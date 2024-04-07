@@ -13,3 +13,5 @@
 | 9           | 503450 Battery|                           | 1        | [1688](https://detail.1688.com/offer/741144487402.html?spm=a360q.8274423.0.0.7b854c9ayJtmcd)                                            | With protect board and 2 wires out.                                                                                    |
 | 10           | 100K resistor| 1/4w                      | 2        | [Tmall](https://detail.tmall.com/item.htm?_u=pnmg8fed34&id=13302997879&spm=a1z09.2.0.0.10072e8dCAfwWX&skuId=3756188445710)              | Voltage divider for ESP32 3.3v max ADC reading the battery level.                                                      |
 | 11          | TTP223       | Touch button              | 2        | [Taobao](https://item.taobao.com/item.htm?_u=pnmg8f71e5&id=611366998227&spm=a1z09.2.0.0.10072e8dCAfwWX)                               | Link point A to have logic low output.                                                                                 |
+# Wiring
+![alt text](https://github.com/decentespresso/openscale/blob/main/Hardware/Wiring.jpg?raw=true)
