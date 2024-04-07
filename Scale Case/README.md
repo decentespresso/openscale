@@ -27,3 +27,7 @@ Different parts of the model require different materials for optimal results:
 #### Important Notes on Materials:
 - **PETG:** PETG may be suitable for some components, offering a good balance between flexibility and strength. Test individual parts for suitability.
 - **PLA:** Avoid using PLA, as it may not provide the necessary durability or heat resistance for the components.
+
+### Multi-color Material printing
+- If you have Bambulab AMS or Prusa MMU, then split the step file into components, you'll find the two buttons.
+- If you don't have those, you can just delete the two buttons, resulting still good looking bridging buttons.
