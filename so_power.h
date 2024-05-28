@@ -10,10 +10,18 @@
 const int windowSize = 1000;
 float batteryLevels[windowSize];
 int readIndex = 0;
-float minVoltage = 3.2;
-float maxVoltage = 4.3;
-float r1 = 50.07;
-float r2 = 46.6;
+// ADC Characteristics
+const float batteryMaxVoltage = 4.2;  // Maximum voltage of battery
+const float showFullBatteryAboveVoltage = 4.1;  // Maximum voltage of battery
+const float showEmptyBatteryBelowVoltage = 3.4;  // Maximum voltage of battery
+
+
+const float dividerRatio = 2.0;       // Ratio of voltage divider (100kΩ/100kΩ)
+const float adcResolution = 4095.0;   // ESP32 ADC resolution for 12-bit (0-4095)
+const float referenceVoltage = 3.3;   // Reference voltage of ESP32 ADC
+
+// Low battery threshold
+const float lowBatteryThreshold = 3.3;  // Battery voltage threshold for low battery action
 
 void (*resetFunc)(void) = 0;  //AVR重启函数
 
@@ -64,10 +72,12 @@ void shut_down_now() {
 #ifdef ENGLISH
   refreshOLED((char*)"Power off", FONT_M);
 #endif
+#ifdef ESPNOW
   if (b_f_espnow) {
     b_f_power_off = 1;
     updateEspnow(1);
   }
+#endif
   delay(1000);
 #ifdef ESP32
   esp32_sleep();
@@ -83,7 +93,7 @@ void shut_down_now() {
 #endif  //ESP32
 }
 
-void shut_down_low_battery(int voltage) {
+void shut_down_low_battery(float voltage) {
   Serial.print("Low battery, voltage:");
   Serial.println(voltage);
 #ifdef CHINESE
@@ -92,10 +102,12 @@ void shut_down_low_battery(int voltage) {
 #ifdef ENGLISH
   refreshOLED((char*)"Low battery", FONT_M);
 #endif
+#ifdef ESPNOW
   if (b_f_espnow) {
     b_f_power_off = 1;
     updateEspnow(1);
   }
+#endif
   delay(1000);
 #ifdef ESP32
   esp32_sleep();
@@ -119,10 +131,12 @@ void shut_down_now_nobeep() {
 #ifdef ENGLISH
   refreshOLED((char*)"Power off", FONT_M);
 #endif
+#ifdef ESPNOW
   if (b_f_espnow) {
     b_f_power_off = 1;
-    updateEspnow(2);
+    updateEspnow(1);
   }
+#endif
   delay(1000);
 #ifdef ESP32
   esp32_sleep();
@@ -140,10 +154,12 @@ void shut_down_now_nobeep() {
 
 void shut_down_now_accidentTouch() {
   Serial.println("accdient on, power off...");
+#ifdef ESPNOW
   if (b_f_espnow) {
     b_f_power_off = 1;
     updateEspnow(1);
   }
+#endif
 #ifdef ESP32
   esp32_sleep();
 #else
@@ -158,21 +174,17 @@ void shut_down_now_accidentTouch() {
 #endif
 }
 
-float getVoltage(int pin) {
-  float realVoltage = 4.14;
-  float adcVoltage = 3.68;
-  float voltage = realVoltage / adcVoltage * 2 * (float)analogRead(pin) * 3.3 / 4095.0;
-  //remember to read the real voltage and compair with esp32 adc voltage.
-  //float adcVoltage =  (float)analogRead(pin) * 3.3 / 4095.0
-  // Serial.print("Voltage");
-  // Serial.print((float)analogRead(pin) * 3.3 / 4095.0 * 2);
-  // Serial.println("\t");
-  return voltage;
+float getVoltage(int batteryPin) {
+  int adcValue = analogRead(batteryPin);                               // Read the value from ADC
+  float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;  // Calculate voltage at ADC pin
+  float batteryVoltage = voltageAtPin * dividerRatio;                  // Calculate the actual battery voltage
+  float correctedVoltage = batteryVoltage * f_batteryCalibrationFactor;
+  return correctedVoltage;
 }
 
 void power_off(int min) {
   if (getVoltage(BATTERY_PIN) < BATTERY_VOLTAGE_MIN) {
-    shut_down_low_battery(getVoltage(BATTERY_PIN));
+    //shut_down_low_battery(getVoltage(BATTERY_PIN));
     return;
   }
 
@@ -226,50 +238,31 @@ void power_off(double sec) {
   }
 }
 
-
-// void getVoltage(int pin) {
-//   float voltage = (float)analogRead(pin) * 3.3 / 4095.0;
-//   float batteryLevel = (voltage * r2) / (r1 + r2) * 100.0;
-//   batteryLevels[readIndex % windowSize] = batteryLevel;
-//   readIndex = (readIndex + 1) % windowSize;
-//   if (readIndex == 0) {
-//     float averageBatteryLevel = 0;
-//     for (int i = 0; i < windowSize; i++) {
-//       averageBatteryLevel += batteryLevels[i];
-//     }
-//     averageBatteryLevel /= windowSize;
-//     Serial.println(averageBatteryLevel);
-//   }
-// }
-
 #ifdef CHECKBATTERY
 float get_usb_voltage() {
   Serial.print("get_usb_voltage");
-  Serial.println(analogRead(USB_LEVEL) * f_vref / (pow(2, ADC_BIT) - 1) * f_divider_factor);
-  return analogRead(USB_LEVEL) * f_vref / (pow(2, ADC_BIT) - 1) * f_divider_factor;
+  Serial.println(analogRead(USB_PIN) * f_vref / (pow(2, ADC_BIT) - 1) * f_divider_factor);
+  return analogRead(USB_PIN) * f_vref / (pow(2, ADC_BIT) - 1) * f_divider_factor;
 }
 
 float get_bat_voltage() {
   Serial.print("get_bat_voltage");
-  Serial.println(analogRead(BATTERY_LEVEL) * f_vref / (pow(2, ADC_BIT) - 1) * f_divider_factor);
-  return analogRead(BATTERY_LEVEL) * f_vref / (pow(2, ADC_BIT) - 1) * f_divider_factor;
+  Serial.println(analogRead(USB_PIN) * f_vref / (pow(2, ADC_BIT) - 1) * f_divider_factor);
+  return analogRead(BATTERY_PIN) * f_vref / (pow(2, ADC_BIT) - 1) * f_divider_factor;
 }
 
-
+#endif  //CHECKBATTERY
 
 void checkBattery() {
-#ifdef POWER_DOG
-  if (millis() > t_PowerDog + 5000) {
-    digitalWrite(BUTTON_KEY, LOW);
-    delay(100);
-    digitalWrite(BUTTON_KEY, HIGH);
-    t_PowerDog = millis();
-  }
-#endif  //POWER_DOG
-  float perc = map(get_bat_voltage(), 3.6, 4.1, 0, 100);
-  Serial.print("bat percent ");
-  Serial.println(perc);
-  i_icon = map(perc, 0, 100, 0, 5);
+  // Serial.print("Battery Voltage:");
+  // Serial.print(getVoltage(BATTERY_PIN));
+  float perc = map(getVoltage(BATTERY_PIN) * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);//map funtion doesn't take float as input.
+  // Serial.print(" ");
+  // Serial.print(perc);
+  // Serial.print("\%,");
+  i_icon = map(perc, 0, 100, 1, 5);
+  // Serial.print(" i_icon =");
+  // Serial.println(i_icon);
   switch (i_icon) {
     case 0:
       c_battery = (char*)"0";
@@ -293,10 +286,9 @@ void checkBattery() {
       c_battery = (char*)"5";
       break;
   }
-  if (get_bat_voltage() > 4.20) {
-    b_f_is_charging = true;
-    //Serial.println("is charging");
-  }
+  // if (getVoltage(BATTERY_PIN) > 4.20) {
+  //   b_f_is_charging = true;
+  //   //Serial.println("is charging");
+  // }
 }
-#endif  //CHECKBATTERY
 #endif

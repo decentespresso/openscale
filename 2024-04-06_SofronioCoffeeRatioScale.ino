@@ -25,12 +25,17 @@
   2024-01-27 v3.4 加入静音后代替蜂鸣器的LED
   2024-03-25 v3.5 Add early verion of English translation
   2024-04-06 v4.0 Add BLE and uuid.
+  2024-04-28 v4.1 fix - wrong button oled indicator on rotated display
+                  fix - "disabled weight in serial" works but "auto tare on espresso mode" doesn't
+                  fix - when ble app connected, scale can't power off via both button down
+  2024-05-13 v4.2 fix - wrong map() usage. map only use long for input, not float.
 
   todo
   开机M进入菜单
   //2023-02-11 关闭蜂鸣器 DONE(2023-06-25)
   2023-03-06 使用enum菜单
-  2024-03-23 Impliment ble function using service uuid and charactoristic uuid to let other apps/devices to get the scale data, or have it tared.
+  2024-03-23 Impliment ble function using service uuid and charactoristic uuid to let other apps/devices to get the scale data, or have it tared.(done)
+  2024-05-05 Fix when in extration mode, screen rotated, back to pure scale, xor button indicating wrong.(done)
 */
 
 //include
@@ -53,8 +58,8 @@
 #include "so_espnow.h"
 #include "so_config.h"
 
-#include <BluetoothSerial.h>
-BluetoothSerial SerialBT;
+// #include <BluetoothSerial.h>
+// BluetoothSerial SerialBT;
 
 // #ifndef BT
 // #ifdef DEBUG_BT
@@ -154,49 +159,49 @@ class MyCallbacks : public BLECharacteristicCallbacks {
 */
 
   void onWrite(BLECharacteristic *pWriteCharacteristic) {
-    Serial.print("Timer");
-    Serial.print(millis());
-    Serial.print(" onWrite counter:");
-    Serial.println(i_onWrite_counter++);
+    //so Serial.print("Timer");
+    //so Serial.print(millis());
+    //so Serial.print(" onWrite counter:");
+    //so Serial.println(i_onWrite_counter++);
     if (pWriteCharacteristic != nullptr) {                         // Check if the characteristic is valid
       size_t len = pWriteCharacteristic->getLength();              // Get the data length
       uint8_t *data = (uint8_t *)pWriteCharacteristic->getData();  // Get the data pointer
 
       // Optionally print the received HEX for verification or debugging
-      Serial.print("Received HEX: ");
+      //so Serial.print("Received HEX: ");
       for (size_t i = 0; i < len; i++) {
         if (data[i] < 0x10) {  // Check if the byte is less than 0x10
-          Serial.print("0");   // Print a leading zero
+          //so Serial.print("0");   // Print a leading zero
         }
-        Serial.print(data[i], HEX);  // Print the byte in HEX
+        //so Serial.print(data[i], HEX);  // Print the byte in HEX
       }
-      Serial.println();  // New line for readability
+      //so Serial.println();  // New line for readability
       if (data[0] == 0x03) {
         if (data[1] == 0x0F) {
           if (validateChecksum(data, len)) {
-            Serial.println("Valid checksum for tare operation. Taring");
+            //so Serial.println("Valid checksum for tare operation. Taring");
           } else {
-            Serial.println("Invalid checksum for tare operation.");
+            //so Serial.println("Invalid checksum for tare operation.");
           }
-          scale.tare();
+          scale.tareNoDelay();
         } else if (data[1] == 0x0A) {
           if (data[2] == 0x00) {
-            Serial.println("LED off detected.");
+            //so Serial.println("LED off detected.");
           } else if (data[2] == 0x01) {
-            Serial.println("LED on detected.");
+            //so Serial.println("LED on detected.");
           } else if (data[2] == 0x02) {
-            Serial.println("Power off detected.");
+            //so Serial.println("Power off detected.");
             shut_down_now_nobeep();
           }
         } else if (data[1] == 0x0B) {
           if (data[2] == 0x03) {
-            Serial.println("Timer start detected.");
+            //so Serial.println("Timer start detected.");
             stopWatch.start();
           } else if (data[2] == 0x00) {
-            Serial.println("Timer stop detected.");
+            //so Serial.println("Timer stop detected.");
             stopWatch.stop();
           } else if (data[2] == 0x02) {
-            Serial.println("Timer zero detected.");
+            //so Serial.println("Timer zero detected.");
             stopWatch.reset();
           }
         }
@@ -212,6 +217,7 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
   int pin = button->getPin();
   switch (eventType) {
     case AceButton::kEventPressed:
+      //if (!deviceConnected)
       buzzer.beep(1, 50);
     //   continue;
     case AceButton::kEventReleased:
@@ -219,11 +225,23 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
       //buzzer.beep(1, 100);
       switch (pin) {
         case BUTTON_SET:
+          if (digitalRead(BUTTON_TARE) == LOW) {
+            //so Serial.print("BUTTON_SET and TARE clicked together");
+            //so Serial.println("Going to sleep now.");
+            shut_down_now_nobeep();
+          }
           buttonSet_Clicked();
+          if (deviceConnected)
+            sendBleButton(0, 0);
+          Serial.println("Left button short pressed");
           break;
 #if defined(FOUR_BUTTON) || defined(FIVE_BUTTON)
         case BUTTON_PLUS:
-          buttonPlus_Clicked();
+          if (!deviceConnected)
+            buttonPlus_Clicked();
+          else
+            sendBleButton(1, 0);
+          //so Serial.println("Right button short pressed");
           break;
         case BUTTON_MINUS:
           buttonMinus_Clicked();
@@ -231,10 +249,13 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
 #endif
         case BUTTON_TARE:
           buttonTare_Clicked();
+          if (deviceConnected)
+            sendBleButton(1, 0);
+          Serial.println("Right button short pressed");
           break;
 #ifdef FIVE_BUTTON
         case BUTTON_POWER:
-          Serial.println("BUTTON_POWER Clicked");
+          //so Serial.println("BUTTON_POWER Clicked");
           shut_down_now_nobeep();
           break;
 #endif  //FIVE_BUTTON
@@ -270,8 +291,8 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
                 b_f_mode = 0;
               else
                 b_f_mode = 1;
-              // Serial.print("b_f_mode: ");
-              // Serial.println(b_f_mode);
+              // //so Serial.print("b_f_mode: ");
+              // //so Serial.println(b_f_mode);
               EEPROM.put(i_addr_mode, b_f_mode);
 #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
               EEPROM.commit();
@@ -298,7 +319,7 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
       //   switch (pin) {
       // #ifndef FIVE_BUTTON
       //         case BUTTON_SET:
-      //           Serial.println("BUTTON_SET Double Clicked");
+      //           //so Serial.println("BUTTON_SET Double Clicked");
       //           shut_down_now_nobeep();
       //           break;
       // #endif  //FIVE_BUTTON
@@ -308,13 +329,6 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
 }
 
 void buttonSet_Clicked() {
-
-  if (digitalRead(BUTTON_TARE) == LOW) {
-    Serial.print("BUTTON_SET and TARE clicked together");
-    Serial.println("Going to sleep now.");
-    shut_down_now_nobeep();
-  }
-
   if (millis() - t_button_pressed > 1000) {
     if (b_f_calibration) {
       reset();
@@ -322,7 +336,7 @@ void buttonSet_Clicked() {
     // if (b_f_set_sample)
     //   i_sample++;
     if (b_f_set_container) {
-      Serial.println("setContainerWeight()");
+      //so Serial.println("setContainerWeight()");
       i_setContainerWeight = 1;
     }
     if (b_f_show_info)
@@ -334,20 +348,20 @@ void buttonSet_Clicked() {
           //初始态 时钟开始
           delay(500);
           stopWatch.start();
-          Serial.println("时钟开始");  //timer start
+          //so Serial.println("时钟开始");  //timer start
         }
-        // Serial.print(stopWatch.elapsed());
-        // Serial.print(" ");
-        // Serial.println("stopWatch.start();");
+        // //so Serial.print(stopWatch.elapsed());
+        // //so Serial.print(" ");
+        // //so Serial.println("stopWatch.start();");
         if (stopWatch.elapsed() > 0) {
           //停止态 时钟清零
           stopWatch.reset();
-          Serial.println("时钟复位");  //timer reset
+          //so Serial.println("时钟复位");  //timer reset
         }
       } else {
         //在计时中 按一下则结束计时 停止冲煮 （固定参数回头再说）
         stopWatch.stop();
-        Serial.println("停止计时");
+        //so Serial.println("停止计时");
       }
 
     } else {
@@ -452,19 +466,10 @@ void buttonMinus_Clicked() {
 
 void buttonTare_Clicked() {
   if (millis() - t_button_pressed > 1000) {
-    // if (b_f_set_sample) {
-    //   i_sample_step = 1;
-    //   //setSample();  //保存sample设定
-    //   return;
-    // }
-    if (b_f_show_info) {
-      b_f_show_info = false;
-      return;
-    }
     if (b_f_calibration) {
       i_button_cal_status++;
-      Serial.print("i_button_cal_status:");
-      Serial.println(i_button_cal_status);
+      //so Serial.print("i_button_cal_status:");
+      //so Serial.println(i_button_cal_status);
       return;
     }
     if (b_f_extraction) {
@@ -486,19 +491,19 @@ void buttonTare_Clicked() {
         t_extraction_first_drop_num = 0;
         t_extraction_last_drop = 0;
         //123scale.tareNoDelay();
-        delay(500);
-        scale.tare();
+        delay(25);  //sodelay 500
+        scale.tareNoDelay();
       }
     } else if (b_f_set_container) {
-      delay(500);
-      scale.tare();
+      delay(25);  //sodelay 500
+      scale.tareNoDelay();
     } else {
       //普通归零
       //a standard tare.
       //f_temp_tare = f_filtered_temperature;
       b_f_weight_quick_zero = true;
-      delay(500);
-      scale.tare();
+      delay(25);  //sodelay 500
+      scale.tareNoDelay();
     }
     t_button_pressed = millis();
   }
@@ -575,40 +580,6 @@ void setup() {
     ;
   delay(200);
 
-  BLEDevice::init("Decent Scale");
-
-  // Create BLE Server
-  pServer = BLEDevice::createServer();
-  pServer->setCallbacks(new MyServerCallbacks());
-
-  // Create BLE Service
-  BLEService *pService = pServer->createService(SUUID_DECENTSCALE);
-
-
-  pWriteCharacteristic = pService->createCharacteristic(
-    CUUID_DECENTSCALE_WRITE,
-    BLECharacteristic::PROPERTY_WRITE);
-  pWriteCharacteristic->setCallbacks(new MyCallbacks());
-  // Create BLE Characteristic for RX
-  pReadCharacteristic = pService->createCharacteristic(
-    CUUID_DECENTSCALE_READ,
-    BLECharacteristic::PROPERTY_READ
-      | BLECharacteristic::PROPERTY_NOTIFY
-    //| BLECharacteristic::PROPERTY_WRITE
-    //| BLECharacteristic::PROPERTY_INDICATE
-    //| BLECharacteristic::PROPERTY_BROADCAST
-    //| BLECharacteristic::PROPERTY_WRITE_NR
-  );
-
-  pReadCharacteristic->addDescriptor(new BLE2902());
-
-  pService->start();
-
-  // Start advertising
-  pServer->getAdvertising()->start();
-  Serial.println("Waiting for a client connection to notify...");
-
-
 #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040) || defined(ESP32C3)
   EEPROM.begin(512);
 #endif
@@ -616,19 +587,19 @@ void setup() {
   SerialBT.begin("soso D.R.S");
 #endif
   //delay(2000);
-  Serial.println("Begin!");
+  //so Serial.println("Begin!");
   MPU6050_init();
 #ifdef GYROFACEUP
   if (gyro_z() < 8) {
-    Serial.print("gyro_z:");
-    Serial.println(gyro_z());
+    //so Serial.print("gyro_z:");
+    //so Serial.println(gyro_z());
     shut_down_now_accidentTouch();
   }
 #endif
 #ifdef GYROFACEDOWN
   if (gyro_z() > -8) {
-    Serial.print("gyro_z:");
-    Serial.println(gyro_z());
+    //so Serial.print("gyro_z:");
+    //so Serial.println(gyro_z());
     shut_down_now_accidentTouch();
   }
 #endif
@@ -669,9 +640,9 @@ void setup() {
 #ifdef WELCOME
   EEPROM.get(i_addr_welcome, str_welcome);
   str_welcome.trim();
-// Serial.print("str_welcome.length() = ");
-// Serial.println(str_welcome.length());
-// Serial.println(str_welcome);
+// //so Serial.print("str_welcome.length() = ");
+// //so Serial.println(str_welcome.length());
+// //so Serial.println(str_welcome);
 #ifdef ROTATION_180
   u8g2.setDisplayRotation(U8G2_R2);
 #else
@@ -698,10 +669,20 @@ void setup() {
 
   EEPROM.get(INPUTCOFFEEPOUROVER_ADDRESS, INPUTCOFFEEPOUROVER);
   EEPROM.get(INPUTCOFFEEESPRESSO_ADDRESS, INPUTCOFFEEESPRESSO);
-  // Serial.print("INPUTCOFFEEPOUROVER:");
-  // Serial.print(INPUTCOFFEEPOUROVER);
-  // Serial.print(" INPUTCOFFEEESPRESSO:");
-  // Serial.println(INPUTCOFFEEESPRESSO);
+  EEPROM.get(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);
+  Serial.print("f_batteryCalibrationFactor:");
+  Serial.println(f_batteryCalibrationFactor);
+  // //so Serial.print("INPUTCOFFEEPOUROVER:");
+  // //so Serial.print(INPUTCOFFEEPOUROVER);
+  // //so Serial.print(" INPUTCOFFEEESPRESSO:");
+  // //so Serial.println(INPUTCOFFEEESPRESSO);
+  if (isnan(f_batteryCalibrationFactor) || f_batteryCalibrationFactor < 0.9) {
+    f_batteryCalibrationFactor = 1.0;
+    EEPROM.put(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);
+#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+    EEPROM.commit();
+#endif
+  }
   if (isnan(INPUTCOFFEEPOUROVER)) {
     INPUTCOFFEEPOUROVER = 16.0;
     EEPROM.put(INPUTCOFFEEPOUROVER_ADDRESS, INPUTCOFFEEPOUROVER);
@@ -725,8 +706,8 @@ void setup() {
   }
   //读取模式
   EEPROM.get(i_addr_mode, b_f_mode);
-  // Serial.print("b_f_mode: ");
-  // Serial.println(b_f_mode);
+  // //so Serial.print("b_f_mode: ");
+  // //so Serial.println(b_f_mode);
   if (b_f_mode > 1) {
     b_f_mode = 0;
     EEPROM.put(i_addr_mode, b_f_mode);
@@ -800,19 +781,11 @@ void setup() {
 #endif
 
 #if DEBUG
-  Serial.print("digitalRead(BUTTON_SET):");
-  Serial.print(digitalRead(BUTTON_SET));
-  Serial.print("\tdigitalRead(BUTTON_SET):");
-  Serial.println(digitalRead(BUTTON_SET));
+  //so Serial.print("digitalRead(BUTTON_SET):");
+  //so Serial.print(digitalRead(BUTTON_SET));
+  //so Serial.print("\tdigitalRead(BUTTON_SET):");
+  //so Serial.println(digitalRead(BUTTON_SET));
 #endif
-
-  //灵敏度设置
-  //sensitivity
-  // if (digitalRead(BUTTON_SET) == LOW) {
-  //   b_f_set_sample = true;
-  //   i_sample_step = 0;
-  //   setSample();
-  // }
 
   //录入手柄/接粉杯重量
   //get the containter weight and save to eeprom
@@ -822,31 +795,70 @@ void setup() {
   }
 
   if (digitalRead(BUTTON_SET) == LOW) {
-    SerialBT.begin("D.R.S.");
+    //bluetooth serial init
+    //SerialBT.begin("D.R.S.");
+    //SerialBT.begin("Open Scale BTSerial");
     setContainerWeight();
-
+#ifdef WIFI
     WiFi.mode(WIFI_STA);
     // Print MAC address
-    Serial.print("MAC Address: ");
-    Serial.println(WiFi.macAddress());
+    //so Serial.print("MAC Address: ");
+    //so Serial.println(WiFi.macAddress());
 
     // Disconnect from WiFi
     WiFi.disconnect();
-
+#endif
+#ifdef ESPNOW
     if (esp_now_init() == ESP_OK) {
-      Serial.println("ESPNow Init Success");
+      //so Serial.println("ESPNow Init Success");
       esp_now_register_recv_cb(receiveCallback);
       esp_now_register_send_cb(sentCallback);
       b_f_espnow = true;
     } else {
-      Serial.println("ESPNow Init Failed");
+      //so Serial.println("ESPNow Init Failed");
       // Retry InitESPNow, add a counte and then restart?
       // InitESPNow();
       // or Simply Restart
       delay(3000);
       ESP.restart();
     }
+#endif
+  } else {
+    //ble init
+    BLEDevice::init("Decent Scale");
+    //BLEDevice::init("Open Scale BLE");
+    // Create BLE Server
+    pServer = BLEDevice::createServer();
+    pServer->setCallbacks(new MyServerCallbacks());
+
+    // Create BLE Service
+    BLEService *pService = pServer->createService(SUUID_DECENTSCALE);
+
+
+    pWriteCharacteristic = pService->createCharacteristic(
+      CUUID_DECENTSCALE_WRITE,
+      BLECharacteristic::PROPERTY_WRITE);
+    pWriteCharacteristic->setCallbacks(new MyCallbacks());
+    // Create BLE Characteristic for RX
+    pReadCharacteristic = pService->createCharacteristic(
+      CUUID_DECENTSCALE_READ,
+      BLECharacteristic::PROPERTY_READ
+        | BLECharacteristic::PROPERTY_NOTIFY
+      //| BLECharacteristic::PROPERTY_WRITE
+      //| BLECharacteristic::PROPERTY_INDICATE
+      //| BLECharacteristic::PROPERTY_BROADCAST
+      //| BLECharacteristic::PROPERTY_WRITE_NR
+    );
+
+    pReadCharacteristic->addDescriptor(new BLE2902());
+
+    pService->start();
+
+    // Start advertising
+    pServer->getAdvertising()->start();
+    //so Serial.println("Waiting for a client connection to notify...");
   }
+
 
 //4按键模式时显示信息
 #ifndef TWO_BUTTON
@@ -856,72 +868,73 @@ void setup() {
     delay(2000);
   }
 #endif
-  Serial.print("Welcome: ");
-  if (str_welcome.length() == 127)
-    Serial.print(WELCOME1);
-  else
-    Serial.print(str_welcome);
-  Serial.print("\t");
-  Serial.print(WELCOME2);
-  Serial.print("\t");
-  Serial.println(WELCOME3);
-  Serial.print("Info: ");
-  Serial.print(LINE1);
-  Serial.print("\t");
-  Serial.print(LINE2);
-  Serial.print("\t");
-  Serial.print(LINE3);
-  Serial.print("\tScale Type: ");
-  if (b_f_mode)
-    Serial.println("ESPRESSO");
-  else
-    Serial.println("POUROVER");
+  //so Serial.print("Welcome: ");
+  if (str_welcome.length() == 127) {
+    //so Serial.print(WELCOME1);
+  } else {
+    //so Serial.print(str_welcome);
+  }
+  //so Serial.print("\t");
+  //so Serial.print(WELCOME2);
+  //so Serial.print("\t");
+  //so Serial.println(WELCOME3);
+  //so Serial.print("Info: ");
+  //so Serial.print(LINE1);
+  //so Serial.print("\t");
+  //so Serial.print(LINE2);
+  //so Serial.print("\t");
+  //so Serial.print(LINE3);
+  //so Serial.print("\tScale Type: ");
+  if (b_f_mode) {
+    //so Serial.println("ESPRESSO");
+  } else {
+    //so Serial.println("POUROVER");
+  }
+  //so Serial.print("Cal_Val: ");
+  //so Serial.print(f_calibration_value);
+  // //so Serial.print("\tSample[");
+  // //so Serial.print(i_sample);
+  // //so Serial.print("]: ");
+  // //so Serial.print(sample[i_sample]);
+  //so Serial.print(F("\tContainer: "));
+  //so Serial.print(f_weight_container);
+  //so Serial.print("g");
+  //so Serial.print(F("\tDefaultPourOver: "));
+  //so Serial.print(INPUTCOFFEEPOUROVER);
+  //so Serial.print("g");
+  //so Serial.print(F("\tDefaultEspresso: "));
+  //so Serial.print(INPUTCOFFEEESPRESSO);
+  //so Serial.println("g");
 
-  Serial.print("Cal_Val: ");
-  Serial.print(f_calibration_value);
-  // Serial.print("\tSample[");
-  // Serial.print(i_sample);
-  // Serial.print("]: ");
-  // Serial.print(sample[i_sample]);
-  Serial.print(F("\tContainer: "));
-  Serial.print(f_weight_container);
-  Serial.print("g");
-  Serial.print(F("\tDefaultPourOver: "));
-  Serial.print(INPUTCOFFEEPOUROVER);
-  Serial.print("g");
-  Serial.print(F("\tDefaultEspresso: "));
-  Serial.print(INPUTCOFFEEESPRESSO);
-  Serial.println("g");
-
-  Serial.println("Button:\tSET\tTare\tPower");
+  //so Serial.println("Button:\tSET\tTare\tPower");
 #if defined(FOUR_BUTTON) || defined(FIVE_BUTTON)
-  Serial.println("Button:\tSET\tPlus\tMinus\tTare\tPower");
+  //so Serial.println("Button:\tSET\tPlus\tMinus\tTare\tPower");
 #endif
-  Serial.print("Pin:");
-  Serial.print("\t");
-  Serial.print(BUTTON_SET);
-  Serial.print("\t");
+  //so Serial.print("Pin:");
+  //so Serial.print("\t");
+  //so Serial.print(BUTTON_SET);
+  //so Serial.print("\t");
 #if defined(FOUR_BUTTON) || defined(FIVE_BUTTON)
-  Serial.print(BUTTON_PLUS);
-  Serial.print("\t");
-  Serial.print(BUTTON_MINUS);
-  Serial.print("\t");
+  //so Serial.print(BUTTON_PLUS);
+  //so Serial.print("\t");
+  //so Serial.print(BUTTON_MINUS);
+  //so Serial.print("\t");
 #endif
-  Serial.print(BUTTON_TARE);
-  Serial.print("\t");
-  Serial.println(GPIO_NUM_BUTTON_POWER);
-  Serial.println("Button:\tI2C_SDA\tI2C_SCK\t711SDA\t711SCK\tBUZZER");
-  Serial.print("Pin:");
-  Serial.print("\t");
-  Serial.print(I2C_SDA);
-  Serial.print("\t");
-  Serial.print(I2C_SCL);
-  Serial.print("\t");
-  Serial.print(HX711_SDA);
-  Serial.print("\t");
-  Serial.print(HX711_SCL);
-  Serial.print("\t");
-  Serial.println(BUZZER);
+  //so Serial.print(BUTTON_TARE);
+  //so Serial.print("\t");
+  //so Serial.println(GPIO_NUM_BUTTON_POWER);
+  //so Serial.println("Button:\tI2C_SDA\tI2C_SCK\t711SDA\t711SCK\tBUZZER");
+  //so Serial.print("Pin:");
+  //so Serial.print("\t");
+  //so Serial.print(I2C_SDA);
+  //so Serial.print("\t");
+  //so Serial.print(I2C_SCL);
+  //so Serial.print("\t");
+  //so Serial.print(HX711_SDA);
+  //so Serial.print("\t");
+  //so Serial.print(HX711_SCL);
+  //so Serial.print("\t");
+  //so Serial.println(BUZZER);
 
   scale.setCalFactor(f_calibration_value);  //设置偏移量
   //set the calibration value
@@ -933,7 +946,7 @@ void setup() {
   t_up_battery = millis();
 #endif  //CHECKBATTERY
   scale.tareNoDelay();
-  Serial.println("Setup complete...");
+  //so Serial.println("Setup complete...");
   // while (!b_f_ota)
   //   ;
 }
@@ -983,8 +996,9 @@ void pourOverScale() {
     }
 
     dtostrf(f_displayedValue, 7, 1, c_weight);
-    if (b_weight_in_serial == true)
-      Serial.println(trim(c_weight));
+    if (b_weight_in_serial == true) {
+      //so Serial.println(trim(c_weight));
+    }
   }
 
   //记录咖啡粉时，将重量固定为0
@@ -1008,36 +1022,36 @@ void pourOverScale() {
 #ifdef DEBUG_BT
 
 #ifdef ENGLISH
-  Serial.print("手冲模式 ");  //pourover mode
-  Serial.print("原重:");      //raw weight
-  Serial.print(f_weight_adc);
-  Serial.print(",平滑:");  //smoothed weight
-  Serial.print(f_weight_smooth);
-  Serial.print(",显示:");  //displaed weight
-  Serial.println(f_displayedValue);
-  SerialBT.print("手冲模式 ");  //same for serialbt
-  SerialBT.print("原重:");
-  SerialBT.print(f_weight_adc);
-  SerialBT.print(",平滑:");
-  SerialBT.print(f_weight_smooth);
-  SerialBT.print(",显示:");
-  SerialBT.println(f_displayedValue);
+  //so Serial.print("手冲模式 ");  //pourover mode
+  //so Serial.print("原重:");      //raw weight
+  //so Serial.print(f_weight_adc);
+  //so Serial.print(",平滑:");  //smoothed weight
+  //so Serial.print(f_weight_smooth);
+  //so Serial.print(",显示:");  //displaed weight
+  //so Serial.println(f_displayedValue);
+  //so SerialBT.print("手冲模式 ");  //same for serialbt
+  //so SerialBT.print("原重:");
+  //so SerialBT.print(f_weight_adc);
+  //so SerialBT.print(",平滑:");
+  //so SerialBT.print(f_weight_smooth);
+  //so SerialBT.print(",显示:");
+  //so SerialBT.println(f_displayedValue);
 #endif
 #ifdef ENGLISH
-  Serial.print("Pour Over mode ");  //pourover mode
-  Serial.print("Raw:");             //raw weight
-  Serial.print(f_weight_adc);
-  Serial.print(",Smoothed:");  //smoothed weight
-  Serial.print(f_weight_smooth);
-  Serial.print(",Displayed:");  //displaed weight
-  Serial.println(f_displayedValue);
-  SerialBT.print("Pour Over mode ");  //same for serialbt
-  SerialBT.print("Raw:");
-  SerialBT.print(f_weight_adc);
-  SerialBT.print(",Smoothed:");
-  SerialBT.print(f_weight_smooth);
-  SerialBT.print(",Displayed:");
-  SerialBT.println(f_displayedValue);
+  //so Serial.print("Pour Over mode ");  //pourover mode
+  //so Serial.print("Raw:");             //raw weight
+  //so Serial.print(f_weight_adc);
+  //so Serial.print(",Smoothed:");  //smoothed weight
+  //so Serial.print(f_weight_smooth);
+  //so Serial.print(",Displayed:");  //displaed weight
+  //so Serial.println(f_displayedValue);
+  //so SerialBT.print("Pour Over mode ");  //same for serialbt
+  //so SerialBT.print("Raw:");
+  //so SerialBT.print(f_weight_adc);
+  //so SerialBT.print(",Smoothed:");
+  //so SerialBT.print(f_weight_smooth);
+  //so SerialBT.print(",Displayed:");
+  //so SerialBT.println(f_displayedValue);
 #endif
 #endif
 }
@@ -1081,19 +1095,19 @@ void espressoScale() {
         t_flow_rate = millis();
       }
       dtostrf(f_displayedValue, 7, 1, c_weight);
-      if (b_weight_in_serial == true)
-        Serial.println(trim(c_weight));
-
+      if (b_weight_in_serial == true) {
+        //so Serial.println(trim(c_weight));
+      }
       if (millis() > t_scale_stable + scaleStableInterval) {
         //稳定判断
         t_scale_stable = millis();  //重量稳定打点
         //get the time stamp for a stable scale.
         if (abs(aWeight - f_weight_smooth) < aWeightDiff) {
           scaleStable = true;  //称已经稳定
+
 #ifdef DEBUG_BT
-          Serial.println("称已经稳定");
           //scale is steady
-          SerialBT.println("称已经稳定");
+          //so SerialBT.println("称已经稳定");
 #endif
           aWeight = f_weight_smooth;  //稳定重量aWeight
           //smoothed data
@@ -1112,8 +1126,8 @@ void espressoScale() {
                 stopWatch.stop();
 //萃取完成 单次固定液重
 #ifdef DEBUG_BT
-                Serial.println("萃取完成");
-                SerialBT.println("萃取完成");
+                //so Serial.println("萃取完成");
+                //so SerialBT.println("萃取完成");
 #endif
                 buzzer.beep(3, 50);
                 b_f_ready_to_brew = false;
@@ -1124,7 +1138,7 @@ void espressoScale() {
               t_auto_tare = millis();                                       //自动清零计时打点
               if (f_displayedValue > 30 && b_f_minus_container == false) {  //大于30g说明放了杯子 3g是纸杯
                 //后面的判断避免手柄模式超过30g对放杯感应产生干扰
-                scale.tare();
+                scale.tareNoDelay();
                 buzzer.beep(1, 100);
                 tareCounter = 0;
                 t_extraction_last_drop = 0;
@@ -1140,11 +1154,12 @@ void espressoScale() {
                 }
                 scaleStable = false;
                 t_extraction_begin = millis();
-                //Serial.println(F("正归零 开始计时 取消稳定"));
+                ////so Serial.println(F("正归零 开始计时 取消稳定"));
               }
               //时钟为零，负重量稳定后归零，时钟不变
               if (f_displayedValue < -0.5) {  //负重量状态
-                scale.tare();
+                scale.tareNoDelay();
+                Serial.println("tareNoDelay() 负归零后 进入准备冲煮状态 【下次】放了杯子后 清零并计时");
                 //负归零后 进入准备冲煮状态 【下次】放了杯子后 清零并计时
                 b_f_ready_to_brew = true;
               }
@@ -1178,7 +1193,7 @@ void espressoScale() {
   if (scale.getTareStatus()) {
     b_f_minus_container = false;
     buzzer.beep(2, 50);
-    //Serial.println("beep2 espressoScale");
+    ////so Serial.println("beep2 espressoScale");
     b_f_ready_to_brew = true;
     b_f_weight_quick_zero = false;
   }
@@ -1195,36 +1210,36 @@ void espressoScale() {
   dtostrf(ratio_temp, 7, 1, c_brew_ratio);
 #ifdef DEBUG_BT
 #ifdef CHINESE
-  Serial.print("意式模式 ");
-  Serial.print("原重:");
-  Serial.print(f_weight_adc);
-  Serial.print(",平滑:");
-  Serial.print(f_weight_smooth);
-  Serial.print(",显示:");
-  Serial.println(f_displayedValue);
-  SerialBT.print("意式模式 ");
-  SerialBT.print("原重:");
-  SerialBT.print(f_weight_adc);
-  SerialBT.print(",平滑:");
-  SerialBT.print(f_weight_smooth);
-  SerialBT.print(",显示:");
-  SerialBT.println(f_displayedValue);
+  //so Serial.print("意式模式 ");
+  //so Serial.print("原重:");
+  //so Serial.print(f_weight_adc);
+  //so Serial.print(",平滑:");
+  //so Serial.print(f_weight_smooth);
+  //so Serial.print(",显示:");
+  //so Serial.println(f_displayedValue);
+  //so SerialBT.print("意式模式 ");
+  //so SerialBT.print("原重:");
+  //so SerialBT.print(f_weight_adc);
+  //so SerialBT.print(",平滑:");
+  //so SerialBT.print(f_weight_smooth);
+  //so SerialBT.print(",显示:");
+  //so SerialBT.println(f_displayedValue);
 #endif
 #ifdef ENGLISH
-  Serial.print("Espresso Mode ");
-  Serial.print("Raw:");
-  Serial.print(f_weight_adc);
-  Serial.print(",Smoothed:");
-  Serial.print(f_weight_smooth);
-  Serial.print(",Displayed:");
-  Serial.println(f_displayedValue);
-  SerialBT.print("Espresso Mode ");
-  SerialBT.print("Raw:");
-  SerialBT.print(f_weight_adc);
-  SerialBT.print(",Smoothed:");
-  SerialBT.print(f_weight_smooth);
-  SerialBT.print(",Displayed:");
-  SerialBT.println(f_displayedValue);
+  //so Serial.print("Espresso Mode ");
+  //so Serial.print("Raw:");
+  //so Serial.print(f_weight_adc);
+  //so Serial.print(",Smoothed:");
+  //so Serial.print(f_weight_smooth);
+  //so Serial.print(",Displayed:");
+  //so Serial.println(f_displayedValue);
+  //so SerialBT.print("Espresso Mode ");
+  //so SerialBT.print("Raw:");
+  //so SerialBT.print(f_weight_adc);
+  //so SerialBT.print(",Smoothed:");
+  //so SerialBT.print(f_weight_smooth);
+  //so SerialBT.print(",Displayed:");
+  //so SerialBT.println(f_displayedValue);
 #endif
 #endif
 }
@@ -1312,46 +1327,47 @@ void pureScale() {
     mpu_accel->getEvent(&a);
 
     dtostrf(f_displayedValue, 7, i_decimal_precision, c_weight);
-    if (b_weight_in_serial == true)
-      Serial.println(trim(c_weight));
+    if (b_weight_in_serial == true) {
+      //so Serial.println(trim(c_weight));
 #ifdef DEBUG_BT
 #ifdef CHINESES
-    Serial.print("称重模式 ");
-    Serial.print("原重:");
-    Serial.print(f_weight_adc);
-    Serial.print(",平滑:");
-    Serial.print(f_weight_smooth);
-    Serial.print(",显示:");
-    Serial.println(f_displayedValue);
-    SerialBT.print("称重模式 ");
-    SerialBT.print("原重:");
-    SerialBT.print(f_weight_adc);
-    SerialBT.print(",平滑:");
-    SerialBT.print(f_weight_smooth);
-    SerialBT.print(",显示:");
-    SerialBT.println(f_displayedValue);
-    Serial.print("Gyro Z:");
-    Serial.println(a.acceleration.z);
+      //so Serial.print("称重模式 ");
+      //so Serial.print("原重:");
+      //so Serial.print(f_weight_adc);
+      //so Serial.print(",平滑:");
+      //so Serial.print(f_weight_smooth);
+      //so Serial.print(",显示:");
+      //so Serial.println(f_displayedValue);
+      //so SerialBT.print("称重模式 ");
+      //so SerialBT.print("原重:");
+      //so SerialBT.print(f_weight_adc);
+      //so SerialBT.print(",平滑:");
+      //so SerialBT.print(f_weight_smooth);
+      //so SerialBT.print(",显示:");
+      //so SerialBT.println(f_displayedValue);
+      //so Serial.print("Gyro Z:");
+      //so Serial.println(a.acceleration.z);
 #endif
 #ifdef ENGLISH
-    Serial.print("Weighing Mode ");
-    Serial.print("Raw:");
-    Serial.print(f_weight_adc);
-    Serial.print(",Smoothed:");
-    Serial.print(f_weight_smooth);
-    Serial.print(",Displayed:");
-    Serial.println(f_displayedValue);
-    SerialBT.print("Weighing Mode ");
-    SerialBT.print("Raw:");
-    SerialBT.print(f_weight_adc);
-    SerialBT.print(",Smoothed:");
-    SerialBT.print(f_weight_smooth);
-    SerialBT.print(",Displayed:");
-    SerialBT.println(f_displayedValue);
-    Serial.print("Gyro Z:");
-    Serial.println(a.acceleration.z);
+      //so Serial.print("Weighing Mode ");
+      //so Serial.print("Raw:");
+      //so Serial.print(f_weight_adc);
+      //so Serial.print(",Smoothed:");
+      //so Serial.print(f_weight_smooth);
+      //so Serial.print(",Displayed:");
+      //so Serial.println(f_displayedValue);
+      //so SerialBT.print("Weighing Mode ");
+      //so SerialBT.print("Raw:");
+      //so SerialBT.print(f_weight_adc);
+      //so SerialBT.print(",Smoothed:");
+      //so SerialBT.print(f_weight_smooth);
+      //so SerialBT.print(",Displayed:");
+      //so SerialBT.println(f_displayedValue);
+      //so Serial.print("Gyro Z:");
+      //so Serial.println(a.acceleration.z);
 #endif
 #endif
+    }
   }
   if (scale.getTareStatus()) {
     buzzer.beep(2, 50);
@@ -1368,14 +1384,14 @@ void pureScale() {
     ratio_temp = 0.0;
   dtostrf(ratio_temp, 7, i_decimal_precision, c_brew_ratio);
   // if (millis() - t_temp > 500) {
-  //   // Serial.print("temperature:");
-  //   Serial.print(f_filtered_temperature);
-  //   Serial.print("\t");
-  //   // Serial.print("weightCompensation:");
-  //   Serial.print(f_weight_smooth);
-  //   Serial.print("\t");
-  //   // Serial.print("f_weight_smooth:");
-  //   Serial.println(f_displayedValue);
+  //   // //so Serial.print("temperature:");
+  //   //so Serial.print(f_filtered_temperature);
+  //   //so Serial.print("\t");
+  //   // //so Serial.print("weightCompensation:");
+  //   //so Serial.print(f_weight_smooth);
+  //   //so Serial.print("\t");
+  //   // //so Serial.print("f_weight_smooth:");
+  //   //so Serial.println(f_displayedValue);
   //   t_temp = millis();
   // }
 }
@@ -1482,7 +1498,7 @@ void serialCommand() {
 #endif
     }
 
-    if (inputString.startsWith("cp ")) {  //手冲粉量
+    if (inputString.startsWith("cp ")) {  //set default pour over ground weight
       INPUTCOFFEEPOUROVER = inputString.substring(3).toFloat();
       EEPROM.put(INPUTCOFFEEPOUROVER_ADDRESS, INPUTCOFFEEPOUROVER);
 #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
@@ -1490,12 +1506,31 @@ void serialCommand() {
 #endif
     }
 
-    if (inputString.startsWith("v")) {  //电压
+    if (inputString.startsWith("v")) {  //read battery voltage
       Serial.print("Battery Voltage:");
-      Serial.println(getVoltage(BATTERY_PIN));
+      Serial.print(getVoltage(BATTERY_PIN));
+      int adcValue = analogRead(BATTERY_PIN);                              // Read the value from ADC
+      float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;  // Calculate voltage at ADC pin
+      Serial.print("\tADC Voltage:");
+      Serial.print(voltageAtPin);
+      Serial.print("\tbatteryCalibrationFactor: ");
+      Serial.println(f_batteryCalibrationFactor);
     }
 
-    if (inputString.startsWith("ce ")) {  //意式粉量
+    if (inputString.startsWith("vf ")) {                                   //input real voltage to set battery voltage calibration factor
+      int adcValue = analogRead(BATTERY_PIN);                              // Read the value from ADC
+      float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;  // Calculate voltage at ADC pin
+      float batteryVoltage = voltageAtPin * dividerRatio;                  // Calculate the actual battery voltage
+      f_batteryCalibrationFactor = inputString.substring(3).toFloat() / batteryVoltage;
+      EEPROM.put(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);
+#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+      EEPROM.commit();
+#endif
+      Serial.print("Battery Voltage Factor set to: ");
+      Serial.println(f_batteryCalibrationFactor);
+    }
+
+    if (inputString.startsWith("ce ")) {  //set default espresso ground weight
       INPUTCOFFEEESPRESSO = inputString.substring(3).toFloat();
       EEPROM.put(INPUTCOFFEEESPRESSO_ADDRESS, INPUTCOFFEEESPRESSO);
 #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
@@ -1503,7 +1538,7 @@ void serialCommand() {
 #endif
     }
 
-    if (inputString.startsWith("ct ")) {  //容器重量
+    if (inputString.startsWith("ct ")) {  //set container weight
       f_weight_container = inputString.substring(3).toFloat();
       EEPROM.put(i_addr_container, f_weight_container);
 #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
@@ -1511,7 +1546,7 @@ void serialCommand() {
 #endif
     }
 
-    if (inputString.startsWith("cv ")) {  //校准值
+    if (inputString.startsWith("cv ")) {  //set scale calibration value
       f_calibration_value = inputString.substring(3).toFloat();
       EEPROM.put(i_addr_calibration_value, f_calibration_value);
 #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
@@ -1555,151 +1590,148 @@ void serialCommand() {
 
 // Send the updated values via USB serial
 #ifdef CHINESE
-    Serial.print("手冲默认粉重:");
-    Serial.print(INPUTCOFFEEPOUROVER);
-    Serial.print("g\t意式默认粉重:");
-    Serial.print(INPUTCOFFEEESPRESSO);
-    Serial.print("g\t容器重量:");
-    Serial.print(f_weight_container);
-    Serial.print("g\t蜂鸣器状态:");
-    if (b_f_beep)
-      Serial.println("打开");
-    else
-      Serial.println("关闭");
+    //so Serial.print("手冲默认粉重:");
+    //so Serial.print(INPUTCOFFEEPOUROVER);
+    //so Serial.print("g\t意式默认粉重:");
+    //so Serial.print(INPUTCOFFEEESPRESSO);
+    //so Serial.print("g\t容器重量:");
+    //so Serial.print(f_weight_container);
+    //so Serial.print("g\t蜂鸣器状态:");
+    if (b_f_beep) {
+      //so Serial.println("打开");
+    } else {  //so Serial.println("关闭");
+    }
 #endif
 #ifdef ENGLISH
-    Serial.print("Pour Over default ground weight:");
-    Serial.print(INPUTCOFFEEPOUROVER);
-    Serial.print("g\tEspresso default ground weight:");
-    Serial.print(INPUTCOFFEEESPRESSO);
-    Serial.print("g\tContainer Weight:");
-    Serial.print(f_weight_container);
-    Serial.print("g\tBuzzer:");
-    if (b_f_beep)
-      Serial.println("On");
-    else
-      Serial.println("Off");
+    //so Serial.print("Pour Over default ground weight:");
+    //so Serial.print(INPUTCOFFEEPOUROVER);
+    //so Serial.print("g\tEspresso default ground weight:");
+    //so Serial.print(INPUTCOFFEEESPRESSO);
+    //so Serial.print("g\tContainer Weight:");
+    //so Serial.print(f_weight_container);
+    //so Serial.print("g\tBuzzer:");
+    if (b_f_beep) {
+      //so Serial.println("On");
+    } else {  //so Serial.println("Off");
+    }
 #endif
   }
 
-  if (SerialBT.available()) {
-    String inputStringBT = SerialBT.readStringUntil('\n');
-    inputStringBT.trim();
+  //   if (SerialBT.available()) {
+  //     String inputStringBT = SerialBT.readStringUntil('\n');
+  //     inputStringBT.trim();
 
-    if (inputStringBT.startsWith("welcome ")) {
-      //strcpy(str_welcome, inputStringBT.substring(8).c_str());
-      EEPROM.put(i_addr_welcome, inputStringBT.substring(8));
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
-      EEPROM.commit();
-#endif
-    }
+  //     if (inputStringBT.startsWith("welcome ")) {
+  //       //strcpy(str_welcome, inputStringBT.substring(8).c_str());
+  //       EEPROM.put(i_addr_welcome, inputStringBT.substring(8));
+  // #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+  //       EEPROM.commit();
+  // #endif
+  //     }
 
-    if (inputStringBT.startsWith("cp ")) {  //手冲粉量
-      INPUTCOFFEEPOUROVER = inputStringBT.substring(3).toFloat();
-      EEPROM.put(INPUTCOFFEEPOUROVER_ADDRESS, INPUTCOFFEEPOUROVER);
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
-      EEPROM.commit();
-#endif
-    }
+  //     if (inputStringBT.startsWith("cp ")) {  //手冲粉量
+  //       INPUTCOFFEEPOUROVER = inputStringBT.substring(3).toFloat();
+  //       EEPROM.put(INPUTCOFFEEPOUROVER_ADDRESS, INPUTCOFFEEPOUROVER);
+  // #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+  //       EEPROM.commit();
+  // #endif
+  //     }
 
-    if (inputStringBT.startsWith("v")) {  //电压
-      SerialBT.print("Battery Voltage:");
-      SerialBT.println(getVoltage(BATTERY_PIN));
-    }
+  //     if (inputStringBT.startsWith("v")) {  //电压
+  //       //so SerialBT.print("Battery Voltage:");
+  //       //so SerialBT.println(getVoltage(BATTERY_PIN));
+  //     }
 
-    if (inputStringBT.startsWith("ce ")) {  //意式粉量
-      INPUTCOFFEEESPRESSO = inputStringBT.substring(3).toFloat();
-      EEPROM.put(INPUTCOFFEEESPRESSO_ADDRESS, INPUTCOFFEEESPRESSO);
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
-      EEPROM.commit();
-#endif
-    }
+  //     if (inputStringBT.startsWith("ce ")) {  //意式粉量
+  //       INPUTCOFFEEESPRESSO = inputStringBT.substring(3).toFloat();
+  //       EEPROM.put(INPUTCOFFEEESPRESSO_ADDRESS, INPUTCOFFEEESPRESSO);
+  // #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+  //       EEPROM.commit();
+  // #endif
+  //     }
 
-    if (inputStringBT.startsWith("ct ")) {  //容器重量
-      f_weight_container = inputStringBT.substring(3).toFloat();
-      EEPROM.put(i_addr_container, f_weight_container);
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
-      EEPROM.commit();
-#endif
-    }
+  //     if (inputStringBT.startsWith("ct ")) {  //容器重量
+  //       f_weight_container = inputStringBT.substring(3).toFloat();
+  //       EEPROM.put(i_addr_container, f_weight_container);
+  // #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+  //       EEPROM.commit();
+  // #endif
+  //     }
 
-    if (inputStringBT.startsWith("cv ")) {  //校准值
-      f_calibration_value = inputStringBT.substring(3).toFloat();
-      EEPROM.put(i_addr_calibration_value, f_calibration_value);
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
-      EEPROM.commit();
-#endif
-    }
-
-
-    if (inputStringBT.startsWith("reset")) {  //重启
-      reset();
-    }
-
-    // if (inputStringBT.startsWith("sample")) {
-    //   b_f_set_sample = true;
-    //   i_sample = 0;  //读取失败 默认值为3 对应sample为8
-    //   i_sample_step = 0;
-    //   setSample();
-    // }
-
-    if (inputStringBT.startsWith("cal")) {  //校准
-      b_f_calibration = true;               //让按钮进入校准状态3
-      cal();                                //无有效读取，进入校准模式
-    }
-
-    if (inputStringBT.startsWith("tare")) {
-      buttonTare_Clicked();
-    }
-
-    if (inputStringBT.startsWith("set")) {
-      buttonSet_Clicked();
-    }
-
-    if (inputStringBT.startsWith("beep")) {  //蜂鸣器
-      b_f_beep = !b_f_beep;
-      EEPROM.put(i_addr_beep, b_f_beep);
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
-      EEPROM.commit();
-#endif
-    }
+  //     if (inputStringBT.startsWith("cv ")) {  //校准值
+  //       f_calibration_value = inputStringBT.substring(3).toFloat();
+  //       EEPROM.put(i_addr_calibration_value, f_calibration_value);
+  // #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+  //       EEPROM.commit();
+  // #endif
+  //     }
 
 
-// Send the updated values via USB serial
-#ifdef CHINESE
-    SerialBT.print("手冲默认粉重:");
-    SerialBT.print(INPUTCOFFEEPOUROVER);
-    SerialBT.print("g\t意式默认粉重:");
-    SerialBT.print(INPUTCOFFEEESPRESSO);
-    SerialBT.print("g\t容器重量:");
-    SerialBT.print(f_weight_container);
-    SerialBT.print("g\t蜂鸣器状态:");
-    if (b_f_beep)
-      SerialBT.println("打开");
-    else
-      SerialBT.println("关闭");
-#endif
-#ifdef ENGLISH
-    SerialBT.print("Pour Over default ground weight:");
-    SerialBT.print(INPUTCOFFEEPOUROVER);
-    SerialBT.print("g\tEspresso default ground weight:");
-    SerialBT.print(INPUTCOFFEEESPRESSO);
-    SerialBT.print("g\tContainer weight:");
-    SerialBT.print(f_weight_container);
-    SerialBT.print("g\tBuzzer:");
-    if (b_f_beep)
-      SerialBT.println("On");
-    else
-      SerialBT.println("Off");
-#endif
-  }
+  //     if (inputStringBT.startsWith("reset")) {  //重启
+  //       reset();
+  //     }
+
+  //     // if (inputStringBT.startsWith("sample")) {
+  //     //   b_f_set_sample = true;
+  //     //   i_sample = 0;  //读取失败 默认值为3 对应sample为8
+  //     //   i_sample_step = 0;
+  //     //   setSample();
+  //     // }
+
+  //     if (inputStringBT.startsWith("cal")) {  //校准
+  //       b_f_calibration = true;               //让按钮进入校准状态3
+  //       cal();                                //无有效读取，进入校准模式
+  //     }
+
+  //     if (inputStringBT.startsWith("tare")) {
+  //       buttonTare_Clicked();
+  //     }
+
+  //     if (inputStringBT.startsWith("set")) {
+  //       buttonSet_Clicked();
+  //     }
+
+  //     if (inputStringBT.startsWith("beep")) {  //蜂鸣器
+  //       b_f_beep = !b_f_beep;
+  //       EEPROM.put(i_addr_beep, b_f_beep);
+  // #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+  //       EEPROM.commit();
+  // #endif
+  //     }
+
+
+  // // Send the updated values via USB serial
+  // #ifdef CHINESE
+  //     //so SerialBT.print("手冲默认粉重:");
+  //     //so SerialBT.print(INPUTCOFFEEPOUROVER);
+  //     //so SerialBT.print("g\t意式默认粉重:");
+  //     //so SerialBT.print(INPUTCOFFEEESPRESSO);
+  //     //so SerialBT.print("g\t容器重量:");
+  //     //so SerialBT.print(f_weight_container);
+  //     //so SerialBT.print("g\t蜂鸣器状态:");
+  //     if (b_f_beep)
+  //       //so SerialBT.println("打开");
+  //     else
+  //       //so SerialBT.println("关闭");
+  // #endif
+  // #ifdef ENGLISH
+  //     //so SerialBT.print("Pour Over default ground weight:");
+  //     //so SerialBT.print(INPUTCOFFEEPOUROVER);
+  //     //so SerialBT.print("g\tEspresso default ground weight:");
+  //     //so SerialBT.print(INPUTCOFFEEESPRESSO);
+  //     //so SerialBT.print("g\tContainer weight:");
+  //     //so SerialBT.print(f_weight_container);
+  //     //so SerialBT.print("g\tBuzzer:");
+  //     if (b_f_beep)
+  //       //so SerialBT.println("On");
+  //     else
+  //       //so SerialBT.println("Off");
+  // #endif
+  //   }
 }
 
-void loop() {
-  //Serial.println(getDoubleClickDelay());
-  power_off(15);  //power off after 15 minutes
 
-  serialCommand();
+void sendBleWeight() {
   if (deviceConnected) {
     unsigned long currentMillis = millis();
 
@@ -1726,33 +1758,43 @@ void loop() {
       pReadCharacteristic->notify();
     }
   }
-  //
-  // if (SerialBT.available()) {
-  //   String inputString = SerialBT.readStringUntil('\n');
-  //   inputString.trim();
+}
 
-  //   if (inputString.startsWith("cp ")) {
-  //     INPUTCOFFEEPOUROVER = inputString.substring(3).toFloat();
-  //     EEPROM.put(INPUTCOFFEEPOUROVER_ADDRESS, INPUTCOFFEEPOUROVER);
-  //   } else if (inputString.startsWith("ce ")) {
-  //     INPUTCOFFEEESPRESSO = inputString.substring(3).toFloat();
-  //     EEPROM.put(INPUTCOFFEEESPRESSO_ADDRESS, INPUTCOFFEEESPRESSO);
-  //   }
+void sendBleButton(int buttonNumber, int buttonShortPress) {
+  //buttonNumber 0 for button O, 1 for button[]
+  //isShortPress ture for short press, false for long press
+  byte data[7];
+  float weight = scale.getData();
+  byte weightByte1, weightByte2;
 
-  //   // Send the updated values via Bluetooth
-  //   SerialBT.print("手冲默认粉重");
-  //   SerialBT.println(INPUTCOFFEEPOUROVER);
-  //   SerialBT.print("意式默认粉重");
-  //   SerialBT.println(INPUTCOFFEEESPRESSO);
-  // }
+  encodeWeight(weight, weightByte1, weightByte2);
+
+  data[0] = modelByte;
+  data[1] = 0xAA;  // Type byte for weight stable
+  data[2] = buttonNumber;
+  data[3] = buttonShortPress;
+  // Fill the rest with dummy data or real data as needed
+  data[4] = 0x00;
+  data[5] = 0x00;
+  data[6] = calculateXOR(data, 6);  // Last byte is XOR validation
+
+  pReadCharacteristic->setValue(data, 7);
+  pReadCharacteristic->notify();
+}
+
+
+void loop() {
+  power_off(15);  //power off after 15 minutes
+  serialCommand();
+  sendBleWeight();
+  buttonSet.check();
+  buttonTare.check();
 
   // measureTemperature();
-  buttonSet.check();
 #if defined(FOUR_BUTTON) || defined(FIVE_BUTTON)
   buttonPlus.check();
   buttonMinus.check();
 #endif  //extra button for four and five buttons
-  buttonTare.check();
 #ifdef FIVE_BUTTON
   buttonPower.check();
 #endif  //FIVE_BUTTON
@@ -1770,9 +1812,10 @@ void loop() {
 #if defined(DEBUG) && defined(CHECKBATTERY)
   debugData();
 #endif  //DEBUG
-#ifdef CHECKBATTERY
+// #ifdef CHECKBATTERY
+//   checkBattery();
+// #endif
   checkBattery();
-#endif
   if (b_f_extraction) {
     if (b_f_mode)
       espressoScale();
@@ -1782,9 +1825,11 @@ void loop() {
     pureScale();
   }
   updateOled();
+#ifdef ESPNOW
   if (b_f_espnow) {
     updateEspnow();
   }
+#endif
 }
 
 void updateOled() {
@@ -1801,6 +1846,8 @@ void updateOled() {
     u8g2.firstPage();
     if (b_f_extraction) {
       do {
+        u8g2.setFontMode(1);
+        u8g2.setDrawColor(1);
         if (i_display_rotation == 0) {
           u8g2.setFontDirection(0);
 #ifdef ROTATION_180
@@ -1832,12 +1879,12 @@ void updateOled() {
           y = LCDHeight - Margin_Bottom;
           u8g2.drawUTF8(x, y, trim(c_coffee_powder));
           u8g2.drawUTF8(AR(trim(c_oled_ratio)), y, trim(c_oled_ratio));
-#ifdef CHECKBATTERY
+#ifdef SHOWBATTERY
           u8g2.setFontDirection(1);
           u8g2.setFont(FONT_BATTERY);
           if (b_f_is_charging) {
             u8g2.drawUTF8(108, 29, "6");
-            //Serial.println("ischarging");
+            ////so Serial.println("ischarging");
           } else {
             if (millis() > t_batteryRefresh + batteryRefreshTareInterval) {
               c_batteryTemp = c_battery;
@@ -1854,9 +1901,10 @@ void updateOled() {
           char c_votage[10];
           String(batteryVoltage).toCharArray(c_votage, 10);
           u8g2.drawUTF8(AR(c_votage), 64, trim(c_votage));
-          Serial.print("v");
-          Serial.println(c_votage);
+          //so Serial.print("v");
+          //so Serial.println(c_votage);
 #endif  //DEBUG
+          drawButtonBox();
         }
         //////////////////旋转效果
         if (i_display_rotation == 1) {
@@ -1866,20 +1914,20 @@ void updateOled() {
           u8g2.setDisplayRotation(U8G2_R1);
 #endif
           //00 battery
-#ifdef CHECKBATTERY
-          u8g2.setFontDirection(1);
-          u8g2.setFont(FONT_BATTERY);
-          if (b_f_is_charging) {
-            u8g2.drawStr(64 - 20, 6, "6");
-            Serial.println("ischarging");
-          } else {
-            if (millis() > t_batteryRefresh + batteryRefreshTareInterval) {
-              c_batteryTemp = c_battery;
-              t_batteryRefresh = millis();
-            }
-            u8g2.drawUTF8(64 - 20, 6, c_batteryTemp);
-          }
-#endif
+// #ifdef SHOWBATTERY
+//           u8g2.setFontDirection(1);
+//           u8g2.setFont(FONT_BATTERY);
+//           if (b_f_is_charging) {
+//             u8g2.drawStr(64 - 20, 6, "6");
+//             //so Serial.println("ischarging");
+//           } else {
+//             if (millis() > t_batteryRefresh + batteryRefreshTareInterval) {
+//               c_batteryTemp = c_battery;
+//               t_batteryRefresh = millis();
+//             }
+//             u8g2.drawUTF8(64 - 20, 6, c_batteryTemp);
+//           }
+// #endif
           u8g2.setFontDirection(0);
           u8g2.setFont(FONT_S);
           x = Margin_Left;
@@ -1921,12 +1969,15 @@ void updateOled() {
           y = LCDHeight - Margin_Bottom;
 
           u8g2.drawUTF8(0, y, trim(c_oled_ratio));
+          drawButtonBox();
         }
       } while (u8g2.nextPage());
     } else {
       ////////////////////////////////////
       //纯称重
       do {
+        u8g2.setFontMode(1);
+        u8g2.setDrawColor(1);
 #ifdef ROTATION_180
         u8g2.setDisplayRotation(U8G2_R2);
 #else
@@ -1958,7 +2009,7 @@ void updateOled() {
         x = AC(trim(c_weight));
         y = AM();
         u8g2.drawUTF8(x, y + 3, trim(c_weight));
-#ifdef CHECKBATTERY
+#ifdef SHOWBATTERY
         u8g2.setFontDirection(1);
         u8g2.setFont(FONT_BATTERY);
         if (b_f_is_charging) {
@@ -1979,11 +2030,28 @@ void updateOled() {
           char c_votage[10];
           String(batteryVoltage).toCharArray(c_votage, 10);
           u8g2.drawUTF8(AR(c_votage), 64, trim(c_votage));
-          Serial.print("v");
-          Serial.println(c_votage);
+          //so Serial.print("v");
+          //so Serial.println(c_votage);
         }
 #endif  //DEBUG_BATTERY
+        drawButtonBox();
       } while (u8g2.nextPage());
     }
+  }
+}
+
+//button pressed box, left and right, added xor
+void drawButtonBox() {
+  u8g2.setDrawColor(2);
+  if (i_display_rotation == 1 && b_f_extraction == true) {
+    if (digitalRead(BUTTON_SET) == LOW)
+      u8g2.drawBox(0, 118, 64, 118);
+    if (digitalRead(BUTTON_TARE) == LOW)
+      u8g2.drawBox(0, 0, 64, 10);
+  } else {
+    if (digitalRead(BUTTON_SET) == LOW)
+      u8g2.drawBox(0, 0, 10, 64);
+    if (digitalRead(BUTTON_TARE) == LOW)
+      u8g2.drawBox(118, 0, 118, 64);
   }
 }

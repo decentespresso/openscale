@@ -1,6 +1,6 @@
 #ifndef ESPNOW_H
 #define ESPNOW_H
-
+#ifdef ESPNOW
 #include <esp_now.h>
 #include <WiFi.h>
 
@@ -140,5 +140,5 @@ void sentCallback(const uint8_t *macAddr, esp_now_send_status_t status)
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 #endif
 }
-
+#endif
 #endif

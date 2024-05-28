@@ -20,6 +20,7 @@ int b_f_beep = 1;
 //varables 变量
 float INPUTCOFFEEPOUROVER = 20.0;
 float INPUTCOFFEEESPRESSO = 20.0;
+float f_batteryCalibrationFactor = 1.0;
 String str_welcome = "welcome";
 float f_calibration_value;  //称重单元校准值
 float f_up_battery;         //开机时电池电压
@@ -156,6 +157,7 @@ int i_addr_mode = i_addr_container + sizeof(f_weight_container);                
 int INPUTCOFFEEPOUROVER_ADDRESS = i_addr_mode + sizeof(b_f_mode);
 int INPUTCOFFEEESPRESSO_ADDRESS = INPUTCOFFEEPOUROVER_ADDRESS + sizeof(INPUTCOFFEEPOUROVER);
 int i_addr_beep = INPUTCOFFEEESPRESSO_ADDRESS + sizeof(INPUTCOFFEEESPRESSO);
-int i_addr_welcome = i_addr_beep + sizeof(b_f_beep);  //c_welcome
+int i_addr_welcome = i_addr_beep + sizeof(b_f_beep);  //str_welcome
+int i_addr_batteryCalibrationFactor =  i_addr_welcome+ sizeof(str_welcome);//f_batteryCalibrationFactor
 
 #endif
