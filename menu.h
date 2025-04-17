@@ -1,521 +1,780 @@
-/*
-   -------------------------------------------------------------------------------------
-   ADS1232_ADC
-   Arduino library for ADS1232 24-Bit Analog-to-Digital Converter for Weight Scales
-   By Sofronio Chen July2024
-   Based on HX711_ADC By Olav Kallhovd sept2017
-   -------------------------------------------------------------------------------------
-*/
+#ifndef MENU_H
+#define MENU_H
 
-#include <Arduino.h>
-#include "ADS1232_ADC.h"
-
-ADS1232_ADC::ADS1232_ADC(uint8_t dout, uint8_t sck, uint8_t pdwn, uint8_t a0)  //constructor
-{
-  doutPin = dout;
-  sckPin = sck;
-  pdwnPin = pdwn;
-  a0Pin = a0;
+const char *weights[] = { "Exit", "50g", "100g", "200g", "500g", "1000g" };
+const float weight_values[] = { 0.0, 50.0, 100.0, 200.0, 500.0, 1000.0 };
+bool b_showAbout = false;
+bool b_showLogo = false;
+bool b_showNumber = false;
+String actionMessage = "Default";
+String actionMessage2 = "Default";
+long t_actionMessage = 0;
+long t_actionMessageDelay = 1000;
+template<typename T>
+int getMenuSize(T &menu) {
+  return sizeof(menu) / sizeof(menu[0]);
 }
 
-ADS1232_ADC::ADS1232_ADC(uint8_t dout, uint8_t sck, uint8_t pdwn)  //constructor
-{
-  doutPin = dout;
-  sckPin = sck;
-  pdwnPin = pdwn;
-  a0Pin = -1;
+// Menu structure
+struct Menu {
+  const char *name;  //menu name
+  void (*action)();  //what to do NULL for submenu
+  Menu *subMenu;     //submenu NULL for none
+  Menu *parentMenu;  //parentmenu NULL for root menu
+};
+
+// Function prototypes
+void exitMenu();
+void buzzerOn();
+void buzzerOff();
+void calibrate();
+void drawButton();
+void wifiUpdate();
+void showAbout();
+void showMenu();
+void showLogo();
+void calibrateVoltage();
+void navigateMenu(int direction);
+void selectMenu();
+void enableDebug();
+
+// Top-level menu options
+// 1/5 define the 1st level menu
+Menu menuExit = { "Exit", exitMenu, NULL, NULL };
+Menu menuBuzzer = { "Buzzer", NULL, NULL, NULL };
+Menu menuCalibration = { "Calibration", NULL, NULL, NULL };
+Menu menuWiFiUpdate = { "WiFi Update", NULL, NULL, NULL };
+Menu menuAbout = { "About", showAbout, NULL, NULL };
+Menu menuLogo = { "Show Logo", showLogo, NULL, NULL };
+Menu menuFactory = { "Factory", NULL, NULL, NULL };
+
+// Buzzer submenu
+// 2/5 define the 2st level menu
+Menu menuBuzzerBack = { "Back", NULL, NULL, &menuBuzzer };
+Menu menuBuzzerOn = { "Buzzer On", buzzerOn, NULL, &menuBuzzer };
+Menu menuBuzzerOff = { "Buzzer Off", buzzerOff, NULL, &menuBuzzer };
+Menu *buzzerMenu[] = { &menuBuzzerBack, &menuBuzzerOn, &menuBuzzerOff };
+
+// Calibration submenu
+Menu menuCalibrationBack = { "Back", NULL, NULL, &menuCalibration };
+Menu menuCalibrate = { "Calibrate", calibrate, NULL, &menuCalibration };
+Menu *calibrationMenu[] = { &menuCalibrationBack, &menuCalibrate };
+
+// WiFi Update submenu
+Menu menuWiFiUpdateBack = { "Back", NULL, NULL, &menuWiFiUpdate };
+Menu menuWiFiUpdateOption = { "WiFi Update", wifiUpdate, NULL, &menuWiFiUpdate };
+Menu *wifiUpdateMenu[] = { &menuWiFiUpdateBack, &menuWiFiUpdateOption };
+
+// Menu menuFactoryBack = { "Back", NULL, NULL, &menuFactory };
+// Menu menuCalibrateVoltage = { "Calibrate 4.2v", calibrateVoltage, NULL, &menuFactory };
+// Menu menuFactoryDebug = { "Debug Info", enableDebug, NULL, &menuFactory };
+// Menu *factoryMenu[] = { &menuFactoryBack, &menuCalibrateVoltage, &menuFactoryDebug };
+
+// Main menu
+// 3/5 write all the 1st menu to mainMenu
+Menu *mainMenu[] = {
+  &menuExit, &menuBuzzer, &menuCalibration, &menuWiFiUpdate, &menuAbout, &menuLogo
+  //, &menuFactory
+};
+//  &menuHolder1, &menuHolder2, &menuHolder3, &menuHolder4,
+//  &menuHolder5, &menuHolder6};
+Menu **currentMenu = mainMenu;
+Menu *currentSelection = mainMenu[0];
+int currentMenuSize = getMenuSize(mainMenu);  // Top-level menu size
+int currentIndex = 0;
+const int linesPerPage = 4;                           // Maximum number of lines that can fit on the display
+int currentPage = 0;                                  // Determine the current page
+int totalPages = currentMenuSize / linesPerPage + 1;  // Calculate total pages
+
+// 4/5 link all the submenus
+void linkSubmenus() {
+  // Link submenus
+  menuBuzzer.subMenu = buzzerMenu[0];
+  menuCalibration.subMenu = calibrationMenu[0];
+  menuWiFiUpdate.subMenu = wifiUpdateMenu[0];
+  //menuFactory.subMenu = factoryMenu[0];
 }
 
-void ADS1232_ADC::setGain(uint8_t gain)  //value should be 32, 64 or 128*
-{
-  if (gain < 64) GAIN = 2;        //32, channel B
-  else if (gain < 128) GAIN = 3;  //64, channel A
-  else GAIN = 1;                  //128, channel A
+// Menu actions
+void exitMenu() {
+  u8g2.setFont(FONT_M);
+  u8g2.firstPage();
+  do {
+    u8g2.drawStr(AC((char *)"Exit Menu"), AM(), (char *)"Exit Menu");
+  } while (u8g2.nextPage());
+  buzzer.off();
+  delay(1000);
+  b_menu = false;
+  // Optionally reset or perform an exit action
 }
 
-//set pinMode, ADS1232 gain and power up the ADS1232
-void ADS1232_ADC::begin() {
-  pinMode(sckPin, OUTPUT);
-  pinMode(doutPin, INPUT);
-  pinMode(pdwnPin, OUTPUT);
-  if(a0Pin != -1)
-    pinMode(a0Pin, OUTPUT); // Set A0 pin as OUTPUT
-
-  setGain(128);
-  powerUp();
-}
-
-//set pinMode, ADS1232 selected gain and power up the ADS1232
-void ADS1232_ADC::begin(uint8_t gain) {
-  pinMode(sckPin, OUTPUT);
-  pinMode(doutPin, INPUT);
-  pinMode(pdwnPin, OUTPUT);
-  pinMode(a0Pin, OUTPUT); // Set A0 pin as OUTPUT
-
-  setGain(gain);
-  powerUp();
-}
-void ADS1232_ADC::start(unsigned long t) {
-  t += 400;
-  lastDoutLowTime = millis();
-  while (millis() < t) {
-    update();
-    yield();
+void buzzerOn() {
+  if (b_beep == false) {
+    b_beep = true;
+    buzzer.beep(1, BUZZER_DURATION);
   }
-  tare();
-  tareStatus = 0;
+  actionMessage = "Buzzer on";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  EEPROM.put(i_addr_beep, b_beep);
+  EEPROM.commit();
 }
 
-/*  start(t, dotare) with selectable tare:
-*	will do conversions continuously for 't' +400 milliseconds (400ms is min. settling time at 10SPS). 
-*   Running this for 1-5s in setup() - before tare() seems to improve the tare accuracy. */
-void ADS1232_ADC::start(unsigned long t, bool dotare) {
-  t += 400;
-  lastDoutLowTime = millis();
-  while (millis() < t) {
-    update();
-    yield();
-  }
-  if (dotare) {
-    tare();
-    tareStatus = 0;
-  }
+void buzzerOff() {
+  b_beep = false;
+  actionMessage = "Buzzer off";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  EEPROM.put(i_addr_beep, b_beep);
+  EEPROM.commit();
 }
 
-/*  startMultiple(t): use this if you have more than one load cell and you want to do tare and stabilization simultaneously.
-*	Will do conversions continuously for 't' +400 milliseconds (400ms is min. settling time at 10SPS). 
-*   Running this for 1-5s in setup() - before tare() seems to improve the tare accuracy */
-int ADS1232_ADC::startMultiple(unsigned long t) {
-  tareTimeoutFlag = 0;
-  lastDoutLowTime = millis();
-  if (startStatus == 0) {
-    if (isFirst) {
-      startMultipleTimeStamp = millis();
-      if (t < 400) {
-        startMultipleWaitTime = t + 400;  //min time for ADS1232 to be stable
-      } else {
-        startMultipleWaitTime = t;
+void calibrate() {
+  b_menu = false;
+  b_calibration = true;  //让按钮进入校准状态3
+  i_calibration = 0;
+  //calibration(0);
+  //the calibration if is after the showMenu() if, so it should exit menu to do calibration
+}
+
+void calibration(int input) {
+  if (b_calibration == true) {
+    bool newDataReady = false;
+    char *c_calval = (char *)"";
+    if (i_button_cal_status == 1) {
+      if (input == 0) {
+        scale.setSamplesInUse(16);
+        u8g2.firstPage();
+        do {
+#ifdef ROTATION_180
+          u8g2.setDisplayRotation(U8G2_R2);
+#else
+          u8g2.setDisplayRotation(U8G2_R0);
+#endif
+          u8g2.setFontMode(1);
+          u8g2.setDrawColor(1);
+          u8g2.setFont(FONT_S);
+          if (b_is_charging) {
+            u8g2.drawUTF8(AC((char *)"Unplug scale"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Unplug scale");
+            u8g2.drawUTF8(AC((char *)"to start calibration"), LCDHeight - i_margin_bottom, (char *)"to start calibration");
+          } else {
+            int x, y;
+            x = 0;
+            y = u8g2.getMaxCharHeight();
+            u8g2.drawUTF8(x, y, "Calibration Weight");
+            //u8g2.setFont(FONT_M);
+            x += 5;
+            y += u8g2.getMaxCharHeight();
+            u8g2.drawUTF8(x, y, weights[0]);
+            x = 64;
+            u8g2.drawUTF8(x, y, weights[3]);
+            x = 5;
+            y += u8g2.getMaxCharHeight();
+            u8g2.drawUTF8(x, y, weights[1]);
+            x = 64;
+            u8g2.drawUTF8(x, y, weights[4]);
+            x = 5;
+            y += u8g2.getMaxCharHeight();
+            u8g2.drawUTF8(x, y, weights[2]);
+            x = 64;
+            u8g2.drawUTF8(x, y, weights[5]);
+            if (i_cal_weight == 0 || i_cal_weight == 3)
+              y = y - u8g2.getMaxCharHeight() * 2;
+            if (i_cal_weight == 1 || i_cal_weight == 4)
+              y = y - u8g2.getMaxCharHeight();
+            if (i_cal_weight == 0 || i_cal_weight == 1 || i_cal_weight == 2)
+              x = 0;
+            else
+              x = 64 - 5;
+            int x0 = x;
+            int x1 = x;
+            int x2 = x0 + 4;
+            int y0 = y - u8g2.getMaxCharHeight() + 6;
+            int y1 = y;
+            int y2 = y - (y1 - y0) / 2;
+            u8g2.drawTriangle(x0, y0, x1, y1, x2, y2);
+          }
+
+          u8g2.setDrawColor(2);
+          drawButton();
+          //drawBleBox();
+        } while (u8g2.nextPage());
       }
-      isFirst = 0;
+      if (input == 1) {
+        scale.setSamplesInUse(16);
+        u8g2.firstPage();
+        u8g2.setFont(FONT_S);
+        do {
+          //2行
+          //FONT_M = u8g2_font_fub14_tn;
+          u8g2.drawUTF8(AC((char *)"Remove all weight"), u8g2.getMaxCharHeight() + i_margin_top + 3, (char *)"Remove all weight");
+          u8g2.drawUTF8(AC((char *)"to start calibration"), LCDHeight - i_margin_bottom - 3, (char *)"to start calibration");
+        } while (u8g2.nextPage());
+      }
     }
-    if ((millis() - startMultipleTimeStamp) < startMultipleWaitTime) {
-      update();  //do conversions during stabilization time
-      yield();
-      return 0;
-    } else {  //do tare after stabilization time is up
-      static unsigned long timeout = millis() + tareTimeOut;
-      doTare = 1;
-      update();
-      if (convRslt == 2) {
-        doTare = 0;
-        convRslt = 0;
-        startStatus = 1;
+    if (i_button_cal_status == 2) {
+      Serial.println("Before if check, i_cal_weight = " + String(i_cal_weight));
+
+      if (i_cal_weight == 0 || b_is_charging) {
+        //exit was selected, exit the calibration.
+        i_button_cal_status = 0;
+        b_calibration = false;
+        b_menu = true;
+        return;
       }
-      if (!tareTimeoutDisable) {
-        if (millis() > timeout) {
-          tareTimeoutFlag = 1;
-          return 1;  // Prevent endless loop if no ADS1232 is connected
+      //scale.update();
+      if (input == 0) {
+        u8g2.firstPage();
+        u8g2.setFont(FONT_S);
+        do {
+          u8g2.drawUTF8(AC((char *)"Remove weight"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Remove weight");
+          u8g2.drawUTF8(AC((char *)"from scale"), LCDHeight - i_margin_bottom, (char *)"from scale");
+        } while (u8g2.nextPage());
+        buzzer.off();
+        delay(2000);
+      }
+      u8g2.firstPage();
+      u8g2.setFont(FONT_S);
+      do {
+        u8g2.drawUTF8(AC((char *)"Calibrating 0g"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Calibrating 0g");
+        u8g2.drawUTF8(AC((char *)"Wait: 3s"), LCDHeight - i_margin_bottom, (char *)"Wait: 3s");
+      } while (u8g2.nextPage());
+
+      buzzer.off();
+      delay(1000);
+      u8g2.firstPage();
+      u8g2.setFont(FONT_S);
+      do {
+        u8g2.drawUTF8(AC((char *)"Calibrating 0g"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Calibrating 0g");
+        u8g2.drawUTF8(AC((char *)"Wait: 2s"), LCDHeight - i_margin_bottom, (char *)"Wait: 2s");
+      } while (u8g2.nextPage());
+
+      buzzer.off();
+      delay(1000);
+
+      u8g2.firstPage();
+      u8g2.setFont(FONT_S);
+      do {
+        u8g2.drawUTF8(AC((char *)"Calibrating 0g"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Calibrating 0g");
+        u8g2.drawUTF8(AC((char *)"Wait: 1s"), LCDHeight - i_margin_bottom, (char *)"Wait: 1s");
+      } while (u8g2.nextPage());
+
+      buzzer.off();
+      delay(1000);
+
+      u8g2.firstPage();
+      u8g2.setFont(FONT_S);
+      do {
+        u8g2.drawUTF8(AC((char *)"Calibrating 0g"), AM(), (char *)"Calibrating 0g");
+      } while (u8g2.nextPage());
+
+      scale.tare();
+      Serial.println(F("0g calibration done"));
+      u8g2.firstPage();
+      u8g2.setFont(FONT_S);
+      do {
+        u8g2.drawUTF8(AC((char *)"0g calibration done"), AM(), (char *)"0g calibration done");
+      } while (u8g2.nextPage());
+
+      buzzer.beep(1, BUZZER_DURATION);
+
+      buzzer.off();
+      delay(1000);
+      i_button_cal_status++;
+    }
+    if (i_button_cal_status == 3) {
+      if (input == 0) {
+        float known_mass = 0;
+        scale.update();
+        known_mass = weight_values[i_cal_weight];
+        char buffer[50];
+        snprintf(buffer, sizeof(buffer), "Place %s weight", weights[i_cal_weight]);
+
+        u8g2.firstPage();
+        u8g2.setFont(FONT_S);
+        do {
+          u8g2.drawUTF8(AC((char *)trim(buffer)), u8g2.getMaxCharHeight() + i_margin_top, (char *)trim(buffer));
+          u8g2.drawUTF8(AC((char *)"Wait: 3s"), LCDHeight - i_margin_bottom, (char *)"Wait: 3s");
+        } while (u8g2.nextPage());
+        buzzer.off();
+        delay(1000);
+
+        u8g2.firstPage();
+        u8g2.setFont(FONT_S);
+        do {
+          u8g2.drawUTF8(AC((char *)trim(buffer)), u8g2.getMaxCharHeight() + i_margin_top, (char *)trim(buffer));
+          u8g2.drawUTF8(AC((char *)"Wait: 2s"), LCDHeight - i_margin_bottom, (char *)"Wait: 2s");
+        } while (u8g2.nextPage());
+        buzzer.off();
+        delay(1000);
+
+        u8g2.firstPage();
+        u8g2.setFont(FONT_S);
+        do {
+          u8g2.drawUTF8(AC((char *)trim(buffer)), u8g2.getMaxCharHeight() + i_margin_top, (char *)trim(buffer));
+          u8g2.drawUTF8(AC((char *)"Wait: 1s"), LCDHeight - i_margin_bottom, (char *)"Wait: 1s");
+        } while (u8g2.nextPage());
+        buzzer.off();
+        delay(1000);
+
+        u8g2.firstPage();
+        u8g2.setFont(FONT_S);
+        do {
+
+          u8g2.drawUTF8(AC((char *)"Calibrating"), AM(), (char *)"Calibrating");
+        } while (u8g2.nextPage());
+        buzzer.off();
+        delay(1000);
+        for (int i = 0; i < DATA_SET; i++) {
+          scale.update();
+          Serial.println(scale.getData());
+          delay(10);
         }
-      }
-    }
-  }
-  return startStatus;
-}
-
-/*  startMultiple(t, dotare) with selectable tare: 
-*	use this if you have more than one load cell and you want to (do tare and) stabilization simultaneously.
-*	Will do conversions continuously for 't' +400 milliseconds (400ms is min. settling time at 10SPS). 
-*   Running this for 1-5s in setup() - before tare() seems to improve the tare accuracy */
-int ADS1232_ADC::startMultiple(unsigned long t, bool dotare) {
-  tareTimeoutFlag = 0;
-  lastDoutLowTime = millis();
-  if (startStatus == 0) {
-    if (isFirst) {
-      startMultipleTimeStamp = millis();
-      if (t < 400) {
-        startMultipleWaitTime = t + 400;  //min time for ADS1232 to be stable
-      } else {
-        startMultipleWaitTime = t;
-      }
-      isFirst = 0;
-    }
-    if ((millis() - startMultipleTimeStamp) < startMultipleWaitTime) {
-      update();  //do conversions during stabilization time
-      yield();
-      return 0;
-    } else {  //do tare after stabilization time is up
-      if (dotare) {
-        static unsigned long timeout = millis() + tareTimeOut;
-        doTare = 1;
-        update();
-        if (convRslt == 2) {
-          doTare = 0;
-          convRslt = 0;
-          startStatus = 1;
+        double d_weight = scale.getData();
+        Serial.print("weight is ");
+        Serial.println(d_weight);
+        if (abs(d_weight) < 5) {
+          u8g2.firstPage();
+          u8g2.setFont(FONT_S);
+          do {
+            //2行
+            //FONT_M = u8g2_font_fub14_tn;
+            u8g2.drawUTF8(AC((char *)"No weight detected"), AM(), (char *)"No weight detected");
+          } while (u8g2.nextPage());
+          buzzer.off();
+          delay(1000);
+          //reject the weight and exit
+          i_button_cal_status = 0;
+          b_calibration = false;
+          b_menu = true;
+          return;
         }
-        if (!tareTimeoutDisable) {
-          if (millis() > timeout) {
-            tareTimeoutFlag = 1;
-            return 1;  // Prevent endless loop if no ADS1232 is connected
+        scale.refreshDataSet();  //refresh the dataset to be sure that the known mass is measured correct
+
+        f_calibration_value = scale.getNewCalibration(known_mass);  //get the new calibration value
+        Serial.print(F("New calibration value f: "));
+        Serial.println(f_calibration_value);
+        // #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+        //     EEPROM.begin(512);
+        // #endif
+        EEPROM.put(i_addr_calibration_value, f_calibration_value);
+#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+        EEPROM.commit();
+#endif
+        dtostrf(f_calibration_value, 10, 2, c_calval);
+        Serial.print(F("New calibration value c: "));
+        Serial.println(trim(c_calval));
+
+        u8g2.firstPage();
+        u8g2.setFont(FONT_S);
+        do {
+          //2行
+          //FONT_M = u8g2_font_fub14_tn;
+          u8g2.drawUTF8(AC((char *)"Recalibration done"), AM(), (char *)"Recalibration done");
+        } while (u8g2.nextPage());
+        buzzer.off();
+        delay(1000);
+
+        buzzer.beep(1, BUZZER_DURATION);
+        buzzer.off();
+        delay(1000);
+        b_calibration = false;
+      }
+      if (input == 1) {
+        scale.update();
+        u8g2.firstPage();
+        u8g2.setFont(FONT_S);
+        do {
+          u8g2.drawUTF8(AC((char *)"Place any weight"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Place any weight");
+          u8g2.drawUTF8(AC((char *)"Wait: 3s"), LCDHeight - i_margin_bottom, (char *)"Wait: 3s");
+        } while (u8g2.nextPage());
+        buzzer.off();
+        delay(1000);
+
+        u8g2.firstPage();
+        u8g2.setFont(FONT_S);
+        do {
+          u8g2.drawUTF8(AC((char *)"Place any weight"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Place any weight");
+          u8g2.drawUTF8(AC((char *)"Wait: 2s"), LCDHeight - i_margin_bottom, (char *)"Wait: 2s");
+        } while (u8g2.nextPage());
+        buzzer.off();
+        delay(1000);
+
+        u8g2.firstPage();
+        u8g2.setFont(FONT_S);
+        do {
+          u8g2.drawUTF8(AC((char *)"Place any weight"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Place any weight");
+          u8g2.drawUTF8(AC((char *)"Wait: 1s"), LCDHeight - i_margin_bottom, (char *)"Wait: 1s");
+        } while (u8g2.nextPage());
+        buzzer.off();
+        delay(1000);
+        scale.update();
+        u8g2.firstPage();
+        u8g2.setFont(FONT_S);
+        do {
+          u8g2.drawUTF8(AC((char *)"Reading weight"), AM(), (char *)"Reading weight");
+        } while (u8g2.nextPage());
+        buzzer.off();
+        delay(1000);
+        i_button_cal_status++;
+      }
+    }
+    if (i_button_cal_status == 4) {
+      float known_mass = 0;
+      if (scale.update()) newDataReady = true;
+      if (newDataReady) {
+        float current_weight = scale.getData();
+        Serial.println(current_weight);
+        bool valid_mass = false;
+        for (int i = 1; i <= 40; i++) {
+          //check from 50g to 2kg
+          if (current_weight > i * 50 - 2 && current_weight < i * 50 + 2) {
+            //check if the weight is within 2g
+            known_mass = i * 50;
+            valid_mass = true;
+            break;
           }
         }
-      } else return 1;
-    }
-  }
-  return startStatus;
-}
 
-//zero the scale, wait for tare to finnish (blocking)
-void ADS1232_ADC::tare() {
-  uint8_t rdy = 0;
-  doTare = 1;
-  tareTimes = 0;
-  tareTimeoutFlag = 0;
-  unsigned long timeout = millis() + tareTimeOut;
-  while (rdy != 2) {
-    rdy = update();
-    if (!tareTimeoutDisable) {
-      if (millis() > timeout) {
-        tareTimeoutFlag = 1;
-        break;  // Prevent endless loop if no ADS1232 is connected
+        if (!valid_mass) {
+          char buffer[50];
+          snprintf(buffer, sizeof(buffer), "%f.0g weight detected", current_weight);
+          Serial.println(F("Error: Invalid weight detected"));
+          u8g2.firstPage();
+          u8g2.setFont(FONT_S);
+          do {
+            u8g2.drawUTF8(AC((char *)"Error: Invalid"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Error: Invalid");
+            u8g2.drawUTF8(AC((char *)trim(buffer)), LCDHeight - i_margin_bottom, (char *)trim(buffer));
+          } while (u8g2.nextPage());
+          buzzer.off();
+          delay(1000);
+          b_calibration = false;
+          return;  // exit calibration
+        }
+
+        char buffer[50];
+        snprintf(buffer, sizeof(buffer), "Place %.0fg weight", known_mass);
+
+        u8g2.firstPage();
+        u8g2.setFont(FONT_S);
+        do {
+          u8g2.drawUTF8(AC((char *)trim(buffer)), u8g2.getMaxCharHeight() + i_margin_top, (char *)trim(buffer));
+          u8g2.drawUTF8(AC((char *)"Wait: 3s"), LCDHeight - i_margin_bottom, (char *)"Wait: 3s");
+        } while (u8g2.nextPage());
+        buzzer.off();
+        delay(1000);
+
+        u8g2.firstPage();
+        u8g2.setFont(FONT_S);
+        do {
+          u8g2.drawUTF8(AC((char *)trim(buffer)), u8g2.getMaxCharHeight() + i_margin_top, (char *)trim(buffer));
+          u8g2.drawUTF8(AC((char *)"Wait: 2s"), LCDHeight - i_margin_bottom, (char *)"Wait: 2s");
+        } while (u8g2.nextPage());
+        buzzer.off();
+        delay(1000);
+
+        u8g2.firstPage();
+        u8g2.setFont(FONT_S);
+        do {
+          u8g2.drawUTF8(AC((char *)trim(buffer)), u8g2.getMaxCharHeight() + i_margin_top, (char *)trim(buffer));
+          u8g2.drawUTF8(AC((char *)"Wait: 1s"), LCDHeight - i_margin_bottom, (char *)"Wait: 1s");
+        } while (u8g2.nextPage());
+        buzzer.off();
+        delay(1000);
+
+        u8g2.firstPage();
+        u8g2.setFont(FONT_S);
+        do {
+          u8g2.drawUTF8(AC((char *)"Calibrating"), AM(), (char *)"Calibrating");
+        } while (u8g2.nextPage());
+        buzzer.off();
+        delay(1000);
+
+        scale.setSamplesInUse(16);
+        scale.refreshDataSet();                                     //refresh the dataset to be sure that the known mass is measured correct
+        f_calibration_value = scale.getNewCalibration(known_mass);  //get the new calibration value
+        Serial.print(F("New calibration value f: "));
+        Serial.println(f_calibration_value);
+        EEPROM.put(i_addr_calibration_value, f_calibration_value);
+#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+        EEPROM.commit();
+#endif
+        dtostrf(f_calibration_value, 10, 2, c_calval);
+        Serial.print(F("New calibration value c: "));
+        Serial.println(trim(c_calval));
+
+        u8g2.firstPage();
+        u8g2.setFont(FONT_S);
+        do {
+          u8g2.drawUTF8(AC((char *)"Recalibration done"), AM(), (char *)"Recalibration done");
+          //u8g2.drawUTF8(AC((char *)trim(c_calval)), LCDHeight - i_margin_bottom, (char *)trim(c_calval));
+        } while (u8g2.nextPage());
+        buzzer.off();
+        delay(1000);
+
+        buzzer.beep(1, BUZZER_DURATION);
+        buzzer.off();
+        delay(1000);
+        b_calibration = false;
       }
     }
-    yield();
+    scale.setSamplesInUse(1);
   }
 }
 
-//zero the scale, initiate the tare operation to run in the background (non-blocking)
-void ADS1232_ADC::tareNoDelay() {
-  doTare = 1;
-  tareTimes = 0;
-  tareStatus = 0;
+void wifiUpdate() {
+  u8g2.setFont(FONT_M);
+  u8g2.firstPage();
+  do {
+    u8g2.drawStr(AC((char *)"WiFi Update"), AM(), (char *)"WiFi Update");
+  } while (u8g2.nextPage());
+  buzzer.off();
+  delay(1000);
+  wifiOta();
+  b_menu = false;
 }
 
-//set new calibration factor, raw data is divided by this value to convert to readable data
-void ADS1232_ADC::setCalFactor(float cal) {
-  calFactor = cal;
-  calFactorRecip = 1 / calFactor;
-}
-
-//returns 'true' if tareNoDelay() operation is complete
-bool ADS1232_ADC::getTareStatus() {
-  bool t = tareStatus;
-  tareStatus = 0;
-  return t;
-}
-
-//returns the current calibration factor
-float ADS1232_ADC::getCalFactor() {
-  return calFactor;
-}
-
-//call the function update() in loop or from ISR
-//if conversion is ready; read out 24 bit data and add to dataset, returns 1
-//if tare operation is complete, returns 2
-//else returns 0
-uint8_t ADS1232_ADC::update() {
-  byte dout = digitalRead(doutPin);  //check if conversion is ready
-  if (!dout) {
-    conversion24bit();
-    lastDoutLowTime = millis();
-    signalTimeoutFlag = 0;
-  } else {
-    //if (millis() > (lastDoutLowTime + SIGNAL_TIMEOUT))
-    if (millis() - lastDoutLowTime > SIGNAL_TIMEOUT) {
-      signalTimeoutFlag = 1;
-    }
-    convRslt = 0;
+void showAbout() {
+  actionMessage = FIRMWARE_VER;
+  actionMessage2 = PCB_VER;
+  b_showAbout = true;
+  u8g2.setFont(FONT_M);
+  u8g2.firstPage();
+  do {
+    if (AC(actionMessage.c_str()) < 0)
+      u8g2.setFont(FONT_S);
+    u8g2.drawStr(AC(actionMessage.c_str()), AM() - 12, actionMessage.c_str());
+    u8g2.drawStr(AC(actionMessage2.c_str()), AM() + 12, actionMessage2.c_str());
+  } while (u8g2.nextPage());
+  buzzer.off();
+  delay(1000);
+  while (b_showAbout) {
+    if (digitalRead(BUTTON_SQUARE) == LOW)
+      b_showAbout = false;
   }
-  return convRslt;
 }
 
-// call the function dataWaitingAsync() in loop or from ISR to check if new data is available to read
-// if conversion is ready, just call updateAsync() to read out 24 bit data and add to dataset
-// returns 1 if data available , else 0
-bool ADS1232_ADC::dataWaitingAsync() {
-  if (dataWaiting) {
-    lastDoutLowTime = millis();
-    return 1;
-  }
-  byte dout = digitalRead(doutPin);  //check if conversion is ready
-  if (!dout) {
-    dataWaiting = true;
-    lastDoutLowTime = millis();
-    signalTimeoutFlag = 0;
-    return 1;
-  } else {
-    //if (millis() > (lastDoutLowTime + SIGNAL_TIMEOUT))
-    if (millis() - lastDoutLowTime > SIGNAL_TIMEOUT) {
-      signalTimeoutFlag = 1;
-    }
-    convRslt = 0;
-  }
-  return 0;
-}
+void showLogo() {
+  b_showLogo = true;
+  u8g2.firstPage();
 
-// if data is available call updateAsync() to convert it and add it to the dataset.
-// call getData() to get latest value
-bool ADS1232_ADC::updateAsync() {
-  if (dataWaiting) {
-    conversion24bit();
-    dataWaiting = false;
-    return true;
-  }
-  return false;
-}
-
-float ADS1232_ADC::getData()  // return fresh data from the moving average dataset
-{
-  long data = 0;
-  lastSmoothedData = smoothedData();
-  data = lastSmoothedData - tareOffset;
-  float x = (float)data * calFactorRecip;
-  return x;
-}
-
-long ADS1232_ADC::smoothedData() {
-  long data = 0;
-  long L = 0xFFFFFF;
-  long H = 0x00;
-  for (uint8_t r = 0; r < (samplesInUse + IGN_HIGH_SAMPLE + IGN_LOW_SAMPLE); r++) {
-#if IGN_LOW_SAMPLE
-    if (L > dataSampleSet[r]) L = dataSampleSet[r];  // find lowest value
-#endif
-#if IGN_HIGH_SAMPLE
-    if (H < dataSampleSet[r]) H = dataSampleSet[r];  // find highest value
-#endif
-    data += dataSampleSet[r];
-  }
-#if IGN_LOW_SAMPLE
-  data -= L;  //remove lowest value
-#endif
-#if IGN_HIGH_SAMPLE
-  data -= H;  //remove highest value
-#endif
-  //return data;
-  return (data >> divBit);
-}
-
-void ADS1232_ADC::conversion24bit()  //read 24 bit data, store in dataset and start the next conversion
-{
-  conversionTime = micros() - conversionStartTime;
-  conversionStartTime = micros();
-  unsigned long data = 0;
-  uint8_t dout;
-  convRslt = 0;
-  if (SCK_DISABLE_INTERRUPTS) noInterrupts();
-
-  for (uint8_t i = 0; i < (24 + GAIN); i++) {  //read 24 bit data + set gain and start next conversion
-    digitalWrite(sckPin, 1);
-    if (SCK_DELAY) delayMicroseconds(1);  // could be required for faster mcu's, set value in config.h
-    digitalWrite(sckPin, 0);
-    if (i < (24)) {
-      dout = digitalRead(doutPin);
-      data = (data << 1) | dout;
+  do {
+    if (!b_showNumber) {
+      //show logo
+      u8g2.setFont(u8g2_font_logisoso22_tf);
+      u8g2.drawStr(AC("Half"), 26, "Half");
+      u8g2.drawBox(4, LCDHeight / 2, LCDWidth - 4 * 2, 2);
+      u8g2.drawStr(AC("Decent"), LCDHeight - 2, "Decent");
     } else {
-      if (SCK_DELAY) delayMicroseconds(1);  // could be required for faster mcu's, set value in config.h
-    }
-  }
-  if (SCK_DISABLE_INTERRUPTS) interrupts();
+      //show number
+      u8g2.drawXBM(121, 52, 7, 12, image_battery_4);  // 75-100% battery
+      u8g2.drawXBM(3, 51, 5, 13, image_ble_enabled);
+      u8g2.setFont(FONT_TIMER);
+      u8g2.drawStr(AC("345"), LCDHeight - 8, "345");
 
-  /*
-	The ADS1232 output range is min. 0x800000 and max. 0x7FFFFF (the value rolls over).
-	In order to convert the range to min. 0x000000 and max. 0xFFFFFF,
-	the 24th bit must be changed from 0 to 1 or from 1 to 0.
-	*/
-  data = data ^ 0x800000;  // flip the 24th bit
-
-  /* ADS1232 Bit 23 is acutally the sign bit. Shift by 8 to get it to the
-     * right position (31), divide by 256 to restore the correct value.
-     */
-  //data = (data << 8) / 256;
-
-  if (data > 0xFFFFFF) {
-    dataOutOfRange = 1;
-    //Serial.println("dataOutOfRange");
-  }
-  if (reverseVal) {
-    data = 0xFFFFFF - data;
-  }
-  if (readIndex == samplesInUse + IGN_HIGH_SAMPLE + IGN_LOW_SAMPLE - 1) {
-    readIndex = 0;
-  } else {
-    readIndex++;
-  }
-  if (data > 0) {
-    convRslt++;
-    dataSampleSet[readIndex] = (long)data;
-    if (doTare) {
-      if (tareTimes < DATA_SET) {
-        tareTimes++;
+      // Extract the integer part
+      float number = 1234.5;
+      int i_weightInt = (int)number;
+      if (number >= 0) {
+        b_negativeWeight = false;
       } else {
-        tareOffset = smoothedData();
-        tareTimes = 0;
-        doTare = 0;
-        tareStatus = 1;
-        convRslt++;
+        b_negativeWeight = true;
       }
+
+      // Calculate the decimal part by subtracting the integer part from the number
+      // and then multiplying by 10 to shift the first decimal digit into the integer place
+      float decimalPart = number - (float)(i_weightInt);
+      int i_weightFirstDecimal = abs((int)(decimalPart * 10));
+      char integerStr[10] = "-0";  // to save the - sign if the input is between -1 to 0
+      char decimalStr[10] = "0";
+      if (number >= 0 || number <= -1) {
+        dtostrf(i_weightInt, 7, 0, integerStr);  // Integer part, no decimal
+      }
+      dtostrf(i_weightFirstDecimal, 7, 0, decimalStr);
+      u8g2.setFont(FONT_GRAM);
+      int gramWidth = u8g2.getUTF8Width("g");  // Width of the "g" character
+      u8g2.setFont(FONT_WEIGHT);
+      int integerWidth = u8g2.getUTF8Width(trim(integerStr));
+      int decimalWidth = u8g2.getUTF8Width(trim(decimalStr));
+      int decimalPointWidth = u8g2.getUTF8Width(".");
+      if (number <= -1000.0)
+        gramWidth = 0;
+      int x_integer = (128 - (integerWidth + decimalWidth + gramWidth + decimalPointWidth - 6 - 1)) / 2;
+      int x_decimalPoint = x_integer + integerWidth - 4;
+      int x_decimal = x_decimalPoint + decimalPointWidth - 4;
+      int x_gram = x_decimal + decimalWidth - 1;
+      int y = AT() - 15;
+      u8g2.drawStr(x_decimalPoint, y, ".");
+      u8g2.drawStr(x_integer, y, trim(integerStr));  // Assuming vertical position at 28, adjust as needed
+      u8g2.drawStr(x_decimal, y, trim(decimalStr));
+      if (number > -1000.0) {
+        u8g2.setFont(FONT_GRAM);
+        u8g2.drawStr(x_gram, y - 5, "g");
+      }
+    }
+  } while (u8g2.nextPage());
+
+  buzzer.off();
+  delay(1000);
+  while (b_showLogo) {
+    if (digitalRead(BUTTON_SQUARE) == LOW) {
+      //next time to show number
+      b_showNumber = !b_showNumber;
+      //exit
+      b_showLogo = false;
     }
   }
 }
 
-//power down the ADS1232
-void ADS1232_ADC::powerDown() {
-  digitalWrite(pdwnPin, LOW);
-  if (SCK_DELAY) delayMicroseconds(1);
-  digitalWrite(sckPin, HIGH);
-  if (SCK_DELAY) delayMicroseconds(1);
+void enableDebug() {
+  u8g2.setFont(FONT_M);
+  u8g2.firstPage();
+  do {
+    u8g2.drawStr(AC((char *)"Exit Menu"), AM(), (char *)"Exit Menu");
+  } while (u8g2.nextPage());
+  buzzer.off();
+  delay(1000);
+  b_debug = true;
+  b_menu = false;
+  // Optionally reset or perform an exit action
 }
 
-//power up the ADS1232
-void ADS1232_ADC::powerUp() {
-  digitalWrite(pdwnPin, HIGH);
-  if (SCK_DELAY) delayMicroseconds(1);
-  digitalWrite(sckPin, LOW);
-  if (SCK_DELAY) delayMicroseconds(1);
+// void calibrateVoltage() {
+//   actionMessage = "Calibrate 4.2v";
+//   t_actionMessage = millis();
+//   int adcValue = analogRead(BATTERY_PIN);                                   // Read the ADC value from the battery pin
+//   float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;       // Calculate the voltage at the ADC pin
+//   float batteryVoltage = voltageAtPin * dividerRatio;                       // Calculate the actual battery voltage using the voltage divider ratio
+//   f_batteryCalibrationFactor = 4.2 / batteryVoltage;                        // Calculate the calibration factor from user input
+//   EEPROM.put(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);  // Store the calibration factor in EEPROM
+
+// #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+//   EEPROM.commit();  // Commit changes to EEPROM to save the calibration factor
+// #endif
+//   Serial.print("Battery Voltage Factor set to: ");  // Output the new calibration factor to the Serial Monitor
+//   Serial.println(f_batteryCalibrationFactor);
+// }
+
+void calibrateVoltage() {
+  actionMessage = "Calibrate 4.2v";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  const int numReadings = 50;  // Number of readings to average
+  long adcSum = 0;
+
+  // Take multiple ADC readings and calculate their sum
+  for (int i = 0; i < numReadings; i++) {
+    adcSum += analogRead(BATTERY_PIN);
+    delay(10);  // Optional: Add a small delay between readings for stability
+  }
+
+  // Calculate the average ADC value
+  float adcValue = adcSum / (float)numReadings;
+
+  // Calculate the voltage at the pin and the actual battery voltage
+  float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;
+  float batteryVoltage = voltageAtPin * dividerRatio;
+
+  // Calculate the calibration factor
+  f_batteryCalibrationFactor = 4.2 / batteryVoltage;
+
+  // Store the calibration factor in EEPROM
+  EEPROM.put(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);
+
+#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+  EEPROM.commit();  // Commit changes to EEPROM
+#endif
+
+  // Output the new calibration factor to the Serial Monitor
+  Serial.print("Battery Voltage Factor set to: ");
+  Serial.println(f_batteryCalibrationFactor);
 }
 
-//get the tare offset (raw data value output without the scale "calFactor")
-long ADS1232_ADC::getTareOffset() {
-  return tareOffset;
+// Navigate menu
+void navigateMenu(int direction) {
+  currentIndex = (currentIndex + direction + currentMenuSize) % currentMenuSize;
+  currentSelection = currentMenu[currentIndex];
+  Serial.print("currentIndex ");
+  Serial.println(currentIndex);
+  //showMenu();
 }
 
-//set new tare offset (raw data value input without the scale "calFactor")
-void ADS1232_ADC::setTareOffset(long newoffset) {
-  tareOffset = newoffset;
+// Select menu
+// 5/5 count submenu items
+void selectMenu() {
+  //use the static way to avoid get size of dynamic array.
+  if (currentSelection->subMenu) {
+    // Enter the submenu
+    if (currentSelection == &menuBuzzer) {
+      currentMenu = buzzerMenu;
+      currentMenuSize = getMenuSize(buzzerMenu);
+    } else if (currentSelection == &menuCalibration) {
+      currentMenu = calibrationMenu;
+      currentMenuSize = getMenuSize(calibrationMenu);
+    } else if (currentSelection == &menuWiFiUpdate) {
+      currentMenu = wifiUpdateMenu;
+      currentMenuSize = getMenuSize(wifiUpdateMenu);
+    }
+    // else if (currentSelection == &menuFactory) {
+    //   currentMenu = factoryMenu;
+    //   currentMenuSize = getMenuSize(factoryMenu);
+    // }
+    currentIndex = 0;
+    currentSelection = currentMenu[currentIndex];
+    //showMenu();
+  } else if (currentSelection->action) {
+    // Execute the action if available
+    currentSelection->action();
+  } else if (currentSelection->parentMenu) {
+    // Go back to the parent menu
+    currentMenu = mainMenu;
+    currentMenuSize = getMenuSize(mainMenu);
+    currentIndex = 0;  // Reset to the first item in the parent menu
+    currentSelection = currentMenu[currentIndex];
+    //showMenu();
+  }
 }
 
-//for testing and debugging:
-//returns current value of dataset readIndex
-int ADS1232_ADC::getReadIndex() {
-  return readIndex;
-}
+// Display menu
+void showMenu() {
+#ifdef ROTATION_180
+  u8g2.setDisplayRotation(U8G2_R2);
+#else
+  u8g2.setDisplayRotation(U8G2_R0);
+#endif
 
-//for testing and debugging:
-//returns latest conversion time in millis
-float ADS1232_ADC::getConversionTime() {
-  return conversionTime / 1000.0;
-}
-
-//for testing and debugging:
-//returns the ADS1232 conversions ea seconds based on the latest conversion time.
-//The ADS1232 can be set to 10SPS or 80SPS. For general use the recommended setting is 10SPS.
-float ADS1232_ADC::getSPS() {
-  float sps = 1000000.0 / conversionTime;
-  return sps;
-}
-
-//for testing and debugging:
-//returns the tare timeout flag from the last tare operation.
-//0 = no timeout, 1 = timeout
-bool ADS1232_ADC::getTareTimeoutFlag() {
-  return tareTimeoutFlag;
-}
-
-void ADS1232_ADC::disableTareTimeout() {
-  tareTimeoutDisable = 1;
-}
-
-long ADS1232_ADC::getSettlingTime() {
-  long st = getConversionTime() * DATA_SET;
-  return st;
-}
-
-//overide the number of samples in use
-//value is rounded down to the nearest valid value
-void ADS1232_ADC::setSamplesInUse(int samples) {
-  int old_value = samplesInUse;
-
-  if (samples <= SAMPLES) {
-    if (samples == 0)  //reset to the original value
-    {
-      divBit = divBitCompiled;
+  u8g2.setFont(FONT_S);
+  u8g2.firstPage();
+  do {
+    if (millis() - t_actionMessage < t_actionMessageDelay) {
+      u8g2.setFont(FONT_M);
+      if (AC(actionMessage.c_str()) < 0)
+        u8g2.setFont(FONT_S);
+      if (actionMessage2 == "Default")
+        u8g2.drawStr(AC(actionMessage.c_str()), AM(), actionMessage.c_str());
+      else {
+        u8g2.drawStr(AC(actionMessage.c_str()), AM() - 12, actionMessage.c_str());
+        u8g2.drawStr(AC(actionMessage2.c_str()), AM() + 12, actionMessage2.c_str());
+      }
     } else {
-      samples >>= 1;
-      for (divBit = 0; samples != 0; samples >>= 1, divBit++)
-        ;
-    }
-    samplesInUse = 1 << divBit;
-
-    //replace the value of all samples in use with the last conversion value
-    if (samplesInUse != old_value) {
-      for (uint8_t r = 0; r < samplesInUse + IGN_HIGH_SAMPLE + IGN_LOW_SAMPLE; r++) {
-        dataSampleSet[r] = lastSmoothedData;
+      actionMessage == "Default";
+      currentPage = currentIndex / linesPerPage + 1;
+      //currentMenuSize = getMenuSize(currentMenu);
+      totalPages = (currentMenuSize + linesPerPage - 1) / linesPerPage;  //Calculate total pages
+      char pageInfo[10];
+      snprintf(pageInfo, sizeof(pageInfo), "%d/%d", currentPage, totalPages);
+      if (totalPages > 1)
+        u8g2.drawStr(AR(pageInfo), u8g2.getMaxCharHeight(), pageInfo);  // Show on top-right of the screen if more than one page is needed.
+      for (int i = 0; i < currentMenuSize; i++) {
+        if (currentMenu[i] == currentSelection) {
+          u8g2.drawStr(0, u8g2.getMaxCharHeight() * (i % linesPerPage + 1), ">");  // Highlight current selection
+        }
+        if (i >= (currentPage - 1) * linesPerPage && i < currentPage * linesPerPage)
+          u8g2.drawStr(10, u8g2.getMaxCharHeight() * (i % linesPerPage + 1), currentMenu[i]->name);
       }
-      readIndex = 0;
     }
-  }
+  } while (u8g2.nextPage());
 }
 
-//returns the current number of samples in use.
-int ADS1232_ADC::getSamplesInUse() {
-  return samplesInUse;
-}
 
-//resets index for dataset
-void ADS1232_ADC::resetSamplesIndex() {
-  readIndex = 0;
-}
-
-//Fill the whole dataset up with new conversions, i.e. after a reset/restart (this function is blocking once started)
-bool ADS1232_ADC::refreshDataSet() {
-  int s = getSamplesInUse() + IGN_HIGH_SAMPLE + IGN_LOW_SAMPLE;  // get number of samples in dataset
-  resetSamplesIndex();
-  while (s > 0) {
-    update();
-    yield();
-    if (digitalRead(doutPin) == LOW) {  // ADS1232 dout pin is pulled low when a new conversion is ready
-      getData();                        // add data to the set and start next conversion
-      s--;
-    }
-  }
-  return true;
-}
-
-//returns 'true' when the whole dataset has been filled up with conversions, i.e. after a reset/restart.
-bool ADS1232_ADC::getDataSetStatus() {
-  bool i = false;
-  if (readIndex == samplesInUse + IGN_HIGH_SAMPLE + IGN_LOW_SAMPLE - 1) {
-    i = true;
-  }
-  return i;
-}
-
-//returns and sets a new calibration value (calFactor) based on a known mass input
-float ADS1232_ADC::getNewCalibration(float known_mass) {
-  float readValue = getData();
-  float exist_calFactor = getCalFactor();
-  float new_calFactor;
-  new_calFactor = (readValue * exist_calFactor) / known_mass;
-  setCalFactor(new_calFactor);
-  return new_calFactor;
-}
-
-//returns 'true' if it takes longer time then 'SIGNAL_TIMEOUT' for the dout pin to go low after a new conversion is started
-bool ADS1232_ADC::getSignalTimeoutFlag() {
-  return signalTimeoutFlag;
-}
-
-//reverse the output value (flip positive/negative value)
-//tare/zero-offset must be re-set after calling this.
-void ADS1232_ADC::setReverseOutput() {
-  reverseVal = true;
-}
-
-void ADS1232_ADC::setChannelInUse(int channel) {
-  channelInUse = channel;
-  if (channel == 0) {
-    digitalWrite(a0Pin, LOW); // Set A0 pin LOW for Channel B
-  } else if (channel == 1) {
-    digitalWrite(a0Pin, HIGH); // Set A0 pin HIGH for Channel A
-  } else {
-    // Handle invalid channel input (optional)
-    // For example, you could set a default behavior or print an error message
-    Serial.println("Invalid channel selection. Please input 1 or 2.");
-  }
-}
-
-//returns the current number of samples in use.
-int ADS1232_ADC::getChannelInUse() {
-  return channelInUse;
-}
+#endif
