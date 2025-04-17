@@ -21,10 +21,14 @@ Adafruit_MPU6050 https://github.com/adafruit/Adafruit_MPU6050 <br />
 Adafruit_ADS1X15 https://github.com/adafruit/Adafruit_ADS1X15 <br />
 SparkFun_BMA400_Arduino_Library https://github.com/sparkfun/SparkFun_BMA400_Arduino_Library <br />
 
-# How to upload HEX file
-Use OpenJumper™ Serial Assistant, link as below.(In Chinese)<br />
-https://www.cnblogs.com/wind-under-the-wing/p/14686625.html <br />
+# Compile Guide:
+In Arduino IDE, selete tool menu, and change:
+- Board to "ESP32S3 Dev Module"<br />
+- CPU Frequency to "80MHz (WiFi)"<br />
+- Flash Size to "16MB (128Mb)"<br />
+- Partition Scheme to "16MB Flash (3MB APP/9.9MB FATFS)"<br />
 
+# How to upload HEX file
 Web USB Flash(please use Chrome/Edge, Safari or Firefox is not supported):<br />
 https://adafruit.github.io/Adafruit_WebSerial_ESPTool/ <br />
 The offset values are:<br />
@@ -33,3 +37,6 @@ hds.ino.partitions.bin 0x8000<br />
 hds.ino.bin 0x10000<br />
 This tool works great, but need to reset by pressing the button on the PCB.<br />
 And as it erase the eprom, a calibration is also required.<br />
+
+Or use OpenJumper™ Serial Assistant, link as below.(In Chinese)<br />
+https://www.cnblogs.com/wind-under-the-wing/p/14686625.html <br />
