@@ -325,12 +325,16 @@ void calibration(int input) {
         } while (u8g2.nextPage());
         buzzer.off();
         delay(1000);
+        double d_weight;
         for (int i = 0; i < DATA_SET; i++) {
-          scale.update();
-          Serial.println(scale.getData());
-          delay(10);
-        }
-        double d_weight = scale.getData();
+          if (scale.update()) newDataReady = true;
+          if (newDataReady) {
+            d_weight = scale.getData();
+            Serial.println(d_weight);
+            newDataReady = false;
+            delay(100);
+          }
+        }        
         Serial.print("weight is ");
         Serial.println(d_weight);
         if (abs(d_weight) < 5) {
