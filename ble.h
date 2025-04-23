@@ -166,6 +166,14 @@ class MyCallbacks : public BLECharacteristicCallbacks {
           }
           b_tareByBle = true;
           t_tareByBle = millis();
+          if (data[5] == 0x00) {
+            /*
+            Tare the scale by sending "030F000000000C" (old version, disables heartbeat)
+            Tare the scale by sending "030F000000010D" (new version, leaves heartbeat as set)
+            */
+            b_requireHeartBeat = false;
+            Serial.println("*** Heartbeat detection Off ***");
+          }
         } else if (data[1] == 0x0A) {
           if (data[2] == 0x00) {
             Serial.println("LED off detected. Turn off OLED.");
