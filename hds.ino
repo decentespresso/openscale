@@ -132,7 +132,6 @@ void buttonCircle_Pressed() {
     //This will increment i_cal_weight by 1 and wrap around to 0 when it reaches 4, effectively keeping it within the range of 0 to 3.
     // return;
   }
-  
 }
 
 void buttonSquare_Pressed() {
@@ -861,6 +860,7 @@ void loop() {
         //showing charging animation when powered off
         //charging();
       } else {
+        sendUsbTextWeight();
         if (b_ble_enabled)
           sendBleWeight();
         if (b_usbweight_enabled)
