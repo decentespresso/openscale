@@ -419,7 +419,7 @@ void setup() {
   EEPROM.get(INPUTCOFFEEESPRESSO_ADDRESS, INPUTCOFFEEESPRESSO);
   EEPROM.get(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);
   EEPROM.get(i_addr_mode, b_mode);
-  //EEPROM.get(i_addr_requireHeartBeat, b_requireHeartBeat);
+  EEPROM.get(i_addr_heartbeat, b_requireHeartBeat);
 
   //EEPROM.get(i_addr_debug, b_debug);
 
@@ -453,6 +453,12 @@ void setup() {
     EEPROM.put(i_addr_beep, b_beep);
     EEPROM.commit();
   }
+  if (b_requireHeartBeat != 0 && b_requireHeartBeat != 1) {
+    b_requireHeartBeat = true;
+    EEPROM.put(i_addr_heartbeat, b_requireHeartBeat);
+    EEPROM.commit();
+  }
+
   // if (b_debug != 0 && b_debug != 1) {
   //   b_debug = false;
   //   EEPROM.put(i_addr_debug, b_debug);
@@ -539,9 +545,14 @@ void setup() {
   Serial.print(LINE2);
   Serial.print("\t");
   Serial.print(LINE3);
-
   Serial.print("\tCal_Val: ");
-  Serial.println(f_calibration_value);
+  Serial.print(f_calibration_value);
+  Serial.print("\tHB_DET: ");
+  Serial.print(b_requireHeartBeat);
+
+  Serial.println("");
+
+
   Serial.print("Button:\tSQARE\tCIRCLE\tPOWER");
   Serial.print("Pin:");
   Serial.print("\t");
@@ -564,7 +575,9 @@ void setup() {
   Serial.print("\t");
   Serial.print(SCALE_PDWN);
   Serial.print("\t");
-  Serial.println(BUZZER);
+  Serial.print(BUZZER);
+  Serial.println("");
+
 #endif
 #ifdef HX711ADC
   Serial.println("Button:\tI2C_SDA\tI2C_SCK\t711SDA\t711SCK\tBUZZER");

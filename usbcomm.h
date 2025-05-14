@@ -65,33 +65,39 @@ public:
             b_requireHeartBeat = false;
             Serial.println("*** Heartbeat detection Off ***");
           }
+          if (data[5] == 0x01) {
+            /*
+            Tare the scale by sending "030F000000000C" (old version, disables heartbeat)
+            Tare the scale by sending "030F000000010D" (new version, leaves heartbeat as set)
+            */
+            Serial.print("*** Heartbeat detection remained ");
+            if (b_requireHeartBeat)
+              Serial.print("On");
+            else
+              Serial.print("Off");
+            Serial.println(" ***");
+          }
         } else if (data[1] == 0x0A) {
           if (data[2] == 0x00) {
-            Serial.print("LED off detected. Turn off OLED.");
+            Serial.println("LED off detected. Turn off OLED.");
             u8g2.setPowerSave(1);
             b_u8g2Sleep = true;
-            if (data[5] == 0x00) {
-              b_requireHeartBeat = false;
-              Serial.print(" *** Heartbeat detection Off ***");
-            }
-            if (data[5] == 0x01) {
-              b_requireHeartBeat = true;
-              Serial.print(" *** Heartbeat detection On ***");
-            }
-            Serial.println();
           } else if (data[2] == 0x01) {
             Serial.print("LED on detected. Turn on OLED.");
             u8g2.setPowerSave(0);
             b_u8g2Sleep = false;
             if (data[5] == 0x00) {
               b_requireHeartBeat = false;
-              Serial.print(" *** Heartbeat detection Off ***");
+              Serial.println(" *** Heartbeat detection Off ***");
             }
             if (data[5] == 0x01) {
-              b_requireHeartBeat = true;
-              Serial.print(" *** Heartbeat detection On ***");
+              Serial.print("*** Heartbeat detection remained ");
+              if (b_requireHeartBeat)
+                Serial.print("On");
+              else
+                Serial.print("Off");
+              Serial.println(" ***");
             }
-            Serial.println();
           } else if (data[2] == 0x02) {
             Serial.println("Power off detected.");
             shut_down_now_nobeep();

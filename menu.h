@@ -27,6 +27,8 @@ struct Menu {
 void exitMenu();
 void buzzerOn();
 void buzzerOff();
+void heartbeatOn();
+void heartbeatOff();
 void calibrate();
 void drawButton();
 void wifiUpdate();
@@ -47,6 +49,7 @@ Menu menuWiFiUpdate = { "WiFi Update", NULL, NULL, NULL };
 Menu menuAbout = { "About", showAbout, NULL, NULL };
 Menu menuLogo = { "Show Logo", showLogo, NULL, NULL };
 Menu menuFactory = { "Factory", NULL, NULL, NULL };
+Menu menuHeartbeat = { "Heartbeat", NULL, NULL, NULL };
 
 // Buzzer submenu
 // 2/5 define the 2st level menu
@@ -65,6 +68,12 @@ Menu menuWiFiUpdateBack = { "Back", NULL, NULL, &menuWiFiUpdate };
 Menu menuWiFiUpdateOption = { "WiFi Update", wifiUpdate, NULL, &menuWiFiUpdate };
 Menu *wifiUpdateMenu[] = { &menuWiFiUpdateBack, &menuWiFiUpdateOption };
 
+// Heartbeat detection
+Menu menuHeartbeatBack = { "Back", NULL, NULL, &menuHeartbeat };
+Menu menuHeartbeatOn = { "Heartbeat On", heartbeatOn, NULL, &menuHeartbeat };
+Menu menuHeartbeatOff = { "Heartbeat Off", heartbeatOff, NULL, &menuHeartbeat };
+Menu *heartbeatMenu[] = { &menuHeartbeatBack, &menuHeartbeatOn, &menuHeartbeatOff };
+
 // Menu menuFactoryBack = { "Back", NULL, NULL, &menuFactory };
 // Menu menuCalibrateVoltage = { "Calibrate 4.2v", calibrateVoltage, NULL, &menuFactory };
 // Menu menuFactoryDebug = { "Debug Info", enableDebug, NULL, &menuFactory };
@@ -73,7 +82,7 @@ Menu *wifiUpdateMenu[] = { &menuWiFiUpdateBack, &menuWiFiUpdateOption };
 // Main menu
 // 3/5 write all the 1st menu to mainMenu
 Menu *mainMenu[] = {
-  &menuExit, &menuBuzzer, &menuCalibration, &menuWiFiUpdate, &menuAbout, &menuLogo
+  &menuExit, &menuBuzzer, &menuCalibration, &menuWiFiUpdate, &menuAbout, &menuLogo, &menuHeartbeat
   //, &menuFactory
 };
 //  &menuHolder1, &menuHolder2, &menuHolder3, &menuHolder4,
@@ -92,6 +101,7 @@ void linkSubmenus() {
   menuBuzzer.subMenu = buzzerMenu[0];
   menuCalibration.subMenu = calibrationMenu[0];
   menuWiFiUpdate.subMenu = wifiUpdateMenu[0];
+  menuHeartbeat.subMenu = heartbeatMenu[0];
   //menuFactory.subMenu = factoryMenu[0];
 }
 
@@ -118,6 +128,7 @@ void buzzerOn() {
   t_actionMessageDelay = 1000;
   EEPROM.put(i_addr_beep, b_beep);
   EEPROM.commit();
+  Serial.println("Buzzer On stored in EEPROM.");
 }
 
 void buzzerOff() {
@@ -127,6 +138,27 @@ void buzzerOff() {
   t_actionMessageDelay = 1000;
   EEPROM.put(i_addr_beep, b_beep);
   EEPROM.commit();
+  Serial.println("Buzzer off stored in EEPROM.");
+}
+
+void heartbeatOn() {
+  b_requireHeartBeat = true;
+  actionMessage = "Heartbeat On";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  EEPROM.put(i_addr_heartbeat, b_requireHeartBeat);
+  EEPROM.commit();
+  Serial.println("Heartbeat detection...On");
+}
+
+void heartbeatOff() {
+  b_requireHeartBeat = false;
+  actionMessage = "Heartbeat Off";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  EEPROM.put(i_addr_heartbeat, b_requireHeartBeat);
+  EEPROM.commit();
+  Serial.println("Heartbeat detection...Off");
 }
 
 void calibrate() {
@@ -334,7 +366,7 @@ void calibration(int input) {
             newDataReady = false;
             delay(100);
           }
-        }        
+        }
         Serial.print("weight is ");
         Serial.println(d_weight);
         if (abs(d_weight) < 5) {
@@ -718,6 +750,9 @@ void selectMenu() {
     } else if (currentSelection == &menuWiFiUpdate) {
       currentMenu = wifiUpdateMenu;
       currentMenuSize = getMenuSize(wifiUpdateMenu);
+    } else if (currentSelection == &menuHeartbeat) {
+      currentMenu = heartbeatMenu;
+      currentMenuSize = getMenuSize(heartbeatMenu);
     }
     // else if (currentSelection == &menuFactory) {
     //   currentMenu = factoryMenu;

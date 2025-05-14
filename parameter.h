@@ -6,7 +6,9 @@
 bool b_ble_enabled = false;
 bool b_usbweight_enabled = false;
 unsigned long lastWeightNotifyTime = 0;  // Stores the last time the weight notification was sent
+unsigned long lastWeightTextNotifyTime = 0;  // Stores the last time the weight notification was sent
 const long weightNotifyInterval = 100;   // Interval at which to send weight notifications (milliseconds)
+const long weightTextNotifyInterval = 1000;
 int i_onWrite_counter = 0;
 long t_heartBeat = 0;
 bool b_requireHeartBeat = true;
@@ -199,6 +201,8 @@ int INPUTCOFFEEESPRESSO_ADDRESS = INPUTCOFFEEPOUROVER_ADDRESS + sizeof(INPUTCOFF
 int i_addr_beep = INPUTCOFFEEESPRESSO_ADDRESS + sizeof(INPUTCOFFEEESPRESSO);
 int i_addr_welcome = i_addr_beep + sizeof(b_beep);                           //str_welcome
 int i_addr_batteryCalibrationFactor = i_addr_welcome + sizeof(str_welcome);  //f_batteryCalibrationFactor
+int i_addr_heartbeat = i_addr_batteryCalibrationFactor + sizeof(f_batteryCalibrationFactor);  //b_requireHeartBeat
+
 //int i_addr_debug = i_addr_batteryCalibrationFactor + sizeof(f_batteryCalibrationFactor);  //str_welcome
 
 #endif
