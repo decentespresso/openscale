@@ -26,8 +26,8 @@
 //#define CHECKBATTERY
 
 //SCALE CONFIG
-#define LINE1 (char*)"FW: 2.7.0"
-#define LINE2 (char*)"Built-date(YYYYMMDD): 20250514"
+#define LINE1 (char*)"FW: 2.7.1"
+#define LINE2 (char*)"Built-date(YYYYMMDD): 20250519"
 #define LINE3 (char*)"S/N: HDS001"  //Serial number
 #define VERSION /*version*/ LINE1, /*compile date*/ LINE2, /*sn*/ LINE3
 //About info

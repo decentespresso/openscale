@@ -227,7 +227,21 @@ public:
           } else if (data[2] == 0x01) {
             Serial.println("Weight by USB enabled");
             b_usbweight_enabled = true;
+            if (len >= 4) {
+              uint16_t interval = 100;
+              uint8_t multiplier = data[3];
+              if (multiplier < 1) multiplier = 1;
+              if (multiplier > 50) multiplier = 50;  // 最大支持 5000ms
+
+              interval = multiplier * 100;
+              weightUsbNotifyInterval = interval;
+
+              Serial.print("USB weight interval set to ");
+              Serial.print(weightUsbNotifyInterval);
+              Serial.println(" ms");
+            }
           }
+
         } else if (data[1] == 0x21) {
           sendUsbGyro();
         } else if (data[1] == 0x22) {
@@ -295,9 +309,9 @@ void sendUsbGyro() {
 
 void sendUsbWeight() {
   unsigned long currentMillis = millis();
-  if (currentMillis - lastWeightNotifyTime >= weightNotifyInterval) {
+  if (currentMillis - lastUsbWeightNotifyTime >= weightUsbNotifyInterval) {
     // Save the last time you sent the weight notification
-    lastWeightNotifyTime = currentMillis;
+    lastUsbWeightNotifyTime = currentMillis;
 
     byte data[7];
     // float weight = scale.getData();
