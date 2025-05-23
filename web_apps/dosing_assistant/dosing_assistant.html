@@ -1,0 +1,195 @@
+<title>Decent Scale Dosing Assistant</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link href="./css/same_weight.css" rel="stylesheet">
+    
+
+<body class="min-h-screen bg-white font-sans">
+    <!-- Main Content - Update container classes -->
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <!-- Update max width and responsive width -->
+        <div class="bg-gray-100 rounded-lg p-4 sm:p-6 w-full max-w-5xl mx-auto">
+            <!-- Header Section -->
+            <div class="bg-gray-50 p-4 sm:p-6 rounded-lg shadow-sm mb-6">
+                <div class="flex justify-between items-center">
+                    <a href="https://decentespresso.com/support/decentscale" class="text-xl font-bold text-gray-800">Dosing Assistant</a>
+                    <div class="relative">
+                        <button 
+                            id="connectButton" 
+                            class="bg-purple-100 font-medium text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg"
+                        >
+                            Connect to Scale
+                        </button>
+                        <!-- Position fullscreen button absolutely -->
+                        <button 
+                                id="fullscreen-button" 
+                                title="Toggle fullscreen"
+                                class="absolute -top-5 -right-5 w-6 h-6 flex items-center justify-center"
+                            >
+                                <!-- Enter fullscreen icon -->
+                                <svg 
+                                xmlns="http://www.w3.org/2000/svg" 
+                                width="14" 
+                                height="14" 
+                                viewBox="0 0 92 92"
+                                class="enter-fullscreen"
+                                >
+                                    <path d="M90,6l0,21c0,2.2-1.8,4-4,4l0,0c-2.2,0-4-1.8-4-4V15.7L56.7,40.9c-0.8,0.8-1.8,1.2-2.8,1.2
+                                    c-1,0-2-0.4-2.8-1.2c-1.6-1.6-1.6-4.1,0-5.7L76.3,10H65c-2.2,0-4-1.8-4-4c0-2.2,1.8-4,4-4h21c1.1,0,2.1,0.4,2.8,1.2
+                                    C89.6,3.9,90,4.9,90,6z M34.9,51.5L10,76.3V65c0-2.2-1.8-4-4-4l0,0c-2.2,0-4,1.8-4,4l0,21c0,1.1,0.4,2.1,1.2,2.8
+                                    C3.9,89.6,4.9,90,6,90l21,0c2.2,0,4-1.8,4-4c0-2.2-1.8-4-4-4H15.7l24.9-24.9c1.6-1.6,1.6-4.1,0-5.7C39,49.9,36.4,49.9,34.9,51.5z"/>
+                                </svg>
+                                <!-- Exit fullscreen icon - keep hidden by default -->
+                                <svg 
+                                xmlns="http://www.w3.org/2000/svg" 
+                                width="16" 
+                                height="16" 
+                                viewBox="0 0 24 24"
+                                class="exit-fullscreen hidden"
+                                fill="none"
+                            >
+                                <path d="M4 14H10M10 14V20M10 14L3 21M20 10H14M14 10V4M14 10L21 3" 
+                                      stroke="#000000" 
+                                      stroke-width="2" 
+                                      stroke-linecap="round" 
+                                      stroke-linejoin="round"/>
+                                </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Target Weight Controls Section -->
+            <div class="bg-gray-50 p-4 sm:p-6 rounded-lg shadow-sm mb-6">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                    <!-- First row - Target Weight controls -->
+                    <div class="flex flex-wrap items-center gap-2">
+                        <div class="flex items-center">
+                            <span class="mr-2 whitespace-nowrap">Target (g):</span>
+                            <input 
+                                type="number" 
+                                id="targetWeight" 
+                                value="30" 
+                                step="0.1"
+                                class="w-16 border border-gray-300 rounded px-2 py-1"
+                            />
+                        </div>
+                        <div class="flex items-center">
+                            <span class="mx-2">Min</span>
+                            <input 
+                                type="number" 
+                                id="lowThreshold" 
+                                value="25" 
+                                step="0.1"
+                                class="w-16 border border-gray-300 rounded px-2 py-1"
+                            />
+                        </div>
+                        <div class="flex items-center">
+                            <span class="mx-2">Max</span>
+                            <input 
+                                type="number" 
+                                id="highThreshold" 
+                                value="33" 
+                                step="0.1"
+                                class="w-16 border border-gray-300 rounded px-2 py-1"
+                            />
+                        </div>
+                    </div>
+                    
+                    <!-- Second row - Name and Preset -->
+                    <div class="flex flex-wrap items-center gap-4">
+                        <div class="flex items-center flex-1 min-w-[200px]">
+                            <span class="mr-2 whitespace-nowrap">Name:</span>
+                            <input 
+                                type="text" 
+                                id="objectName" 
+                                class="border border-gray-300 rounded px-3 py-1 flex-1"
+                                placeholder="Enter object name"
+                            />
+                        </div>
+                        <div class="flex items-center flex-1 min-w-[200px]">
+                            <span class="mr-2 whitespace-nowrap">Preset:</span>
+                            <select 
+                                id="presetSelect" 
+                                class="border border-gray-300 rounded px-3 py-1 flex-1"
+                            >
+                                <option value="">Select a preset...</option>
+                                <option value="save_preset">Save Current Settings as Preset</option>
+                            </select>
+                        </div>
+                        <div class="flex items-center gap-2 mb-4">
+                            <input 
+                                type="checkbox" 
+                                id="soundEnabled" 
+                                class="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                                checked
+                            >
+                            <label for="soundEnabled" class="text-sm text-gray-700">
+                                Enable Sound Feedback
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dosing Controls Section -->
+            <div class="bg-gray-50 p-4 sm:p-6 rounded-lg shadow-sm mb-6">
+                <div class=" p-6 bg-gray-300 rounded-lg shadow-sm">
+                    <div class="flex flex-wrap justify-between mb-6 gap-4">
+                        <div class="flex items-center">
+                            <div id="weight" class="text-xl font-bold mr-4">Weight: 0.0g</div>
+                            <button 
+                                id="tareButton" 
+                                class="bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg"
+                            >
+                                Zero
+                            </button>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button 
+                                id="dosingToggleButton" 
+                                class="bg-purple-400 hover:bg-purple-500 text-white px-4 py-2 rounded-md"
+                            >
+                                Start
+                            </button>
+                            <button 
+                                id="setContainerWeightButton" 
+                                class="bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg invisible"
+                                disabled
+                            >
+                                Set Container Weight
+                            </button>
+                        </div>
+                    </div>
+    
+                    <div class="flex flex-wrap justify-center items-center gap-4">
+                        <div id="progressPercent" class="text-lg font-bold">0%</div>
+                        
+                    </div>
+    
+                    <!-- Progress bar -->
+                    <div class="mt-4 h-4 bg-gray-200 rounded-full overflow-hidden">
+                        <div 
+                            id="progressFill"
+                            class="h-full bg-purple-400 progress-bar"
+                            style="width: 0%"
+                        ></div>
+                    </div>
+                    
+                    <p id="guidance" class="mt-2 text-center text-gray-600">Click Start Dosing After Connected.</p>
+                </div>
+            </div>
+
+            <!-- History Section -->
+            <div class="bg-gray-50 p-4 sm:p-6 rounded-lg shadow-sm">
+                <div class="flex items-center mb-4">
+                    <span class="mr-4 text-lg font-medium">History</span>
+                    <button id="exportCSV" class="border border-gray-300 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-md mr-2" disabled>CSV</button>
+                    <button id="exportJSON" class="border border-gray-300 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-md" disabled>JSON</button>
+                </div>
+                <ul id="weightReadings" class="max-h-72 overflow-y-auto text-gray-700"></ul>
+            </div>
+        </div>
+    </main>
+
+    <script type="module" src="./main.js"></script>
+</body>
