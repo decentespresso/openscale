@@ -45,18 +45,19 @@ Stop QC Mode: Click "Stop QC Mode" to end the current QC session.
 The decentscale_qcweigh application relies on a few key technical aspects:
 
 ### Web BLE Communication:
-The app connects to the Half Decent Scale using its service UUID 0000fff0-0000-1000-8000-00805f9b34fb.
-Read Characteristic: 0000fff4-0000-1000-8000-00805f9b34fb is used to receive weight data notifications.
-Write Characteristic: 000036f5-0000-1000-8000-00805f9b34fb is used to send commands like tare to the scale.
-A command queue (commandQueue) ensures that commands sent to the scale are executed sequentially, preventing conflicts.
-QC State Machine: The core of the QC logic is managed by a state machine with three states:
-WAITING_FOR_NEXT: The scale is waiting for an object to be placed.
-MEASURING: An object has been detected, and the app is waiting for the weight to stabilize.
+The app connects to the Half Decent Scale using its service UUID 0000fff0-0000-1000-8000-00805f9b34fb.   
+Read Characteristic: 0000fff4-0000-1000-8000-00805f9b34fb is used to receive weight data notifications.   
+Write Characteristic: 000036f5-0000-1000-8000-00805f9b34fb is used to send commands like tare to the scale.   
+A command queue (commandQueue) ensures that commands sent to the scale are executed sequentially, preventing conflicts.    
+**QC State Machine:** The core of the QC logic is managed by a state machine with three states:    
+WAITING_FOR_NEXT: The scale is waiting for an object to be placed.   
+MEASURING: An object has been detected, and the app is waiting for the weight to stabilize.     
 REMOVAL_PENDING: A measurement has been recorded, and the app is waiting for the object to be removed before prompting for the next.
 Weight Stability: Stability is determined by monitoring the change in weight over time. A stabilityThreshold (default 0.2g) defines the maximum allowed fluctuation for a reading to be considered stable.
-Local Storage for Presets: User-defined QC settings are stored in localStorage under the key 'decentScalePresets', allowing them to persist across browser sessions. The lastUsedPreset is also stored.
+Local Storage for Presets: User-defined QC settings are stored in localStorage under the key 'decentScalePresets', allowing them to persist across browser sessions. The lastUsedPreset is also stored.   
 Sound Generation: Basic pass/fail sounds are generated directly in the browser using the Web Audio API (AudioContext, OscillatorNode, GainNode).
-Fullscreen API: Utilizes the HTML Fullscreen API (requestFullscreen, exitFullscreen) for a more immersive user interface.
+Fullscreen API: Utilizes the HTML Fullscreen API (requestFullscreen, exitFullscreen) for a more immersive user interface.    
+
 ## Development Setup
 To explore, modify, or contribute to this application:
 
