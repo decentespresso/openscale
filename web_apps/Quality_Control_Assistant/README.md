@@ -1,4 +1,4 @@
-**A Quality Control Weighing Application for Decent Scales**
+# A Quality Control Weighing Application for Decent Scales
 
 This web app is a web-based tool designed to streamline **quality control weighing processes**. Built with pure JavaScript, HTML, and CSS, it leverages **Web Bluetooth Low Energy (Web BLE)** to connect directly to your **Half Decent Scale**, providing a guided workflow for repetitive measurements, real-time feedback, and easy data export.
 
