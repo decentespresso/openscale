@@ -1,0 +1,168 @@
+<title>Decent Scale QC Assistant</title>
+    <link href="./css/qc.css" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+
+<body class="min-h-screen bg-white font-sans">
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div class="bg-gray-100 rounded-lg p-4 sm:p-6 w-full max-w-5xl mx-auto">
+            <!-- Header Section -->
+            <div class="bg-gray-50 p-4 sm:p-6 rounded-lg shadow-sm mb-6">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                    <a href="https://decentespresso.com/support/decentscale" class="text-xl font-bold text-gray-800">Quality Control Assistant</a>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span id="status" class="mr-2">Status: Not connected</span>                
+                        <button 
+                            id="connectButton" 
+                            class="bg-purple-100 font-medium text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg"
+                        >
+                            Connect to Scale
+                        </button>
+                        <!-- Position fullscreen button absolutely -->
+                        <div class="relative">
+                            <button id="tareButton" 
+                                    class="bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg">
+                                Zero Scale
+                            </button>
+                            <button 
+                                id="fullscreen-button" 
+                                title="Toggle fullscreen"
+                                class="absolute -top-3 -right-3 w-6 h-6 flex items-center justify-center"
+                            >
+                                <!-- Enter fullscreen icon -->
+                                <svg 
+                                xmlns="http://www.w3.org/2000/svg" 
+                                width="14" 
+                                height="14" 
+                                viewBox="0 0 92 92"
+                                class="enter-fullscreen"
+                                >
+                                    <path d="M90,6l0,21c0,2.2-1.8,4-4,4l0,0c-2.2,0-4-1.8-4-4V15.7L56.7,40.9c-0.8,0.8-1.8,1.2-2.8,1.2
+                                    c-1,0-2-0.4-2.8-1.2c-1.6-1.6-1.6-4.1,0-5.7L76.3,10H65c-2.2,0-4-1.8-4-4c0-2.2,1.8-4,4-4h21c1.1,0,2.1,0.4,2.8,1.2
+                                    C89.6,3.9,90,4.9,90,6z M34.9,51.5L10,76.3V65c0-2.2-1.8-4-4-4l0,0c-2.2,0-4,1.8-4,4l0,21c0,1.1,0.4,2.1,1.2,2.8
+                                    C3.9,89.6,4.9,90,6,90l21,0c2.2,0,4-1.8,4-4c0-2.2-1.8-4-4-4H15.7l24.9-24.9c1.6-1.6,1.6-4.1,0-5.7C39,49.9,36.4,49.9,34.9,51.5z"/>
+                                </svg>
+                                <!-- Exit fullscreen icon - keep hidden by default -->
+                                <svg 
+                                xmlns="http://www.w3.org/2000/svg" 
+                                width="16" 
+                                height="16" 
+                                viewBox="0 0 24 24"
+                                class="exit-fullscreen hidden"
+                                fill="none"
+                            >
+                                <path d="M4 14H10M10 14V20M10 14L3 21M20 10H14M14 10V4M14 10L21 3" 
+                                      stroke="#000000" 
+                                      stroke-width="2" 
+                                      stroke-linecap="round" 
+                                      stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                        </div>
+                        <button id="testPassSound" 
+                                class="bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg">
+                            Test Sound
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- QC Controls Section -->
+            <div class="bg-gray-50 p-4 sm:p-6 rounded-lg shadow-sm mb-6">
+                <div class="font-medium mb-4">Quality Control Settings</div>
+                
+                <!-- Preset Controls -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div class="flex items-center">
+                        <label for="objectName" class="w-32 mr-2 whitespace-nowrap">Object Name:</label>
+                        <input type="text" id="objectName" 
+                               class="border border-gray-300 rounded px-3 py-1 flex-1"
+                               placeholder="Enter object name">
+                    </div>
+                    <div class="flex items-center">
+                        <label for="presetSelect" class="w-32 mr-2 whitespace-nowrap">Preset:</label>
+                        <select id="presetSelect" 
+                                class="border border-gray-300 rounded px-3 py-1 flex-1">
+                            <option value="">Select a preset...</option>
+                            <option value="save_preset">Save Current Settings as Preset</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Threshold Controls -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                    <div class="flex flex-col">
+                        <label for="goalWeight" class="mb-1">Goal Weight (g):</label>
+                        <input type="number" id="goalWeight" value="0" step="0.1"
+                               class="w-full border border-gray-300 rounded px-3 py-2">
+                    </div>
+                    <div class="flex flex-col">
+                        <label for="lowThreshold" class="mb-1">Low Threshold (g):</label>
+                        <input type="number" id="lowThreshold" value="0" step="0.1"
+                               class="w-full border border-gray-300 rounded px-3 py-2">
+                    </div>
+                    <div class="flex flex-col">
+                        <label for="highThreshold" class="mb-1">High Threshold (g):</label>
+                        <input type="number" id="highThreshold" value="0" step="0.1"
+                               class="w-full border border-gray-300 rounded px-3 py-2">
+                    </div>
+                    <div class="flex flex-col">
+                        <label for="minWeight" class="mb-1">Min Weight (g):</label>
+                        <input type="number" id="minWeight" value="0" step="0.1"
+                               class="w-full border border-gray-300 rounded px-3 py-2">
+                    </div>
+                </div>
+
+                <!-- Sound Controls -->
+                <div class="flex items-center mb-4">
+                    <div class="flex items-center">
+                        <input type="checkbox" id="enableSounds" class="mr-2 h-4 w-4">
+                        <label for="enableSounds">Enable Sounds</label>
+                    </div>
+                </div>
+
+                <!-- QC Toggle -->
+                <div class="flex flex-col sm:flex-row items-center justify-center gap-4 p-4">
+                    <div id="weight" class="p-2 text-xl font-bold">Weight: N/A</div>
+                    <button id="toggleQC" 
+                            class="bg-purple-400 hover:bg-purple-500 text-white px-6 py-2 rounded-md">
+                        Start QC Mode
+                    </button>
+                </div>
+
+                <!-- QC Status -->
+                <div id="qcStatus" 
+                     class="mt-4 p-4 rounded-lg bg-gray-200 text-center transition-all duration-300">
+                </div>
+            </div>
+
+            <!-- Readings Section -->
+            <div class="bg-gray-50 p-4 sm:p-6 rounded-lg shadow-sm">
+                <div class="flex items-center mb-4">
+                    <span class="mr-4 text-lg font-medium">History</span>
+                    <button id="exportCSV" 
+                            class="border border-gray-300 bg-gray-50 hover:bg-gray-100 px-4 py-2 rounded-md mr-2" 
+                            disabled>CSV</button>
+                    <button id="exportJSON" 
+                            class="border border-gray-300 bg-gray-50 hover:bg-gray-100 px-4 py-2 rounded-md" 
+                            disabled>JSON</button>
+                </div>
+                <div>
+                    <ul id="weightReadings" class="max-h-72 overflow-y-auto text-gray-700"></ul>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="quality_control.js"></script>
+    
+    <script>
+        const scale = new DecentScale();
+    </script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            window.scale = new DecentScale();
+        });
+    </script>
+</body>
