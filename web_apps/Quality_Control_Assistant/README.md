@@ -1,6 +1,6 @@
 # A Quality Control Weighing Application for Decent Scales
 
-The decentscale_qcweigh app is a web-based tool designed to streamline quality control weighing processes. Built with pure JavaScript, HTML, and CSS, it leverages Web Bluetooth Low Energy (Web BLE) to connect directly to your Half Decent Scale, providing a guided workflow for repetitive measurements, real-time feedback, and data export.
+This web app is a web-based tool designed to streamline quality control weighing processes. Built with pure JavaScript, HTML, and CSS, it leverages Web Bluetooth Low Energy (Web BLE) to connect directly to your Half Decent Scale, providing a guided workflow for repetitive measurements, real-time feedback, and data export.
 
 ## Live Demo
 Experience the app in action (requires a Chrome browser, version 70 or newer):
