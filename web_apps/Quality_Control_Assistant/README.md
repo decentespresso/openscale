@@ -132,7 +132,8 @@ The core logic resides within the `DecentScale` class (`ble_jvs_QCv2.1.js`):
 
 ## Contributing
 
-We welcome community contributions! If you have suggestions, bug reports, or want to contribute code, please refer to the main [Half Decent Web Apps repository's contribution guidelines](LINK_TO_MAIN_REPO_CONTRIBUTING.MD_HERE).
+We welcome community contributions! If you have suggestions, bug reports, or want to contribute code, please refer to the main [Programmers guide to the Half Decent Scale](https://decentespresso.com/docs/programmers_guide_to_the_half_decent_scale).
+
 
 ---
 
