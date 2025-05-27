@@ -1,0 +1,138 @@
+<title>Decent Scale Weigh and Save</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="./css/webweigh_output.css" rel="stylesheet">
+
+<body class="min-h-screen bg-white font-sans">
+    <!-- Change the container class and add responsive padding -->
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <!-- Modify the max width and add responsive width constraints -->
+        <div class="bg-gray-100 rounded-lg p-4 sm:p-6 w-full max-w-5xl mx-auto">
+            <!-- Header -->
+            <div class="bg-gray-50 p-4 sm:p-6 rounded-lg shadow-sm mb-6">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <a href="https://decentespresso.com/support/decentscale" class="text-xl font-bold text-gray-800">Weigh and Save</a>
+                    <div class="flex items-center gap-2">
+                        <select 
+                            id="connectionType" 
+                            class="border border-gray-300 rounded px-2 py-1"
+                        >
+                            <option value="bluetooth">Bluetooth</option>
+                            <option value="usb">USB</option>
+                        </select>
+                        <span id="status" class="mr-2">Status: Not connected</span>
+                        <div class="relative">
+                            <button 
+                                id="connect" 
+                                class="bg-purple-100 font-medium text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg"
+                            >
+                                Connect to Scale
+                            </button>
+                            <button 
+                                id="fullscreen-button" 
+                                title="Toggle fullscreen"
+                                class="absolute -top-3 -right-3 w-6 h-6 flex items-center justify-center"
+                            >
+                                <!-- Enter fullscreen icon -->
+                                <svg 
+                                xmlns="http://www.w3.org/2000/svg" 
+                                width="14" 
+                                height="14" 
+                                viewBox="0 0 92 92"
+                                class="enter-fullscreen"
+                                >
+                                    <path d="M90,6l0,21c0,2.2-1.8,4-4,4l0,0c-2.2,0-4-1.8-4-4V15.7L56.7,40.9c-0.8,0.8-1.8,1.2-2.8,1.2
+                                    c-1,0-2-0.4-2.8-1.2c-1.6-1.6-1.6-4.1,0-5.7L76.3,10H65c-2.2,0-4-1.8-4-4c0-2.2,1.8-4,4-4h21c1.1,0,2.1,0.4,2.8,1.2
+                                    C89.6,3.9,90,4.9,90,6z M34.9,51.5L10,76.3V65c0-2.2-1.8-4-4-4l0,0c-2.2,0-4,1.8-4,4l0,21c0,1.1,0.4,2.1,1.2,2.8
+                                    C3.9,89.6,4.9,90,6,90l21,0c2.2,0,4-1.8,4-4c0-2.2-1.8-4-4-4H15.7l24.9-24.9c1.6-1.6,1.6-4.1,0-5.7C39,49.9,36.4,49.9,34.9,51.5z"/>
+                                </svg>
+                                <!-- Exit fullscreen icon - keep hidden by default -->
+                                <svg 
+                                xmlns="http://www.w3.org/2000/svg" 
+                                width="16" 
+                                height="16" 
+                                viewBox="0 0 24 24"
+                                class="exit-fullscreen hidden"
+                                fill="none"
+                            >
+                                <path d="M4 14H10M10 14V20M10 14L3 21M20 10H14M14 10V4M14 10L21 3" 
+                                      stroke="#000000" 
+                                      stroke-width="2" 
+                                      stroke-linecap="round" 
+                                      stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Timer Settings -->
+            <div class="bg-gray-50 p-4 sm:p-6 rounded-lg shadow-sm mb-6">
+                <div class="flex flex-wrap items-center gap-2">
+                    
+                    <div class="flex items-center">
+                        <span class="mx-2">Interval (s):</span>
+                        <input 
+                            type="number" 
+                            id="interval" 
+                            value="1" 
+                            min="1"
+                            class="w-16 border border-gray-300 rounded px-2 py-1"
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <!-- Weight Display and Controls -->
+            <div class="bg-gray-50 p-4 sm:p-6 rounded-lg shadow-sm mb-6">
+                <div class="flex flex-wrap justify-between mb-6 gap-4">
+                    
+                    <div class="flex items-center space-x-2">
+                        <button 
+                            id="tareButton" 
+                            class="bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg"
+                        >
+                            Zero
+                        </button>
+                        <button 
+                            id="toggleTimer" 
+                            class="bg-purple-400 hover:bg-purple-500 text-white px-4 py-2 rounded-md"
+                        >
+                            Start
+                        </button>
+                       
+                       
+                    </div>
+                </div>
+
+                <div class="text-center flex items-center justify-center gap-5">
+                    <p id="timer" class="text-xl font-bold mb-0">Timer: 0s</p>
+                    <p id="weight" class="text-xl font-bold mb-0">Weight: 0.0g</p>
+                    <p id="rate" class="text-xl font-bold mb-0">Rate Change: 0.0 g/s</p>
+                </div>
+                <!-- Alert -->
+                <div 
+                    id="measurementAlert" 
+                    class="hidden mt-4 p-4 rounded-lg shadow-md text-center text-lg font-bold bg-green-100 text-green-800"
+                >
+                    Measurement Complete!
+                </div>
+            </div>
+
+            <!-- History Section -->
+            <div class="bg-gray-50 p-4 sm:p-6 rounded-lg shadow-sm">
+                <div class="flex items-center mb-4">
+                    <span class="mr-4 text-lg font-medium">History</span>
+                    <button id="exportCSV" class="border border-gray-300 bg-gray-50 hover:bg-gray-100 px-4 py-2 rounded-md mr-2" disabled>CSV</button>
+                    <button id="exportJSON" class="border border-gray-300 bg-gray-50 hover:bg-gray-100 px-4 py-2 rounded-md" disabled>JSON</button>
+                </div>
+                
+                <div>
+                    <ul id="weightReadings" class="max-h-72 overflow-y-auto text-gray-700"></ul>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script type="module" src="/support/scale/js/web_weigh_timer/main.js"></script>
+</body>
