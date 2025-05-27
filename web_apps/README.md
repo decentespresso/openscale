@@ -77,8 +77,7 @@ http-server -p 8000
 Then, navigate to the respective app URLs as above.
 
 **Contributing**
-We welcome contributions from the community! If you have suggestions for improvements, bug reports, or would like to contribute code, please feel free to:
-
+We welcome community contributions! If you have suggestions, bug reports, or want to contribute code, please refer to the main [Programmers guide to the Half Decent Scale](https://decentespresso.com/docs/programmers_guide_to_the_half_decent_scale).
 Open an issue to report bugs or suggest new features.
 Fork the repository and submit a pull request with your changes.
 License
