@@ -111,8 +111,7 @@ The core logic is likely split across files to handle different connection metho
 
 ## Contributing
 
-We welcome community contributions! If you have suggestions, bug reports, or want to contribute code, please refer to our [Programmers guide to the Half Decent Scale](Programmers guide to the Half Decent Scale)
-
+We welcome community contributions! If you have suggestions, bug reports, or want to contribute code, please refer to the main [Programmers guide to the Half Decent Scale](https://decentespresso.com/docs/programmers_guide_to_the_half_decent_scale).
 ---
 
 ## License
