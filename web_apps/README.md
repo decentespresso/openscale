@@ -21,8 +21,10 @@ Developers interested in Web BLE: To serve as a practical example of Web BLE imp
 Features
 This repository contains three distinct web applications, each serving a unique purpose:
 
-**decentscale_webweigh**: A Chrome web application for general weighing, allowing users to precisely measure items within a designated timeframe and export the results for further analysis.
-**decentscale_qcweigh**: Designed for quality control, this web application enables users to repeatedly weigh the same items, facilitating consistency checks and data tracking.
+**Weigh_Save**: A Chrome web application for general weighing, allowing users to precisely measure items within a designated timeframe and export the results for further analysis.  
+
+**Quality_Control_Assistant**: Designed for quality control, this web application enables users to repeatedly weigh the same items, facilitating consistency checks and data tracking.  
+
 **Dosing Assistant**: This web application aims to simplify the dosing process, providing an intuitive interface for achieving accurate and repeatable doses.
 Technologies Used
 These applications are built with a focus on simplicity and direct browser compatibility:
