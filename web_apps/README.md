@@ -68,7 +68,7 @@ Using Python's http.server (Python 3):
 Bash
 
 python -m http.server 8000
-Then, open your Chrome browser and navigate to http://localhost:8000/decentscale_webweigh/, http://localhost:8000/decentscale_qcweigh/, or http://localhost:8000/samew_dosing_ast/.
+Then, open your Chrome browser and navigate to http://localhost:8000/weigh_save/, http://localhost:8000/dosing_assistant/, or http://localhost:8000/quality_control/.
 
 Using Node.js http-server (if you have Node.js installed):
 
