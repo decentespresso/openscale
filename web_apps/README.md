@@ -96,8 +96,9 @@ To get a local copy up and running, follow these simple steps:
 `bash cd dosing_assistant`
 
 <br>
-**Serve the files with a local HTTP server:** :
-Since these are web applications using Web BLE, they need to be served over https:// (or [http://localhost](http://localhost/)).
+**Serve the files with a local HTTP server:
+**
+Since these are web applications using Web BLE, they need to be served over https:// or [http://localhost](http://localhost/)
 
 You can use a simple Python HTTP server or any other local server you prefer.
 Using Python's http.server (Python 3):
