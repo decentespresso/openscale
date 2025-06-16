@@ -13,8 +13,10 @@ unsigned long weightBleNotifyInterval = 100;          // Interval at which to se
 unsigned long weightUsbNotifyInterval = 100;          // Interval at which to send weight notifications (milliseconds)
 unsigned long weightTextNotifyInterval = 1000;
 int i_onWrite_counter = 0;
-long t_heartBeat = 0;
+unsigned long t_heartBeat = 0;
 bool b_requireHeartBeat = true;
+bool b_screenFlipped = false;
+bool b_timeOnTop = false;
 
 //
 int windowLength = 5;  // default window length
@@ -32,10 +34,12 @@ int b_beep = 1;  //although it should be bool, change it from int to bool will a
 bool b_about = false;
 bool b_debug = false;
 
-long t_batteryIcon = 0;
+unsigned long t_batteryIcon = 0;
 bool b_showBatteryIcon = true;
 bool b_softSleep = false;
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
 bool b_gyroEnabled = true;
+#endif
 
 //varables 变量
 uint64_t GPIO_reason = 0;
@@ -52,25 +56,27 @@ float f_batteryCalibrationFactor = 0.66;
 String str_welcome = "welcome";
 float f_calibration_value;  //称重单元校准值
 float f_up_battery;         //开机时电池电压
-long t_up_battery;          //开机到现在时间
+unsigned long t_up_battery;          //开机到现在时间
 
 bool b_chargingOLED = true;
-long t_shutdownFailBle = 0;  //for popping up shut down fail due to ble is connected.
+unsigned long t_shutdownFailBle = 0;  //for popping up shut down fail due to ble is connected.
 bool b_shutdownFailBle = false;
 bool b_u8g2Sleep = true;
-long t_bootTare = 0;
+unsigned long t_bootTare = 0;
 bool b_bootTare = false;
 int i_bootTareDelay = 1000;
 int i_tareDelay = 200;    //tare delay for button
-long t_tareByButton = 0;  //tare time stamp used by button to mimic delay
+unsigned long t_tareByButton = 0;  //tare time stamp used by button to mimic delay
 bool b_tareByButton = false;
-long t_tareByBle = 0;
+unsigned long t_tareByBle = 0;
 bool b_tareByBle = false;
-long t_tareStatus = 0;      //tare done time stamp
-long t_power_off;           //关机倒计时
-long t_power_off_gyro = 0;  //侧放关机倒计时
-long t_button_pressed;      //进入萃取模式的时间点
-long t_temp;                //上次更新温度和度数时间
+unsigned long t_tareStatus = 0;      //tare done time stamp
+unsigned long t_power_off;           //关机倒计时
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
+unsigned long t_power_off_gyro = 0;  //侧放关机倒计时
+#endif
+unsigned long t_button_pressed;      //进入萃取模式的时间点
+unsigned long t_temp;                //上次更新温度和度数时间
 float f_temp_tare = 0;
 // int i_sample = 0;       //采样数0-7
 // int i_sample_step = 0;  //设置采样数的第几步
@@ -127,10 +133,10 @@ struct CoffeeData {
   float f_flow_rate;
   float f_displayedValue;
   float f_weight_dose;
-  long t_extraction_begin;
-  long t_extraction_first_drop_num;
-  long t_extraction_last_drop;
-  long t_elapsed;
+  unsigned long t_extraction_begin;
+  unsigned long t_extraction_first_drop_num;
+  unsigned long t_extraction_last_drop;
+  unsigned long t_elapsed;
   long dataFlag;    // Flag to identify the type of data
   int b_power_off;  //if 1 then power off.
 };
@@ -205,6 +211,9 @@ int i_addr_beep = INPUTCOFFEEESPRESSO_ADDRESS + sizeof(INPUTCOFFEEESPRESSO);
 int i_addr_welcome = i_addr_beep + sizeof(b_beep);                                            //str_welcome
 int i_addr_batteryCalibrationFactor = i_addr_welcome + sizeof(str_welcome);                   //f_batteryCalibrationFactor
 int i_addr_heartbeat = i_addr_batteryCalibrationFactor + sizeof(f_batteryCalibrationFactor);  //b_requireHeartBeat
+int i_addr_screenFlipped = i_addr_heartbeat + sizeof(b_requireHeartBeat);  //b_screenFlipped
+int i_addr_timeOnTop= i_addr_screenFlipped + sizeof(b_screenFlipped);  //b_swapWeightTime
+
 
 //int i_addr_debug = i_addr_batteryCalibrationFactor + sizeof(f_batteryCalibrationFactor);  //str_welcome
 

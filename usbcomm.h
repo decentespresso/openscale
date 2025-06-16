@@ -3,7 +3,9 @@
 
 //functions
 void sendUsbVoltage();
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendUsbGyro();
+#endif
 
 class MyUsbCallbacks {
 public:
@@ -115,11 +117,15 @@ public:
               u8g2.setPowerSave(1);
               b_softSleep = true;
               digitalWrite(PWR_CTRL, LOW);
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
               digitalWrite(ACC_PWR_CTRL, LOW);
+#endif
             } else if (data[3] == 0x00) {
               Serial.println("Exit Soft Sleep.");
               digitalWrite(PWR_CTRL, HIGH);
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
               digitalWrite(ACC_PWR_CTRL, HIGH);
+#endif
               u8g2.setPowerSave(0);
               b_softSleep = false;
             }
@@ -151,7 +157,9 @@ public:
         } else if (data[1] == 0x1B) {
           Serial.println("Start WiFi OTA");
           wifiUpdate();
-        } else if (data[1] == 0x1C) {  //buzzer settings
+        }
+#ifdef BUZZER
+        else if (data[1] == 0x1C) {  //buzzer settings
           if (data[2] == 0x00) {
             Serial.println("Buzzer Off");
             b_beep = false;  // won't store into eeprom
@@ -162,7 +170,9 @@ public:
             Serial.println("Buzzer Beep");
             buzzer.beep(1, 50);
           }
-        } else if (data[1] == 0x1D) {  //Sample settings
+        }
+#endif
+        else if (data[1] == 0x1D) {  //Sample settings
           if (data[2] == 0x00) {
             scale.setSamplesInUse(1);
             Serial.print("Samples in use set to: ");
@@ -242,9 +252,13 @@ public:
             }
           }
 
-        } else if (data[1] == 0x21) {
+        }
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
+        else if (data[1] == 0x21) {
           sendUsbGyro();
-        } else if (data[1] == 0x22) {
+        }
+#endif
+        else if (data[1] == 0x22) {
           sendUsbVoltage();
         }
       }
@@ -274,7 +288,7 @@ void sendUsbVoltage() {
   encodeWeight(voltage, voltageByte1, voltageByte2);
 
   data[0] = modelByte;
-  data[1] = 0x22;  // Type byte for gyro data
+  data[1] = 0x22;  // Type byte for voltage data
   data[2] = voltageByte1;
   data[3] = voltageByte2;
   // Fill the rest with dummy data or real data as needed
@@ -286,6 +300,7 @@ void sendUsbVoltage() {
   Serial.write(data, 7);  // 7 bytes of data
 }
 
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendUsbGyro() {
   byte data[7];
   // float weight = scale.getData();
@@ -306,6 +321,7 @@ void sendUsbGyro() {
   // Use Serial.write to send data via USB (serial)
   Serial.write(data, 7);  // 7 bytes of data
 }
+#endif
 
 void sendUsbWeight() {
   unsigned long currentMillis = millis();

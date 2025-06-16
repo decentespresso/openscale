@@ -14,7 +14,9 @@ const unsigned long HEARTBEAT_TIMEOUT = 5000;  // 5 seconds
 
 //functions
 void sendBleVoltage();
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendBleGyro();
+#endif
 uint16_t connId = 0;
 
 
@@ -42,7 +44,9 @@ class MyServerCallbacks : public BLEServerCallbacks {
     t_heartBeat = millis();
     bleState = CONNECTED;
     deviceConnected = true;
+#ifdef BUZZER
     b_beep = false;  //disable buzzer once when connected, and wait for ble command to enable it
+#endif
     Serial.println("Device connected");
   }
 
@@ -52,8 +56,10 @@ class MyServerCallbacks : public BLEServerCallbacks {
     deviceConnected = false;
     bleState = DISCONNECTED;
 
-    //Serial.println("ble 01");
+//Serial.println("ble 01");
+#ifdef BUZZER
     EEPROM.get(i_addr_beep, b_beep);  //read buzzer state after disconnect
+#endif
     //Serial.println("ble 02");
 
     Serial.println("Device disconnected, restarting advertising...");
@@ -235,11 +241,15 @@ class MyCallbacks : public BLECharacteristicCallbacks {
               u8g2.setPowerSave(1);
               b_softSleep = true;
               digitalWrite(PWR_CTRL, LOW);
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
               digitalWrite(ACC_PWR_CTRL, LOW);
+#endif
             } else if (data[3] == 0x00) {
               Serial.println("Exit Soft Sleep.");
               digitalWrite(PWR_CTRL, HIGH);
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
               digitalWrite(ACC_PWR_CTRL, HIGH);
+#endif
               u8g2.setPowerSave(0);
               b_softSleep = false;
             }
@@ -271,7 +281,9 @@ class MyCallbacks : public BLECharacteristicCallbacks {
         } else if (data[1] == 0x1B) {
           Serial.println("Start WiFi OTA");
           wifiUpdate();
-        } else if (data[1] == 0x1C) {  //buzzer settings
+        }
+#ifdef BUZZER
+        else if (data[1] == 0x1C) {  //buzzer settings
           if (data[2] == 0x00) {
             Serial.println("Buzzer Off");
             b_beep = false;  // won't store into eeprom
@@ -282,7 +294,9 @@ class MyCallbacks : public BLECharacteristicCallbacks {
             Serial.println("Buzzer Beep");
             buzzer.beep(1, BUZZER_DURATION);
           }
-        } else if (data[1] == 0x1D) {  //Sample settings
+        }
+#endif
+        else if (data[1] == 0x1D) {  //Sample settings
           if (data[2] == 0x00) {
             scale.setSamplesInUse(1);
             Serial.print("Samples in use set to: ");
@@ -361,9 +375,13 @@ class MyCallbacks : public BLECharacteristicCallbacks {
               Serial.println(" ms");
             }
           }
-        } else if (data[1] == 0x21) {
+        }
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
+        else if (data[1] == 0x21) {
           sendBleGyro();
-        } else if (data[1] == 0x22) {
+        }
+#endif
+        else if (data[1] == 0x22) {
           sendBleVoltage();
         }
       }
@@ -428,7 +446,7 @@ void sendBleVoltage() {
     encodeWeight(voltage, voltageByte1, voltageByte2);
 
     data[0] = modelByte;
-    data[1] = 0x22;  // Type byte for gyro data
+    data[1] = 0x22;  // Type byte for voltage data
     data[2] = voltageByte1;
     data[3] = voltageByte2;
     // Fill the rest with dummy data or real data as needed
@@ -458,6 +476,7 @@ void sendHeartBeat() {
   }
 }
 
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendBleGyro() {
   if (deviceConnected) {
     byte data[7];
@@ -480,6 +499,7 @@ void sendBleGyro() {
     pReadCharacteristic->notify();
   }
 }
+#endif
 
 void sendBleWeight() {
   if (deviceConnected) {
@@ -550,9 +570,11 @@ void sendBlePowerOff(int i_reason) {
       case 3:
         data[3] = 0x20;  //power off low battery.
         break;
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
       case 4:
         data[2] = 0x30;  //power off from gyro.
         break;
+#endif
       default:
         data[2] = 0x00;  //Don't power off because i_reason is not valid.
         break;

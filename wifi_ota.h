@@ -29,7 +29,7 @@ const char *ssid = "DecentScale";
 const char *password = "12345678";
 AsyncWebServer server(80);
 unsigned long ota_progress_millis = 0;
-long t_otaEnd = 0;
+unsigned long t_otaEnd = 0;
 
 void onOTAStart() {
   // Log when OTA has started
@@ -46,6 +46,10 @@ void onOTAProgress(size_t current, size_t final) {
     snprintf(buffer, sizeof(buffer), "Uploading: %u%%", (current * 100) / final);
     u8g2.firstPage();
     u8g2.setFont(FONT_S);
+    if (b_screenFlipped)
+      u8g2.setDisplayRotation(U8G2_R0);
+    else
+      u8g2.setDisplayRotation(U8G2_R2);
     do {
       u8g2.drawUTF8(AC((char *)trim(buffer)), AM(), (char *)trim(buffer));
     } while (u8g2.nextPage());
@@ -58,6 +62,10 @@ void onOTAEnd(bool success) {
   if (success) {
     Serial.println("OTA update finished successfully!");
     u8g2.setFont(FONT_S);
+    if (b_screenFlipped)
+      u8g2.setDisplayRotation(U8G2_R0);
+    else
+      u8g2.setDisplayRotation(U8G2_R2);
     while (millis() - t_otaEnd < 1000) {
       u8g2.firstPage();
       do {
@@ -67,6 +75,10 @@ void onOTAEnd(bool success) {
   } else {
     Serial.println("There was an error during OTA update!");
     u8g2.setFont(FONT_S);
+    if (b_screenFlipped)
+      u8g2.setDisplayRotation(U8G2_R0);
+    else
+      u8g2.setDisplayRotation(U8G2_R2);
     while (millis() - t_otaEnd < 1000) {
       u8g2.firstPage();
       do {
@@ -79,6 +91,10 @@ void onOTAEnd(bool success) {
 void wifiOta() {
   u8g2.firstPage();
   u8g2.setFont(FONT_S);
+  if (b_screenFlipped)
+    u8g2.setDisplayRotation(U8G2_R0);
+  else
+    u8g2.setDisplayRotation(U8G2_R2);
   do {
     u8g2.drawUTF8(AC((char *)"Starting OTA"), AM(), (char *)"Starting OTA");
   } while (u8g2.nextPage());
@@ -110,6 +126,10 @@ void wifiOta() {
   b_ota = true;
   u8g2.firstPage();
   u8g2.setFont(FONT_S);
+  if (b_screenFlipped)
+    u8g2.setDisplayRotation(U8G2_R0);
+  else
+    u8g2.setDisplayRotation(U8G2_R2);
   do {
     char ver[50];
     sprintf(ver, "%s %s", PCB_VER, FIRMWARE_VER);

@@ -4,7 +4,9 @@
 #include "declare.h"
 #include "parameter.h"
 #include "display.h"
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
 #include "gyro.h"
+#endif
 #include "espnow.h"
 
 #ifdef ADS1115ADC
@@ -169,13 +171,14 @@ void esp32_sleep() {
 
 void shut_down_now() {
   Serial.println("power off");
+#ifdef BUZZER
   buzzer.beep(1, BUZZER_DURATION);
-  u8g2.setFontDirection(0);
-#ifdef ROTATION_180
-  u8g2.setDisplayRotation(U8G2_R2);
-#else
-  u8g2.setDisplayRotation(U8G2_R0);
 #endif
+  u8g2.setFontDirection(0);
+  if (b_screenFlipped)
+    u8g2.setDisplayRotation(U8G2_R0);
+  else
+    u8g2.setDisplayRotation(U8G2_R2);
   refreshOLED((char*)"Off", FONT_M);
 #ifdef ESPNOW
   if (b_espnow) {
@@ -183,7 +186,9 @@ void shut_down_now() {
     updateEspnow(1);
   }
 #endif
+#ifdef BUZZER
   buzzer.off();
+#endif
   delay(1000);
   esp32_sleep();
 }
@@ -200,7 +205,9 @@ void shut_down_low_battery(float voltage) {
   }
   sendBlePowerOff(3);
 #endif
+#ifdef BUZZER
   buzzer.off();
+#endif
   delay(1000);
   esp32_sleep();
 }
@@ -208,11 +215,10 @@ void shut_down_low_battery(float voltage) {
 void shut_down_now_nobeep() {
   Serial.println("power off no beep");
   u8g2.setFontDirection(0);
-#ifdef ROTATION_180
-  u8g2.setDisplayRotation(U8G2_R2);
-#else
-  u8g2.setDisplayRotation(U8G2_R0);
-#endif
+  if (b_screenFlipped)
+    u8g2.setDisplayRotation(U8G2_R0);
+  else
+    u8g2.setDisplayRotation(U8G2_R2);
   refreshOLED((char*)"Off", FONT_M);
 #ifdef ESPNOW
   if (b_espnow) {
@@ -220,7 +226,9 @@ void shut_down_now_nobeep() {
     updateEspnow(1);
   }
 #endif
+#ifdef BUZZER
   buzzer.off();
+#endif
   delay(1000);
   esp32_sleep();
 }
@@ -293,6 +301,7 @@ void power_off(int min) {
   }
 }
 
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void power_off_gyro(int sec) {
   if (!b_is_charging) {
     if (sec == -1) {
@@ -310,6 +319,7 @@ void power_off_gyro(int sec) {
     }
   }
 }
+#endif
 
 void power_off(double sec) {
   if (!b_is_charging) {

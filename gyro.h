@@ -9,17 +9,19 @@
 Adafruit_MPU6050 mpu;
 Adafruit_Sensor *mpu_temp;
 int i_gyro_print_interval = 100;
-long t_gyro_refresh = 0;
+unsigned long t_gyro_refresh = 0;
 
 void ACC_init() {
   if (!mpu.begin()) {
     Serial.println("Failed to find MPU6050 chip");
+#ifdef BUZZER
     for (int i = 0; i < 4; i++) {
       digitalWrite(BUZZER, HIGH);
       delay(100);
       digitalWrite(BUZZER, LOW);
       delay(100);
     }
+#endif
     // while (1) {
     //   delay(1000);
     //   Serial.println("Failed to find MPU6050 chip");
@@ -127,7 +129,7 @@ double gyro_z() {
 
 BMA400 acc;
 int i_gyro_print_interval = 100;
-long t_gyro_refresh = 0;
+unsigned long t_gyro_refresh = 0;
 // I2C address selection
 uint8_t i2cAddress = BMA400_I2C_ADDRESS_DEFAULT;  // 0x14
 //uint8_t i2cAddress = BMA400_I2C_ADDRESS_SECONDARY; // 0x15
@@ -136,13 +138,14 @@ void ACC_init() {
   while (acc.beginI2C(i2cAddress) != BMA400_OK) {
     // Not connected, inform user
     Serial.println("Failed to find BMA400 chip");
-
+#ifdef BUZZER
     for (int i = 0; i < 4; i++) {
       digitalWrite(BUZZER, HIGH);
       delay(100);
       digitalWrite(BUZZER, LOW);
       delay(100);
     }
+#endif
     // Wait a bit to see if connection is established
     delay(1000);
     // while (1) {

@@ -38,7 +38,7 @@ ButtonConfig config1;
 AceButton buttonCircle(&config1);
 AceButton buttonSquare(&config1);
 
-
+#ifdef BUZZER
 namespace hds_buzzer {
 class Buzzer {
 public:
@@ -74,12 +74,12 @@ private:
   int _buzzerLedPin;
   int _buzzerTimes;
   int _buzzerDuration;
-  long _buzzerTimeStamp;
+  unsigned long _buzzerTimeStamp;
 };
 }
 
 using namespace hds_buzzer;
 Buzzer buzzer(BUZZER);
-
+#endif
 
 #endif

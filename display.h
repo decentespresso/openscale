@@ -88,8 +88,8 @@ static const unsigned char image_battery_2[] = { 0x08, 0x36, 0x41, 0x41, 0x41, 0
 static const unsigned char image_battery_3[] = { 0x08, 0x36, 0x41, 0x41, 0x41, 0x5d, 0x41, 0x5d, 0x41, 0x5d, 0x41, 0x3e };
 static const unsigned char image_battery_4[] = { 0x08, 0x36, 0x41, 0x5d, 0x41, 0x5d, 0x41, 0x5d, 0x41, 0x5d, 0x41, 0x3e };
 static const unsigned char image_battery_charging[] = { 0x08, 0x36, 0x41, 0x51, 0x59, 0x7d, 0x7f, 0x5f, 0x4d, 0x45, 0x41, 0x3e };
-char* sec2minsec(long n);
-char* sec2sec(long n);
+char* sec2minsec(unsigned long n);
+char* sec2sec(unsigned long n);
 char* ltrim(char* s);
 char* rtrim(char* s);
 char* trim(char* s);
@@ -184,7 +184,7 @@ void refreshOLED(char* input1, char* input2, char* input3, const uint8_t* font) 
 #define numberOfHours(_time_) ((_time_ % SECS_PER_DAY) / SECS_PER_HOUR)
 #define elapsedDays(_time_) (_time_ / SECS_PER_DAY)
 
-char* sec2minsec(long n) {
+char* sec2minsec(unsigned long n) {
   //手冲称使用xx:yy显示时间
   int minute = 0;
   int second = 0;
@@ -202,9 +202,9 @@ char* sec2minsec(long n) {
   return (char*)minsec;
 }
 
-char* sec2sec(long n) {
+char* sec2sec(unsigned long n) {
   //意式称使用xx秒显示时间
-  long second = 0;
+  unsigned long second = 0;
   // if (n < 99) {
   //   second = n;
   // } else
