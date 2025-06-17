@@ -45,6 +45,8 @@ void flipScreenOn();
 void flipScreenOff();
 void timeOnTopOn();
 void timeOnTopOff();
+void btnFuncWhileConnectedOn();
+void btnFuncWhileConnectedOff();
 
 // Top-level menu options
 // 1/5 define the 1st level menu
@@ -60,7 +62,7 @@ Menu menuFactory = { "Factory", NULL, NULL, NULL };
 Menu menuHeartbeat = { "Heartbeat", NULL, NULL, NULL };
 Menu menuFlipScreen = { "Flip Screen", NULL, NULL, NULL };
 Menu menuTimeOnTop = { "Time On Top", NULL, NULL, NULL };
-
+Menu menuBtnFuncWhileConnected = { "Button with BLE", NULL, NULL, NULL };
 
 // 2/5 define the 2st level menu
 #ifdef BUZZER
@@ -98,6 +100,12 @@ Menu menuTimeOnTopOn = { "Time On Top", timeOnTopOn, NULL, &menuTimeOnTop };
 Menu menuTimeOnTopOff = { "Weight On Top", timeOnTopOff, NULL, &menuTimeOnTop };
 Menu *timeOnTopMenu[] = { &menuTimeOnTopBack, &menuTimeOnTopOn, &menuTimeOnTopOff };
 
+//Enable button fucntion while BLE connected
+Menu menuBtnFuncWhileConnectedBack = { "Back", NULL, NULL, &menuBtnFuncWhileConnected };
+Menu menuBtnFuncWhileConnectedOn = { "Enable Button", btnFuncWhileConnectedOn, NULL, &menuBtnFuncWhileConnected };
+Menu menuBtnFuncWhileConnectedOff = { "Disable Button", btnFuncWhileConnectedOff, NULL, &menuBtnFuncWhileConnected };
+Menu *btnFuncWhileConnectedMenu[] = { &menuBtnFuncWhileConnectedBack, &menuBtnFuncWhileConnectedOn, &menuBtnFuncWhileConnectedOff };
+
 // Menu menuFactoryBack = { "Back", NULL, NULL, &menuFactory };
 // Menu menuCalibrateVoltage = { "Calibrate 4.2v", calibrateVoltage, NULL, &menuFactory };
 // Menu menuFactoryDebug = { "Debug Info", enableDebug, NULL, &menuFactory };
@@ -112,7 +120,7 @@ Menu *mainMenu[] = {
 #endif
   &menuCalibration, &menuWiFiUpdate,
   &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen,
-  &menuTimeOnTop
+  &menuTimeOnTop, &menuBtnFuncWhileConnected
   //, &menuFactory
 };
 //  &menuHolder1, &menuHolder2, &menuHolder3, &menuHolder4,
@@ -136,6 +144,7 @@ void linkSubmenus() {
   menuHeartbeat.subMenu = heartbeatMenu[0];
   menuFlipScreen.subMenu = flipScreenMenu[0];
   menuTimeOnTop.subMenu = timeOnTopMenu[0];
+  menuBtnFuncWhileConnected.subMenu = btnFuncWhileConnectedMenu[0];
   //menuFactory.subMenu = factoryMenu[0];
 }
 
@@ -240,6 +249,27 @@ void timeOnTopOff() {
   EEPROM.commit();
   Serial.println("Weight On Top");
 }
+
+void btnFuncWhileConnectedOn() {
+  b_btnFuncWhileConnected = true;
+  actionMessage = "BLE Btn On";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  EEPROM.put(i_addr_btnFuncWhileConnected, b_btnFuncWhileConnected);
+  EEPROM.commit();
+  Serial.println("BLE Btn On");
+}
+
+void btnFuncWhileConnectedOff() {
+  b_btnFuncWhileConnected = false;
+  actionMessage = "BLE Btn Off";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  EEPROM.put(i_addr_btnFuncWhileConnected, b_btnFuncWhileConnected);
+  EEPROM.commit();
+  Serial.println("BLE Btn Off");
+}
+
 
 void calibrate() {
   b_menu = false;
@@ -888,6 +918,9 @@ void selectMenu() {
     } else if (currentSelection == &menuTimeOnTop) {
       currentMenu = timeOnTopMenu;
       currentMenuSize = getMenuSize(timeOnTopMenu);
+    } else if (currentSelection == &menuBtnFuncWhileConnected) {
+      currentMenu = btnFuncWhileConnectedMenu;
+      currentMenuSize = getMenuSize(btnFuncWhileConnectedMenu);
     }
     // else if (currentSelection == &menuFactory) {
     //   currentMenu = factoryMenu;

@@ -1,12 +1,15 @@
 #include <Arduino.h>
 #include <EEPROM.h>
+#include "config.h"
+
 #include "parameter.h"
 #include "power.h"
 #include "gyro.h"
 #include "display.h"
 #include "declare.h"
 #include "wifi_ota.h"
-#include "config.h"
+
+
 #include "menu.h"
 #include "ble.h"
 #include "usbcomm.h"
@@ -23,7 +26,9 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
   if (b_softSleep) {
     Serial.println("Exit Soft Sleep.");
     digitalWrite(PWR_CTRL, HIGH);
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
     digitalWrite(ACC_PWR_CTRL, HIGH);
+#endif
     u8g2.setPowerSave(0);
     b_softSleep = false;
   }
@@ -31,9 +36,11 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
   int pin = button->getPin();
   switch (eventType) {
     case AceButton::kEventPressed:
-      //these will be triggered once the button is touched.
+//these will be triggered once the button is touched.
+#ifdef BUZZER
       if (GPIO_power_on_with != BATTERY_CHARGING)
         buzzer.beep(1, BUZZER_DURATION);
+#endif
       switch (pin) {
         case BUTTON_CIRCLE:
           buttonCircle_Pressed();
@@ -107,7 +114,7 @@ void scaleTimer() {
 
 void buttonCircle_Released() {
   //trigger tare after released to avoid to judge where the tare should be placed.
-  if (!deviceConnected) {
+  if (!deviceConnected || b_btnFuncWhileConnected) {
     b_weight_quick_zero = true;
     t_tareByButton = millis();
     b_tareByButton = true;
@@ -146,7 +153,7 @@ void buttonSquare_Pressed() {
   }
   if (deviceConnected && millis() - t_shutdownFailBle < 3000)
     shut_down_now_nobeep();
-  if (!b_menu && !b_calibration && !deviceConnected) {
+  if (!b_menu && !b_calibration && (!deviceConnected || b_btnFuncWhileConnected)) {
     scaleTimer();
   }
 
@@ -218,7 +225,9 @@ void buttonSquare_DoubleClicked() {
 void buttonCircle_LongPressed() {
   if (!b_menu) {
     Serial.println("O button long pressed");
+#ifdef BUZZER
     buzzer.beep(1, 200);
+#endif
     if (GPIO_power_on_with == BATTERY_CHARGING) {
       //change GPIO_power_on_with from BATTERY_CHARGING to enter scale loop
       GPIO_power_on_with = BUTTON_CIRCLE;
@@ -236,7 +245,9 @@ void buttonCircle_LongPressed() {
 void buttonSquare_LongPressed() {
   if (!b_menu) {
     Serial.println("[] button long pressed");
+#ifdef BUZZER
     buzzer.beep(1, 200);
+#endif
     if (GPIO_power_on_with == BATTERY_CHARGING) {
       //change GPIO_power_on_with from BATTERY_CHARGING to enter scale loop
       GPIO_power_on_with = BUTTON_SQUARE;
@@ -321,11 +332,13 @@ void setup() {
   gpio_hold_dis((gpio_num_t)PWR_CTRL);  // Disable GPIO hold mode for the specified pin, allowing it to be controlled
   pinMode(PWR_CTRL, OUTPUT);            // Set the PWR_CTRL pin as an output pin
   digitalWrite(PWR_CTRL, HIGH);         // Set the PWR_CTRL pin to HIGH, turning on the connected device or circuit
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
 #if defined(V7_3) || defined(V7_4) || defined(V7_5) || defined(V8_0)
   gpio_hold_dis((gpio_num_t)ACC_PWR_CTRL);  // Disable GPIO hold mode for the specified pin, allowing it to be controlled
   pinMode(ACC_PWR_CTRL, OUTPUT);            // Set the PWR_CTRL pin as an output pin
   digitalWrite(ACC_PWR_CTRL, HIGH);         // Set the PWR_CTRL pin to HIGH, turning on the connected device or circuit
   Serial.println("ACC_PWR_CTRL = HIGH");
+#endif
 #endif
 #ifdef ESP32
   Wire.begin(I2C_SDA, I2C_SCL);
@@ -341,6 +354,7 @@ void setup() {
 #ifdef ADS1115ADC
   ADS_init();
 #endif
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
   ACC_init();
   Serial.println("ACC_init complete");
   if (b_gyroEnabled) {
@@ -359,14 +373,16 @@ void setup() {
     }
 #endif
   }
+#endif
   analogReadResolution(ADC_BIT);
+#ifdef BUZZER
   pinMode(BUZZER, OUTPUT);
   EEPROM.get(i_addr_beep, b_beep);
 
   if (GPIO_power_on_with != BATTERY_CHARGING) {
-
     buzzer.beep(1, BUZZER_DURATION);
   }
+#endif
   u8g2.begin();
   u8g2.enableUTF8Print();
   u8g2.setContrast(255);
@@ -377,11 +393,21 @@ void setup() {
   str_welcome.trim();
 #endif
 
-#ifdef ROTATION_180
-  u8g2.setDisplayRotation(U8G2_R2);
-#else
-  u8g2.setDisplayRotation(U8G2_R0);
-#endif
+  // #ifdef ROTATION_180
+  //   u8g2.setDisplayRotation(U8G2_R2);
+  // #else
+  //   u8g2.setDisplayRotation(U8G2_R0);
+  // #endif
+  EEPROM.get(i_addr_screenFlipped, b_screenFlipped);
+  if (b_screenFlipped != 0 && b_screenFlipped != 1) {
+    b_screenFlipped = false;
+    EEPROM.put(i_addr_screenFlipped, b_screenFlipped);
+    EEPROM.commit();
+  }
+  if (b_screenFlipped)
+    u8g2.setDisplayRotation(U8G2_R0);
+  else
+    u8g2.setDisplayRotation(U8G2_R2);
 
 
   //welcome
@@ -413,13 +439,13 @@ void setup() {
   stopWatch.start();
   stopWatch.reset();
 
-
-
   EEPROM.get(INPUTCOFFEEPOUROVER_ADDRESS, INPUTCOFFEEPOUROVER);
   EEPROM.get(INPUTCOFFEEESPRESSO_ADDRESS, INPUTCOFFEEESPRESSO);
   EEPROM.get(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);
   EEPROM.get(i_addr_mode, b_mode);
   EEPROM.get(i_addr_heartbeat, b_requireHeartBeat);
+  EEPROM.get(i_addr_timeOnTop, b_timeOnTop);
+  EEPROM.get(i_addr_btnFuncWhileConnected, b_btnFuncWhileConnected);
 
   //EEPROM.get(i_addr_debug, b_debug);
 
@@ -448,14 +474,26 @@ void setup() {
     EEPROM.commit();
   }
 #endif
+#ifdef BUZZER
   if (b_beep != 0 && b_beep != 1) {
     b_beep = 1;
     EEPROM.put(i_addr_beep, b_beep);
     EEPROM.commit();
   }
+#endif
   if (b_requireHeartBeat != 0 && b_requireHeartBeat != 1) {
     b_requireHeartBeat = true;
     EEPROM.put(i_addr_heartbeat, b_requireHeartBeat);
+    EEPROM.commit();
+  }
+  if (b_timeOnTop != 0 && b_timeOnTop != 1) {
+    b_timeOnTop = false;
+    EEPROM.put(i_addr_timeOnTop, b_timeOnTop);
+    EEPROM.commit();
+  }
+  if (b_btnFuncWhileConnected != 0 && b_btnFuncWhileConnected != 1) {
+    b_btnFuncWhileConnected = false;
+    EEPROM.put(i_addr_btnFuncWhileConnected, b_btnFuncWhileConnected);
     EEPROM.commit();
   }
 
@@ -544,17 +582,20 @@ void setup() {
   Serial.print("\t");
   Serial.print(LINE2);
   Serial.print("\t");
-  Serial.print(LINE3);
+  Serial.println(LINE3);
   Serial.print("\tCal_Val: ");
   Serial.print(f_calibration_value);
   Serial.print("\tHB_DET: ");
   Serial.print(b_requireHeartBeat);
-
+  Serial.print("\tTime_on_top: ");
+  Serial.print(b_timeOnTop);
+  Serial.print("\tButton_Func_While_Connected: ");
+  Serial.print(b_btnFuncWhileConnected);
   Serial.println("");
 
 
   Serial.print("Button:\tSQARE\tCIRCLE\tPOWER");
-  Serial.print("Pin:");
+  Serial.println("Pin:");
   Serial.print("\t");
   Serial.print(BUTTON_SQUARE);
   Serial.print("\t");
@@ -562,20 +603,26 @@ void setup() {
   Serial.print("\t");
   Serial.println(GPIO_NUM_BUTTON_POWER);
 #ifdef ADS1232ADC
-  Serial.println("Button:\tI2C_SDA\tI2C_SCK\tADC_DOUT\tADC_SCLK\tADC_PWDN\tBUZZER");
+#ifdef BUZZER
+  Serial.println("Pin:\tI2C_SDA\tI2C_SCK ADC_DOUT\tADC_SCLK\tADC_PWDN\tBUZZER");
+#else
+  Serial.println("Pin:\tI2C_SDA\tI2C_SCK ADC_DOUT\tADC_SCLK\tADC_PWDN");
+#endif
   Serial.print("Pin:");
   Serial.print("\t");
   Serial.print(I2C_SDA);
   Serial.print("\t");
   Serial.print(I2C_SCL);
-  Serial.print("\t");
+  Serial.print("\t ");
   Serial.print(SCALE_DOUT);
   Serial.print("\t");
   Serial.print(SCALE_SCLK);
   Serial.print("\t");
   Serial.print(SCALE_PDWN);
+#ifdef BUZZER
   Serial.print("\t");
   Serial.print(BUZZER);
+#endif
   Serial.println("");
 
 #endif
@@ -676,12 +723,13 @@ void serialCommand() {
       EEPROM.put(i_addr_welcome, inputString.substring(8));
       EEPROM.commit();
     }
-
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
     if (inputString.startsWith("gyro")) {
       //strcpy(str_welcome, inputString.substring(8).c_str());
       Serial.print("\tGyro:");
       Serial.println(gyro_z());
     }
+#endif
 
     if (inputString.startsWith("cp ")) {  //手冲粉量
       INPUTCOFFEEPOUROVER = inputString.substring(3).toFloat();
@@ -781,7 +829,7 @@ void serialCommand() {
       //EEPROM.put(i_addr_debug, b_debug);
       //EEPROM.commit();
     }
-
+#ifdef BUZZER
     if (inputString.startsWith("beep")) {  //蜂鸣器
       b_beep = !b_beep;
       EEPROM.put(i_addr_beep, b_beep);
@@ -793,6 +841,7 @@ void serialCommand() {
       Serial.println("On");
     else
       Serial.println("Off");
+#endif
   }
 }
 
@@ -823,9 +872,12 @@ void loop() {
 
   buttonCircle.check();
   buttonSquare.check();
+#ifdef BUZZER
   buzzer.check();
+#endif
 
   if (!b_softSleep) {
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
     if (b_gyroEnabled) {
 #ifdef GYROFACEUP
       if (gyro_z() > 5)
@@ -837,6 +889,7 @@ void loop() {
 #endif
       power_off_gyro(10);
     }
+#endif
 #if defined(DEBUG) && defined(CHECKBATTERY)
     debugData();
 #endif  //DEBUG
@@ -911,11 +964,10 @@ void chargingOLED(int perc, float voltage) {
     t_oled_refresh = millis();
     u8g2.firstPage();
     do {
-#ifdef ROTATION_180
-      u8g2.setDisplayRotation(U8G2_R2);
-#else
-      u8g2.setDisplayRotation(U8G2_R0);
-#endif
+      if (b_screenFlipped)
+        u8g2.setDisplayRotation(U8G2_R0);
+      else
+        u8g2.setDisplayRotation(U8G2_R2);
 
       // Get the display width and height
       int16_t displayWidth = u8g2.getDisplayWidth();
@@ -972,11 +1024,10 @@ void updateOled() {
 
     u8g2.firstPage();
     do {
-#ifdef ROTATION_180
-      u8g2.setDisplayRotation(U8G2_R2);
-#else
-      u8g2.setDisplayRotation(U8G2_R0);
-#endif
+      if (b_screenFlipped)
+        u8g2.setDisplayRotation(U8G2_R0);
+      else
+        u8g2.setDisplayRotation(U8G2_R2);
       u8g2.setFontMode(1);
       u8g2.setDrawColor(1);
       if (!b_debug) {
@@ -1076,6 +1127,9 @@ void drawWeight(float input) {
     dtostrf(i_weightInt, 7, 0, integerStr);  // Integer part, no decimal
   }
   dtostrf(i_weightFirstDecimal, 7, 0, decimalStr);
+
+  u8g2.setFont(FONT_TIMER);
+  int y_timer = u8g2.getMaxCharHeight();
   u8g2.setFont(FONT_GRAM);
   int gramWidth = u8g2.getUTF8Width("g");  // Width of the "g" character
   u8g2.setFont(FONT_WEIGHT);
@@ -1088,9 +1142,12 @@ void drawWeight(float input) {
   int x_decimalPoint = x_integer + integerWidth - 4;
   int x_decimal = x_decimalPoint + decimalPointWidth - 4;
   int x_gram = x_decimal + decimalWidth - 1;
-  int y = AT() - 15;
-  if (String(sec2sec(stopWatch.elapsed())) == "0s")
-    y = AT();
+  int y = AT() - 15;  // Weight y when timer is shown.
+  if (b_timeOnTop)
+    y = AT() + 9;
+  if (String(sec2sec(stopWatch.elapsed())) == "0s") {
+    y = AT();  //Weight y when timer is hidden.
+  }
   u8g2.drawStr(x_decimalPoint, y, ".");
   u8g2.drawStr(x_integer, y, trim(integerStr));  // Assuming vertical position at 28, adjust as needed
   u8g2.drawStr(x_decimal, y, trim(decimalStr));
@@ -1103,7 +1160,10 @@ void drawWeight(float input) {
 void drawTime() {
   if (String(sec2sec(stopWatch.elapsed())) != "0s") {
     u8g2.setFont(FONT_TIMER);
-    u8g2.drawStr(AC(sec2sec(stopWatch.elapsed())), LCDHeight - 8, sec2sec(stopWatch.elapsed()));
+    int y = LCDHeight - 8;
+    if (b_timeOnTop)
+      y = u8g2.getMaxCharHeight() - 8;
+    u8g2.drawStr(AC(sec2sec(stopWatch.elapsed())), y, sec2sec(stopWatch.elapsed()));
   }
 }
 
@@ -1111,15 +1171,21 @@ void drawTime() {
 void drawButton() {
   if (digitalRead(BUTTON_CIRCLE) == LOW) {
     // u8g2.drawBox(0, 0, 10, 64);
-    u8g2.drawXBM(0, 0, 15, 16, image_circle);
+    if (b_screenFlipped)
+      u8g2.drawXBM(113, 0, 15, 16, image_circle);
+    else
+      u8g2.drawXBM(0, 0, 15, 16, image_circle);
   }
   if (digitalRead(BUTTON_SQUARE) == LOW)
     //u8g2.drawBox(118, 0, 118, 64);
-    u8g2.drawXBM(114, 0, 14, 16, image_square);
+    if (b_screenFlipped)
+      u8g2.drawXBM(0, 0, 14, 16, image_square);
+    else
+      u8g2.drawXBM(114, 0, 14, 16, image_square);
 }
 
 //some quick variable
-long t_ble_box = 0;
+unsigned long t_ble_box = 0;
 bool b_drawBle = false;
 //fake draw ble indicator box(bottom part)
 void drawBle() {
@@ -1219,8 +1285,10 @@ void drawDebug() {
     char gpioText[10];
     snprintf(gpioText, sizeof(gpioText), "GPIO:%d", i_wakeupPin);
 
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
     char gyroText[10];
     snprintf(gyroText, sizeof(gyroText), "Gyro:%.1f", gyro_z());
+#endif
 
     char weightText[10];
     snprintf(weightText, sizeof(weightText), "%.1fg", f_displayedValue);
@@ -1230,7 +1298,9 @@ void drawDebug() {
     int lineHeight = 12;
     u8g2.drawStr(-54, lineHeight, LINE1);
     u8g2.drawStr(0, lineHeight * 2, (char *)trim(gpioText));
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
     u8g2.drawStr(0, lineHeight * 3, (char *)trim(gyroText));
+#endif
     u8g2.drawStr(0, lineHeight * 4, (char *)trim(chargingText));
     u8g2.drawStr(14, lineHeight * 5, (char *)trim(bleText));
 

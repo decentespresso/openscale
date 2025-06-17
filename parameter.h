@@ -17,6 +17,7 @@ unsigned long t_heartBeat = 0;
 bool b_requireHeartBeat = true;
 bool b_screenFlipped = false;
 bool b_timeOnTop = false;
+bool b_btnFuncWhileConnected = false;
 
 //
 int windowLength = 5;  // default window length
@@ -212,7 +213,8 @@ int i_addr_welcome = i_addr_beep + sizeof(b_beep);                              
 int i_addr_batteryCalibrationFactor = i_addr_welcome + sizeof(str_welcome);                   //f_batteryCalibrationFactor
 int i_addr_heartbeat = i_addr_batteryCalibrationFactor + sizeof(f_batteryCalibrationFactor);  //b_requireHeartBeat
 int i_addr_screenFlipped = i_addr_heartbeat + sizeof(b_requireHeartBeat);  //b_screenFlipped
-int i_addr_timeOnTop= i_addr_screenFlipped + sizeof(b_screenFlipped);  //b_swapWeightTime
+int i_addr_timeOnTop= i_addr_screenFlipped + sizeof(b_screenFlipped);  //b_timeOnTop
+int i_addr_btnFuncWhileConnected= i_addr_timeOnTop + sizeof(b_timeOnTop);  //b_btnFuncWhileConnectedOn
 
 
 //int i_addr_debug = i_addr_batteryCalibrationFactor + sizeof(f_batteryCalibrationFactor);  //str_welcome
