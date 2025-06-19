@@ -102,8 +102,8 @@ Menu *timeOnTopMenu[] = { &menuTimeOnTopBack, &menuTimeOnTopOn, &menuTimeOnTopOf
 
 //Enable button fucntion while BLE connected
 Menu menuBtnFuncWhileConnectedBack = { "Back", NULL, NULL, &menuBtnFuncWhileConnected };
-Menu menuBtnFuncWhileConnectedOn = { "Enable Button", btnFuncWhileConnectedOn, NULL, &menuBtnFuncWhileConnected };
-Menu menuBtnFuncWhileConnectedOff = { "Disable Button", btnFuncWhileConnectedOff, NULL, &menuBtnFuncWhileConnected };
+Menu menuBtnFuncWhileConnectedOn = { "Enable Buttons", btnFuncWhileConnectedOn, NULL, &menuBtnFuncWhileConnected };
+Menu menuBtnFuncWhileConnectedOff = { "Disable Buttons", btnFuncWhileConnectedOff, NULL, &menuBtnFuncWhileConnected };
 Menu *btnFuncWhileConnectedMenu[] = { &menuBtnFuncWhileConnectedBack, &menuBtnFuncWhileConnectedOn, &menuBtnFuncWhileConnectedOff };
 
 // Menu menuFactoryBack = { "Back", NULL, NULL, &menuFactory };
@@ -193,7 +193,7 @@ void heartbeatOn() {
   actionMessage = "Heartbeat On";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_heartbeat, b_requireHeartBeat);
+  EEPROM.put(i_addr_requireHeartBeat, b_requireHeartBeat);
   EEPROM.commit();
   Serial.println("Heartbeat detection...On");
 }
@@ -203,7 +203,7 @@ void heartbeatOff() {
   actionMessage = "Heartbeat Off";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_heartbeat, b_requireHeartBeat);
+  EEPROM.put(i_addr_requireHeartBeat, b_requireHeartBeat);
   EEPROM.commit();
   Serial.println("Heartbeat detection...Off");
 }
@@ -252,22 +252,22 @@ void timeOnTopOff() {
 
 void btnFuncWhileConnectedOn() {
   b_btnFuncWhileConnected = true;
-  actionMessage = "BLE Btn On";
+  actionMessage = "BLE Btns On";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
   EEPROM.put(i_addr_btnFuncWhileConnected, b_btnFuncWhileConnected);
   EEPROM.commit();
-  Serial.println("BLE Btn On");
+  Serial.println("BLE Btns On");
 }
 
 void btnFuncWhileConnectedOff() {
   b_btnFuncWhileConnected = false;
-  actionMessage = "BLE Btn Off";
+  actionMessage = "BLE Btns Off";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
   EEPROM.put(i_addr_btnFuncWhileConnected, b_btnFuncWhileConnected);
   EEPROM.commit();
-  Serial.println("BLE Btn Off");
+  Serial.println("BLE Btns Off");
 }
 
 

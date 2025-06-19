@@ -12,7 +12,7 @@
 
 // #define SW_SPI //HW_I2C  HW_SPI  SW_I2C  SW_SPI   //oled linkage
 // #define SH1106
-#define V7_5
+#define V8_1
 #define WIFIOTA
 //#define CAL
 
@@ -26,8 +26,8 @@
 //#define CHECKBATTERY
 
 //SCALE CONFIG
-#define LINE1 (char*)"FW: 2.7.3"
-#define LINE2 (char*)"Built-date(YYYYMMDD): 20250617"
+#define LINE1 (char*)"FW: 2.7.4"
+#define LINE2 (char*)"Built-date(YYYYMMDD): 20250619"
 #define LINE3 (char*)"S/N: HDS001"  //Serial number
 #define VERSION /*version*/ LINE1, /*compile date*/ LINE2, /*sn*/ LINE3
 //About info

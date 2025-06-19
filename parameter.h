@@ -211,8 +211,8 @@ int INPUTCOFFEEESPRESSO_ADDRESS = INPUTCOFFEEPOUROVER_ADDRESS + sizeof(INPUTCOFF
 int i_addr_beep = INPUTCOFFEEESPRESSO_ADDRESS + sizeof(INPUTCOFFEEESPRESSO);
 int i_addr_welcome = i_addr_beep + sizeof(b_beep);                                            //str_welcome
 int i_addr_batteryCalibrationFactor = i_addr_welcome + sizeof(str_welcome);                   //f_batteryCalibrationFactor
-int i_addr_heartbeat = i_addr_batteryCalibrationFactor + sizeof(f_batteryCalibrationFactor);  //b_requireHeartBeat
-int i_addr_screenFlipped = i_addr_heartbeat + sizeof(b_requireHeartBeat);  //b_screenFlipped
+int i_addr_requireHeartBeat = i_addr_batteryCalibrationFactor + sizeof(f_batteryCalibrationFactor);  //b_requireHeartBeat
+int i_addr_screenFlipped = i_addr_requireHeartBeat + sizeof(b_requireHeartBeat);  //b_screenFlipped
 int i_addr_timeOnTop= i_addr_screenFlipped + sizeof(b_screenFlipped);  //b_timeOnTop
 int i_addr_btnFuncWhileConnected= i_addr_timeOnTop + sizeof(b_timeOnTop);  //b_btnFuncWhileConnectedOn
 

@@ -15,6 +15,24 @@
 #include "usbcomm.h"
 //#include "wificomm.h"
 
+// Reads a boolean value from EEPROM with validation.
+// If the stored value is not 0 or 1 (i.e., invalid or uninitialized data),
+// it will be replaced with the provided default value.
+bool readBoolEEPROMWithValidation(int addr, bool defaultVal) {
+  uint8_t val;
+  EEPROM.get(addr, val);  // Read raw byte from EEPROM
+
+  if (val == 0 || val == 1) {
+    // Valid boolean value found
+    return val;
+  }
+
+  // Invalid value, overwrite with default
+  EEPROM.put(addr, (uint8_t)defaultVal);
+  EEPROM.commit();
+  return defaultVal;
+}
+
 //buttons
 
 void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonState) {
@@ -393,17 +411,7 @@ void setup() {
   str_welcome.trim();
 #endif
 
-  // #ifdef ROTATION_180
-  //   u8g2.setDisplayRotation(U8G2_R2);
-  // #else
-  //   u8g2.setDisplayRotation(U8G2_R0);
-  // #endif
-  EEPROM.get(i_addr_screenFlipped, b_screenFlipped);
-  if (b_screenFlipped != 0 && b_screenFlipped != 1) {
-    b_screenFlipped = false;
-    EEPROM.put(i_addr_screenFlipped, b_screenFlipped);
-    EEPROM.commit();
-  }
+  b_screenFlipped = readBoolEEPROMWithValidation(i_addr_screenFlipped, false);
   if (b_screenFlipped)
     u8g2.setDisplayRotation(U8G2_R0);
   else
@@ -443,9 +451,6 @@ void setup() {
   EEPROM.get(INPUTCOFFEEESPRESSO_ADDRESS, INPUTCOFFEEESPRESSO);
   EEPROM.get(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);
   EEPROM.get(i_addr_mode, b_mode);
-  EEPROM.get(i_addr_heartbeat, b_requireHeartBeat);
-  EEPROM.get(i_addr_timeOnTop, b_timeOnTop);
-  EEPROM.get(i_addr_btnFuncWhileConnected, b_btnFuncWhileConnected);
 
   //EEPROM.get(i_addr_debug, b_debug);
 
@@ -481,21 +486,10 @@ void setup() {
     EEPROM.commit();
   }
 #endif
-  if (b_requireHeartBeat != 0 && b_requireHeartBeat != 1) {
-    b_requireHeartBeat = true;
-    EEPROM.put(i_addr_heartbeat, b_requireHeartBeat);
-    EEPROM.commit();
-  }
-  if (b_timeOnTop != 0 && b_timeOnTop != 1) {
-    b_timeOnTop = false;
-    EEPROM.put(i_addr_timeOnTop, b_timeOnTop);
-    EEPROM.commit();
-  }
-  if (b_btnFuncWhileConnected != 0 && b_btnFuncWhileConnected != 1) {
-    b_btnFuncWhileConnected = false;
-    EEPROM.put(i_addr_btnFuncWhileConnected, b_btnFuncWhileConnected);
-    EEPROM.commit();
-  }
+
+  b_requireHeartBeat = readBoolEEPROMWithValidation(i_addr_requireHeartBeat, true);
+  b_timeOnTop = readBoolEEPROMWithValidation(i_addr_timeOnTop, false);
+  b_btnFuncWhileConnected = readBoolEEPROMWithValidation(i_addr_btnFuncWhileConnected, false);
 
   // if (b_debug != 0 && b_debug != 1) {
   //   b_debug = false;
@@ -512,11 +506,6 @@ void setup() {
     EEPROM.put(i_addr_mode, b_mode);
     EEPROM.commit();
   }
-  // if (b_requireHeartBeat > 1 || b_requireHeartBeat < 0) {
-  //   b_requireHeartBeat = true;
-  //   EEPROM.put(i_addr_requireHeartBeat, b_requireHeartBeat);
-  //   EEPROM.commit();
-  // }
 
   //loadcell calibration value check
   EEPROM.get(i_addr_calibration_value, f_calibration_value);
