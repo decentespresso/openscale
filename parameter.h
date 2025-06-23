@@ -8,9 +8,9 @@ bool b_usbweight_enabled = false;
 unsigned long lastBleWeightNotifyTime = 0;  // Stores the last time the weight notification was sent
 unsigned long lastUsbWeightNotifyTime = 0;  // Stores the last time the weight notification was sent
 
-unsigned long lastWeightTextNotifyTime = 0;  // Stores the last time the weight notification was sent
-unsigned long weightBleNotifyInterval = 100;          // Interval at which to send weight notifications (milliseconds)
-unsigned long weightUsbNotifyInterval = 100;          // Interval at which to send weight notifications (milliseconds)
+unsigned long lastWeightTextNotifyTime = 0;   // Stores the last time the weight notification was sent
+unsigned long weightBleNotifyInterval = 100;  // Interval at which to send weight notifications (milliseconds)
+unsigned long weightUsbNotifyInterval = 100;  // Interval at which to send weight notifications (milliseconds)
 unsigned long weightTextNotifyInterval = 1000;
 int i_onWrite_counter = 0;
 unsigned long t_heartBeat = 0;
@@ -55,9 +55,9 @@ float INPUTCOFFEEPOUROVER = 20.0;
 float INPUTCOFFEEESPRESSO = 20.0;
 float f_batteryCalibrationFactor = 0.66;
 String str_welcome = "welcome";
-float f_calibration_value;  //称重单元校准值
-float f_up_battery;         //开机时电池电压
-unsigned long t_up_battery;          //开机到现在时间
+float f_calibration_value;   //称重单元校准值
+float f_up_battery;          //开机时电池电压
+unsigned long t_up_battery;  //开机到现在时间
 
 bool b_chargingOLED = true;
 unsigned long t_shutdownFailBle = 0;  //for popping up shut down fail due to ble is connected.
@@ -66,24 +66,25 @@ bool b_u8g2Sleep = true;
 unsigned long t_bootTare = 0;
 bool b_bootTare = false;
 int i_bootTareDelay = 1000;
-int i_tareDelay = 200;    //tare delay for button
+int i_tareDelay = 200;             //tare delay for button
 unsigned long t_tareByButton = 0;  //tare time stamp used by button to mimic delay
 bool b_tareByButton = false;
 unsigned long t_tareByBle = 0;
 bool b_tareByBle = false;
-unsigned long t_tareStatus = 0;      //tare done time stamp
-unsigned long t_power_off;           //关机倒计时
+unsigned long t_tareStatus = 0;  //tare done time stamp
+unsigned long t_power_off;       //关机倒计时
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 unsigned long t_power_off_gyro = 0;  //侧放关机倒计时
 #endif
-unsigned long t_button_pressed;      //进入萃取模式的时间点
-unsigned long t_temp;                //上次更新温度和度数时间
+unsigned long t_button_pressed;  //进入萃取模式的时间点
+unsigned long t_temp;            //上次更新温度和度数时间
 float f_temp_tare = 0;
 // int i_sample = 0;       //采样数0-7
 // int i_sample_step = 0;  //设置采样数的第几步
 int i_icon = 0;  //充电指示电量数字0-6
 int i_setContainerWeight = 0;
 float f_filtered_temperature = 0;
+bool b_ads1115InitFail = false;  //ads1115 not detected flag
 
 
 
@@ -209,12 +210,12 @@ int i_addr_mode = i_addr_container + sizeof(f_weight_container);                
 int INPUTCOFFEEPOUROVER_ADDRESS = i_addr_mode + sizeof(b_mode);
 int INPUTCOFFEEESPRESSO_ADDRESS = INPUTCOFFEEPOUROVER_ADDRESS + sizeof(INPUTCOFFEEPOUROVER);
 int i_addr_beep = INPUTCOFFEEESPRESSO_ADDRESS + sizeof(INPUTCOFFEEESPRESSO);
-int i_addr_welcome = i_addr_beep + sizeof(b_beep);                                            //str_welcome
-int i_addr_batteryCalibrationFactor = i_addr_welcome + sizeof(str_welcome);                   //f_batteryCalibrationFactor
+int i_addr_welcome = i_addr_beep + sizeof(b_beep);                                                   //str_welcome
+int i_addr_batteryCalibrationFactor = i_addr_welcome + sizeof(str_welcome);                          //f_batteryCalibrationFactor
 int i_addr_requireHeartBeat = i_addr_batteryCalibrationFactor + sizeof(f_batteryCalibrationFactor);  //b_requireHeartBeat
-int i_addr_screenFlipped = i_addr_requireHeartBeat + sizeof(b_requireHeartBeat);  //b_screenFlipped
-int i_addr_timeOnTop= i_addr_screenFlipped + sizeof(b_screenFlipped);  //b_timeOnTop
-int i_addr_btnFuncWhileConnected= i_addr_timeOnTop + sizeof(b_timeOnTop);  //b_btnFuncWhileConnectedOn
+int i_addr_screenFlipped = i_addr_requireHeartBeat + sizeof(b_requireHeartBeat);                     //b_screenFlipped
+int i_addr_timeOnTop = i_addr_screenFlipped + sizeof(b_screenFlipped);                               //b_timeOnTop
+int i_addr_btnFuncWhileConnected = i_addr_timeOnTop + sizeof(b_timeOnTop);                           //b_btnFuncWhileConnectedOn
 
 
 //int i_addr_debug = i_addr_batteryCalibrationFactor + sizeof(f_batteryCalibrationFactor);  //str_welcome

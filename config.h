@@ -26,8 +26,8 @@
 //#define CHECKBATTERY
 
 //SCALE CONFIG
-#define LINE1 (char*)"FW: 2.7.4"
-#define LINE2 (char*)"Built-date(YYYYMMDD): 20250619"
+#define LINE1 (char*)"FW: 2.7.5"
+#define LINE2 (char*)"Built-date(YYYYMMDD): 20250623"
 #define LINE3 (char*)"S/N: HDS001"  //Serial number
 #define VERSION /*version*/ LINE1, /*compile date*/ LINE2, /*sn*/ LINE3
 //About info
@@ -103,6 +103,7 @@
 #define SCALE2_DOUT 47
 #define SCALE2_SCLK 48
 #define SCALE2_PDWN 9
+#define ACC_PWR_CTRL 14
 #define BUTTON_CIRCLE 1  //33
 #define BUTTON_SQUARE 2
 #if defined(TWO_BUTTON) || defined(FOUR_BUTTON)
@@ -163,7 +164,7 @@
 #define HW_SPI
 #define SH1106
 #define ADS1232ADC
-#define ACC_MPU6050
+//#define ACC_MPU6050
 #define ROTATION_180
 #define GYROFACEDOWN  //GYRO //#define GYROFACEUP
 
@@ -192,7 +193,7 @@
 #if defined(TWO_BUTTON) || defined(FOUR_BUTTON)
 #define GPIO_NUM_BUTTON_POWER GPIO_NUM_1
 #endif
-#define BUZZER 38
+//#define BUZZER 38
 
 #define SCALE_A0 -1
 #define HX711_SCL 12

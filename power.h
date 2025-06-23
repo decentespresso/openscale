@@ -33,10 +33,10 @@ const float showEmptyBatteryBelowVoltage = 3.4;  // Minimum voltage of battery
 // Formula for calculating the battery voltage (Vbattery):
 // Vadc = Vbattery * (100 / (100 + 33)), therefore
 // Vbattery = Vadc * ((100 + 33) / 100)
-#if defined(V7_5)
-const float dividerRatio = (100.0 + 100.0) / 100.0;
-#else
+#if defined(V7_2)
 const float dividerRatio = (100.0 + 33.0) / 100.0;
+#else  //7_5 and else
+const float dividerRatio = (100.0 + 100.0) / 100.0;
 #endif
 
 // ESP32 ADC resolution for 12-bit (0-4095)
@@ -66,11 +66,15 @@ void reset() {
 void ADS_init() {
   if (!ads.begin()) {
     Serial.println("Failed to initialize ADS1115!");
-    while (1)
-      Serial.println("Failed to initialize ADS1115!");
+    b_ads1115InitFail = true;
+    // while (1) {
+    //   Serial.println("Failed to initialize ADS1115!");
+    //   delay(5000);
+    // }
+  } else {
+    ads.setGain(GAIN_ONE);  // +/- 4_096V range
+    ads.setDataRate(RATE_ADS1115_860SPS);
   }
-  ads.setGain(GAIN_ONE);  // +/- 4_096V range
-  ads.setDataRate(RATE_ADS1115_860SPS);
 }
 #endif
 
@@ -158,10 +162,10 @@ void esp32_sleep() {
   //new bitmap sleep wakeup pin
   esp_sleep_enable_ext1_wakeup_io(PIN_BITMASK, ESP_EXT1_WAKEUP_ANY_LOW);
 #endif
-#if defined(V7_3) || defined(V7_4) || defined(V7_5) || defined(V8_0)
+  //#if defined(V7_3) || defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
   digitalWrite(ACC_PWR_CTRL, LOW);
   gpio_hold_en((gpio_num_t)ACC_PWR_CTRL);
-#endif
+  //#endif
   digitalWrite(PWR_CTRL, LOW);
   gpio_hold_en((gpio_num_t)PWR_CTRL);
   esp_deep_sleep_start();
@@ -245,19 +249,23 @@ void shut_down_now_accidentTouch() {
 }
 
 float getVoltage(int batteryPin) {
-#ifdef ADS1115ADC
-  int16_t adc0;
-  float volts0;
-  adc0 = ads.readADC_SingleEnded(0);
-  volts0 = ads.computeVolts(adc0);
-  return volts0 * 2.0;
-#else
-  int adcValue = analogRead(batteryPin);                               // Read the value from ADC
-  float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;  // Calculate voltage at ADC pin
-  float batteryVoltage = voltageAtPin * dividerRatio;                  // Calculate the actual battery voltage
-  float correctedVoltage = batteryVoltage * f_batteryCalibrationFactor;
-  return correctedVoltage;
-#endif
+  //#ifdef ADS1115ADC
+  if (!b_ads1115InitFail) {
+    int16_t adc0;
+    float volts0;
+    adc0 = ads.readADC_SingleEnded(0);
+    volts0 = ads.computeVolts(adc0);
+    return volts0 * 2.0;
+  }
+  //#else
+  else {
+    int adcValue = analogRead(batteryPin);                               // Read the value from ADC
+    float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;  // Calculate voltage at ADC pin
+    float batteryVoltage = voltageAtPin * dividerRatio;                  // Calculate the actual battery voltage
+    float correctedVoltage = batteryVoltage * f_batteryCalibrationFactor;
+    return correctedVoltage;
+  }
+  //#endif
 }
 
 float getUsbVoltage(int usbPin) {
@@ -357,7 +365,7 @@ void checkBattery() {
   // Serial.print("Battery Voltage:");
   // Serial.print(getVoltage(BATTERY_PIN));
   float perc = map(getVoltage(BATTERY_PIN) * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);  //map funtion doesn't take float as input.
-#if defined(V7_4) || defined(V7_5) || defined(V8_0)
+#if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
   //if (getUsbVoltage(USB_DET) > 4.0) {
   if (digitalRead(USB_DET) == LOW) {
 #else

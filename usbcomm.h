@@ -117,15 +117,15 @@ public:
               u8g2.setPowerSave(1);
               b_softSleep = true;
               digitalWrite(PWR_CTRL, LOW);
-#if defined(ACC_MPU6050) || defined(ACC_BMA400)
+//#if defined(ACC_MPU6050) || defined(ACC_BMA400)
               digitalWrite(ACC_PWR_CTRL, LOW);
-#endif
+//#endif
             } else if (data[3] == 0x00) {
               Serial.println("Exit Soft Sleep.");
               digitalWrite(PWR_CTRL, HIGH);
-#if defined(ACC_MPU6050) || defined(ACC_BMA400)
+//#if defined(ACC_MPU6050) || defined(ACC_BMA400)
               digitalWrite(ACC_PWR_CTRL, HIGH);
-#endif
+//#endif
               u8g2.setPowerSave(0);
               b_softSleep = false;
             }
@@ -270,14 +270,16 @@ void sendUsbVoltage() {
   Serial.print("Battery Voltage:");
   float voltage = getVoltage(BATTERY_PIN);
   Serial.print(voltage);
-#ifndef ADS1115ADC
+//#ifndef ADS1115ADC
+if (b_ads1115InitFail){
   int adcValue = analogRead(BATTERY_PIN);                              // Read the value from ADC
   float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;  // Calculate voltage at ADC pin
   Serial.print("\tADC Voltage:");
   Serial.print(voltageAtPin);
   Serial.print("\tbatteryCalibrationFactor: ");
   Serial.print(f_batteryCalibrationFactor);
-#endif
+}
+//#endif
   Serial.print("\tlowBatteryCounterTotal: ");
   Serial.print(i_lowBatteryCountTotal);
 
