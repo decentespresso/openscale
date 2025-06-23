@@ -44,9 +44,9 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
   if (b_softSleep) {
     Serial.println("Exit Soft Sleep.");
     digitalWrite(PWR_CTRL, HIGH);
-#if defined(ACC_MPU6050) || defined(ACC_BMA400)
+    //#if defined(ACC_MPU6050) || defined(ACC_BMA400)
     digitalWrite(ACC_PWR_CTRL, HIGH);
-#endif
+    //#endif
     u8g2.setPowerSave(0);
     b_softSleep = false;
   }
@@ -305,7 +305,7 @@ void setup() {
   linkSubmenus();
 
   pinMode(BATTERY_CHARGING, INPUT_PULLUP);
-#if defined(V7_4) || defined(V7_5) || defined(V8_0)
+#if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
   pinMode(USB_DET, INPUT_PULLUP);
 #endif
   print_wakeup_reason();
@@ -350,14 +350,14 @@ void setup() {
   gpio_hold_dis((gpio_num_t)PWR_CTRL);  // Disable GPIO hold mode for the specified pin, allowing it to be controlled
   pinMode(PWR_CTRL, OUTPUT);            // Set the PWR_CTRL pin as an output pin
   digitalWrite(PWR_CTRL, HIGH);         // Set the PWR_CTRL pin to HIGH, turning on the connected device or circuit
-#if defined(ACC_MPU6050) || defined(ACC_BMA400)
-#if defined(V7_3) || defined(V7_4) || defined(V7_5) || defined(V8_0)
+//#if defined(ACC_MPU6050) || defined(ACC_BMA400)
+#if defined(V7_3) || defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
   gpio_hold_dis((gpio_num_t)ACC_PWR_CTRL);  // Disable GPIO hold mode for the specified pin, allowing it to be controlled
   pinMode(ACC_PWR_CTRL, OUTPUT);            // Set the PWR_CTRL pin as an output pin
   digitalWrite(ACC_PWR_CTRL, HIGH);         // Set the PWR_CTRL pin to HIGH, turning on the connected device or circuit
   Serial.println("ACC_PWR_CTRL = HIGH");
 #endif
-#endif
+//#endif
 #ifdef ESP32
   Wire.begin(I2C_SDA, I2C_SCL);
 #endif
@@ -570,8 +570,8 @@ void setup() {
   Serial.print(LINE1);
   Serial.print("\t");
   Serial.print(LINE2);
-  Serial.print("\t");
-  Serial.println(LINE3);
+  // Serial.print("\t");
+  // Serial.println(LINE3);
   Serial.print("\tCal_Val: ");
   Serial.print(f_calibration_value);
   Serial.print("\tHB_DET: ");
@@ -583,19 +583,20 @@ void setup() {
   Serial.println("");
 
 
-  Serial.print("Button:\tSQARE\tCIRCLE\tPOWER");
-  Serial.println("Pin:");
+  //Serial.println("Button:\tSQARE\tCIRCLE\tPOWER");
+  Serial.println("Button:\tSQARE\tCIRCLE");
+  Serial.print("Pin:");
   Serial.print("\t");
   Serial.print(BUTTON_SQUARE);
   Serial.print("\t");
-  Serial.print(BUTTON_CIRCLE);
-  Serial.print("\t");
-  Serial.println(GPIO_NUM_BUTTON_POWER);
+  Serial.println(BUTTON_CIRCLE);
+  // Serial.print("\t");
+  // Serial.println(GPIO_NUM_BUTTON_POWER);
 #ifdef ADS1232ADC
 #ifdef BUZZER
-  Serial.println("Pin:\tI2C_SDA\tI2C_SCK ADC_DOUT\tADC_SCLK\tADC_PWDN\tBUZZER");
+  Serial.println("Pin:\tI2C_SDA\tI2C_SCK ADC_DOUT ADC_SCLK\tADC_PWDN\tBUZZER");
 #else
-  Serial.println("Pin:\tI2C_SDA\tI2C_SCK ADC_DOUT\tADC_SCLK\tADC_PWDN");
+  Serial.println("Pin:\tI2C_SDA\tI2C_SCK ADC_DOUT ADC_SCLK\tADC_PWDN");
 #endif
   Serial.print("Pin:");
   Serial.print("\t");
@@ -604,7 +605,7 @@ void setup() {
   Serial.print(I2C_SCL);
   Serial.print("\t ");
   Serial.print(SCALE_DOUT);
-  Serial.print("\t");
+  Serial.print("\t ");
   Serial.print(SCALE_SCLK);
   Serial.print("\t");
   Serial.print(SCALE_PDWN);
@@ -729,14 +730,16 @@ void serialCommand() {
     if (inputString.startsWith("v")) {  //电压
       Serial.print("Battery Voltage:");
       Serial.print(getVoltage(BATTERY_PIN));
-#ifndef ADS1115ADC
-      int adcValue = analogRead(BATTERY_PIN);                              // Read the value from ADC
-      float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;  // Calculate voltage at ADC pin
-      Serial.print("\tADC Voltage:");
-      Serial.print(voltageAtPin);
-      Serial.print("\tbatteryCalibrationFactor: ");
-      Serial.print(f_batteryCalibrationFactor);
-#endif
+      //#ifndef ADS1115ADC
+      if (b_ads1115InitFail) {
+        int adcValue = analogRead(BATTERY_PIN);                              // Read the value from ADC
+        float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;  // Calculate voltage at ADC pin
+        Serial.print("\tADC Voltage:");
+        Serial.print(voltageAtPin);
+        Serial.print("\tbatteryCalibrationFactor: ");
+        Serial.print(f_batteryCalibrationFactor);
+      }
+      //#endif
       Serial.print("\tlowBatteryCounterTotal: ");
       Serial.print(i_lowBatteryCountTotal);
     }
@@ -1199,7 +1202,7 @@ void drawBattery() {
     t_batteryIcon = millis();
     b_showBatteryIcon = !b_showBatteryIcon;
   }
-#if defined(V7_4) || defined(V7_5) || defined(V8_0)
+#if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
   //if (getUsbVoltage(USB_DET) > 4.0) {
   if (digitalRead(USB_DET) == LOW) {
 #else
