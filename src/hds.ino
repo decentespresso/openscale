@@ -7,6 +7,7 @@
 #include "gyro.h"
 #include "display.h"
 #include "declare.h"
+#include "webserver.h"
 #include "wifi_ota.h"
 
 
@@ -534,6 +535,10 @@ void setup() {
     //calibration value is not valid, go to calibration procedure.
   }
 #endif
+
+  // TODO: guard with flag
+  enableWifi();
+  startWebServer();
 
   // //wifiota
   // #ifdef WIFI
