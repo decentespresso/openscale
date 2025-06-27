@@ -3,11 +3,11 @@
 #define WIFI_OTA_H
 #include "display.h"
 /* please remember to edit the ESPAsyncWebServer.h
-add the following line 
+add the following line
 
 #define ELEGANTOTA_USE_ASYNC_WEBSERVER 1
 
-or edit the 
+or edit the
 
 #ifndef ELEGANTOTA_USE_ASYNC_WEBSERVER
   #define ELEGANTOTA_USE_ASYNC_WEBSERVER 0
@@ -20,10 +20,11 @@ into
 #endif
 #define ELEGANTOTA_USE_ASYNC_WEBSERVER 1
 */
-#include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <ElegantOTA.h>
+#include <WiFi.h>
+#include <SPIFFS.h>
 
 const char *ssid = "DecentScale";
 const char *password = "12345678";
@@ -40,10 +41,12 @@ void onOTAProgress(size_t current, size_t final) {
   // Log every 1 second
   if (millis() - ota_progress_millis > 50) {
     ota_progress_millis = millis();
-    Serial.printf("OTA Progress Current: %u bytes, Final: %u bytes\n", current, final);
+    Serial.printf("OTA Progress Current: %u bytes, Final: %u bytes\n", current,
+                  final);
     Serial.printf("Progress: %u%%\n", (current * 100) / final);
     char buffer[50];
-    snprintf(buffer, sizeof(buffer), "Uploading: %u%%", (current * 100) / final);
+    snprintf(buffer, sizeof(buffer), "Uploading: %u%%",
+             (current * 100) / final);
     u8g2.firstPage();
     u8g2.setFont(FONT_S);
     if (b_screenFlipped)
@@ -69,7 +72,8 @@ void onOTAEnd(bool success) {
     while (millis() - t_otaEnd < 1000) {
       u8g2.firstPage();
       do {
-        u8g2.drawUTF8(AC((char *)"OTA update finished"), AM(), (char *)"OTA update finished");
+        u8g2.drawUTF8(AC((char *)"OTA update finished"), AM(),
+                      (char *)"OTA update finished");
       } while (u8g2.nextPage());
     }
   } else {
@@ -82,7 +86,8 @@ void onOTAEnd(bool success) {
     while (millis() - t_otaEnd < 1000) {
       u8g2.firstPage();
       do {
-        u8g2.drawUTF8(AC((char *)"OTA update failed"), AM(), (char *)"OTA update failed");
+        u8g2.drawUTF8(AC((char *)"OTA update failed"), AM(),
+                      (char *)"OTA update failed");
       } while (u8g2.nextPage());
     }
   }
@@ -100,7 +105,8 @@ void wifiOta() {
   } while (u8g2.nextPage());
 
   WiFi.mode(WIFI_AP);
-  WiFi.softAPConfig(IPAddress(192, 168, 1, 1), IPAddress(192, 168, 1, 1), IPAddress(255, 255, 255, 0));
+  WiFi.softAPConfig(IPAddress(192, 168, 1, 1), IPAddress(192, 168, 1, 1),
+                    IPAddress(255, 255, 255, 0));
   WiFi.softAP(ssid, password);
   Serial.println("");
 
@@ -114,7 +120,7 @@ void wifiOta() {
     request->redirect("/update");
   });
 
-  ElegantOTA.begin(&server);  // Start ElegantOTA
+  ElegantOTA.begin(&server); // Start ElegantOTA
   // ElegantOTA callbacks
   ElegantOTA.setAutoReboot(true);
   ElegantOTA.onStart(onOTAStart);
@@ -133,12 +139,21 @@ void wifiOta() {
   do {
     char ver[50];
     sprintf(ver, "%s %s", PCB_VER, FIRMWARE_VER);
-    //u8g2.drawUTF8(AC((char *)"Please connect WiFi"), u8g2.getMaxCharHeight() + i_margin_top - 5, (char *)"Please connect WiFi");
+    // u8g2.drawUTF8(AC((char *)"Please connect WiFi"), u8g2.getMaxCharHeight()
+    // + i_margin_top - 5, (char *)"Please connect WiFi");
 
-    u8g2.drawUTF8(AC((char *)"WiFi: DecentScale"), u8g2.getMaxCharHeight() + i_margin_top - 5, (char *)"WiFi: DecentScale");
+    u8g2.drawUTF8(AC((char *)"WiFi: DecentScale"),
+                  u8g2.getMaxCharHeight() + i_margin_top - 5,
+                  (char *)"WiFi: DecentScale");
     u8g2.drawUTF8(AC((char *)"Pwd: 12345678"), AM(), (char *)"Pwd: 12345678");
     u8g2.drawUTF8(AC(trim(ver)), LCDHeight - i_margin_bottom + 5, trim(ver));
   } while (u8g2.nextPage());
+  if (!SPIFFS.begin()) {
+    Serial.println("SPIFFS failed");
+    return;
+  }
+  server.serveStatic("/apps", SPIFFS, "/");
+  Serial.println("Serving web-apps");
 }
-#endif  //WIFI_OTA_H
+#endif // WIFI_OTA_H
 #endif
