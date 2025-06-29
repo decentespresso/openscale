@@ -10,7 +10,6 @@ AsyncWebServer server(80);
 
 
 void startWebServer() {
-
   server.begin();
   Serial.println("HTTP server started");
   if (!SPIFFS.begin()) {
