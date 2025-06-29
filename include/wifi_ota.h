@@ -105,48 +105,12 @@ void enableWifi() {
 }
 
 void wifiOta() {
-  u8g2.firstPage();
-  u8g2.setFont(FONT_S);
-  if (b_screenFlipped)
-    u8g2.setDisplayRotation(U8G2_R0);
-  else
-    u8g2.setDisplayRotation(U8G2_R2);
-  do {
-    u8g2.drawUTF8(AC((char *)"Starting OTA"), AM(), (char *)"Starting OTA");
-  } while (u8g2.nextPage());
-
-
-  // server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-  //   // Redirect to "/update"
-  //   request->redirect("/update");
-  // });
-
   ElegantOTA.begin(&server); // Start ElegantOTA
   // ElegantOTA callbacks
   ElegantOTA.setAutoReboot(true);
   ElegantOTA.onStart(onOTAStart);
   ElegantOTA.onProgress(onOTAProgress);
   ElegantOTA.onEnd(onOTAEnd);
-
-  b_ota = true;
-  u8g2.firstPage();
-  u8g2.setFont(FONT_S);
-  if (b_screenFlipped)
-    u8g2.setDisplayRotation(U8G2_R0);
-  else
-    u8g2.setDisplayRotation(U8G2_R2);
-  do {
-    char ver[50];
-    sprintf(ver, "%s %s", PCB_VER, FIRMWARE_VER);
-    // u8g2.drawUTF8(AC((char *)"Please connect WiFi"), u8g2.getMaxCharHeight()
-    // + i_margin_top - 5, (char *)"Please connect WiFi");
-
-    u8g2.drawUTF8(AC((char *)"WiFi: DecentScale"),
-                  u8g2.getMaxCharHeight() + i_margin_top - 5,
-                  (char *)"WiFi: DecentScale");
-    u8g2.drawUTF8(AC((char *)"Pwd: 12345678"), AM(), (char *)"Pwd: 12345678");
-    u8g2.drawUTF8(AC(trim(ver)), LCDHeight - i_margin_bottom + 5, trim(ver));
-  } while (u8g2.nextPage());
 }
 #endif // WIFI_OTA_H
 #endif

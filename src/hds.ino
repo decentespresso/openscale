@@ -536,9 +536,11 @@ void setup() {
   }
 #endif
 
-  // TODO: guard with flag
-  enableWifi();
-  startWebServer();
+  if (readBoolEEPROMWithValidation(i_addr_enableWifiOnBoot, false)) { 
+    enableWifi();
+    startWebServer();
+    wifiOta();
+  }
 
   // //wifiota
   // #ifdef WIFI

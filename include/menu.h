@@ -124,7 +124,7 @@ Menu *mainMenu[] = {
 #endif
     &menuCalibration,
     &menuWifiEnable,
-    &menuWiFiUpdate,
+    // &menuWiFiUpdate,
     &menuAbout,
     &menuLogo,
     &menuHeartbeat,
