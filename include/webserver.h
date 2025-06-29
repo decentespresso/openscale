@@ -4,7 +4,7 @@
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <SPIFFS.h>
+#include <LittleFS.h>
 
 AsyncWebServer server(80);
 
@@ -12,11 +12,11 @@ AsyncWebServer server(80);
 void startWebServer() {
   server.begin();
   Serial.println("HTTP server started");
-  if (!SPIFFS.begin()) {
+  if (!LittleFS.begin()) {
     Serial.println("SPIFFS failed");
     return;
   }
-  server.serveStatic("/apps", SPIFFS, "/");
+  server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
   Serial.println("Serving web-apps");
 }
 #endif
