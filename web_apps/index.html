@@ -68,7 +68,7 @@
     <h2>Setup WiFi</h2>
     <form id="wifi-form">
       <input type="text" id="ssid" placeholder="WiFi SSID" required style="margin-right: 1rem;" />
-      <input type="password" id="password" placeholder="WiFi Password" required style="margin-right: 1rem;" />
+      <input type="password" id="password" placeholder="WiFi Password" style="margin-right: 1rem;" />
       <button type="submit">Connect</button>
     </form>
     <p id="wifi-status"></p>
@@ -93,7 +93,7 @@
         });
 
         if (response.ok) {
-          status.textContent = 'WiFi setup request sent successfully!';
+          status.textContent = 'WiFi setup request sent successfully! Please restart the scale';
         } else {
           status.textContent = 'Failed to send WiFi setup request.';
           status.style.color = 'red';
