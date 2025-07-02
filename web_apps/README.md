@@ -98,20 +98,15 @@ To get a local copy up and running, follow these simple steps:
 
 Since these are web applications using Web BLE, they need to be served over https:// or [http://localhost](http://localhost/)
 
-You can use a simple Python HTTP server or any other local server you prefer.
-Using Python's http.server (Python 3):
+You can use a simple NPX HTTP server or any other local server you prefer.
+Using NPX :
 
-`bash python -m http.server 8000`
+`npx http-server -p 8000`
 
 Then, open your Chrome browser and navigate to
 [http://localhost:8000/decentscale_webweigh/](http://localhost:8000/decentscale_webweigh/)
 
 [http://localhost:8000/decentscale_qcweigh/](http://localhost:8000/decentscale_qcweigh/)
 
-Using Node.js http-server (if you have Node.js installed):
-
-`bash npm install -g http-server http-server -p 8000`
-
-Then, navigate to the respective app URLs as above.
 
 **This project is open source, and we encourage developers to explore, learn from, and contribute to the codebase.**
