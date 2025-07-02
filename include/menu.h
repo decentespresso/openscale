@@ -1,6 +1,8 @@
 #ifndef MENU_H
 #define MENU_H
 
+#include "esp32-hal.h"
+#include "parameter.h"
 const char *weights[] = { "Exit", "50g", "100g", "200g", "500g", "1000g" };
 const float weight_values[] = { 0.0, 50.0, 100.0, 200.0, 500.0, 1000.0 };
 bool b_showAbout = false;
@@ -29,6 +31,7 @@ void exitMenu();
 void buzzerOn();
 void buzzerOff();
 #endif
+void toggleWifi();
 void heartbeatOn();
 void heartbeatOff();
 void calibrate();
@@ -55,6 +58,7 @@ Menu menuExit = { "Exit", exitMenu, NULL, NULL };
 Menu menuBuzzer = { "Buzzer", NULL, NULL, NULL };
 #endif
 Menu menuCalibration = { "Calibration", NULL, NULL, NULL };
+Menu menuWifiEnable = { "Toggle WiFi", toggleWifi, NULL, NULL};
 Menu menuWiFiUpdate = { "WiFi Update", NULL, NULL, NULL };
 Menu menuAbout = { "About", showAbout, NULL, NULL };
 Menu menuLogo = { "Show Logo", showLogo, NULL, NULL };
@@ -114,14 +118,20 @@ Menu *btnFuncWhileConnectedMenu[] = { &menuBtnFuncWhileConnectedBack, &menuBtnFu
 // Main menu
 // 3/5 write all the 1st menu to mainMenu
 Menu *mainMenu[] = {
-  &menuExit,
+    &menuExit,
 #ifdef BUZZER
-  &menuBuzzer,
+    &menuBuzzer,
 #endif
-  &menuCalibration, &menuWiFiUpdate,
-  &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen,
-  &menuTimeOnTop, &menuBtnFuncWhileConnected
-  //, &menuFactory
+    &menuCalibration,
+    &menuWifiEnable,
+    // &menuWiFiUpdate,
+    &menuAbout,
+    &menuLogo,
+    &menuHeartbeat,
+    &menuFlipScreen,
+    &menuTimeOnTop,
+    &menuBtnFuncWhileConnected
+    //, &menuFactory
 };
 //  &menuHolder1, &menuHolder2, &menuHolder3, &menuHolder4,
 //  &menuHolder5, &menuHolder6};
@@ -187,6 +197,17 @@ void buzzerOff() {
   Serial.println("Buzzer off stored in EEPROM.");
 }
 #endif
+
+void toggleWifi() {
+  bool wifiEnabled = false;
+  EEPROM.get(i_addr_enableWifiOnBoot, wifiEnabled);
+  actionMessage = wifiEnabled ? "WiFi Disabled" : "WiFi Enabled";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  EEPROM.put(i_addr_enableWifiOnBoot, !wifiEnabled);
+  EEPROM.commit();
+  Serial.printf("%s\n", actionMessage);
+}
 
 void heartbeatOn() {
   b_requireHeartBeat = true;
