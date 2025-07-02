@@ -83,6 +83,10 @@ void setupWifi() {
   }
 }
 
+void saveCredentials(String ssid, String pass) {
+  params.saveCredentials(ssid, pass);
+}
+
 // ----------------------------------------------------
 // ------------------ WiFiParams ----------------------
 // ----------------------------------------------------

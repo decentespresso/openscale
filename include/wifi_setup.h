@@ -5,6 +5,7 @@
 // check if can connect
 // if not, start AP mode
 void setupWifi();
+void saveCredentials(String ssid, String pass); // ssid, pass
 
 extern const char *wifiPrefsKey;
 extern const char *wifiSSIDKey;
