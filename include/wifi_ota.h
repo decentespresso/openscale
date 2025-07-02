@@ -93,20 +93,6 @@ void onOTAEnd(bool success) {
   }
 }
 
-void enableWifi() {
-  WiFi.mode(WIFI_AP);
-  WiFi.softAPConfig(IPAddress(192, 168, 1, 1), IPAddress(192, 168, 1, 1),
-                    IPAddress(255, 255, 255, 0));
-  WiFi.softAP(ssid, password);
-  Serial.println("");
-
-  Serial.print("WiFi Access Point: ");
-  Serial.println(ssid);
-  Serial.print("IP address: ");
-  Serial.println(WiFi.softAPIP());
-  b_wifiEnabled = true;
-}
-
 void wifiOta() {
   ElegantOTA.begin(&server); // Start ElegantOTA
   // ElegantOTA callbacks
