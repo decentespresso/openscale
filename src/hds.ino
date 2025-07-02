@@ -7,6 +7,7 @@
 #include "gyro.h"
 #include "display.h"
 #include "declare.h"
+#include "wifi_setup.h"
 #include "webserver.h"
 #include "wifi_ota.h"
 
@@ -537,7 +538,7 @@ void setup() {
 #endif
 
   if (readBoolEEPROMWithValidation(i_addr_enableWifiOnBoot, false)) { 
-    enableWifi();
+    setupWifi();
     startWebServer();
     wifiOta();
   }
