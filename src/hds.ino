@@ -7,6 +7,7 @@
 #include "gyro.h"
 #include "display.h"
 #include "declare.h"
+#include "webserver.h"
 #include "wifi_ota.h"
 
 
@@ -535,6 +536,12 @@ void setup() {
   }
 #endif
 
+  if (readBoolEEPROMWithValidation(i_addr_enableWifiOnBoot, false)) { 
+    enableWifi();
+    startWebServer();
+    wifiOta();
+  }
+
   // //wifiota
   // #ifdef WIFI
   if (digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW) {
@@ -910,9 +917,11 @@ void loop() {
       }
     } else {
       //
-      if (b_ota == true) {
+      if (b_wifiEnabled) {
         ElegantOTA.loop();
-      } else if (b_calibration == true) {
+      } 
+
+      if (b_calibration == true) {
         calibration(i_calibration);
       } else if (b_usbLinked == true) {
         //showing charging animation when powered off
