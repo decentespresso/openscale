@@ -917,9 +917,11 @@ void loop() {
       }
     } else {
       //
-      if (b_ota == true) {
+      if (b_wifiEnabled) {
         ElegantOTA.loop();
-      } else if (b_calibration == true) {
+      } 
+
+      if (b_calibration == true) {
         calibration(i_calibration);
       } else if (b_usbLinked == true) {
         //showing charging animation when powered off

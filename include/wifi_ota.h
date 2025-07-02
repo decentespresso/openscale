@@ -29,10 +29,12 @@ const char *ssid = "DecentScale";
 const char *password = "12345678";
 unsigned long ota_progress_millis = 0;
 unsigned long t_otaEnd = 0;
+bool b_wifiEnabled = false;
 
 void onOTAStart() {
   // Log when OTA has started
   Serial.println("OTA update started!");
+  b_ota = true;
 }
 
 void onOTAProgress(size_t current, size_t final) {
@@ -102,6 +104,7 @@ void enableWifi() {
   Serial.println(ssid);
   Serial.print("IP address: ");
   Serial.println(WiFi.softAPIP());
+  b_wifiEnabled = true;
 }
 
 void wifiOta() {
