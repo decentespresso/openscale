@@ -12,14 +12,8 @@
 AsyncWebServer server(80);
 
 void startWebServer() {
+  server.begin();
   Serial.println("HTTP server started");
-  if (!LittleFS.begin()) {
-    Serial.println("SPIFFS failed");
-    return;
-  }
-
-  server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
-
   AsyncCallbackJsonWebHandler *wifiHandler = new AsyncCallbackJsonWebHandler(
       "/setup/wifi", [](AsyncWebServerRequest *request, JsonVariant &json) {
         JsonObject jsonObj = json.as<JsonObject>();
@@ -40,7 +34,13 @@ void startWebServer() {
       });
   server.addHandler(wifiHandler);
 
-  server.begin();
+  if (!LittleFS.begin()) {
+    Serial.println("SPIFFS failed");
+    return;
+  }
+
+  server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
+
   Serial.println("Serving web-apps");
 }
 #endif
