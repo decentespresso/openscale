@@ -6,6 +6,8 @@
 #include <Preferences.h>
 #include <WiFi.h>
 
+bool b_wifiEnabled = false;
+
 const char *wifiPrefsKey = "wifi";
 const char *wifiSSIDKey = "ssid";
 const char *wifiPassKey = "pass";
