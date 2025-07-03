@@ -1,0 +1,16 @@
+{
+  "name": "qc",
+  "version": "1.0.0",
+  "main": "quality_control.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@abandonware/noble": "^1.9.2-26",
+    "ws": "^8.18.3"
+  }
+}
