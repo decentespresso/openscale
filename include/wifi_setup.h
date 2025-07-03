@@ -7,6 +7,8 @@
 void setupWifi();
 void saveCredentials(String ssid, String pass); // ssid, pass
 
+extern bool b_wifiEnabled;
+
 extern const char *wifiPrefsKey;
 extern const char *wifiSSIDKey;
 extern const char *wifiPassKey;
