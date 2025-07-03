@@ -10,6 +10,7 @@
 #include <WiFi.h>
 
 AsyncWebServer server(80);
+AsyncWebSocket websocket("/snapshot");
 
 void startWebServer() {
   server.begin();
@@ -33,6 +34,7 @@ void startWebServer() {
         request->send(200);
       });
   server.addHandler(wifiHandler);
+  server.addHandler(&websocket);
 
   if (!LittleFS.begin()) {
     Serial.println("SPIFFS failed");
