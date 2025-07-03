@@ -29,7 +29,6 @@ const char *ssid = "DecentScale";
 const char *password = "12345678";
 unsigned long ota_progress_millis = 0;
 unsigned long t_otaEnd = 0;
-bool b_wifiEnabled = false;
 
 void onOTAStart() {
   // Log when OTA has started

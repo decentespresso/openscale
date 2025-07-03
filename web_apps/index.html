@@ -53,6 +53,39 @@
       margin-top: 0.5rem;
       color: green;
     }
+
+    /* Weight display */
+    #weight-display {
+      margin-top: 2rem;
+      padding: 1rem;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 0.5rem;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      max-width: 300px;
+    }
+    #weight-display h2 {
+      margin: 0 0 0.5rem 0;
+      color: #333;
+    }
+    #weight-value {
+      font-size: 2rem;
+      font-weight: bold;
+      color: #007bff;
+    }
+    #tare-button {
+      margin-top: 1rem;
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 0.25rem;
+      cursor: pointer;
+    }
+    #tare-button:hover {
+      background: #0056b3;
+    }
   </style>
 </head>
 <body>
@@ -63,6 +96,13 @@
     <li><a href="dosing_assistant/dosing_assistant.html">Dosing assistant</a></li>
     <li><a href="update">Firmware update</a></li>
   </ul>
+
+  <!-- Weight Display and Tare Button -->
+  <div id="weight-display">
+    <h2>Weight</h2>
+    <div id="weight-value">-- g</div>
+    <button id="tare-button">Tare</button>
+  </div>
 
   <!-- WiFi Setup Popup -->
   <div id="wifi-popup">
@@ -76,6 +116,7 @@
   </div>
 
   <script>
+    // WiFi form submission
     document.getElementById('wifi-form').addEventListener('submit', async function (e) {
       e.preventDefault();
       const ssid = document.getElementById('ssid').value;
@@ -103,6 +144,33 @@
         status.textContent = 'Error connecting to server.';
         status.style.color = 'red';
       }
+    });
+
+    // WebSocket for live weight
+    const ws = new WebSocket(`ws://${window.location.host}/snapshot`);
+    const weightValue = document.getElementById('weight-value');
+    const tareButton = document.getElementById('tare-button');
+
+    ws.addEventListener('message', (event) => {
+      weightValue.textContent = `${event.data} g`;
+    });
+
+    tareButton.addEventListener('click', () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send('tare');
+      } else {
+        alert('WebSocket not connected.');
+      }
+    });
+
+    ws.addEventListener('error', () => {
+      weightValue.textContent = 'Connection error';
+      weightValue.style.color = 'red';
+    });
+
+    ws.addEventListener('close', () => {
+      weightValue.textContent = 'Disconnected';
+      weightValue.style.color = 'gray';
     });
   </script>
 </body>

@@ -538,9 +538,29 @@ void setup() {
 #endif
 
   if (readBoolEEPROMWithValidation(i_addr_enableWifiOnBoot, false)) { 
+    b_wifiEnabled = true;
     setupWifi();
     startWebServer();
     wifiOta();
+    websocket.onEvent([](
+          AsyncWebSocket *server, AsyncWebSocketClient *client,
+               AwsEventType type, void *arg, uint8_t *data, size_t len
+          ){
+        if (type == WS_EVT_DATA) {
+
+          AwsFrameInfo *info = (AwsFrameInfo *)arg;
+          String msg = "";
+
+          for (size_t i = 0; i < info->len; i++) {
+            msg += (char)data[i];
+          }
+          Serial.print("Websocket recv: ");
+          Serial.println(msg);
+          if (msg == "tare") {
+            b_tareByBle = true;
+          }
+        }
+    });
   }
 
   // //wifiota
@@ -933,6 +953,14 @@ void loop() {
           sendBleWeight();
         if (b_usbweight_enabled)
           sendUsbWeight();
+        if (b_wifiEnabled) {
+          static long lastUpdate = 0;
+          long current = millis();
+          if (current - lastUpdate > 300) {  
+            websocket.textAll(String(f_displayedValue));
+            lastUpdate = current;
+          }
+        }
         if (b_bootTare) {
           //tare after boot
           if (millis() - t_bootTare > i_bootTareDelay) {
