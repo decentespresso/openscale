@@ -43,4 +43,4 @@ jobs:
           name: firmware-${{ matrix.board }}
           path: |
             .pio.nosync/build/${{ matrix.board }}/firmware.bin
-            .pio.nosync/build/${{ matrix.board }}/spiffs.bin
+            .pio.nosync/build/${{ matrix.board }}/littlefs.bin
