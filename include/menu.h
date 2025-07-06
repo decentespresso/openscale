@@ -3,26 +3,26 @@
 
 #include "esp32-hal.h"
 #include "parameter.h"
-const char *weights[] = { "Exit", "50g", "100g", "200g", "500g", "1000g" };
-const float weight_values[] = { 0.0, 50.0, 100.0, 200.0, 500.0, 1000.0 };
+const char *weights[] = {"Exit", "50g", "100g", "200g", "500g", "1000g"};
+const float weight_values[] = {0.0, 50.0, 100.0, 200.0, 500.0, 1000.0};
 bool b_showAbout = false;
 bool b_showLogo = false;
 bool b_showNumber = false;
+bool b_showWifiData = false;
 String actionMessage = "Default";
 String actionMessage2 = "Default";
 unsigned long t_actionMessage = 0;
 int t_actionMessageDelay = 1000;
-template<typename T>
-int getMenuSize(T &menu) {
+template <typename T> int getMenuSize(T &menu) {
   return sizeof(menu) / sizeof(menu[0]);
 }
 
 // Menu structure
 struct Menu {
-  const char *name;  //menu name
-  void (*action)();  //what to do NULL for submenu
-  Menu *subMenu;     //submenu NULL for none
-  Menu *parentMenu;  //parentmenu NULL for root menu
+  const char *name; // menu name
+  void (*action)(); // what to do NULL for submenu
+  Menu *subMenu;    // submenu NULL for none
+  Menu *parentMenu; // parentmenu NULL for root menu
 };
 
 // Function prototypes
@@ -31,7 +31,9 @@ void exitMenu();
 void buzzerOn();
 void buzzerOff();
 #endif
-void toggleWifi();
+void toggleWifiOff();
+void toggleWifiOn();
+void showWifiStatus();
 void heartbeatOn();
 void heartbeatOff();
 void calibrate();
@@ -53,67 +55,84 @@ void btnFuncWhileConnectedOff();
 
 // Top-level menu options
 // 1/5 define the 1st level menu
-Menu menuExit = { "Exit", exitMenu, NULL, NULL };
+Menu menuExit = {"Exit", exitMenu, NULL, NULL};
 #ifdef BUZZER
-Menu menuBuzzer = { "Buzzer", NULL, NULL, NULL };
+Menu menuBuzzer = {"Buzzer", NULL, NULL, NULL};
 #endif
-Menu menuCalibration = { "Calibration", NULL, NULL, NULL };
-Menu menuWifiEnable = { "Toggle WiFi", toggleWifi, NULL, NULL};
-Menu menuWiFiUpdate = { "WiFi Update", NULL, NULL, NULL };
-Menu menuAbout = { "About", showAbout, NULL, NULL };
-Menu menuLogo = { "Show Logo", showLogo, NULL, NULL };
-Menu menuFactory = { "Factory", NULL, NULL, NULL };
-Menu menuHeartbeat = { "Heartbeat", NULL, NULL, NULL };
-Menu menuFlipScreen = { "Flip Screen", NULL, NULL, NULL };
-Menu menuTimeOnTop = { "Time On Top", NULL, NULL, NULL };
-Menu menuBtnFuncWhileConnected = { "Button with BLE", NULL, NULL, NULL };
+Menu menuCalibration = {"Calibration", NULL, NULL, NULL};
+Menu menuWifi = {"WiFi Settings", NULL, NULL, NULL};
+// Menu menuWiFiUpdate = {"WiFi Update", NULL, NULL, NULL};
+Menu menuAbout = {"About", showAbout, NULL, NULL};
+Menu menuLogo = {"Show Logo", showLogo, NULL, NULL};
+Menu menuFactory = {"Factory", NULL, NULL, NULL};
+Menu menuHeartbeat = {"Heartbeat", NULL, NULL, NULL};
+Menu menuFlipScreen = {"Flip Screen", NULL, NULL, NULL};
+Menu menuTimeOnTop = {"Time On Top", NULL, NULL, NULL};
+Menu menuBtnFuncWhileConnected = {"Button with BLE", NULL, NULL, NULL};
 
 // 2/5 define the 2st level menu
 #ifdef BUZZER
 // Buzzer submenu
-Menu menuBuzzerBack = { "Back", NULL, NULL, &menuBuzzer };
-Menu menuBuzzerOn = { "Buzzer On", buzzerOn, NULL, &menuBuzzer };
-Menu menuBuzzerOff = { "Buzzer Off", buzzerOff, NULL, &menuBuzzer };
-Menu *buzzerMenu[] = { &menuBuzzerBack, &menuBuzzerOn, &menuBuzzerOff };
+Menu menuBuzzerBack = {"Back", NULL, NULL, &menuBuzzer};
+Menu menuBuzzerOn = {"Buzzer On", buzzerOn, NULL, &menuBuzzer};
+Menu menuBuzzerOff = {"Buzzer Off", buzzerOff, NULL, &menuBuzzer};
+Menu *buzzerMenu[] = {&menuBuzzerBack, &menuBuzzerOn, &menuBuzzerOff};
 #endif
 // Calibration submenu
-Menu menuCalibrationBack = { "Back", NULL, NULL, &menuCalibration };
-Menu menuCalibrate = { "Calibrate", calibrate, NULL, &menuCalibration };
-Menu *calibrationMenu[] = { &menuCalibrationBack, &menuCalibrate };
+Menu menuCalibrationBack = {"Back", NULL, NULL, &menuCalibration};
+Menu menuCalibrate = {"Calibrate", calibrate, NULL, &menuCalibration};
+Menu *calibrationMenu[] = {&menuCalibrationBack, &menuCalibrate};
 
-// WiFi Update submenu
-Menu menuWiFiUpdateBack = { "Back", NULL, NULL, &menuWiFiUpdate };
-Menu menuWiFiUpdateOption = { "WiFi Update", wifiUpdate, NULL, &menuWiFiUpdate };
-Menu *wifiUpdateMenu[] = { &menuWiFiUpdateBack, &menuWiFiUpdateOption };
+// WiFi submenu
+Menu menuWiFiUpdateBack = {"Back", NULL, NULL, &menuWifi};
+Menu menuWiFiOnOption = {"WiFi On", toggleWifiOn, NULL, &menuWifi};
+Menu menuWiFiOffOption = {"WiFi Off", toggleWifiOff, NULL, &menuWifi};
+Menu menuWiFiStatusOption = {"WiFi Status", showWifiStatus, NULL, &menuWifi};
+Menu *wifiUpdateMenu[] = {
+    &menuWiFiUpdateBack,
+    &menuWiFiOnOption,
+    &menuWiFiOffOption,
+    &menuWiFiStatusOption,
+};
 
 // Heartbeat detection
-Menu menuHeartbeatBack = { "Back", NULL, NULL, &menuHeartbeat };
-Menu menuHeartbeatOn = { "Heartbeat On", heartbeatOn, NULL, &menuHeartbeat };
-Menu menuHeartbeatOff = { "Heartbeat Off", heartbeatOff, NULL, &menuHeartbeat };
-Menu *heartbeatMenu[] = { &menuHeartbeatBack, &menuHeartbeatOn, &menuHeartbeatOff };
+Menu menuHeartbeatBack = {"Back", NULL, NULL, &menuHeartbeat};
+Menu menuHeartbeatOn = {"Heartbeat On", heartbeatOn, NULL, &menuHeartbeat};
+Menu menuHeartbeatOff = {"Heartbeat Off", heartbeatOff, NULL, &menuHeartbeat};
+Menu *heartbeatMenu[] = {&menuHeartbeatBack, &menuHeartbeatOn,
+                         &menuHeartbeatOff};
 
-//Screen flip option
-Menu menuFlipScreenBack = { "Back", NULL, NULL, &menuFlipScreen };
-Menu menuFlipScreenOn = { "Flip On", flipScreenOn, NULL, &menuFlipScreen };
-Menu menuFlipScreenOff = { "Flip Off", flipScreenOff, NULL, &menuFlipScreen };
-Menu *flipScreenMenu[] = { &menuFlipScreenBack, &menuFlipScreenOn, &menuFlipScreenOff };
+// Screen flip option
+Menu menuFlipScreenBack = {"Back", NULL, NULL, &menuFlipScreen};
+Menu menuFlipScreenOn = {"Flip On", flipScreenOn, NULL, &menuFlipScreen};
+Menu menuFlipScreenOff = {"Flip Off", flipScreenOff, NULL, &menuFlipScreen};
+Menu *flipScreenMenu[] = {&menuFlipScreenBack, &menuFlipScreenOn,
+                          &menuFlipScreenOff};
 
-//Swap weight time option
-Menu menuTimeOnTopBack = { "Back", NULL, NULL, &menuTimeOnTop };
-Menu menuTimeOnTopOn = { "Time On Top", timeOnTopOn, NULL, &menuTimeOnTop };
-Menu menuTimeOnTopOff = { "Weight On Top", timeOnTopOff, NULL, &menuTimeOnTop };
-Menu *timeOnTopMenu[] = { &menuTimeOnTopBack, &menuTimeOnTopOn, &menuTimeOnTopOff };
+// Swap weight time option
+Menu menuTimeOnTopBack = {"Back", NULL, NULL, &menuTimeOnTop};
+Menu menuTimeOnTopOn = {"Time On Top", timeOnTopOn, NULL, &menuTimeOnTop};
+Menu menuTimeOnTopOff = {"Weight On Top", timeOnTopOff, NULL, &menuTimeOnTop};
+Menu *timeOnTopMenu[] = {&menuTimeOnTopBack, &menuTimeOnTopOn,
+                         &menuTimeOnTopOff};
 
-//Enable button fucntion while BLE connected
-Menu menuBtnFuncWhileConnectedBack = { "Back", NULL, NULL, &menuBtnFuncWhileConnected };
-Menu menuBtnFuncWhileConnectedOn = { "Enable Buttons", btnFuncWhileConnectedOn, NULL, &menuBtnFuncWhileConnected };
-Menu menuBtnFuncWhileConnectedOff = { "Disable Buttons", btnFuncWhileConnectedOff, NULL, &menuBtnFuncWhileConnected };
-Menu *btnFuncWhileConnectedMenu[] = { &menuBtnFuncWhileConnectedBack, &menuBtnFuncWhileConnectedOn, &menuBtnFuncWhileConnectedOff };
+// Enable button fucntion while BLE connected
+Menu menuBtnFuncWhileConnectedBack = {"Back", NULL, NULL,
+                                      &menuBtnFuncWhileConnected};
+Menu menuBtnFuncWhileConnectedOn = {"Enable Buttons", btnFuncWhileConnectedOn,
+                                    NULL, &menuBtnFuncWhileConnected};
+Menu menuBtnFuncWhileConnectedOff = {"Disable Buttons",
+                                     btnFuncWhileConnectedOff, NULL,
+                                     &menuBtnFuncWhileConnected};
+Menu *btnFuncWhileConnectedMenu[] = {&menuBtnFuncWhileConnectedBack,
+                                     &menuBtnFuncWhileConnectedOn,
+                                     &menuBtnFuncWhileConnectedOff};
 
 // Menu menuFactoryBack = { "Back", NULL, NULL, &menuFactory };
-// Menu menuCalibrateVoltage = { "Calibrate 4.2v", calibrateVoltage, NULL, &menuFactory };
-// Menu menuFactoryDebug = { "Debug Info", enableDebug, NULL, &menuFactory };
-// Menu *factoryMenu[] = { &menuFactoryBack, &menuCalibrateVoltage, &menuFactoryDebug };
+// Menu menuCalibrateVoltage = { "Calibrate 4.2v", calibrateVoltage, NULL,
+// &menuFactory }; Menu menuFactoryDebug = { "Debug Info", enableDebug, NULL,
+// &menuFactory }; Menu *factoryMenu[] = { &menuFactoryBack,
+// &menuCalibrateVoltage, &menuFactoryDebug };
 
 // Main menu
 // 3/5 write all the 1st menu to mainMenu
@@ -122,14 +141,9 @@ Menu *mainMenu[] = {
 #ifdef BUZZER
     &menuBuzzer,
 #endif
-    &menuCalibration,
-    &menuWifiEnable,
+    &menuCalibration, &menuWifi,
     // &menuWiFiUpdate,
-    &menuAbout,
-    &menuLogo,
-    &menuHeartbeat,
-    &menuFlipScreen,
-    &menuTimeOnTop,
+    &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen, &menuTimeOnTop,
     &menuBtnFuncWhileConnected
     //, &menuFactory
 };
@@ -137,11 +151,12 @@ Menu *mainMenu[] = {
 //  &menuHolder5, &menuHolder6};
 Menu **currentMenu = mainMenu;
 Menu *currentSelection = mainMenu[0];
-int currentMenuSize = getMenuSize(mainMenu);  // Top-level menu size
+int currentMenuSize = getMenuSize(mainMenu); // Top-level menu size
 int currentIndex = 0;
-const int linesPerPage = 4;                           // Maximum number of lines that can fit on the display
-int currentPage = 0;                                  // Determine the current page
-int totalPages = currentMenuSize / linesPerPage + 1;  // Calculate total pages
+const int linesPerPage =
+    4;               // Maximum number of lines that can fit on the display
+int currentPage = 0; // Determine the current page
+int totalPages = currentMenuSize / linesPerPage + 1; // Calculate total pages
 
 // 4/5 link all the submenus
 void linkSubmenus() {
@@ -150,12 +165,12 @@ void linkSubmenus() {
   menuBuzzer.subMenu = buzzerMenu[0];
 #endif
   menuCalibration.subMenu = calibrationMenu[0];
-  menuWiFiUpdate.subMenu = wifiUpdateMenu[0];
+  menuWifi.subMenu = wifiUpdateMenu[0];
   menuHeartbeat.subMenu = heartbeatMenu[0];
   menuFlipScreen.subMenu = flipScreenMenu[0];
   menuTimeOnTop.subMenu = timeOnTopMenu[0];
   menuBtnFuncWhileConnected.subMenu = btnFuncWhileConnectedMenu[0];
-  //menuFactory.subMenu = factoryMenu[0];
+  // menuFactory.subMenu = factoryMenu[0];
 }
 
 // Menu actions
@@ -198,15 +213,56 @@ void buzzerOff() {
 }
 #endif
 
-void toggleWifi() {
-  bool wifiEnabled = false;
-  EEPROM.get(i_addr_enableWifiOnBoot, wifiEnabled);
-  actionMessage = wifiEnabled ? "WiFi Disabled" : "WiFi Enabled";
+void toggleWifiOn() {
+  actionMessage = "WiFi Enabled";
+  actionMessage2 = "Restart scale";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_enableWifiOnBoot, !wifiEnabled);
+  EEPROM.put(i_addr_enableWifiOnBoot, true);
   EEPROM.commit();
   Serial.printf("%s\n", actionMessage);
+}
+
+void toggleWifiOff() {
+  bool wifiEnabled = false;
+  actionMessage = "WiFi Disabled";
+  actionMessage2 = "Restart scale";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  EEPROM.put(i_addr_enableWifiOnBoot, false);
+  EEPROM.commit();
+  Serial.printf("%s\n", actionMessage);
+}
+
+void showWifiStatus() {
+  b_showWifiData = true; 
+
+  // Get WiFi info
+  String ssid = WiFi.isConnected() ? WiFi.SSID() : "N/A";
+  String ip = WiFi.isConnected() ? WiFi.localIP().toString() : "0.0.0.0";
+  const char* status = WiFi.isConnected() ? "Enabled" : "Disabled";
+
+  u8g2.firstPage();
+  do {
+
+    u8g2.setFont(u8g2_font_6x12_tr);  // Use readable font
+
+    u8g2.drawStr(0, 12, "WiFi Status:");
+    u8g2.drawStr(72, 12, status);
+
+    u8g2.drawStr(0, 28, "SSID:");
+    u8g2.drawStr(40, 28, ssid.c_str());
+
+    u8g2.drawStr(0, 44, "IP:");
+    u8g2.drawStr(40, 44, ip.c_str());
+
+  } while (u8g2.nextPage());
+  delay(1000);
+  while (b_showWifiData) {
+    if (digitalRead(BUTTON_SQUARE) == LOW) {
+      b_showWifiData = false;
+    }
+  }
 }
 
 void heartbeatOn() {
@@ -291,13 +347,13 @@ void btnFuncWhileConnectedOff() {
   Serial.println("BLE Btns Off");
 }
 
-
 void calibrate() {
   b_menu = false;
-  b_calibration = true;  //让按钮进入校准状态3
+  b_calibration = true; // 让按钮进入校准状态3
   i_calibration = 0;
-  //calibration(0);
-  //the calibration if is after the showMenu() if, so it should exit menu to do calibration
+  // calibration(0);
+  // the calibration if is after the showMenu() if, so it should exit menu to do
+  // calibration
 }
 
 void calibration(int input) {
@@ -317,14 +373,18 @@ void calibration(int input) {
           u8g2.setDrawColor(1);
           u8g2.setFont(FONT_S);
           if (b_is_charging) {
-            u8g2.drawUTF8(AC((char *)"Unplug scale"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Unplug scale");
-            u8g2.drawUTF8(AC((char *)"to start calibration"), LCDHeight - i_margin_bottom, (char *)"to start calibration");
+            u8g2.drawUTF8(AC((char *)"Unplug scale"),
+                          u8g2.getMaxCharHeight() + i_margin_top,
+                          (char *)"Unplug scale");
+            u8g2.drawUTF8(AC((char *)"to start calibration"),
+                          LCDHeight - i_margin_bottom,
+                          (char *)"to start calibration");
           } else {
             int x, y;
             x = 0;
             y = u8g2.getMaxCharHeight();
             u8g2.drawUTF8(x, y, "Calibration Weight");
-            //u8g2.setFont(FONT_M);
+            // u8g2.setFont(FONT_M);
             x += 5;
             y += u8g2.getMaxCharHeight();
             u8g2.drawUTF8(x, y, weights[0]);
@@ -359,7 +419,7 @@ void calibration(int input) {
 
           u8g2.setDrawColor(2);
           drawButton();
-          //drawBleBox();
+          // drawBleBox();
         } while (u8g2.nextPage());
       }
       if (input == 1) {
@@ -367,10 +427,14 @@ void calibration(int input) {
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
-          //2行
-          //FONT_M = u8g2_font_fub14_tn;
-          u8g2.drawUTF8(AC((char *)"Remove all weight"), u8g2.getMaxCharHeight() + i_margin_top + 3, (char *)"Remove all weight");
-          u8g2.drawUTF8(AC((char *)"to start calibration"), LCDHeight - i_margin_bottom - 3, (char *)"to start calibration");
+          // 2行
+          // FONT_M = u8g2_font_fub14_tn;
+          u8g2.drawUTF8(AC((char *)"Remove all weight"),
+                        u8g2.getMaxCharHeight() + i_margin_top + 3,
+                        (char *)"Remove all weight");
+          u8g2.drawUTF8(AC((char *)"to start calibration"),
+                        LCDHeight - i_margin_bottom - 3,
+                        (char *)"to start calibration");
         } while (u8g2.nextPage());
       }
     }
@@ -378,19 +442,22 @@ void calibration(int input) {
       Serial.println("Before if check, i_cal_weight = " + String(i_cal_weight));
 
       if (i_cal_weight == 0 || b_is_charging) {
-        //exit was selected, exit the calibration.
+        // exit was selected, exit the calibration.
         i_button_cal_status = 0;
         b_calibration = false;
         b_menu = true;
         return;
       }
-      //scale.update();
+      // scale.update();
       if (input == 0) {
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
-          u8g2.drawUTF8(AC((char *)"Remove weight"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Remove weight");
-          u8g2.drawUTF8(AC((char *)"from scale"), LCDHeight - i_margin_bottom, (char *)"from scale");
+          u8g2.drawUTF8(AC((char *)"Remove weight"),
+                        u8g2.getMaxCharHeight() + i_margin_top,
+                        (char *)"Remove weight");
+          u8g2.drawUTF8(AC((char *)"from scale"), LCDHeight - i_margin_bottom,
+                        (char *)"from scale");
         } while (u8g2.nextPage());
 #ifdef BUZZER
         buzzer.off();
@@ -400,8 +467,11 @@ void calibration(int input) {
       u8g2.firstPage();
       u8g2.setFont(FONT_S);
       do {
-        u8g2.drawUTF8(AC((char *)"Calibrating 0g"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Calibrating 0g");
-        u8g2.drawUTF8(AC((char *)"Wait: 3s"), LCDHeight - i_margin_bottom, (char *)"Wait: 3s");
+        u8g2.drawUTF8(AC((char *)"Calibrating 0g"),
+                      u8g2.getMaxCharHeight() + i_margin_top,
+                      (char *)"Calibrating 0g");
+        u8g2.drawUTF8(AC((char *)"Wait: 3s"), LCDHeight - i_margin_bottom,
+                      (char *)"Wait: 3s");
       } while (u8g2.nextPage());
 #ifdef BUZZER
       buzzer.off();
@@ -410,8 +480,11 @@ void calibration(int input) {
       u8g2.firstPage();
       u8g2.setFont(FONT_S);
       do {
-        u8g2.drawUTF8(AC((char *)"Calibrating 0g"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Calibrating 0g");
-        u8g2.drawUTF8(AC((char *)"Wait: 2s"), LCDHeight - i_margin_bottom, (char *)"Wait: 2s");
+        u8g2.drawUTF8(AC((char *)"Calibrating 0g"),
+                      u8g2.getMaxCharHeight() + i_margin_top,
+                      (char *)"Calibrating 0g");
+        u8g2.drawUTF8(AC((char *)"Wait: 2s"), LCDHeight - i_margin_bottom,
+                      (char *)"Wait: 2s");
       } while (u8g2.nextPage());
 #ifdef BUZZER
       buzzer.off();
@@ -421,8 +494,11 @@ void calibration(int input) {
       u8g2.firstPage();
       u8g2.setFont(FONT_S);
       do {
-        u8g2.drawUTF8(AC((char *)"Calibrating 0g"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Calibrating 0g");
-        u8g2.drawUTF8(AC((char *)"Wait: 1s"), LCDHeight - i_margin_bottom, (char *)"Wait: 1s");
+        u8g2.drawUTF8(AC((char *)"Calibrating 0g"),
+                      u8g2.getMaxCharHeight() + i_margin_top,
+                      (char *)"Calibrating 0g");
+        u8g2.drawUTF8(AC((char *)"Wait: 1s"), LCDHeight - i_margin_bottom,
+                      (char *)"Wait: 1s");
       } while (u8g2.nextPage());
 #ifdef BUZZER
       buzzer.off();
@@ -432,7 +508,8 @@ void calibration(int input) {
       u8g2.firstPage();
       u8g2.setFont(FONT_S);
       do {
-        u8g2.drawUTF8(AC((char *)"Calibrating 0g"), AM(), (char *)"Calibrating 0g");
+        u8g2.drawUTF8(AC((char *)"Calibrating 0g"), AM(),
+                      (char *)"Calibrating 0g");
       } while (u8g2.nextPage());
 
       scale.tare();
@@ -440,7 +517,8 @@ void calibration(int input) {
       u8g2.firstPage();
       u8g2.setFont(FONT_S);
       do {
-        u8g2.drawUTF8(AC((char *)"0g calibration done"), AM(), (char *)"0g calibration done");
+        u8g2.drawUTF8(AC((char *)"0g calibration done"), AM(),
+                      (char *)"0g calibration done");
       } while (u8g2.nextPage());
 #ifdef BUZZER
       buzzer.beep(1, BUZZER_DURATION);
@@ -456,13 +534,17 @@ void calibration(int input) {
         scale.update();
         known_mass = weight_values[i_cal_weight];
         char buffer[50];
-        snprintf(buffer, sizeof(buffer), "Place %s weight", weights[i_cal_weight]);
+        snprintf(buffer, sizeof(buffer), "Place %s weight",
+                 weights[i_cal_weight]);
 
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
-          u8g2.drawUTF8(AC((char *)trim(buffer)), u8g2.getMaxCharHeight() + i_margin_top, (char *)trim(buffer));
-          u8g2.drawUTF8(AC((char *)"Wait: 3s"), LCDHeight - i_margin_bottom, (char *)"Wait: 3s");
+          u8g2.drawUTF8(AC((char *)trim(buffer)),
+                        u8g2.getMaxCharHeight() + i_margin_top,
+                        (char *)trim(buffer));
+          u8g2.drawUTF8(AC((char *)"Wait: 3s"), LCDHeight - i_margin_bottom,
+                        (char *)"Wait: 3s");
         } while (u8g2.nextPage());
 #ifdef BUZZER
         buzzer.off();
@@ -472,8 +554,11 @@ void calibration(int input) {
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
-          u8g2.drawUTF8(AC((char *)trim(buffer)), u8g2.getMaxCharHeight() + i_margin_top, (char *)trim(buffer));
-          u8g2.drawUTF8(AC((char *)"Wait: 2s"), LCDHeight - i_margin_bottom, (char *)"Wait: 2s");
+          u8g2.drawUTF8(AC((char *)trim(buffer)),
+                        u8g2.getMaxCharHeight() + i_margin_top,
+                        (char *)trim(buffer));
+          u8g2.drawUTF8(AC((char *)"Wait: 2s"), LCDHeight - i_margin_bottom,
+                        (char *)"Wait: 2s");
         } while (u8g2.nextPage());
 #ifdef BUZZER
         buzzer.off();
@@ -483,8 +568,11 @@ void calibration(int input) {
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
-          u8g2.drawUTF8(AC((char *)trim(buffer)), u8g2.getMaxCharHeight() + i_margin_top, (char *)trim(buffer));
-          u8g2.drawUTF8(AC((char *)"Wait: 1s"), LCDHeight - i_margin_bottom, (char *)"Wait: 1s");
+          u8g2.drawUTF8(AC((char *)trim(buffer)),
+                        u8g2.getMaxCharHeight() + i_margin_top,
+                        (char *)trim(buffer));
+          u8g2.drawUTF8(AC((char *)"Wait: 1s"), LCDHeight - i_margin_bottom,
+                        (char *)"Wait: 1s");
         } while (u8g2.nextPage());
 #ifdef BUZZER
         buzzer.off();
@@ -503,7 +591,8 @@ void calibration(int input) {
         delay(1000);
         double d_weight;
         for (int i = 0; i < DATA_SET; i++) {
-          if (scale.update()) newDataReady = true;
+          if (scale.update())
+            newDataReady = true;
           if (newDataReady) {
             d_weight = scale.getData();
             Serial.println(d_weight);
@@ -517,30 +606,35 @@ void calibration(int input) {
           u8g2.firstPage();
           u8g2.setFont(FONT_S);
           do {
-            //2行
-            //FONT_M = u8g2_font_fub14_tn;
-            u8g2.drawUTF8(AC((char *)"No weight detected"), AM(), (char *)"No weight detected");
+            // 2行
+            // FONT_M = u8g2_font_fub14_tn;
+            u8g2.drawUTF8(AC((char *)"No weight detected"), AM(),
+                          (char *)"No weight detected");
           } while (u8g2.nextPage());
 #ifdef BUZZER
           buzzer.off();
 #endif
           delay(1000);
-          //reject the weight and exit
+          // reject the weight and exit
           i_button_cal_status = 0;
           b_calibration = false;
           b_menu = true;
           return;
         }
-        scale.refreshDataSet();  //refresh the dataset to be sure that the known mass is measured correct
+        scale.refreshDataSet(); // refresh the dataset to be sure that the known
+                                // mass is measured correct
 
-        f_calibration_value = scale.getNewCalibration(known_mass);  //get the new calibration value
+        f_calibration_value = scale.getNewCalibration(
+            known_mass); // get the new calibration value
         Serial.print(F("New calibration value f: "));
         Serial.println(f_calibration_value);
-        // #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+        // #if defined(ESP8266) || defined(ESP32) ||
+        // defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
         //     EEPROM.begin(512);
         // #endif
         EEPROM.put(i_addr_calibration_value, f_calibration_value);
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) ||      \
+    defined(ARDUINO_ARCH_MBED_RP2040)
         EEPROM.commit();
 #endif
         dtostrf(f_calibration_value, 10, 2, c_calval);
@@ -550,9 +644,10 @@ void calibration(int input) {
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
-          //2行
-          //FONT_M = u8g2_font_fub14_tn;
-          u8g2.drawUTF8(AC((char *)"Recalibration done"), AM(), (char *)"Recalibration done");
+          // 2行
+          // FONT_M = u8g2_font_fub14_tn;
+          u8g2.drawUTF8(AC((char *)"Recalibration done"), AM(),
+                        (char *)"Recalibration done");
         } while (u8g2.nextPage());
 #ifdef BUZZER
         buzzer.off();
@@ -570,8 +665,11 @@ void calibration(int input) {
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
-          u8g2.drawUTF8(AC((char *)"Place any weight"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Place any weight");
-          u8g2.drawUTF8(AC((char *)"Wait: 3s"), LCDHeight - i_margin_bottom, (char *)"Wait: 3s");
+          u8g2.drawUTF8(AC((char *)"Place any weight"),
+                        u8g2.getMaxCharHeight() + i_margin_top,
+                        (char *)"Place any weight");
+          u8g2.drawUTF8(AC((char *)"Wait: 3s"), LCDHeight - i_margin_bottom,
+                        (char *)"Wait: 3s");
         } while (u8g2.nextPage());
 #ifdef BUZZER
         buzzer.off();
@@ -581,8 +679,11 @@ void calibration(int input) {
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
-          u8g2.drawUTF8(AC((char *)"Place any weight"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Place any weight");
-          u8g2.drawUTF8(AC((char *)"Wait: 2s"), LCDHeight - i_margin_bottom, (char *)"Wait: 2s");
+          u8g2.drawUTF8(AC((char *)"Place any weight"),
+                        u8g2.getMaxCharHeight() + i_margin_top,
+                        (char *)"Place any weight");
+          u8g2.drawUTF8(AC((char *)"Wait: 2s"), LCDHeight - i_margin_bottom,
+                        (char *)"Wait: 2s");
         } while (u8g2.nextPage());
 #ifdef BUZZER
         buzzer.off();
@@ -592,8 +693,11 @@ void calibration(int input) {
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
-          u8g2.drawUTF8(AC((char *)"Place any weight"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Place any weight");
-          u8g2.drawUTF8(AC((char *)"Wait: 1s"), LCDHeight - i_margin_bottom, (char *)"Wait: 1s");
+          u8g2.drawUTF8(AC((char *)"Place any weight"),
+                        u8g2.getMaxCharHeight() + i_margin_top,
+                        (char *)"Place any weight");
+          u8g2.drawUTF8(AC((char *)"Wait: 1s"), LCDHeight - i_margin_bottom,
+                        (char *)"Wait: 1s");
         } while (u8g2.nextPage());
 #ifdef BUZZER
         buzzer.off();
@@ -603,7 +707,8 @@ void calibration(int input) {
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
-          u8g2.drawUTF8(AC((char *)"Reading weight"), AM(), (char *)"Reading weight");
+          u8g2.drawUTF8(AC((char *)"Reading weight"), AM(),
+                        (char *)"Reading weight");
         } while (u8g2.nextPage());
 #ifdef BUZZER
         buzzer.off();
@@ -614,15 +719,16 @@ void calibration(int input) {
     }
     if (i_button_cal_status == 4) {
       float known_mass = 0;
-      if (scale.update()) newDataReady = true;
+      if (scale.update())
+        newDataReady = true;
       if (newDataReady) {
         float current_weight = scale.getData();
         Serial.println(current_weight);
         bool valid_mass = false;
         for (int i = 1; i <= 40; i++) {
-          //check from 50g to 2kg
+          // check from 50g to 2kg
           if (current_weight > i * 50 - 2 && current_weight < i * 50 + 2) {
-            //check if the weight is within 2g
+            // check if the weight is within 2g
             known_mass = i * 50;
             valid_mass = true;
             break;
@@ -631,20 +737,24 @@ void calibration(int input) {
 
         if (!valid_mass) {
           char buffer[50];
-          snprintf(buffer, sizeof(buffer), "%f.0g weight detected", current_weight);
+          snprintf(buffer, sizeof(buffer), "%f.0g weight detected",
+                   current_weight);
           Serial.println(F("Error: Invalid weight detected"));
           u8g2.firstPage();
           u8g2.setFont(FONT_S);
           do {
-            u8g2.drawUTF8(AC((char *)"Error: Invalid"), u8g2.getMaxCharHeight() + i_margin_top, (char *)"Error: Invalid");
-            u8g2.drawUTF8(AC((char *)trim(buffer)), LCDHeight - i_margin_bottom, (char *)trim(buffer));
+            u8g2.drawUTF8(AC((char *)"Error: Invalid"),
+                          u8g2.getMaxCharHeight() + i_margin_top,
+                          (char *)"Error: Invalid");
+            u8g2.drawUTF8(AC((char *)trim(buffer)), LCDHeight - i_margin_bottom,
+                          (char *)trim(buffer));
           } while (u8g2.nextPage());
 #ifdef BUZZER
           buzzer.off();
 #endif
           delay(1000);
           b_calibration = false;
-          return;  // exit calibration
+          return; // exit calibration
         }
 
         char buffer[50];
@@ -653,8 +763,11 @@ void calibration(int input) {
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
-          u8g2.drawUTF8(AC((char *)trim(buffer)), u8g2.getMaxCharHeight() + i_margin_top, (char *)trim(buffer));
-          u8g2.drawUTF8(AC((char *)"Wait: 3s"), LCDHeight - i_margin_bottom, (char *)"Wait: 3s");
+          u8g2.drawUTF8(AC((char *)trim(buffer)),
+                        u8g2.getMaxCharHeight() + i_margin_top,
+                        (char *)trim(buffer));
+          u8g2.drawUTF8(AC((char *)"Wait: 3s"), LCDHeight - i_margin_bottom,
+                        (char *)"Wait: 3s");
         } while (u8g2.nextPage());
 #ifdef BUZZER
         buzzer.off();
@@ -664,8 +777,11 @@ void calibration(int input) {
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
-          u8g2.drawUTF8(AC((char *)trim(buffer)), u8g2.getMaxCharHeight() + i_margin_top, (char *)trim(buffer));
-          u8g2.drawUTF8(AC((char *)"Wait: 2s"), LCDHeight - i_margin_bottom, (char *)"Wait: 2s");
+          u8g2.drawUTF8(AC((char *)trim(buffer)),
+                        u8g2.getMaxCharHeight() + i_margin_top,
+                        (char *)trim(buffer));
+          u8g2.drawUTF8(AC((char *)"Wait: 2s"), LCDHeight - i_margin_bottom,
+                        (char *)"Wait: 2s");
         } while (u8g2.nextPage());
 #ifdef BUZZER
         buzzer.off();
@@ -675,8 +791,11 @@ void calibration(int input) {
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
-          u8g2.drawUTF8(AC((char *)trim(buffer)), u8g2.getMaxCharHeight() + i_margin_top, (char *)trim(buffer));
-          u8g2.drawUTF8(AC((char *)"Wait: 1s"), LCDHeight - i_margin_bottom, (char *)"Wait: 1s");
+          u8g2.drawUTF8(AC((char *)trim(buffer)),
+                        u8g2.getMaxCharHeight() + i_margin_top,
+                        (char *)trim(buffer));
+          u8g2.drawUTF8(AC((char *)"Wait: 1s"), LCDHeight - i_margin_bottom,
+                        (char *)"Wait: 1s");
         } while (u8g2.nextPage());
 #ifdef BUZZER
         buzzer.off();
@@ -694,12 +813,15 @@ void calibration(int input) {
         delay(1000);
 
         scale.setSamplesInUse(16);
-        scale.refreshDataSet();                                     //refresh the dataset to be sure that the known mass is measured correct
-        f_calibration_value = scale.getNewCalibration(known_mass);  //get the new calibration value
+        scale.refreshDataSet(); // refresh the dataset to be sure that the known
+                                // mass is measured correct
+        f_calibration_value = scale.getNewCalibration(
+            known_mass); // get the new calibration value
         Serial.print(F("New calibration value f: "));
         Serial.println(f_calibration_value);
         EEPROM.put(i_addr_calibration_value, f_calibration_value);
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) ||      \
+    defined(ARDUINO_ARCH_MBED_RP2040)
         EEPROM.commit();
 #endif
         dtostrf(f_calibration_value, 10, 2, c_calval);
@@ -709,8 +831,10 @@ void calibration(int input) {
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
-          u8g2.drawUTF8(AC((char *)"Recalibration done"), AM(), (char *)"Recalibration done");
-          //u8g2.drawUTF8(AC((char *)trim(c_calval)), LCDHeight - i_margin_bottom, (char *)trim(c_calval));
+          u8g2.drawUTF8(AC((char *)"Recalibration done"), AM(),
+                        (char *)"Recalibration done");
+          // u8g2.drawUTF8(AC((char *)trim(c_calval)), LCDHeight -
+          // i_margin_bottom, (char *)trim(c_calval));
         } while (u8g2.nextPage());
 #ifdef BUZZER
         buzzer.off();
@@ -744,15 +868,16 @@ void wifiUpdate() {
 
 void showAbout() {
   actionMessage = FIRMWARE_VER;
-  //actionMessage2 = PCB_VER;
+  // actionMessage2 = PCB_VER;
   b_showAbout = true;
   u8g2.setFont(FONT_M);
   u8g2.firstPage();
   do {
     if (AC(actionMessage.c_str()) < 0)
       u8g2.setFont(FONT_S);
-    // u8g2.drawStr(AC(actionMessage.c_str()), AM() - 12, actionMessage.c_str());
-    // u8g2.drawStr(AC(actionMessage2.c_str()), AM() + 12, actionMessage2.c_str());
+    // u8g2.drawStr(AC(actionMessage.c_str()), AM() - 12,
+    // actionMessage.c_str()); u8g2.drawStr(AC(actionMessage2.c_str()), AM() +
+    // 12, actionMessage2.c_str());
     u8g2.drawStr(AC(actionMessage.c_str()), AM(), actionMessage.c_str());
   } while (u8g2.nextPage());
 #ifdef BUZZER
@@ -771,14 +896,14 @@ void showLogo() {
 
   do {
     if (!b_showNumber) {
-      //show logo
+      // show logo
       u8g2.setFont(u8g2_font_logisoso22_tf);
       u8g2.drawStr(AC("Half"), 26, "Half");
       u8g2.drawBox(4, LCDHeight / 2, LCDWidth - 4 * 2, 2);
       u8g2.drawStr(AC("Decent"), LCDHeight - 2, "Decent");
     } else {
-      //show number
-      u8g2.drawXBM(121, 52, 7, 12, image_battery_4);  // 75-100% battery
+      // show number
+      u8g2.drawXBM(121, 52, 7, 12, image_battery_4); // 75-100% battery
       u8g2.drawXBM(3, 51, 5, 13, image_ble_enabled);
       u8g2.setFont(FONT_TIMER);
       u8g2.drawStr(AC("345"), LCDHeight - 8, "345");
@@ -792,31 +917,37 @@ void showLogo() {
         b_negativeWeight = true;
       }
 
-      // Calculate the decimal part by subtracting the integer part from the number
-      // and then multiplying by 10 to shift the first decimal digit into the integer place
+      // Calculate the decimal part by subtracting the integer part from the
+      // number and then multiplying by 10 to shift the first decimal digit into
+      // the integer place
       float decimalPart = number - (float)(i_weightInt);
       int i_weightFirstDecimal = abs((int)(decimalPart * 10));
-      char integerStr[10] = "-0";  // to save the - sign if the input is between -1 to 0
+      char integerStr[10] =
+          "-0"; // to save the - sign if the input is between -1 to 0
       char decimalStr[10] = "0";
       if (number >= 0 || number <= -1) {
-        dtostrf(i_weightInt, 7, 0, integerStr);  // Integer part, no decimal
+        dtostrf(i_weightInt, 7, 0, integerStr); // Integer part, no decimal
       }
       dtostrf(i_weightFirstDecimal, 7, 0, decimalStr);
       u8g2.setFont(FONT_GRAM);
-      int gramWidth = u8g2.getUTF8Width("g");  // Width of the "g" character
+      int gramWidth = u8g2.getUTF8Width("g"); // Width of the "g" character
       u8g2.setFont(FONT_WEIGHT);
       int integerWidth = u8g2.getUTF8Width(trim(integerStr));
       int decimalWidth = u8g2.getUTF8Width(trim(decimalStr));
       int decimalPointWidth = u8g2.getUTF8Width(".");
       if (number <= -1000.0)
         gramWidth = 0;
-      int x_integer = (128 - (integerWidth + decimalWidth + gramWidth + decimalPointWidth - 6 - 1)) / 2;
+      int x_integer = (128 - (integerWidth + decimalWidth + gramWidth +
+                              decimalPointWidth - 6 - 1)) /
+                      2;
       int x_decimalPoint = x_integer + integerWidth - 4;
       int x_decimal = x_decimalPoint + decimalPointWidth - 4;
       int x_gram = x_decimal + decimalWidth - 1;
       int y = AT() - 15;
       u8g2.drawStr(x_decimalPoint, y, ".");
-      u8g2.drawStr(x_integer, y, trim(integerStr));  // Assuming vertical position at 28, adjust as needed
+      u8g2.drawStr(x_integer, y,
+                   trim(integerStr)); // Assuming vertical position at 28,
+                                      // adjust as needed
       u8g2.drawStr(x_decimal, y, trim(decimalStr));
       if (number > -1000.0) {
         u8g2.setFont(FONT_GRAM);
@@ -830,9 +961,9 @@ void showLogo() {
   delay(1000);
   while (b_showLogo) {
     if (digitalRead(BUTTON_SQUARE) == LOW) {
-      //next time to show number
+      // next time to show number
       b_showNumber = !b_showNumber;
-      //exit
+      // exit
       b_showLogo = false;
     }
   }
@@ -856,16 +987,23 @@ void enableDebug() {
 // void calibrateVoltage() {
 //   actionMessage = "Calibrate 4.2v";
 //   t_actionMessage = millis();
-//   int adcValue = analogRead(BATTERY_PIN);                                   // Read the ADC value from the battery pin
-//   float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;       // Calculate the voltage at the ADC pin
-//   float batteryVoltage = voltageAtPin * dividerRatio;                       // Calculate the actual battery voltage using the voltage divider ratio
-//   f_batteryCalibrationFactor = 4.2 / batteryVoltage;                        // Calculate the calibration factor from user input
-//   EEPROM.put(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);  // Store the calibration factor in EEPROM
+//   int adcValue = analogRead(BATTERY_PIN); // Read the ADC value from the
+//   battery pin float voltageAtPin = (adcValue / adcResolution) *
+//   referenceVoltage;       // Calculate the voltage at the ADC pin float
+//   batteryVoltage = voltageAtPin * dividerRatio;                       //
+//   Calculate the actual battery voltage using the voltage divider ratio
+//   f_batteryCalibrationFactor = 4.2 / batteryVoltage; // Calculate the
+//   calibration factor from user input
+//   EEPROM.put(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor); //
+//   Store the calibration factor in EEPROM
 
-// #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
-//   EEPROM.commit();  // Commit changes to EEPROM to save the calibration factor
+// #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) ||
+// defined(ARDUINO_ARCH_MBED_RP2040)
+//   EEPROM.commit();  // Commit changes to EEPROM to save the calibration
+//   factor
 // #endif
-//   Serial.print("Battery Voltage Factor set to: ");  // Output the new calibration factor to the Serial Monitor
+//   Serial.print("Battery Voltage Factor set to: ");  // Output the new
+//   calibration factor to the Serial Monitor
 //   Serial.println(f_batteryCalibrationFactor);
 // }
 
@@ -873,13 +1011,13 @@ void calibrateVoltage() {
   actionMessage = "Calibrate 4.2v";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  const int numReadings = 50;  // Number of readings to average
+  const int numReadings = 50; // Number of readings to average
   long adcSum = 0;
 
   // Take multiple ADC readings and calculate their sum
   for (int i = 0; i < numReadings; i++) {
     adcSum += analogRead(BATTERY_PIN);
-    delay(10);  // Optional: Add a small delay between readings for stability
+    delay(10); // Optional: Add a small delay between readings for stability
   }
 
   // Calculate the average ADC value
@@ -895,8 +1033,9 @@ void calibrateVoltage() {
   // Store the calibration factor in EEPROM
   EEPROM.put(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);
 
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
-  EEPROM.commit();  // Commit changes to EEPROM
+#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) ||      \
+    defined(ARDUINO_ARCH_MBED_RP2040)
+  EEPROM.commit(); // Commit changes to EEPROM
 #endif
 
   // Output the new calibration factor to the Serial Monitor
@@ -910,13 +1049,13 @@ void navigateMenu(int direction) {
   currentSelection = currentMenu[currentIndex];
   Serial.print("currentIndex ");
   Serial.println(currentIndex);
-  //showMenu();
+  // showMenu();
 }
 
 // Select menu
 // 5/5 count submenu items
 void selectMenu() {
-  //use the static way to avoid get size of dynamic array.
+  // use the static way to avoid get size of dynamic array.
   if (currentSelection->subMenu) {
 // Enter the submenu
 #ifdef BUZZER
@@ -925,10 +1064,10 @@ void selectMenu() {
       currentMenuSize = getMenuSize(buzzerMenu);
     } else
 #endif
-      if (currentSelection == &menuCalibration) {
+        if (currentSelection == &menuCalibration) {
       currentMenu = calibrationMenu;
       currentMenuSize = getMenuSize(calibrationMenu);
-    } else if (currentSelection == &menuWiFiUpdate) {
+    } else if (currentSelection == &menuWifi) {
       currentMenu = wifiUpdateMenu;
       currentMenuSize = getMenuSize(wifiUpdateMenu);
     } else if (currentSelection == &menuHeartbeat) {
@@ -950,7 +1089,7 @@ void selectMenu() {
     // }
     currentIndex = 0;
     currentSelection = currentMenu[currentIndex];
-    //showMenu();
+    // showMenu();
   } else if (currentSelection->action) {
     // Execute the action if available
     currentSelection->action();
@@ -958,9 +1097,9 @@ void selectMenu() {
     // Go back to the parent menu
     currentMenu = mainMenu;
     currentMenuSize = getMenuSize(mainMenu);
-    currentIndex = 0;  // Reset to the first item in the parent menu
+    currentIndex = 0; // Reset to the first item in the parent menu
     currentSelection = currentMenu[currentIndex];
-    //showMenu();
+    // showMenu();
   }
 }
 
@@ -981,28 +1120,35 @@ void showMenu() {
       if (actionMessage2 == "Default")
         u8g2.drawStr(AC(actionMessage.c_str()), AM(), actionMessage.c_str());
       else {
-        u8g2.drawStr(AC(actionMessage.c_str()), AM() - 12, actionMessage.c_str());
-        u8g2.drawStr(AC(actionMessage2.c_str()), AM() + 12, actionMessage2.c_str());
+        u8g2.drawStr(AC(actionMessage.c_str()), AM() - 12,
+                     actionMessage.c_str());
+        u8g2.drawStr(AC(actionMessage2.c_str()), AM() + 12,
+                     actionMessage2.c_str());
       }
     } else {
       actionMessage == "Default";
       currentPage = currentIndex / linesPerPage + 1;
-      //currentMenuSize = getMenuSize(currentMenu);
-      totalPages = (currentMenuSize + linesPerPage - 1) / linesPerPage;  //Calculate total pages
+      // currentMenuSize = getMenuSize(currentMenu);
+      totalPages = (currentMenuSize + linesPerPage - 1) /
+                   linesPerPage; // Calculate total pages
       char pageInfo[10];
       snprintf(pageInfo, sizeof(pageInfo), "%d/%d", currentPage, totalPages);
       if (totalPages > 1)
-        u8g2.drawStr(AR(pageInfo), u8g2.getMaxCharHeight(), pageInfo);  // Show on top-right of the screen if more than one page is needed.
+        u8g2.drawStr(AR(pageInfo), u8g2.getMaxCharHeight(),
+                     pageInfo); // Show on top-right of the screen if more than
+                                // one page is needed.
       for (int i = 0; i < currentMenuSize; i++) {
         if (currentMenu[i] == currentSelection) {
-          u8g2.drawStr(0, u8g2.getMaxCharHeight() * (i % linesPerPage + 1), ">");  // Highlight current selection
+          u8g2.drawStr(0, u8g2.getMaxCharHeight() * (i % linesPerPage + 1),
+                       ">"); // Highlight current selection
         }
-        if (i >= (currentPage - 1) * linesPerPage && i < currentPage * linesPerPage)
-          u8g2.drawStr(10, u8g2.getMaxCharHeight() * (i % linesPerPage + 1), currentMenu[i]->name);
+        if (i >= (currentPage - 1) * linesPerPage &&
+            i < currentPage * linesPerPage)
+          u8g2.drawStr(10, u8g2.getMaxCharHeight() * (i % linesPerPage + 1),
+                       currentMenu[i]->name);
       }
     }
   } while (u8g2.nextPage());
 }
-
 
 #endif
