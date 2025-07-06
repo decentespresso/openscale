@@ -235,13 +235,26 @@ void toggleWifiOff() {
 }
 
 void showWifiStatus() {
-  b_showWifiData = true;
+  b_showWifiData = true; 
+
+  // Get WiFi info
+  String ssid = WiFi.isConnected() ? WiFi.SSID() : "N/A";
+  String ip = WiFi.isConnected() ? WiFi.localIP().toString() : "0.0.0.0";
+  const char* status = WiFi.isConnected() ? "Enabled" : "Disabled";
 
   u8g2.firstPage();
   do {
 
-    u8g2.setFont(u8g2_font_logisoso22_tf);
-    u8g2.drawStr(AC("Wifi"), 26, "Wifi");
+    u8g2.setFont(u8g2_font_6x12_tr);  // Use readable font
+
+    u8g2.drawStr(0, 12, "WiFi Status:");
+    u8g2.drawStr(72, 12, status);
+
+    u8g2.drawStr(0, 28, "SSID:");
+    u8g2.drawStr(40, 28, ssid.c_str());
+
+    u8g2.drawStr(0, 44, "IP:");
+    u8g2.drawStr(40, 44, ip.c_str());
 
   } while (u8g2.nextPage());
   delay(1000);

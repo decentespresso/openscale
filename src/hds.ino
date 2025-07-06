@@ -1266,6 +1266,7 @@ void drawBattery() {
     }
   }
 
+  // TODO: move to separate func?
   if (b_wifiEnabled) {
     u8g2.setFont(u8g2_font_open_iconic_www_1x_t);
     u8g2.drawGlyph(10, 64, 0x0051);
