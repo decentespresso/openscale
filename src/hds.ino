@@ -1265,6 +1265,11 @@ void drawBattery() {
       u8g2.drawXBM(121, 52, 7, 12, image_battery_4);  // 75-100% battery
     }
   }
+
+  if (b_wifiEnabled) {
+    u8g2.setFont(u8g2_font_open_iconic_www_1x_t);
+    u8g2.drawGlyph(10, 64, 0x0051);
+  }
 }
 
 void drawAbout() {
