@@ -937,10 +937,6 @@ void loop() {
         }
       }
     } else {
-      //
-      if (b_wifiEnabled) {
-        ElegantOTA.loop();
-      } 
 
       if (b_calibration == true) {
         calibration(i_calibration);
@@ -954,9 +950,11 @@ void loop() {
         if (b_usbweight_enabled)
           sendUsbWeight();
         if (b_wifiEnabled) {
+          websocket.cleanupClients();
+          ElegantOTA.loop();
           static long lastUpdate = 0;
-          long current = millis();
-          if (current - lastUpdate > 300) {  
+          unsigned long current = millis();
+          if (current - lastUpdate > 500) {  
             websocket.textAll(String(f_displayedValue));
             lastUpdate = current;
           }
