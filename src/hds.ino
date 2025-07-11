@@ -172,6 +172,7 @@ void buttonSquare_Pressed() {
     //return;
   }
   if (deviceConnected && millis() - t_shutdownFailBle < 3000)
+    stopWifi();
     shut_down_now_nobeep();
   if (!b_menu && !b_calibration && (!deviceConnected || b_btnFuncWhileConnected)) {
     scaleTimer();
@@ -209,6 +210,7 @@ void buttonCircle_DoubleClicked() {
   if (!deviceConnected && !b_menu && !b_calibration) {
     Serial.println("Going to sleep now.");
     sendBlePowerOff(1);
+    stopWifi();
     shut_down_now_nobeep();
   } else {
     if (deviceConnected) {
@@ -228,6 +230,7 @@ void buttonSquare_DoubleClicked() {
   if (!deviceConnected && !b_menu && !b_calibration) {
     Serial.println("Going to sleep now.");
     sendBlePowerOff(2);
+    stopWifi();
     shut_down_now_nobeep();
   } else {
     if (deviceConnected) {
@@ -343,6 +346,7 @@ void setup() {
         //Power on by button press
         Serial.println("Button released before 0.5 second.");
         Serial.println("Going to sleep now.");
+        stopWifi();
         shut_down_now_nobeep();
         break;  // Exit loop to enter sleep mode
       }
@@ -933,6 +937,7 @@ void loop() {
             //charging not complete, but the serial maynot be ouput cause usb unplugged.
             Serial.println("USB Unplugged, charging not compelete.");
           }
+    stopWifi();
           shut_down_now_nobeep();  //deepsleep
         }
       }
@@ -980,6 +985,7 @@ void loop() {
         }
         pureScale();
         updateOled();
+        delay(10);
       }
     }
   }

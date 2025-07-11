@@ -5,6 +5,7 @@
 // check if can connect
 // if not, start AP mode
 void setupWifi();
+void stopWifi();
 void saveCredentials(String ssid, String pass); // ssid, pass
 
 extern bool b_wifiEnabled;
