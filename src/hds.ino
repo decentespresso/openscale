@@ -172,6 +172,7 @@ void buttonSquare_Pressed() {
     //return;
   }
   if (deviceConnected && millis() - t_shutdownFailBle < 3000)
+    stopWebServer();
     stopWifi();
     shut_down_now_nobeep();
   if (!b_menu && !b_calibration && (!deviceConnected || b_btnFuncWhileConnected)) {
@@ -210,6 +211,7 @@ void buttonCircle_DoubleClicked() {
   if (!deviceConnected && !b_menu && !b_calibration) {
     Serial.println("Going to sleep now.");
     sendBlePowerOff(1);
+    stopWebServer();
     stopWifi();
     shut_down_now_nobeep();
   } else {
@@ -230,6 +232,7 @@ void buttonSquare_DoubleClicked() {
   if (!deviceConnected && !b_menu && !b_calibration) {
     Serial.println("Going to sleep now.");
     sendBlePowerOff(2);
+    stopWebServer();
     stopWifi();
     shut_down_now_nobeep();
   } else {
@@ -346,6 +349,7 @@ void setup() {
         //Power on by button press
         Serial.println("Button released before 0.5 second.");
         Serial.println("Going to sleep now.");
+        stopWebServer();
         stopWifi();
         shut_down_now_nobeep();
         break;  // Exit loop to enter sleep mode
@@ -550,6 +554,7 @@ void setup() {
           AsyncWebSocket *server, AsyncWebSocketClient *client,
                AwsEventType type, void *arg, uint8_t *data, size_t len
           ){
+        client->setCloseClientOnQueueFull(false);
         if (type == WS_EVT_DATA) {
 
           AwsFrameInfo *info = (AwsFrameInfo *)arg;
@@ -937,7 +942,8 @@ void loop() {
             //charging not complete, but the serial maynot be ouput cause usb unplugged.
             Serial.println("USB Unplugged, charging not compelete.");
           }
-    stopWifi();
+          stopWebServer();
+          stopWifi();
           shut_down_now_nobeep();  //deepsleep
         }
       }
@@ -955,13 +961,17 @@ void loop() {
         if (b_usbweight_enabled)
           sendUsbWeight();
         if (b_wifiEnabled) {
-          websocket.cleanupClients();
+          websocket.cleanupClients(1);
           ElegantOTA.loop();
           static long lastUpdate = 0;
           unsigned long current = millis();
           if (current - lastUpdate > 500) {  
-            websocket.textAll(String(f_displayedValue));
-            lastUpdate = current;
+            if (websocket.availableForWriteAll() > 0) {
+              websocket.printfAll("%.2f", f_displayedValue);
+              lastUpdate = current;
+            } else {
+              Serial.println("Websocket write unavailable");
+            }
           }
         }
         if (b_bootTare) {
@@ -985,7 +995,6 @@ void loop() {
         }
         pureScale();
         updateOled();
-        delay(10);
       }
     }
   }
