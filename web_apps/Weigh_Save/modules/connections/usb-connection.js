@@ -17,7 +17,7 @@ export class USBConnection extends BaseConnection {
 
     _checkUSBSupport() {
         if (!navigator.usb) {
-            console.error('WebUSB not available');
+            console.log('WebUSB not available');
             return false;
         }
         console.log('WebUSB is available');

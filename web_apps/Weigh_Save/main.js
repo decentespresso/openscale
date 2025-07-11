@@ -4,20 +4,41 @@ import { TimerManager } from './modules/timer.js';
 import { Led } from './modules/led.js';
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialize components in correct order
     const timerManager = new TimerManager();
     const ui = new UIController(timerManager);
-    timerManager.setUIController(ui);
     const scale = new DecentScale(ui, timerManager);
-    const led = new Led(scale);
 
-    // Connect button
-    document.getElementById('connect')?.addEventListener('click', async () => {
-        if (scale.activeConnection) {
-            await scale.disconnect();
+    timerManager.setUIController(ui);
+
+    // --- WebSocket for live weight ---
+    let currentWeight = 0;
+    const ws = new WebSocket(`ws://${window.location.host}/snapshot`);
+//mock : ws://localhost:8080/snapshot
+    ws.addEventListener('message', (event) => {
+        currentWeight = parseFloat(event.data);
+        ui.updateWeightDisplay(currentWeight);
+            scale.processWeight(currentWeight);
+            
+ // Make sure your UIController has this method
+    });
+    ws.addEventListener('open', () => {
+    console.log('WebSocket connection established.');
+    ui.updateStatus('Connected'); // Set status to connected when the WebSocket opens
+});
+    ws.addEventListener('error', () => {
+        ui.updateStatus('Connection error');
+    });
+
+    ws.addEventListener('close', () => {
+        ui.updateStatus('Disconnected');
+    });
+
+    // Tare button
+    document.getElementById('tareButton')?.addEventListener('click', () => {
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send('tare');
         } else {
-            const connectionType = document.getElementById('connectionType').value;
-            await scale.connect(connectionType);
+            alert('WebSocket not connected.');
         }
     });
 
@@ -26,9 +47,16 @@ document.addEventListener('DOMContentLoaded', () => {
         ui.toggleTimer();
     });
 
+    
+   
+
+    // Remove BLE/USB/DecentScale/LED logic
+
+
     // Other controls
     document.getElementById('tareButton')?.addEventListener('click', () => scale.tare());
     document.getElementById('toggleLed')?.addEventListener('click', () => led.toggleLed());
     document.getElementById('exportCSV')?.addEventListener('click', () => scale.exportToCSV());
     document.getElementById('exportJSON')?.addEventListener('click', () => scale.exportToJSON());
 });
+
