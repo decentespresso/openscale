@@ -1061,6 +1061,9 @@ void chargingOLED(int perc, float voltage) {
 
 
 void updateOled() {
+  if (b_ota) {
+    return;
+  }
   if (millis() > t_oled_refresh + i_oled_print_interval) {
     //达到设定的oled刷新频率后进行刷新
     t_oled_refresh = millis();
