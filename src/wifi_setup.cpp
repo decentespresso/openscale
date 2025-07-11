@@ -1,4 +1,5 @@
 
+#include "NetworkEvents.h"
 #include "WiFiType.h"
 #include "esp32-hal.h"
 #include <Arduino.h>
@@ -51,7 +52,7 @@ void connectToWifi() {
     wifiCounter++;
     delay(1000);
     Serial.println(".");
-    if (wifiCounter > 10) {
+    if (wifiCounter > 20) {
       WiFi.disconnect(true);
       delay(100);
       setupAP();
@@ -63,6 +64,10 @@ void connectToWifi() {
   Serial.println(WiFi.SSID().c_str());
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP().toString().c_str());
+}
+
+void stopWifi() {
+    WiFi.disconnect(true);
 }
 
 void setupWifi() {
