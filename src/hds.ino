@@ -545,7 +545,7 @@ void setup() {
   }
 #endif
 
-  if (readBoolEEPROMWithValidation(i_addr_enableWifiOnBoot, false)) { 
+  if (b_ble_enabled && readBoolEEPROMWithValidation(i_addr_enableWifiOnBoot, false)) { 
     b_wifiEnabled = true;
     setupWifi();
     startWebServer();
