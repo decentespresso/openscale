@@ -259,6 +259,7 @@ void buttonCircle_LongPressed() {
       GPIO_power_on_with = BUTTON_CIRCLE;
       b_ble_enabled = true;
       ble_init();
+      wifi_init();
     }
     // sendUsbButton(1, 2);
     // if (deviceConnected) {
@@ -302,6 +303,45 @@ void button_init() {
   //config1.setFeature(ButtonConfig::kFeatureSuppressAfterLongPress);
   config1.setDoubleClickDelay(DOUBLECLICK);
   config1.setLongPressDelay(LONGCLICK);
+}
+
+void wifi_init() {
+  if (!readBoolEEPROMWithValidation(i_addr_enableWifiOnBoot, false)) {
+    return;
+  }
+  b_wifiEnabled = true;
+  setupWifi();
+  startWebServer();
+  wifiOta();
+  websocket.onEvent([](
+        AsyncWebSocket *server, AsyncWebSocketClient *client,
+              AwsEventType type, void *arg, uint8_t *data, size_t len
+        ){
+      if (type == WS_EVT_CONNECT) {
+        Serial.printf("Client %u connected\n", client->id());
+        client->setCloseClientOnQueueFull(false);
+      } else if (type == WS_EVT_DISCONNECT) {
+          Serial.printf("Client %u disconnected\n", client->id());
+      } else if (type == WS_EVT_ERROR) {
+          Serial.printf("WebSocket error on client %u\n", client->id());
+      } else if (type == WS_EVT_PONG) {
+          Serial.printf("Pong received from client %u\n", client->id());
+      }
+      if (type == WS_EVT_DATA) {
+
+        AwsFrameInfo *info = (AwsFrameInfo *)arg;
+        String msg = "";
+
+        for (size_t i = 0; i < info->len; i++) {
+          msg += (char)data[i];
+        }
+        Serial.print("Websocket recv: ");
+        Serial.println(msg);
+        if (msg == "tare") {
+          b_tareByBle = true;
+        }
+      }
+  });
 }
 
 
@@ -545,33 +585,7 @@ void setup() {
   }
 #endif
 
-  if (b_ble_enabled && readBoolEEPROMWithValidation(i_addr_enableWifiOnBoot, false)) { 
-    b_wifiEnabled = true;
-    setupWifi();
-    startWebServer();
-    wifiOta();
-    websocket.onEvent([](
-          AsyncWebSocket *server, AsyncWebSocketClient *client,
-               AwsEventType type, void *arg, uint8_t *data, size_t len
-          ){
-        client->setCloseClientOnQueueFull(false);
-        if (type == WS_EVT_DATA) {
-
-          AwsFrameInfo *info = (AwsFrameInfo *)arg;
-          String msg = "";
-
-          for (size_t i = 0; i < info->len; i++) {
-            msg += (char)data[i];
-          }
-          Serial.print("Websocket recv: ");
-          Serial.println(msg);
-          if (msg == "tare") {
-            b_tareByBle = true;
-          }
-        }
-    });
-  }
-
+  wifi_init();
   // //wifiota
   // #ifdef WIFI
   if (digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW) {
@@ -874,7 +888,6 @@ void serialCommand() {
   }
 }
 
-
 void loop() {
   if (bleState == CONNECTED && b_requireHeartBeat) {
     if (millis() - t_heartBeat > HEARTBEAT_TIMEOUT) {
@@ -948,7 +961,10 @@ void loop() {
         }
       }
     } else {
-
+      if (b_ota) {
+        ElegantOTA.loop();
+        return;
+      }
       if (b_calibration == true) {
         calibration(i_calibration);
       } else if (b_usbLinked == true) {
@@ -968,10 +984,10 @@ void loop() {
           if (current - lastUpdate > 500) {  
             if (websocket.availableForWriteAll() > 0) {
               websocket.printfAll("%.2f", f_displayedValue);
-              lastUpdate = current;
             } else {
               Serial.println("Websocket write unavailable");
             }
+              lastUpdate = current;
           }
         }
         if (b_bootTare) {
@@ -1061,9 +1077,6 @@ void chargingOLED(int perc, float voltage) {
 
 
 void updateOled() {
-  if (b_ota) {
-    return;
-  }
   if (millis() > t_oled_refresh + i_oled_print_interval) {
     //达到设定的oled刷新频率后进行刷新
     t_oled_refresh = millis();
@@ -1285,7 +1298,8 @@ void drawBattery() {
   // TODO: move to separate func?
   if (b_wifiEnabled) {
     u8g2.setFont(u8g2_font_open_iconic_www_1x_t);
-    u8g2.drawGlyph(10, 64, 0x0051);
+    int glyph = WiFi.getMode() == WIFI_STA ? 0x0051 : 0x0052;
+    u8g2.drawGlyph(10, 64, glyph);
   }
 }
 
