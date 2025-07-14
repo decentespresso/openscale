@@ -171,10 +171,11 @@ void buttonSquare_Pressed() {
     Serial.println(i_button_cal_status);
     //return;
   }
-  if (deviceConnected && millis() - t_shutdownFailBle < 3000)
+  if (deviceConnected && millis() - t_shutdownFailBle < 3000) {
     stopWebServer();
     stopWifi();
     shut_down_now_nobeep();
+  }
   if (!b_menu && !b_calibration && (!deviceConnected || b_btnFuncWhileConnected)) {
     scaleTimer();
   }
