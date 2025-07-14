@@ -172,6 +172,8 @@ void buttonSquare_Pressed() {
     //return;
   }
   if (deviceConnected && millis() - t_shutdownFailBle < 3000)
+    stopWebServer();
+    stopWifi();
     shut_down_now_nobeep();
   if (!b_menu && !b_calibration && (!deviceConnected || b_btnFuncWhileConnected)) {
     scaleTimer();
@@ -209,6 +211,8 @@ void buttonCircle_DoubleClicked() {
   if (!deviceConnected && !b_menu && !b_calibration) {
     Serial.println("Going to sleep now.");
     sendBlePowerOff(1);
+    stopWebServer();
+    stopWifi();
     shut_down_now_nobeep();
   } else {
     if (deviceConnected) {
@@ -228,6 +232,8 @@ void buttonSquare_DoubleClicked() {
   if (!deviceConnected && !b_menu && !b_calibration) {
     Serial.println("Going to sleep now.");
     sendBlePowerOff(2);
+    stopWebServer();
+    stopWifi();
     shut_down_now_nobeep();
   } else {
     if (deviceConnected) {
@@ -253,6 +259,7 @@ void buttonCircle_LongPressed() {
       GPIO_power_on_with = BUTTON_CIRCLE;
       b_ble_enabled = true;
       ble_init();
+      wifi_init();
     }
     // sendUsbButton(1, 2);
     // if (deviceConnected) {
@@ -296,6 +303,45 @@ void button_init() {
   //config1.setFeature(ButtonConfig::kFeatureSuppressAfterLongPress);
   config1.setDoubleClickDelay(DOUBLECLICK);
   config1.setLongPressDelay(LONGCLICK);
+}
+
+void wifi_init() {
+  if (!readBoolEEPROMWithValidation(i_addr_enableWifiOnBoot, false)) {
+    return;
+  }
+  b_wifiEnabled = true;
+  setupWifi();
+  startWebServer();
+  wifiOta();
+  websocket.onEvent([](
+        AsyncWebSocket *server, AsyncWebSocketClient *client,
+              AwsEventType type, void *arg, uint8_t *data, size_t len
+        ){
+      if (type == WS_EVT_CONNECT) {
+        Serial.printf("Client %u connected\n", client->id());
+        client->setCloseClientOnQueueFull(false);
+      } else if (type == WS_EVT_DISCONNECT) {
+          Serial.printf("Client %u disconnected\n", client->id());
+      } else if (type == WS_EVT_ERROR) {
+          Serial.printf("WebSocket error on client %u\n", client->id());
+      } else if (type == WS_EVT_PONG) {
+          Serial.printf("Pong received from client %u\n", client->id());
+      }
+      if (type == WS_EVT_DATA) {
+
+        AwsFrameInfo *info = (AwsFrameInfo *)arg;
+        String msg = "";
+
+        for (size_t i = 0; i < info->len; i++) {
+          msg += (char)data[i];
+        }
+        Serial.print("Websocket recv: ");
+        Serial.println(msg);
+        if (msg == "tare") {
+          b_tareByBle = true;
+        }
+      }
+  });
 }
 
 
@@ -343,6 +389,8 @@ void setup() {
         //Power on by button press
         Serial.println("Button released before 0.5 second.");
         Serial.println("Going to sleep now.");
+        stopWebServer();
+        stopWifi();
         shut_down_now_nobeep();
         break;  // Exit loop to enter sleep mode
       }
@@ -537,32 +585,7 @@ void setup() {
   }
 #endif
 
-  if (readBoolEEPROMWithValidation(i_addr_enableWifiOnBoot, false)) { 
-    b_wifiEnabled = true;
-    setupWifi();
-    startWebServer();
-    wifiOta();
-    websocket.onEvent([](
-          AsyncWebSocket *server, AsyncWebSocketClient *client,
-               AwsEventType type, void *arg, uint8_t *data, size_t len
-          ){
-        if (type == WS_EVT_DATA) {
-
-          AwsFrameInfo *info = (AwsFrameInfo *)arg;
-          String msg = "";
-
-          for (size_t i = 0; i < info->len; i++) {
-            msg += (char)data[i];
-          }
-          Serial.print("Websocket recv: ");
-          Serial.println(msg);
-          if (msg == "tare") {
-            b_tareByBle = true;
-          }
-        }
-    });
-  }
-
+  wifi_init();
   // //wifiota
   // #ifdef WIFI
   if (digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW) {
@@ -865,7 +888,6 @@ void serialCommand() {
   }
 }
 
-
 void loop() {
   if (bleState == CONNECTED && b_requireHeartBeat) {
     if (millis() - t_heartBeat > HEARTBEAT_TIMEOUT) {
@@ -933,11 +955,16 @@ void loop() {
             //charging not complete, but the serial maynot be ouput cause usb unplugged.
             Serial.println("USB Unplugged, charging not compelete.");
           }
+          stopWebServer();
+          stopWifi();
           shut_down_now_nobeep();  //deepsleep
         }
       }
     } else {
-
+      if (b_ota) {
+        ElegantOTA.loop();
+        return;
+      }
       if (b_calibration == true) {
         calibration(i_calibration);
       } else if (b_usbLinked == true) {
@@ -950,13 +977,17 @@ void loop() {
         if (b_usbweight_enabled)
           sendUsbWeight();
         if (b_wifiEnabled) {
-          websocket.cleanupClients();
+          websocket.cleanupClients(1);
           ElegantOTA.loop();
           static long lastUpdate = 0;
           unsigned long current = millis();
           if (current - lastUpdate > 500) {  
-            websocket.textAll(String(f_displayedValue));
-            lastUpdate = current;
+            if (websocket.availableForWriteAll() > 0) {
+              websocket.printfAll("%.2f", f_displayedValue);
+            } else {
+              Serial.println("Websocket write unavailable");
+            }
+              lastUpdate = current;
           }
         }
         if (b_bootTare) {
@@ -1267,7 +1298,8 @@ void drawBattery() {
   // TODO: move to separate func?
   if (b_wifiEnabled) {
     u8g2.setFont(u8g2_font_open_iconic_www_1x_t);
-    u8g2.drawGlyph(10, 64, 0x0051);
+    int glyph = WiFi.getMode() == WIFI_STA ? 0x0051 : 0x0052;
+    u8g2.drawGlyph(10, 64, glyph);
   }
 }
 

@@ -9,8 +9,8 @@
 #include <LittleFS.h>
 #include <WiFi.h>
 
-AsyncWebServer server(80);
-AsyncWebSocket websocket("/snapshot");
+static AsyncWebServer server(80);
+static AsyncWebSocket websocket("/snapshot");
 
 void startWebServer() {
   server.begin();
@@ -34,6 +34,17 @@ void startWebServer() {
         request->send(200);
       });
   server.addHandler(wifiHandler);
+
+  server.addHandler(&websocket).addMiddleware([](AsyncWebServerRequest *request, ArMiddlewareNext next) {
+    // ws.count() is the current count of WS clients: this one is trying to upgrade its HTTP connection
+    if (websocket.count() > 0) {
+      // if we have 1 clients or more, prevent the next one to connect
+      request->send(503, "text/plain", "Server is busy");
+    } else {
+      // process next middleware and at the end the handler
+      next();
+    }
+  });
   server.addHandler(&websocket);
 
   if (!LittleFS.begin()) {
@@ -44,5 +55,10 @@ void startWebServer() {
   server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
 
   Serial.println("Serving web-apps");
+}
+
+void stopWebServer() {
+  websocket.closeAll();
+  server.end();
 }
 #endif
