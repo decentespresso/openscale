@@ -41,7 +41,7 @@ void connectToWifi() {
   WiFi.mode(WIFI_STA);
 
   WiFi.begin(params.getSSID(), params.getPass());
-  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+  WiFi.setTxPower(WIFI_POWER_18_5dBm);
   int wifiCounter = 0;
   while (WiFi.status() != WL_CONNECTED) {
     if (WiFi.status() == WL_CONNECT_FAILED) {
