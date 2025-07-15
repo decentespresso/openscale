@@ -1,5 +1,5 @@
 <title>Decent Scale QC Assistant</title>
-    <link href="./css/qc.css" rel="stylesheet">
+    <link href="qc.css" rel="stylesheet">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 
@@ -11,19 +11,24 @@
                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
                     <a href="https://decentespresso.com/support/decentscale" class="text-xl font-bold text-gray-800">Quality Control Assistant</a>
                     <div class="flex flex-wrap items-center gap-2">
-                        <span id="status" class="mr-2">Status: Not connected</span>                
+                        <span id="status" class="mr-2">Status: Not connected</span>    
+                        <button id="tareButton" 
+                                    class="bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg">
+                                Zero Scale
+                            </button>            
                         <button 
                             id="connectButton" 
-                            class="bg-purple-100 font-medium text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg"
+                            class="hidden bg-purple-100 font-medium text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg"
                         >
                             Connect to Scale
                         </button>
                         <!-- Position fullscreen button absolutely -->
                         <div class="relative">
-                            <button id="tareButton" 
-                                    class="bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg">
-                                Zero Scale
-                            </button>
+                            
+                            <button id="testPassSound" 
+                                class="bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg">
+                            Test Sound
+                        </button>
                             <button 
                                 id="fullscreen-button" 
                                 title="Toggle fullscreen"
@@ -59,10 +64,7 @@
                                 </svg>
                             </button>
                         </div>
-                        <button id="testPassSound" 
-                                class="bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg">
-                            Test Sound
-                        </button>
+                        
                     </div>
                 </div>
             </div>
