@@ -12,7 +12,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- WebSocket for live weight ---
     let currentWeight = 0;
-    const ws = new WebSocket(`ws://${window.location.host}/snapshot`);
+    const ws = new ReconnectingWebSocket(`ws://${window.location.host}/snapshot`);
+    ws.debug = true;
+
 //mock : ws://localhost:8080/snapshot
     ws.addEventListener('message', (event) => {
         currentWeight = parseFloat(event.data);

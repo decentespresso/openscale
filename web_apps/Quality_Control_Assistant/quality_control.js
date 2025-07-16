@@ -51,8 +51,8 @@ class DecentScale {
         this.exportCSVButton = null;
         this.exportJSONButton = null;
         //websocket 
-        this.ws = new WebSocket(`ws://${window.location.host}/snapshot`);
-
+        this.ws = new ReconnectingWebSocket(`ws://${window.location.host}/snapshot`);
+        this.ws.debug =true;
     this.ws.addEventListener('message', (event) => {
         const parsedWeight = parseFloat(event.data);
         const weight = isNaN(parsedWeight) ? 0 : parsedWeight;
