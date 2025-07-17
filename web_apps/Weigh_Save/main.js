@@ -12,15 +12,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- WebSocket for live weight ---
     let currentWeight = 0;
+    let currentTimestamp = 0 
     const ws = new ReconnectingWebSocket(`ws://${window.location.host}/snapshot`);
     ws.debug = true;
 
 //mock : ws://localhost:8080/snapshot
     ws.addEventListener('message', (event) => {
-        currentWeight = parseFloat(event.data);
-        ui.updateWeightDisplay(currentWeight);
+  try {
+    const jsondata = JSON.parse(event.data);
+    if (jsondata.grams !== undefined) {
+      currentWeight = jsondata.grams;
+      ui.updateWeightDisplay(currentWeight);
             scale.processWeight(currentWeight);
-            
+    }
+    if (jsondata.ms !== undefined) {
+      currentTimestamp = jsondata.ms;
+    }
+    // console.log('Current Weight:', currentWeight, 'Timestamp:', currentTimestamp);
+  } catch (e) {
+    console.error('Failed to parse WebSocket message as JSON:', event.data, e);
+  }
+
  // Make sure your UIController has this method
     });
     ws.addEventListener('open', () => {

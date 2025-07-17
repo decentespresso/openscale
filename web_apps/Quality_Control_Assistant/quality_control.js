@@ -54,10 +54,15 @@ class DecentScale {
         this.ws = new ReconnectingWebSocket(`ws://${window.location.host}/snapshot`);
         this.ws.debug =true;
     this.ws.addEventListener('message', (event) => {
-        const parsedWeight = parseFloat(event.data);
+        const jsondata = JSON.parse(event.data);
+        if (jsondata.grams !== undefined){
+        const parsedWeight = jsondata.grams;
         const weight = isNaN(parsedWeight) ? 0 : parsedWeight;
         this.handleWebSocketWeight(weight);
+        const currentTimestamp = jsondata.ms;
+        }
     });
+
 
     this.ws.addEventListener('open', () => {
         if (this.statusDisplay) this.statusDisplay.textContent = 'Status: Connected (WebSocket)';
