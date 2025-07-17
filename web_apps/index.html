@@ -153,8 +153,8 @@
 
     ws.addEventListener('message', (event) => {
       const json = JSON.parse(event.data)
-      if (json.weight != undefined) {
-        weightValue.textContent = `${json.weight} g`;
+      if (json.grams != undefined) {
+        weightValue.textContent = `${json.grams} g`;
       }
     });
 
