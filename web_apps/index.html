@@ -152,7 +152,10 @@
     const tareButton = document.getElementById('tare-button');
 
     ws.addEventListener('message', (event) => {
-      weightValue.textContent = `${event.data} g`;
+      const json = JSON.parse(event.data)
+      if (json.grams != undefined) {
+        weightValue.textContent = `${json.grams} g`;
+      }
     });
 
     tareButton.addEventListener('click', () => {

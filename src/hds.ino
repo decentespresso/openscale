@@ -984,7 +984,7 @@ void loop() {
           unsigned long current = millis();
           if (current - lastUpdate > 500) {  
             if (websocket.availableForWriteAll() > 0) {
-              websocket.printfAll("%.2f", f_displayedValue);
+              websocket.printfAll("{ \"grams\": %.2f, \"ms\": %lu }", f_displayedValue, current);
             } else {
               Serial.println("Websocket write unavailable");
             }
