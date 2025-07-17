@@ -23,7 +23,33 @@ document.addEventListener('DOMContentLoaded', () => {
             await scale.tare();
         }
     });
+    //websocket 
+    const ws = new ReconnectingWebSocket(`ws://${window.location.host}/snapshot`); // or your server URL
+    
+    ws.debug=true;
+    scale.ws = ws;
+    ws.addEventListener('open', () => {
+        ui.updateStatus('WebSocket Connected');
+        console.log('WebSocket connected');
+    });
 
+    ws.addEventListener('close', () => {
+        ui.updateStatus('WebSocket Disconnected');
+        console.log('WebSocket disconnected');
+    });
+
+    ws.addEventListener('error', () => {
+        ui.updateStatus('WebSocket Error');
+        console.log('WebSocket error');
+    });
+
+    ws.addEventListener('message', (event) => {
+        const weight = parseFloat(event.data);
+        if (!isNaN(weight)) {
+            // Pass weight to scale logic
+            scale.handleWebSocketWeight(weight);
+        }
+    });
     // Other button listeners - using correct IDs
     document.getElementById('tareButton')?.addEventListener('click', () => 
         scale.tare()
