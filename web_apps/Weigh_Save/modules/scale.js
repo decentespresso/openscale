@@ -39,7 +39,7 @@ export class DecentScale {
         
         // Stability tracking
         this.stableWeightReadings = [];
-        this.stabilityThreshold = 0.5;
+        this.stabilityThreshold = 0.2;
         this.stabilityDuration = 4;
         this.doseCompletedAndSaved = false;
         this.containerReplacedWeightReadings = [];
@@ -561,4 +561,51 @@ async connect(type) {
         return (weightDiff / timeDiff);
         
     }
+    processWeight(weight) {
+    this.uiController.updateWeightDisplay(weight);
+
+    if (this.timerManager && this.timerManager.shouldTakeMeasurement()) {
+        const currentTime = Date.now();
+        const weight_tole = Math.abs(weight - this.lastWeight);
+        console.log("weight_tole", weight_tole);
+
+        if (
+            weight_tole >= this.stabilityThreshold &&
+            weight !== this.lastWeight &&
+            Math.abs(weight) > this.stabilityThreshold
+        ) {
+            this.readingCount++;
+            const rate = this.rate_grams_per_second(weight, currentTime);
+            this.uiController.updateRateDisplay(rate);
+
+            const reading = {
+                readings: this.readingCount,
+                timestamp: new Date().toLocaleString('en-UK', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                }),
+                weight: weight.toFixed(1),
+                elapsedTime: this.timerManager.elapsedTime,
+                rate: rate.toFixed(1)
+            };
+
+            this.lastWeight = weight;
+            this.lastWeightTime = currentTime;
+
+            this.weightData.push(reading);
+            this.weightReadings.push(
+                `${this.readingCount}, ${reading.weight}g, ${rate.toFixed(1)}g/s, ${reading.timestamp}`
+            );
+
+            this.uiController.displayWeightReadings(this.weightReadings);
+            this.uiController.updateExportButtonStates(true);
+
+            console.log("Measurement taken:", reading);
+        }
+    }
+}
 }

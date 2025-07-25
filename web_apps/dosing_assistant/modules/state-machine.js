@@ -57,7 +57,7 @@ export class StateMachine {
         }
 
         const isStable = this.checkWeightStability(scale.stableWeightReadings);
-        
+        console.log("isStable=", isStable);
         if (isStable) {
             scale.weightIsStable = true;
             
@@ -154,7 +154,7 @@ export class StateMachine {
         }
     }
     
-    checkWeightStability(stableWeightReadings, threshold = 0.4, minReadings = 4) {
+    checkWeightStability(stableWeightReadings, threshold = 0.4, minReadings = 2) {
         // Check if we have enough readings
         if (!stableWeightReadings || stableWeightReadings.length < minReadings) {
             console.log('Weight Stability: Not enough readings yet.');
