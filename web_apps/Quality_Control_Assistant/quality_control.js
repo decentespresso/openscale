@@ -37,7 +37,7 @@ class DecentScale {
         this.countdownInterval = null;
         this.loadPresets();
         this.setupPresetHandlers();
-
+        
         // QC State machine
         this.QC_STATES = {
             
@@ -50,7 +50,32 @@ class DecentScale {
         this.removalTimeoutDuration = 5000; // 5 seconds
         this.exportCSVButton = null;
         this.exportJSONButton = null;
-        
+        //websocket 
+        this.ws = new ReconnectingWebSocket(`ws://${window.location.host}/snapshot`);
+        this.ws.debug =true;
+    this.ws.addEventListener('message', (event) => {
+        const jsondata = JSON.parse(event.data);
+        if (jsondata.grams !== undefined){
+        const parsedWeight = jsondata.grams;
+        const weight = isNaN(parsedWeight) ? 0 : parsedWeight;
+        this.handleWebSocketWeight(weight);
+        const currentTimestamp = jsondata.ms;
+        }
+    });
+
+
+    this.ws.addEventListener('open', () => {
+        if (this.statusDisplay) this.statusDisplay.textContent = 'Status: Connected (WebSocket)';
+    });
+
+    this.ws.addEventListener('error', () => {
+        if (this.statusDisplay) this.statusDisplay.textContent = 'Status: Connection error (WebSocket)';
+    });
+
+    this.ws.addEventListener('close', () => {
+        if (this.statusDisplay) this.statusDisplay.textContent = 'Status: Disconnected (WebSocket)';
+    });
+    
     }
 
     initializeElements() {
@@ -116,7 +141,7 @@ class DecentScale {
             console.error('JSON export button not initialized properly');
         }
     }
-    
+    //websocket
 
     async _findAddress() {
         try {
@@ -512,14 +537,31 @@ class DecentScale {
     }
 
     async tare() {
+       
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send('tare');
+            console.log('Tare requested via WebSocket');
+            return; // If you only want WebSocket tare, you can return here
+        } else {
+            alert('WebSocket not connected.');
+        }
+        if (this.writeCharacteristic) {
         try {
-            console.log('Tare requested');
+            console.log('Tare requested via BLE');
             await this.executeCommand(() => this._tare());
         } catch (error) {
             console.error('Tare error:', error);
-            this.statusDisplay.textContent = `Status: Tare Error - ${error.message}`;
+            if (this.statusDisplay) {
+                this.statusDisplay.textContent = `Status: Tare Error - ${error.message}`;
+            }
         }
+        return;
     }
+     // If neither is connected, show error
+    alert('No scale connection for tare.');
+    }
+
+    
 
     async _led_on() {
         await this._send([0x03, 0x0A, 0x01, 0x01, 0x00, 0x00, 0x09]);
@@ -872,4 +914,117 @@ class DecentScale {
             document.body.removeAttribute("fullscreen");
         }
     }
+    //websocket methods 
+    handleWebSocketWeight(weight) {
+    // Update the weight display
+    if (this.weightDisplay) {
+        this.weightDisplay.textContent = `Weight: ${weight.toFixed(1)} g`;
+    }
+    // If QC mode is active, run QC logic
+    if (this.qcMode) {
+        this.processQCWeight(weight);
+    }
+}
+    processQCWeight(weight) {
+        try {
+        // Directly use the weight value from WebSocket
+        this.weightDisplay.textContent = `Weight: ${weight.toFixed(1)} g`;
+
+        if (this.qcMode) {
+            // QC state machine logic
+            switch (this.currentQCState) {
+                case this.QC_STATES.WAITING_FOR_NEXT:
+                    if (weight >= this.qcSettings.minWeight) {
+                        this.updateQCStatus(
+                            this.QC_STATES.MEASURING,
+                            'Stabilizing...'
+                        );
+                        this.currentQCState = this.QC_STATES.MEASURING;
+                        this.weightIsStable = false;
+                        this.lastWeight = weight;
+                    }
+                    break;
+
+                case this.QC_STATES.MEASURING:
+                    const weightChange = Math.abs(weight - this.lastWeight);
+
+                    if (weightChange <= this.stabilityThreshold) {
+                        if (weight >= this.qcSettings.minWeight) {
+                            this.weightIsStable = true;
+                            const result = this.evaluateWeight(weight);
+                            this.saveMeasurement(weight, result);
+                            this.updateQCStatus(
+                                this.QC_STATES.REMOVAL_PENDING,
+                                'Place next object on scale'
+                            );
+                            this.currentQCState = this.QC_STATES.REMOVAL_PENDING;
+                            this.removalTimeout = setTimeout(() => {
+                                if (this.currentQCState === this.QC_STATES.REMOVAL_PENDING && weight >= this.qcSettings.minWeight) {
+                                    this.weightIsStable = false;
+                                    this.updateQCStatus(
+                                        this.QC_STATES.REMOVAL_PENDING,
+                                        'Ready - Place next object on scale (Check if previous object was left)'
+                                    );
+                                }
+                            }, this.removalTimeoutDuration);
+                        } else if (weight < this.qcSettings.minWeight) {
+                            this.weightIsStable = true;
+                            const result = this.evaluateWeight(weight);
+                            this.saveMeasurement(weight, result);
+                            this.updateQCStatus(
+                                this.QC_STATES.REMOVAL_PENDING,
+                                'Place next object on scale'
+                            );
+                            this.currentQCState = this.QC_STATES.REMOVAL_PENDING;
+                            this.removalTimeout = setTimeout(() => {
+                                if (this.currentQCState === this.QC_STATES.REMOVAL_PENDING && weight < this.qcSettings.minWeight) {
+                                    this.weightIsStable = false;
+                                    this.updateQCStatus(
+                                        this.QC_STATES.REMOVAL_PENDING,
+                                        'Ready - Place next object on scale (Check if previous object was left)'
+                                    );
+                                }
+                            }, this.removalTimeoutDuration);
+                        } else if (weight <= this.nearzerotolerance) {
+                            this.weightIsStable = false;
+                            this.updateQCStatus(
+                                this.QC_STATES.WAITING_FOR_NEXT,
+                                'No Object Detected - Place next one on scale'
+                            );
+                            this.currentQCState = this.QC_STATES.WAITING_FOR_NEXT;
+                            clearTimeout(this.removalTimeout);
+                        }
+                    } else {
+                        this.weightIsStable = false;
+                        this.updateQCStatus(
+                            this.QC_STATES.MEASURING,
+                            'Stabilizing...'
+                        );
+                    }
+                    break;
+
+                case this.QC_STATES.REMOVAL_PENDING:
+                    if (weight > this.nearzerotolerance) {
+                        this.weightIsStable = false;
+                        this.updateQCStatus(
+                            this.QC_STATES.REMOVAL_PENDING,
+                            'Remove this object, and then place the next object'
+                        );
+                        this.currentQCState = this.QC_STATES.REMOVAL_PENDING;
+                    } else if (weight === 0 || weight <= this.nearzerotolerance) {
+                        this.updateQCStatus(
+                            this.QC_STATES.WAITING_FOR_NEXT,
+                            'Ready ! Place next object on scale'
+                        );
+                        this.currentQCState = this.QC_STATES.WAITING_FOR_NEXT;
+                    }
+                    break;
+            }
+
+            this.lastWeight = weight;
+        }
+    } catch (error) {
+        console.error('Weight update error:', error);
+    }
+}
 }

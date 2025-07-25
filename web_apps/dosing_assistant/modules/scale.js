@@ -33,7 +33,7 @@ export class DecentScale {
         // Stability tracking
         this.stableWeightReadings = [];
         this.stabilityThreshold = 0.4;
-        this.stabilityDuration = 4;
+        this.stabilityDuration = 2;
         this.doseCompletedAndSaved = false;
         this.containerReplacedWeightReadings = [];
         this.containerReplacementStabilityCheckTimeout = null;
@@ -184,7 +184,28 @@ export class DecentScale {
     }
 
     async tare() {
-        await this._tare();
+       
+        if (this.ws && this.ws.readyState === 1) {
+            this.ws.send('tare');
+            console.log('Tare requested via WebSocket');
+            return; // If you only want WebSocket tare, you can return here
+        } else {
+            alert('WebSocket not connected.');
+        }
+        if (this.writeCharacteristic) {
+        try {
+            console.log('Tare requested via BLE');
+            await this.executeCommand(() => this._tare());
+        } catch (error) {
+            console.error('Tare error:', error);
+            if (this.statusDisplay) {
+                this.statusDisplay.textContent = `Status: Tare Error - ${error.message}`;
+            }
+        }
+        return;
+    }
+     // If neither is connected, show error
+    alert('No scale connection for tare.');
     }
 
     async _tare() {
@@ -568,5 +589,23 @@ export class DecentScale {
             storedPreference: localStorage.getItem('soundEnabled')
         });
     }
+    handleWebSocketWeight(weight) {
+        // If you have tare logic, subtract tareWeight here
+        const netWeight = weight - (this.tareWeight || 0);
 
+        // Update UI
+        if (this.uiController) {
+            this.uiController.updateWeightDisplay(netWeight);
+        }
+        this.stableWeightReadings.push(netWeight);
+        if (this.stableWeightReadings.length > this.stabilityDuration) {
+                        this.stableWeightReadings.shift();
+                    }
+        // Pass to dosing logic if needed
+        if (this.dosingMode) {
+            this.handleDosingMode(netWeight);
+        }
+
+        
+    }
 }
