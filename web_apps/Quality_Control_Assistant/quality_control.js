@@ -1,10 +1,9 @@
 class DecentScale {
     constructor() {
-        // Move button initialization to DOMContentLoaded
-        document.addEventListener('DOMContentLoaded', () => {
-            this.initializeElements();
-            this.addEventListeners();
-        });
+        // Initialize elements and listeners directly, as this class is now
+        // instantiated after the DOM is loaded.
+        this.initializeElements();
+        this.addEventListeners();
 
         // Keep other constructor initializations
         this.device = null;
@@ -916,19 +915,20 @@ class DecentScale {
     }
     //websocket methods 
     handleWebSocketWeight(weight) {
-    // Update the weight display
-    if (this.weightDisplay) {
-        this.weightDisplay.textContent = `Weight: ${weight.toFixed(1)} g`;
+        console.log("handleWebSocketWeight called with weight:", weight); // <---- Add this line
+        // Update the weight display
+        if (this.weightDisplay) {
+            this.weightDisplay.textContent = `Weight: ${weight.toFixed(1)} g`;
+        }
+        // If QC mode is active, run QC logic
+        if (this.qcMode) {
+            this.processQCWeight(weight);
+        }
     }
-    // If QC mode is active, run QC logic
-    if (this.qcMode) {
-        this.processQCWeight(weight);
-    }
-}
     processQCWeight(weight) {
         try {
-        // Directly use the weight value from WebSocket
-        this.weightDisplay.textContent = `Weight: ${weight.toFixed(1)} g`;
+        // The UI is already updated by handleWebSocketWeight.
+        // This function will now only manage the state machine logic.
 
         if (this.qcMode) {
             // QC state machine logic
