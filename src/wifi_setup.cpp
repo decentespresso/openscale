@@ -33,7 +33,10 @@ WiFiParams params;
 void setupAP() {
   WiFi.mode(WIFI_AP);
   delay(100);
-  WiFi.softAP("Decent Scale");
+  WiFi.softAP("DecentScale", "12345678");
+  WiFi.softAPConfig(IPAddress(192, 168, 1, 1), IPAddress(192, 168, 1, 1),
+                    IPAddress(255, 255, 255, 0));
+
   WiFi.setTxPower(WIFI_POWER_8_5dBm);
 }
 
@@ -66,9 +69,7 @@ void connectToWifi() {
   Serial.println(WiFi.localIP().toString().c_str());
 }
 
-void stopWifi() {
-    WiFi.disconnect(true);
-}
+void stopWifi() { WiFi.disconnect(true); }
 
 void setupWifi() {
   params.init();
