@@ -1299,7 +1299,7 @@ void drawBattery() {
   // TODO: move to separate func?
   if (b_wifiEnabled) {
     u8g2.setFont(u8g2_font_open_iconic_www_1x_t);
-    int glyph = WiFi.getMode() == WIFI_STA ? 0x0051 : 0x0052;
+    int glyph = WiFi.getMode() == WIFI_STA ? 0x004F : 0x0051;
     u8g2.drawGlyph(10, 64, glyph);
   }
 }
