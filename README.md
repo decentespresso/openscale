@@ -12,21 +12,52 @@ The current PCB for HDS uses ESP32S3N16, i2000 2kg loadcell, ADS1232(instead of 
 If you want to use it unplugged, you'll also need a 3.7v battery.<br />
 If you only want to burn the firmware, please read How to upload HEX file.<br />
 
-# Library needed:
-AceButton https://github.com/bxparks/AceButton <br />
-Stopwatch_RT https://github.com/RobTillaart/Stopwatch_RT <br />
-HX711_ADC https://github.com/olkal/HX711_ADC <br />
-u8g2 https://github.com/olikraus/u8g2 <br />
-Adafruit_MPU6050 https://github.com/adafruit/Adafruit_MPU6050 <br />
-Adafruit_ADS1X15 https://github.com/adafruit/Adafruit_ADS1X15 <br />
-SparkFun_BMA400_Arduino_Library https://github.com/sparkfun/SparkFun_BMA400_Arduino_Library <br />
+# How to build
 
-# Compile Guide:
-In Arduino IDE, selete tool menu, and change:
-- Board to "ESP32S3 Dev Module"<br />
-- CPU Frequency to "80MHz (WiFi)"<br />
-- Flash Size to "16MB (128Mb)"<br />
-- Partition Scheme to "16MB Flash (3MB APP/9.9MB FATFS)"<br />
+Beginning with firmware version 3.0.0, OpenScale now uses [Platform.io](https://platformio.org) for development, building and flashing the firmware.  
+
+To build and flash the scale from your computer, make sure you have the `pio` command line tool installed.  
+After this, one can simply use `$pio run -t upload` and platformio will build and flash the firmware to the connected Esp32s3 chip.
+
+
+# New Features in 3.0.0
+
+## Wifi mode
+
+Decent Scale now uses WiFi for additional features, not just OTA update.   
+
+To enable WiFi mode, go to HDS setup menu and find "Wifi settings" entry. From there you can enable/disable WiFi as well as see current WiFi details.
+Initially HDS will open its own WiFi, called "Decent Scale", protected with a password '12345678'. Once connected to this WiFi, you can navigate with your browser to [hds.local](http://hds.local) or [192.168.1.1](http://192.168.1.1) to change the Wifi settings, in case you want HDS to connect to your home WiFi. 
+If you do change the settings, make sure to restart the scale for the settings to take effect.
+If you store WiFi settings incorrectly, or you take your HDS out of signal range, HDS will return back to its own Wifi (Decent Scale) - so you can change the settings again.
+
+## Web apps
+The same web apps that could be used with Half Decent Scale from [the web](https://decentespresso.com/docs/introducing_half_decent_scale_web_apps) have now been rewritten to run directly from the Half Decent Scale.
+
+You can find these apps on the index page of Half Decent Scale Web User Interface - navigating to [hds.local](http://hds.local)
+
+## WebSockets support
+
+When WiFi mode is enabled on HDS, there is also a new WebSocket endpoint available, where you can receive real-time information regarding the weight in the following format  
+
+```json
+{
+  "grams": 25.66,
+  "ms": 12345
+}
+```
+
+you can also send a simple `tare` String over the websocket and the scale will tare itself.
+
+
+# How to upload Web apps?
+
+In order to build and upload Web apps to HDS, you need to use `pio` to build and upload the filesystem image to the Esp32s3.  
+Simply run `pio run -t buildfs -t uploadfs` with the Esp32s3 connected to your computer
+
+# Automated builds
+
+With version 3, we have also started using GitHub actions to build the firmware and filesystem images. You can find the recent builds on the "Actions" tab on the GitHub page of this project. From there you can also download the firmware files (e.g. for development builds).
 
 # How to upload HEX file
 Web USB Flash(please use Chrome/Edge, Safari or Firefox is not supported):<br />
