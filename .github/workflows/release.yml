@@ -1,0 +1,118 @@
+name: Release firmware
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (must already exist on main)"
+        required: true
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Needed for all commits/tags
+          ref: main  # Explicitly checkout main branch
+
+      - name: Verify tag exists on main
+        run: |
+          if ! git rev-parse ${{ github.event.inputs.tag }} >/dev/null 2>&1; then
+            echo "Error: Tag ${{ github.event.inputs.tag }} does not exist"
+            exit 1
+          fi
+          if [ "$(git rev-parse ${{ github.event.inputs.tag }})" != "$(git rev-parse main~0)" ]; then
+            echo "Error: Tag ${{ github.event.inputs.tag }} is not at the tip of main branch"
+            exit 1
+          fi
+
+      - name: Fetch all tags
+        run: git fetch --tags
+
+      - name: Determine previous tag
+        id: prevtag
+        run: |
+          # Get all tags sorted by version
+          ALL_TAGS=$(git tag --sort=-v:refname)
+          CURRENT_TAG=${{ github.event.inputs.tag }}
+          
+          # Find the tag before the current one
+          PREV_TAG=""
+          found=0
+          for tag in $ALL_TAGS; do
+            if [ "$found" -eq 1 ]; then
+              PREV_TAG=$tag
+              break
+            fi
+            if [ "$tag" = "$CURRENT_TAG" ]; then
+              found=1
+            fi
+          done
+          
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous tag found, this appears to be the first release"
+            PREV_TAG=$(git rev-list --max-parents=0 HEAD)  # Get initial commit
+          fi
+          
+          echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: ${{ runner.os }}-pio
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO Core
+        run: pip install --upgrade platformio
+
+      - name: Build PlatformIO Project
+        run: |
+          pio run -e esp32s3 || exit 1
+          pio run -e esp32s3 -t buildfs || exit 1
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          NOTES=$(git log ${{ steps.prevtag.outputs.previous_tag }}..${{ github.event.inputs.tag }} --pretty=format:"- %s" || echo "- Initial release")
+          if [ -z "$NOTES" ]; then
+            NOTES="- No significant changes"
+          fi
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create firmware ZIP
+        run: |
+          # Remove leading 'v' from tag if present
+          CLEAN_TAG=${GITHUB_EVENT_INPUTS_TAG/#v/}
+          mkdir -p release-files
+          # Check files exist before copying
+          for file in firmware.bin bootloader.bin partitions.bin littlefs.bin; do
+            if [ ! -f ".pio/build/esp32s3/$file" ]; then
+              echo "Error: File .pio/build/esp32s3/$file not found"
+              exit 1
+            fi
+            cp ".pio/build/esp32s3/$file" release-files/
+          done
+          cd release-files
+          zip ../HDS_FW_${CLEAN_TAG}.zip ./* || exit 1
+          cd ..
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.tag }}
+          name: HDS-${{ github.event.inputs.tag }}
+          body: ${{ steps.notes.outputs.notes }}
+          files: HDS_FW_${CLEAN_TAG}.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
