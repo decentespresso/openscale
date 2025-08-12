@@ -37,10 +37,14 @@ jobs:
           pio run -e ${{ matrix.board }} 
           pio run -e ${{ matrix.board }} -t buildfs
 
+      - name: "Run slugify"
+        id: slugify
+        uses: eltimn/slugify-action@v2
+
       - name: Save firmware file
         uses: actions/upload-artifact@v4
         with:
-          name: HDS-snapshot-${GITHUB_SHA::6}
+          name: HDS-snapshot-${{steps.slugify.outputs.sha}}
           path: |
             .pio.nosync/build/${{ matrix.board }}/firmware.bin
             .pio.nosync/build/${{ matrix.board }}/bootloader.bin
