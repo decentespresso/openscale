@@ -39,7 +39,7 @@ jobs:
 
       - name: "Run slugify"
         id: slugify
-        uses: eltimn/slugify-action@v2
+        uses: eltimn/slugify-action@v2.0.2
 
       - name: Save firmware file
         uses: actions/upload-artifact@v4
