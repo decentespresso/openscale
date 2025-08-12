@@ -40,7 +40,9 @@ jobs:
       - name: Save firmware file
         uses: actions/upload-artifact@v4
         with:
-          name: firmware-${{ matrix.board }}
+          name: HDS-snapshot-${GOTHUB_SHA::6}
           path: |
             .pio.nosync/build/${{ matrix.board }}/firmware.bin
+            .pio.nosync/build/${{ matrix.board }}/bootloader.bin
+            .pio.nosync/build/${{ matrix.board }}/partitions.bin
             .pio.nosync/build/${{ matrix.board }}/littlefs.bin
