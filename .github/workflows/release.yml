@@ -103,7 +103,7 @@ jobs:
             cp ".pio.nosync/build/esp32s3/$file" release-files/
           done
           cd release-files
-          zip ../HDS_FW_${{ github.event.inputs.tag }}.zip ./* || exit 1
+          zip "../HDS_FW_${{ github.event.inputs.tag }}.zip" ./* || exit 1
           cd ..
       - name: Create release
         env:
