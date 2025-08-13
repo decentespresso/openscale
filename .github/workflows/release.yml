@@ -28,35 +28,35 @@ jobs:
           #   exit 1
           # fi
 
-      - name: Fetch all tags
-        run: git fetch --tags
+      # - name: Fetch all tags
+      #   run: git fetch --tags
 
-      - name: Determine previous tag
-        id: prevtag
-        run: |
-          # Get all tags sorted by version
-          ALL_TAGS=$(git tag --sort=-v:refname)
-          CURRENT_TAG=${{ github.event.inputs.tag }}
-          
-          # Find the tag before the current one
-          PREV_TAG=""
-          found=0
-          for tag in $ALL_TAGS; do
-            if [ "$found" -eq 1 ]; then
-              PREV_TAG=$tag
-              break
-            fi
-            if [ "$tag" = "$CURRENT_TAG" ]; then
-              found=1
-            fi
-          done
-          
-          if [ -z "$PREV_TAG" ]; then
-            echo "No previous tag found, this appears to be the first release"
-            PREV_TAG=$(git rev-list --max-parents=0 HEAD)  # Get initial commit
-          fi
-          
-          echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+      # - name: Determine previous tag
+      #   id: prevtag
+      #   run: |
+      #     # Get all tags sorted by version
+      #     ALL_TAGS=$(git tag --sort=-v:refname)
+      #     CURRENT_TAG=${{ github.event.inputs.tag }}
+      #
+      #     # Find the tag before the current one
+      #     PREV_TAG=""
+      #     found=0
+      #     for tag in $ALL_TAGS; do
+      #       if [ "$found" -eq 1 ]; then
+      #         PREV_TAG=$tag
+      #         break
+      #       fi
+      #       if [ "$tag" = "$CURRENT_TAG" ]; then
+      #         found=1
+      #       fi
+      #     done
+      #
+      #     if [ -z "$PREV_TAG" ]; then
+      #       echo "No previous tag found, this appears to be the first release"
+      #       PREV_TAG=$(git rev-list --max-parents=0 HEAD)  # Get initial commit
+      #     fi
+      #
+      #     echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
 
       - uses: actions/cache@v3
         with:
@@ -77,22 +77,22 @@ jobs:
           pio run -e esp32s3 || exit 1
           pio run -e esp32s3 -t buildfs || exit 1
 
-      - name: Generate release notes
-        id: notes
-        run: |
-          NOTES=$(git log ${{ steps.prevtag.outputs.previous_tag }}..${{ github.event.inputs.tag }} --pretty=format:"- %s" || echo "- Initial release")
-          if [ -z "$NOTES" ]; then
-            NOTES="- No significant changes"
-          fi
-          echo "notes<<EOF" >> $GITHUB_OUTPUT
-          echo "$NOTES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+      # - name: Generate release notes
+      #   id: notes
+      #   run: |
+      #     NOTES=$(git log ${{ steps.prevtag.outputs.previous_tag }}..${{ github.event.inputs.tag }} --pretty=format:"- %s" || echo "- Initial release")
+      #     if [ -z "$NOTES" ]; then
+      #       NOTES="- No significant changes"
+      #     fi
+      #     echo "notes<<EOF" >> $GITHUB_OUTPUT
+      #     echo "$NOTES" >> $GITHUB_OUTPUT
+      #     echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Create firmware ZIP
         run: |
           # Remove leading 'v' from tag if present
-          CLEAN_TAG=${GITHUB_EVENT_INPUTS_TAG/#v/}
-          echo "CLEAN_TAG"="${CLEAN_TAG}" >> $GITHUB_ENV
+          # CLEAN_TAG=${GITHUB_EVENT_INPUTS_TAG/#v/}
+          # echo "CLEAN_TAG"="${CLEAN_TAG}" >> $GITHUB_ENV
           mkdir -p release-files
           # Check files exist before copying
           for file in firmware.bin bootloader.bin partitions.bin littlefs.bin; do
@@ -103,14 +103,14 @@ jobs:
             cp ".pio.nosync/build/esp32s3/$file" release-files/
           done
           cd release-files
-          zip ../HDS_FW_${CLEAN_TAG}.zip ./* || exit 1
+          zip ../HDS_FW_${{ github.event.inputs.tag }}.zip ./* || exit 1
           cd ..
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create ${{ github.event.inputs.tag }} \
-            --title="${GITHUB_REPOSITORY#*/} ${tag#v}" \
+            --title= ${{ github.event.inputs.tag }} \
             --generate-notes \
             *.zip
       # - name: Create GitHub Release
