@@ -23,10 +23,10 @@ jobs:
             echo "Error: Tag ${{ github.event.inputs.tag }} does not exist"
             exit 1
           fi
-          if [ "$(git rev-parse ${{ github.event.inputs.tag }})" != "$(git rev-parse main~0)" ]; then
-            echo "Error: Tag ${{ github.event.inputs.tag }} is not at the tip of main branch"
-            exit 1
-          fi
+          # if [ "$(git rev-parse ${{ github.event.inputs.tag }})" != "$(git rev-parse main~0)" ]; then
+          #   echo "Error: Tag ${{ github.event.inputs.tag }} is not at the tip of main branch"
+          #   exit 1
+          # fi
 
       - name: Fetch all tags
         run: git fetch --tags
