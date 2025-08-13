@@ -95,11 +95,11 @@ jobs:
           mkdir -p release-files
           # Check files exist before copying
           for file in firmware.bin bootloader.bin partitions.bin littlefs.bin; do
-            if [ ! -f ".pio/build/esp32s3/$file" ]; then
-              echo "Error: File .pio/build/esp32s3/$file not found"
+            if [ ! -f ".pio.nosync/build/esp32s3/$file" ]; then
+              echo "Error: File .pio.nosync/build/esp32s3/$file not found"
               exit 1
             fi
-            cp ".pio/build/esp32s3/$file" release-files/
+            cp ".pio.nosync/build/esp32s3/$file" release-files/
           done
           cd release-files
           zip ../HDS_FW_${CLEAN_TAG}.zip ./* || exit 1
