@@ -92,7 +92,7 @@ jobs:
         run: |
           # Remove leading 'v' from tag if present
           CLEAN_TAG=${GITHUB_EVENT_INPUTS_TAG/#v/}
-          echo "CLEAN_TAG=$CLEAN_TAG" >> $GITHUB_ENV
+          echo "CLEAN_TAG"="${CLEAN_TAG}" >> $GITHUB_ENV
           mkdir -p release-files
           # Check files exist before copying
           for file in firmware.bin bootloader.bin partitions.bin littlefs.bin; do
@@ -105,15 +105,22 @@ jobs:
           cd release-files
           zip ../HDS_FW_${CLEAN_TAG}.zip ./* || exit 1
           cd ..
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.event.inputs.tag }}
-          name: HDS-${{ github.event.inputs.tag }}
-          body: ${{ steps.notes.outputs.notes }}
-          files: HDS_FW_${{ env.CLEAN_TAG }}.zip
-          draft: false
-          prerelease: false
+      - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.event.inputs.tag }} \
+            --title="${GITHUB_REPOSITORY#*/} ${tag#v}" \
+            --generate-notes \
+            *.zip
+      # - name: Create GitHub Release
+      #   uses: softprops/action-gh-release@v1
+      #   with:
+      #     tag_name: ${{ github.event.inputs.tag }}
+      #     name: HDS-${{ github.event.inputs.tag }}
+      #     body: ${{ steps.notes.outputs.notes }}
+      #     files: HDS_FW_${{ env.CLEAN_TAG }}.zip
+      #     draft: false
+      #     prerelease: false
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
