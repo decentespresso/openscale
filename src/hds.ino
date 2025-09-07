@@ -263,7 +263,7 @@ void buttonCircle_LongPressed() {
       wifi_init();
     } else if (GPIO_power_on_with == BUTTON_CIRCLE ||
         GPIO_power_on_with == BUTTON_SQUARE) {
-      shut_down_now_nobeep();
+      buttonCircle_DoubleClicked();
     }
     // sendUsbButton(1, 2);
     // if (deviceConnected) {
