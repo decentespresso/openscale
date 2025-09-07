@@ -26,8 +26,8 @@
 //#define CHECKBATTERY
 
 //SCALE CONFIG
-#define LINE1 (char*)"FW: 3.0.0beta1"
-#define LINE2 (char*)"Built-date(YYYYMMDD): 20250809"
+#define LINE1 (char*)"FW: 3.0.0beta2"
+#define LINE2 (char*)"Built-date(YYYYMMDD): 20250909"
 #define LINE3 (char*)"S/N: HDS001"  //Serial number
 #define VERSION /*version*/ LINE1, /*compile date*/ LINE2, /*sn*/ LINE3
 //About info
@@ -60,10 +60,10 @@
 //BUTTON
 
 #define ACEBUTTON  //ACEBUTTON ACEBUTTONT
-#define DEBOUNCE 200
+#define DEBOUNCE 100
 #define LONGCLICK 1500
-#define DOUBLECLICK 800
-#define CLICK 400
+#define DOUBLECLICK 500
+#define CLICK 200
 #define BUTTON_KEY_DELAY 150
 
 //DISPLAY
