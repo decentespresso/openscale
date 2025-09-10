@@ -300,9 +300,9 @@ void power_off(int min) {
     }
     if (min > 0) {
       double d_timeleft = min * 60 - (millis() - t_power_off) / 1000;
-      // Serial.print(d_timeleft);
-      // Serial.println(" seconds to power off");
-      if (d_timeleft <= 0) {
+      Serial.print(d_timeleft);
+      Serial.println(" seconds to power off");
+      if (d_timeleft <= 0 && b_autoSleep == true) {
         shut_down_now();
       }
     }
@@ -331,6 +331,20 @@ void power_off_gyro(int sec) {
 
 void power_off(double sec) {
   if (!b_is_charging) {
+    if (getVoltage(BATTERY_PIN) > lowBatteryThreshold) {
+      i_lowBatteryCount = 0;
+    }
+
+    if (getVoltage(BATTERY_PIN) < lowBatteryThreshold) {
+      i_lowBatteryCount++;
+      i_lowBatteryCountTotal++;
+    }
+
+    if (i_lowBatteryCount > 50) {
+      shut_down_low_battery(getVoltage(BATTERY_PIN));
+      return;
+    }
+
     if (sec == -1) {
       t_power_off = millis();
       //Serial.println("power off timer reset");
@@ -339,7 +353,7 @@ void power_off(double sec) {
       double d_timeleft = sec - (millis() - t_power_off) / 1000;
       //Serial.print(d_timeleft);
       //Serial.println(" seconds to power off");
-      if (d_timeleft <= 0) {
+      if (d_timeleft <= 0 && b_autoSleep == true) {
         shut_down_now();
       }
     }

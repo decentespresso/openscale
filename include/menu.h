@@ -3,8 +3,8 @@
 
 #include "esp32-hal.h"
 #include "parameter.h"
-const char *weights[] = {"Exit", "50g", "100g", "200g", "500g", "1000g"};
-const float weight_values[] = {0.0, 50.0, 100.0, 200.0, 500.0, 1000.0};
+const char *weights[] = { "Exit", "50g", "100g", "200g", "500g", "1000g" };
+const float weight_values[] = { 0.0, 50.0, 100.0, 200.0, 500.0, 1000.0 };
 bool b_showAbout = false;
 bool b_showLogo = false;
 bool b_showNumber = false;
@@ -13,16 +13,16 @@ String actionMessage = "Default";
 String actionMessage2 = "Default";
 unsigned long t_actionMessage = 0;
 int t_actionMessageDelay = 1000;
-template <typename T> int getMenuSize(T &menu) {
+template<typename T> int getMenuSize(T &menu) {
   return sizeof(menu) / sizeof(menu[0]);
 }
 
 // Menu structure
 struct Menu {
-  const char *name; // menu name
-  void (*action)(); // what to do NULL for submenu
-  Menu *subMenu;    // submenu NULL for none
-  Menu *parentMenu; // parentmenu NULL for root menu
+  const char *name;  // menu name
+  void (*action)();  // what to do NULL for submenu
+  Menu *subMenu;     // submenu NULL for none
+  Menu *parentMenu;  // parentmenu NULL for root menu
 };
 
 // Function prototypes
@@ -52,81 +52,89 @@ void timeOnTopOn();
 void timeOnTopOff();
 void btnFuncWhileConnectedOn();
 void btnFuncWhileConnectedOff();
+void autoSleepOn();
+void autoSleepOff();
 
 // Top-level menu options
 // 1/5 define the 1st level menu
-Menu menuExit = {"Exit", exitMenu, NULL, NULL};
+Menu menuExit = { "Exit", exitMenu, NULL, NULL };
 #ifdef BUZZER
-Menu menuBuzzer = {"Buzzer", NULL, NULL, NULL};
+Menu menuBuzzer = { "Buzzer", NULL, NULL, NULL };
 #endif
-Menu menuCalibration = {"Calibration", NULL, NULL, NULL};
-Menu menuWifi = {"WiFi Settings", NULL, NULL, NULL};
+Menu menuCalibration = { "Calibration", NULL, NULL, NULL };
+Menu menuWifi = { "WiFi Settings", NULL, NULL, NULL };
 // Menu menuWiFiUpdate = {"WiFi Update", NULL, NULL, NULL};
-Menu menuAbout = {"About", showAbout, NULL, NULL};
-Menu menuLogo = {"Show Logo", showLogo, NULL, NULL};
-Menu menuFactory = {"Factory", NULL, NULL, NULL};
-Menu menuHeartbeat = {"Heartbeat", NULL, NULL, NULL};
-Menu menuFlipScreen = {"Flip Screen", NULL, NULL, NULL};
-Menu menuTimeOnTop = {"Time On Top", NULL, NULL, NULL};
-Menu menuBtnFuncWhileConnected = {"Button with BLE", NULL, NULL, NULL};
+Menu menuAbout = { "About", showAbout, NULL, NULL };
+Menu menuLogo = { "Show Logo", showLogo, NULL, NULL };
+Menu menuFactory = { "Factory", NULL, NULL, NULL };
+Menu menuHeartbeat = { "Heartbeat", NULL, NULL, NULL };
+Menu menuFlipScreen = { "Flip Screen", NULL, NULL, NULL };
+Menu menuTimeOnTop = { "Time On Top", NULL, NULL, NULL };
+Menu menuBtnFuncWhileConnected = { "Button with BLE", NULL, NULL, NULL };
+Menu menuAutoSleep = { "Auto Sleep", NULL, NULL, NULL };
 
 // 2/5 define the 2st level menu
 #ifdef BUZZER
 // Buzzer submenu
-Menu menuBuzzerBack = {"Back", NULL, NULL, &menuBuzzer};
-Menu menuBuzzerOn = {"Buzzer On", buzzerOn, NULL, &menuBuzzer};
-Menu menuBuzzerOff = {"Buzzer Off", buzzerOff, NULL, &menuBuzzer};
-Menu *buzzerMenu[] = {&menuBuzzerBack, &menuBuzzerOn, &menuBuzzerOff};
+Menu menuBuzzerBack = { "Back", NULL, NULL, &menuBuzzer };
+Menu menuBuzzerOn = { "Buzzer On", buzzerOn, NULL, &menuBuzzer };
+Menu menuBuzzerOff = { "Buzzer Off", buzzerOff, NULL, &menuBuzzer };
+Menu *buzzerMenu[] = { &menuBuzzerBack, &menuBuzzerOn, &menuBuzzerOff };
 #endif
 // Calibration submenu
-Menu menuCalibrationBack = {"Back", NULL, NULL, &menuCalibration};
-Menu menuCalibrate = {"Calibrate", calibrate, NULL, &menuCalibration};
-Menu *calibrationMenu[] = {&menuCalibrationBack, &menuCalibrate};
+Menu menuCalibrationBack = { "Back", NULL, NULL, &menuCalibration };
+Menu menuCalibrate = { "Calibrate", calibrate, NULL, &menuCalibration };
+Menu *calibrationMenu[] = { &menuCalibrationBack, &menuCalibrate };
 
 // WiFi submenu
-Menu menuWiFiUpdateBack = {"Back", NULL, NULL, &menuWifi};
-Menu menuWiFiOnOption = {"WiFi On", toggleWifiOn, NULL, &menuWifi};
-Menu menuWiFiOffOption = {"WiFi Off", toggleWifiOff, NULL, &menuWifi};
-Menu menuWiFiStatusOption = {"WiFi Status", showWifiStatus, NULL, &menuWifi};
+Menu menuWiFiUpdateBack = { "Back", NULL, NULL, &menuWifi };
+Menu menuWiFiOnOption = { "WiFi On", toggleWifiOn, NULL, &menuWifi };
+Menu menuWiFiOffOption = { "WiFi Off", toggleWifiOff, NULL, &menuWifi };
+Menu menuWiFiStatusOption = { "WiFi Status", showWifiStatus, NULL, &menuWifi };
 Menu *wifiUpdateMenu[] = {
-    &menuWiFiUpdateBack,
-    &menuWiFiOnOption,
-    &menuWiFiOffOption,
-    &menuWiFiStatusOption,
+  &menuWiFiUpdateBack,
+  &menuWiFiOnOption,
+  &menuWiFiOffOption,
+  &menuWiFiStatusOption,
 };
 
 // Heartbeat detection
-Menu menuHeartbeatBack = {"Back", NULL, NULL, &menuHeartbeat};
-Menu menuHeartbeatOn = {"Heartbeat On", heartbeatOn, NULL, &menuHeartbeat};
-Menu menuHeartbeatOff = {"Heartbeat Off", heartbeatOff, NULL, &menuHeartbeat};
-Menu *heartbeatMenu[] = {&menuHeartbeatBack, &menuHeartbeatOn,
-                         &menuHeartbeatOff};
+Menu menuHeartbeatBack = { "Back", NULL, NULL, &menuHeartbeat };
+Menu menuHeartbeatOn = { "Heartbeat On", heartbeatOn, NULL, &menuHeartbeat };
+Menu menuHeartbeatOff = { "Heartbeat Off", heartbeatOff, NULL, &menuHeartbeat };
+Menu *heartbeatMenu[] = { &menuHeartbeatBack, &menuHeartbeatOn,
+                          &menuHeartbeatOff };
 
 // Screen flip option
-Menu menuFlipScreenBack = {"Back", NULL, NULL, &menuFlipScreen};
-Menu menuFlipScreenOn = {"Flip On", flipScreenOn, NULL, &menuFlipScreen};
-Menu menuFlipScreenOff = {"Flip Off", flipScreenOff, NULL, &menuFlipScreen};
-Menu *flipScreenMenu[] = {&menuFlipScreenBack, &menuFlipScreenOn,
-                          &menuFlipScreenOff};
+Menu menuFlipScreenBack = { "Back", NULL, NULL, &menuFlipScreen };
+Menu menuFlipScreenOn = { "Flip On", flipScreenOn, NULL, &menuFlipScreen };
+Menu menuFlipScreenOff = { "Flip Off", flipScreenOff, NULL, &menuFlipScreen };
+Menu *flipScreenMenu[] = { &menuFlipScreenBack, &menuFlipScreenOn,
+                           &menuFlipScreenOff };
 
 // Swap weight time option
-Menu menuTimeOnTopBack = {"Back", NULL, NULL, &menuTimeOnTop};
-Menu menuTimeOnTopOn = {"Time On Top", timeOnTopOn, NULL, &menuTimeOnTop};
-Menu menuTimeOnTopOff = {"Weight On Top", timeOnTopOff, NULL, &menuTimeOnTop};
-Menu *timeOnTopMenu[] = {&menuTimeOnTopBack, &menuTimeOnTopOn,
-                         &menuTimeOnTopOff};
+Menu menuTimeOnTopBack = { "Back", NULL, NULL, &menuTimeOnTop };
+Menu menuTimeOnTopOn = { "Time On Top", timeOnTopOn, NULL, &menuTimeOnTop };
+Menu menuTimeOnTopOff = { "Weight On Top", timeOnTopOff, NULL, &menuTimeOnTop };
+Menu *timeOnTopMenu[] = { &menuTimeOnTopBack, &menuTimeOnTopOn,
+                          &menuTimeOnTopOff };
 
 // Enable button fucntion while BLE connected
-Menu menuBtnFuncWhileConnectedBack = {"Back", NULL, NULL,
-                                      &menuBtnFuncWhileConnected};
-Menu menuBtnFuncWhileConnectedOn = {"Enable Buttons", btnFuncWhileConnectedOn,
-                                    NULL, &menuBtnFuncWhileConnected};
-Menu menuBtnFuncWhileConnectedOff = {"Disable Buttons",
-                                     btnFuncWhileConnectedOff, NULL,
-                                     &menuBtnFuncWhileConnected};
-Menu *btnFuncWhileConnectedMenu[] = {&menuBtnFuncWhileConnectedBack,
-                                     &menuBtnFuncWhileConnectedOn,
-                                     &menuBtnFuncWhileConnectedOff};
+Menu menuBtnFuncWhileConnectedBack = { "Back", NULL, NULL,
+                                       &menuBtnFuncWhileConnected };
+Menu menuBtnFuncWhileConnectedOn = { "Enable Buttons", btnFuncWhileConnectedOn,
+                                     NULL, &menuBtnFuncWhileConnected };
+Menu menuBtnFuncWhileConnectedOff = { "Disable Buttons",
+                                      btnFuncWhileConnectedOff, NULL,
+                                      &menuBtnFuncWhileConnected };
+Menu *btnFuncWhileConnectedMenu[] = { &menuBtnFuncWhileConnectedBack,
+                                      &menuBtnFuncWhileConnectedOn,
+                                      &menuBtnFuncWhileConnectedOff };
+
+Menu menuAutoSleepBack = { "Back", NULL, NULL, &menuAutoSleep };
+Menu menuAutoSleepOn = { "Auto Sleep On", autoSleepOn, NULL, &menuAutoSleep };
+Menu menuAutoSleepOff = { "Auto Sleep Off", autoSleepOff, NULL, &menuAutoSleep };
+Menu *autoSleepMenu[] = { &menuAutoSleepBack, &menuAutoSleepOn, &menuAutoSleepOff };
 
 // Menu menuFactoryBack = { "Back", NULL, NULL, &menuFactory };
 // Menu menuCalibrateVoltage = { "Calibrate 4.2v", calibrateVoltage, NULL,
@@ -137,26 +145,26 @@ Menu *btnFuncWhileConnectedMenu[] = {&menuBtnFuncWhileConnectedBack,
 // Main menu
 // 3/5 write all the 1st menu to mainMenu
 Menu *mainMenu[] = {
-    &menuExit,
+  &menuExit,
 #ifdef BUZZER
-    &menuBuzzer,
+  &menuBuzzer,
 #endif
-    &menuCalibration, &menuWifi,
-    // &menuWiFiUpdate,
-    &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen, &menuTimeOnTop,
-    &menuBtnFuncWhileConnected
-    //, &menuFactory
+  &menuCalibration, &menuWifi,
+  // &menuWiFiUpdate,
+  &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen, &menuTimeOnTop,
+  &menuBtnFuncWhileConnected, &menuAutoSleep,
+  //, &menuFactory
 };
 //  &menuHolder1, &menuHolder2, &menuHolder3, &menuHolder4,
 //  &menuHolder5, &menuHolder6};
 Menu **currentMenu = mainMenu;
 Menu *currentSelection = mainMenu[0];
-int currentMenuSize = getMenuSize(mainMenu); // Top-level menu size
+int currentMenuSize = getMenuSize(mainMenu);  // Top-level menu size
 int currentIndex = 0;
 const int linesPerPage =
-    4;               // Maximum number of lines that can fit on the display
-int currentPage = 0; // Determine the current page
-int totalPages = currentMenuSize / linesPerPage + 1; // Calculate total pages
+  4;                                                  // Maximum number of lines that can fit on the display
+int currentPage = 0;                                  // Determine the current page
+int totalPages = currentMenuSize / linesPerPage + 1;  // Calculate total pages
 
 // 4/5 link all the submenus
 void linkSubmenus() {
@@ -170,6 +178,7 @@ void linkSubmenus() {
   menuFlipScreen.subMenu = flipScreenMenu[0];
   menuTimeOnTop.subMenu = timeOnTopMenu[0];
   menuBtnFuncWhileConnected.subMenu = btnFuncWhileConnectedMenu[0];
+  menuAutoSleep.subMenu = autoSleepMenu[0];
   // menuFactory.subMenu = factoryMenu[0];
 }
 
@@ -235,12 +244,12 @@ void toggleWifiOff() {
 }
 
 void showWifiStatus() {
-  b_showWifiData = true; 
+  b_showWifiData = true;
 
   // Get WiFi info
   String ssid = WiFi.isConnected() ? WiFi.SSID() : "N/A";
   String ip = WiFi.isConnected() ? WiFi.localIP().toString() : "0.0.0.0";
-  const char* status = WiFi.isConnected() ? "Enabled" : "Disabled";
+  const char *status = WiFi.isConnected() ? "Enabled" : "Disabled";
 
   u8g2.firstPage();
   do {
@@ -347,9 +356,29 @@ void btnFuncWhileConnectedOff() {
   Serial.println("BLE Btns Off");
 }
 
+void autoSleepOn() {
+  b_autoSleep = true;
+  actionMessage = "Autosleep On";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  EEPROM.put(i_addr_autoSleep, b_autoSleep);
+  EEPROM.commit();
+  Serial.println("Autosleep on stored in EEPROM.");
+}
+
+void autoSleepOff() {
+  b_autoSleep = false;
+  actionMessage = "Autosleep Off";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  EEPROM.put(i_addr_autoSleep, b_autoSleep);
+  EEPROM.commit();
+  Serial.println("Autosleep off stored in EEPROM.");
+}
+
 void calibrate() {
   b_menu = false;
-  b_calibration = true; // 让按钮进入校准状态3
+  b_calibration = true;  // 让按钮进入校准状态3
   i_calibration = 0;
   // calibration(0);
   // the calibration if is after the showMenu() if, so it should exit menu to do
@@ -621,11 +650,11 @@ void calibration(int input) {
           b_menu = true;
           return;
         }
-        scale.refreshDataSet(); // refresh the dataset to be sure that the known
-                                // mass is measured correct
+        scale.refreshDataSet();  // refresh the dataset to be sure that the known
+                                 // mass is measured correct
 
         f_calibration_value = scale.getNewCalibration(
-            known_mass); // get the new calibration value
+          known_mass);  // get the new calibration value
         Serial.print(F("New calibration value f: "));
         Serial.println(f_calibration_value);
         // #if defined(ESP8266) || defined(ESP32) ||
@@ -633,8 +662,7 @@ void calibration(int input) {
         //     EEPROM.begin(512);
         // #endif
         EEPROM.put(i_addr_calibration_value, f_calibration_value);
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) ||      \
-    defined(ARDUINO_ARCH_MBED_RP2040)
+#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
         EEPROM.commit();
 #endif
         dtostrf(f_calibration_value, 10, 2, c_calval);
@@ -754,7 +782,7 @@ void calibration(int input) {
 #endif
           delay(1000);
           b_calibration = false;
-          return; // exit calibration
+          return;  // exit calibration
         }
 
         char buffer[50];
@@ -813,15 +841,14 @@ void calibration(int input) {
         delay(1000);
 
         scale.setSamplesInUse(16);
-        scale.refreshDataSet(); // refresh the dataset to be sure that the known
-                                // mass is measured correct
+        scale.refreshDataSet();  // refresh the dataset to be sure that the known
+                                 // mass is measured correct
         f_calibration_value = scale.getNewCalibration(
-            known_mass); // get the new calibration value
+          known_mass);  // get the new calibration value
         Serial.print(F("New calibration value f: "));
         Serial.println(f_calibration_value);
         EEPROM.put(i_addr_calibration_value, f_calibration_value);
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) ||      \
-    defined(ARDUINO_ARCH_MBED_RP2040)
+#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
         EEPROM.commit();
 #endif
         dtostrf(f_calibration_value, 10, 2, c_calval);
@@ -903,7 +930,7 @@ void showLogo() {
       u8g2.drawStr(AC("Decent"), LCDHeight - 2, "Decent");
     } else {
       // show number
-      u8g2.drawXBM(121, 52, 7, 12, image_battery_4); // 75-100% battery
+      u8g2.drawXBM(121, 52, 7, 12, image_battery_4);  // 75-100% battery
       u8g2.drawXBM(3, 51, 5, 13, image_ble_enabled);
       u8g2.setFont(FONT_TIMER);
       u8g2.drawStr(AC("345"), LCDHeight - 8, "345");
@@ -923,31 +950,29 @@ void showLogo() {
       float decimalPart = number - (float)(i_weightInt);
       int i_weightFirstDecimal = abs((int)(decimalPart * 10));
       char integerStr[10] =
-          "-0"; // to save the - sign if the input is between -1 to 0
+        "-0";  // to save the - sign if the input is between -1 to 0
       char decimalStr[10] = "0";
       if (number >= 0 || number <= -1) {
-        dtostrf(i_weightInt, 7, 0, integerStr); // Integer part, no decimal
+        dtostrf(i_weightInt, 7, 0, integerStr);  // Integer part, no decimal
       }
       dtostrf(i_weightFirstDecimal, 7, 0, decimalStr);
       u8g2.setFont(FONT_GRAM);
-      int gramWidth = u8g2.getUTF8Width("g"); // Width of the "g" character
+      int gramWidth = u8g2.getUTF8Width("g");  // Width of the "g" character
       u8g2.setFont(FONT_WEIGHT);
       int integerWidth = u8g2.getUTF8Width(trim(integerStr));
       int decimalWidth = u8g2.getUTF8Width(trim(decimalStr));
       int decimalPointWidth = u8g2.getUTF8Width(".");
       if (number <= -1000.0)
         gramWidth = 0;
-      int x_integer = (128 - (integerWidth + decimalWidth + gramWidth +
-                              decimalPointWidth - 6 - 1)) /
-                      2;
+      int x_integer = (128 - (integerWidth + decimalWidth + gramWidth + decimalPointWidth - 6 - 1)) / 2;
       int x_decimalPoint = x_integer + integerWidth - 4;
       int x_decimal = x_decimalPoint + decimalPointWidth - 4;
       int x_gram = x_decimal + decimalWidth - 1;
       int y = AT() - 15;
       u8g2.drawStr(x_decimalPoint, y, ".");
       u8g2.drawStr(x_integer, y,
-                   trim(integerStr)); // Assuming vertical position at 28,
-                                      // adjust as needed
+                   trim(integerStr));  // Assuming vertical position at 28,
+                                       // adjust as needed
       u8g2.drawStr(x_decimal, y, trim(decimalStr));
       if (number > -1000.0) {
         u8g2.setFont(FONT_GRAM);
@@ -1011,13 +1036,13 @@ void calibrateVoltage() {
   actionMessage = "Calibrate 4.2v";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  const int numReadings = 50; // Number of readings to average
+  const int numReadings = 50;  // Number of readings to average
   long adcSum = 0;
 
   // Take multiple ADC readings and calculate their sum
   for (int i = 0; i < numReadings; i++) {
     adcSum += analogRead(BATTERY_PIN);
-    delay(10); // Optional: Add a small delay between readings for stability
+    delay(10);  // Optional: Add a small delay between readings for stability
   }
 
   // Calculate the average ADC value
@@ -1033,9 +1058,8 @@ void calibrateVoltage() {
   // Store the calibration factor in EEPROM
   EEPROM.put(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);
 
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) ||      \
-    defined(ARDUINO_ARCH_MBED_RP2040)
-  EEPROM.commit(); // Commit changes to EEPROM
+#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+  EEPROM.commit();  // Commit changes to EEPROM
 #endif
 
   // Output the new calibration factor to the Serial Monitor
@@ -1064,7 +1088,7 @@ void selectMenu() {
       currentMenuSize = getMenuSize(buzzerMenu);
     } else
 #endif
-        if (currentSelection == &menuCalibration) {
+      if (currentSelection == &menuCalibration) {
       currentMenu = calibrationMenu;
       currentMenuSize = getMenuSize(calibrationMenu);
     } else if (currentSelection == &menuWifi) {
@@ -1082,6 +1106,9 @@ void selectMenu() {
     } else if (currentSelection == &menuBtnFuncWhileConnected) {
       currentMenu = btnFuncWhileConnectedMenu;
       currentMenuSize = getMenuSize(btnFuncWhileConnectedMenu);
+    } else if (currentSelection == &menuAutoSleep) {
+      currentMenu = autoSleepMenu;
+      currentMenuSize = getMenuSize(autoSleepMenu);
     }
     // else if (currentSelection == &menuFactory) {
     //   currentMenu = factoryMenu;
@@ -1097,7 +1124,7 @@ void selectMenu() {
     // Go back to the parent menu
     currentMenu = mainMenu;
     currentMenuSize = getMenuSize(mainMenu);
-    currentIndex = 0; // Reset to the first item in the parent menu
+    currentIndex = 0;  // Reset to the first item in the parent menu
     currentSelection = currentMenu[currentIndex];
     // showMenu();
   }
@@ -1129,21 +1156,19 @@ void showMenu() {
       actionMessage == "Default";
       currentPage = currentIndex / linesPerPage + 1;
       // currentMenuSize = getMenuSize(currentMenu);
-      totalPages = (currentMenuSize + linesPerPage - 1) /
-                   linesPerPage; // Calculate total pages
+      totalPages = (currentMenuSize + linesPerPage - 1) / linesPerPage;  // Calculate total pages
       char pageInfo[10];
       snprintf(pageInfo, sizeof(pageInfo), "%d/%d", currentPage, totalPages);
       if (totalPages > 1)
         u8g2.drawStr(AR(pageInfo), u8g2.getMaxCharHeight(),
-                     pageInfo); // Show on top-right of the screen if more than
-                                // one page is needed.
+                     pageInfo);  // Show on top-right of the screen if more than
+                                 // one page is needed.
       for (int i = 0; i < currentMenuSize; i++) {
         if (currentMenu[i] == currentSelection) {
           u8g2.drawStr(0, u8g2.getMaxCharHeight() * (i % linesPerPage + 1),
-                       ">"); // Highlight current selection
+                       ">");  // Highlight current selection
         }
-        if (i >= (currentPage - 1) * linesPerPage &&
-            i < currentPage * linesPerPage)
+        if (i >= (currentPage - 1) * linesPerPage && i < currentPage * linesPerPage)
           u8g2.drawStr(10, u8g2.getMaxCharHeight() * (i % linesPerPage + 1),
                        currentMenu[i]->name);
       }
