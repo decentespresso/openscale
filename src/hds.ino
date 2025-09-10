@@ -23,12 +23,10 @@
 bool readBoolEEPROMWithValidation(int addr, bool defaultVal) {
   uint8_t val;
   EEPROM.get(addr, val);  // Read raw byte from EEPROM
-
   if (val == 0 || val == 1) {
     // Valid boolean value found
     return val;
   }
-
   // Invalid value, overwrite with default
   EEPROM.put(addr, (uint8_t)defaultVal);
   EEPROM.commit();
@@ -261,8 +259,7 @@ void buttonCircle_LongPressed() {
       b_ble_enabled = true;
       ble_init();
       wifi_init();
-    } else if (GPIO_power_on_with == BUTTON_CIRCLE ||
-        GPIO_power_on_with == BUTTON_SQUARE) {
+    } else if (GPIO_power_on_with == BUTTON_CIRCLE || GPIO_power_on_with == BUTTON_SQUARE) {
       buttonCircle_DoubleClicked();
     }
     // sendUsbButton(1, 2);
@@ -318,33 +315,32 @@ void wifi_init() {
   startWebServer();
   wifiOta();
   websocket.onEvent([](
-        AsyncWebSocket *server, AsyncWebSocketClient *client,
-              AwsEventType type, void *arg, uint8_t *data, size_t len
-        ){
-      if (type == WS_EVT_CONNECT) {
-        Serial.printf("Client %u connected\n", client->id());
-        client->setCloseClientOnQueueFull(false);
-      } else if (type == WS_EVT_DISCONNECT) {
-          Serial.printf("Client %u disconnected\n", client->id());
-      } else if (type == WS_EVT_ERROR) {
-          Serial.printf("WebSocket error on client %u\n", client->id());
-      } else if (type == WS_EVT_PONG) {
-          Serial.printf("Pong received from client %u\n", client->id());
-      }
-      if (type == WS_EVT_DATA) {
+                      AsyncWebSocket *server, AsyncWebSocketClient *client,
+                      AwsEventType type, void *arg, uint8_t *data, size_t len) {
+    if (type == WS_EVT_CONNECT) {
+      Serial.printf("Client %u connected\n", client->id());
+      client->setCloseClientOnQueueFull(false);
+    } else if (type == WS_EVT_DISCONNECT) {
+      Serial.printf("Client %u disconnected\n", client->id());
+    } else if (type == WS_EVT_ERROR) {
+      Serial.printf("WebSocket error on client %u\n", client->id());
+    } else if (type == WS_EVT_PONG) {
+      Serial.printf("Pong received from client %u\n", client->id());
+    }
+    if (type == WS_EVT_DATA) {
 
-        AwsFrameInfo *info = (AwsFrameInfo *)arg;
-        String msg = "";
+      AwsFrameInfo *info = (AwsFrameInfo *)arg;
+      String msg = "";
 
-        for (size_t i = 0; i < info->len; i++) {
-          msg += (char)data[i];
-        }
-        Serial.print("Websocket recv: ");
-        Serial.println(msg);
-        if (msg == "tare") {
-          b_tareByBle = true;
-        }
+      for (size_t i = 0; i < info->len; i++) {
+        msg += (char)data[i];
       }
+      Serial.print("Websocket recv: ");
+      Serial.println(msg);
+      if (msg == "tare") {
+        b_tareByBle = true;
+      }
+    }
   });
 }
 
@@ -421,7 +417,13 @@ void setup() {
   if (b_ble_enabled) {
     ble_init();
   }
-  EEPROM.begin(512);
+  if (!EEPROM.begin(512)) {
+    Serial.println("EEPROM init failed!");
+    while (1) {
+      delay(1000);
+    }
+  }
+  Serial.println("EEPROM init success");
   Serial.println("Begin!");
 #ifdef ADS1115ADC
   ADS_init();
@@ -464,13 +466,11 @@ void setup() {
   EEPROM.get(i_addr_welcome, str_welcome);
   str_welcome.trim();
 #endif
-
   b_screenFlipped = readBoolEEPROMWithValidation(i_addr_screenFlipped, false);
   if (b_screenFlipped)
     u8g2.setDisplayRotation(U8G2_R0);
   else
     u8g2.setDisplayRotation(U8G2_R2);
-
 
   //welcome
   u8g2.firstPage();
@@ -480,7 +480,6 @@ void setup() {
     u8g2.drawBox(4, LCDHeight / 2, LCDWidth - 4 * 2, 2);
     u8g2.drawStr(AC("Decent"), LCDHeight - 2, "Decent");
   } while (u8g2.nextPage());
-
   //adc init
   unsigned long stabilizingtime = 500;
   //taring duration. longer for better reading.
@@ -500,7 +499,6 @@ void setup() {
   stopWatch.setResolution(StopWatch::SECONDS);
   stopWatch.start();
   stopWatch.reset();
-
   EEPROM.get(INPUTCOFFEEPOUROVER_ADDRESS, INPUTCOFFEEPOUROVER);
   EEPROM.get(INPUTCOFFEEESPRESSO_ADDRESS, INPUTCOFFEEESPRESSO);
   EEPROM.get(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);
@@ -544,7 +542,7 @@ void setup() {
   b_requireHeartBeat = readBoolEEPROMWithValidation(i_addr_requireHeartBeat, true);
   b_timeOnTop = readBoolEEPROMWithValidation(i_addr_timeOnTop, false);
   b_btnFuncWhileConnected = readBoolEEPROMWithValidation(i_addr_btnFuncWhileConnected, false);
-
+  b_autoSleep = readBoolEEPROMWithValidation(i_addr_autoSleep, true);
   // if (b_debug != 0 && b_debug != 1) {
   //   b_debug = false;
   //   EEPROM.put(i_addr_debug, b_debug);
@@ -588,7 +586,6 @@ void setup() {
     //calibration value is not valid, go to calibration procedure.
   }
 #endif
-
   wifi_init();
   // //wifiota
   // #ifdef WIFI
@@ -985,13 +982,13 @@ void loop() {
           ElegantOTA.loop();
           static long lastUpdate = 0;
           unsigned long current = millis();
-          if (current - lastUpdate > 500) {  
+          if (current - lastUpdate > 500) {
             if (websocket.availableForWriteAll() > 0) {
               websocket.printfAll("{ \"grams\": %.2f, \"ms\": %lu }", f_displayedValue, current);
             } else {
               Serial.println("Websocket write unavailable");
             }
-              lastUpdate = current;
+            lastUpdate = current;
           }
         }
         if (b_bootTare) {
