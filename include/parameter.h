@@ -86,7 +86,7 @@ int i_setContainerWeight = 0;
 float f_filtered_temperature = 0;
 bool b_ads1115InitFail = false;  //ads1115 not detected flag
 bool b_wifiOnBoot = false;
-
+bool b_autoSleep = true;
 
 
 //电子秤参数和计时点
@@ -216,8 +216,11 @@ int i_addr_batteryCalibrationFactor = i_addr_welcome + sizeof(str_welcome);     
 int i_addr_requireHeartBeat = i_addr_batteryCalibrationFactor + sizeof(f_batteryCalibrationFactor);  //b_requireHeartBeat
 int i_addr_screenFlipped = i_addr_requireHeartBeat + sizeof(b_requireHeartBeat);                     //b_screenFlipped
 int i_addr_timeOnTop = i_addr_screenFlipped + sizeof(b_screenFlipped);                               //b_timeOnTop
-int i_addr_btnFuncWhileConnected = i_addr_timeOnTop + sizeof(b_timeOnTop);                           //b_btnFuncWhileConnectedOn
-int i_addr_enableWifiOnBoot = i_addr_btnFuncWhileConnected + sizeof(b_wifiOnBoot);
+int i_addr_btnFuncWhileConnected = i_addr_timeOnTop + sizeof(b_timeOnTop);                           //b_btnFuncWhileConnected
+int i_addr_enableWifiOnBoot = i_addr_btnFuncWhileConnected + sizeof(b_btnFuncWhileConnected);        //b_wifiOnBoot
+int i_addr_autoSleep = i_addr_enableWifiOnBoot + sizeof(b_wifiOnBoot);
+
+//int i_addr_enableWifiOnBoot = i_addr_btnFuncWhileConnected + sizeof(b_wifiOnBoot);
 
 
 //int i_addr_debug = i_addr_batteryCalibrationFactor + sizeof(f_batteryCalibrationFactor);  //str_welcome
