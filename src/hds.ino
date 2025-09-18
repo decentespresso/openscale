@@ -351,10 +351,17 @@ void setup() {
     ;
   button_init();
   linkSubmenus();
-
   pinMode(BATTERY_CHARGING, INPUT_PULLUP);
 #if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
   pinMode(USB_DET, INPUT_PULLUP);
+  // either esp32 rev change or diff in SDK? We get 
+  // warnings in logs about incorrect pinMode
+  pinMode(OLED_CS, OUTPUT);
+  pinMode(OLED_DC, OUTPUT);
+  pinMode(SCALE_PDWN, OUTPUT);
+  pinMode(SCALE_SCLK, OUTPUT);
+  pinMode(ACC_PWR_CTRL, OUTPUT);
+  pinMode(PWR_CTRL, OUTPUT);
 #endif
   print_wakeup_reason();
   Serial.println("GPIO_power_on_with = " + String(GPIO_power_on_with));
