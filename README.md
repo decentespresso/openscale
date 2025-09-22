@@ -26,10 +26,10 @@ After this, one can simply use `$pio run -t upload` and platformio will build an
 
 Decent Scale now uses WiFi for additional features, not just OTA update.   
 
-To enable WiFi mode, go to HDS setup menu and find "Wifi settings" entry. From there you can enable/disable WiFi as well as see current WiFi details.
+To enable WiFi mode, go to HDS setup menu and find "Wifi settings" entry. From there you can enable/disable WiFi as well as see current WiFi details. If you toggle WiFi on/off, a restart of the scale is required for the new settings to take effect.
 Initially HDS will open its own WiFi, called "Decent Scale", protected with a password '12345678'. Once connected to this WiFi, you can navigate with your browser to [hds.local](http://hds.local) or [192.168.1.1](http://192.168.1.1) to change the Wifi settings, in case you want HDS to connect to your home WiFi. 
-If you do change the settings, make sure to restart the scale for the settings to take effect.
-If you store WiFi settings incorrectly, or you take your HDS out of signal range, HDS will return back to its own Wifi (Decent Scale) - so you can change the settings again.
+Again, make sure to restart the scale for the settings to take effect.
+If you store WiFi settings incorrectly, or you take your HDS out of signal range, HDS will return back to its own Wifi (Decent Scale) - so you can change the settings again if needed.
 
 ## Web apps
 The same web apps that could be used with Half Decent Scale from [the web](https://decentespresso.com/docs/introducing_half_decent_scale_web_apps) have now been rewritten to run directly from the Half Decent Scale.
@@ -59,13 +59,19 @@ Simply run `pio run -t buildfs -t uploadfs` with the Esp32s3 connected to your c
 
 With version 3, we have also started using GitHub actions to build the firmware and filesystem images. You can find the recent builds on the "Actions" tab on the GitHub page of this project. From there you can also download the firmware files (e.g. for development builds).
 
-# How to upload HEX file
+
+# How to upload firmware files
 Web USB Flash(please use Chrome/Edge, Safari or Firefox is not supported):<br />
 https://adafruit.github.io/Adafruit_WebSerial_ESPTool/ <br />
 The offset values are:<br />
-hds.bootloader.bin 0x0000<br />
-hds.ino.partitions.bin 0x8000<br />
-hds.ino.bin 0x10000<br />
+bootloader.bin 0x0000<br />
+partitions.bin 0x8000<br />
+firmware.bin 0x10000<br />
+littlefs.bin: 0x670000<br />
+
+![binary offsets](./assets/esp-tool.png)
+
+
 This tool works great, but need to reset by pressing the button on the PCB.<br />
 And as it erase the eprom, a calibration is also required.<br />
 
