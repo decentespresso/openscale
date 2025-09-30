@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Decent Cocktail Maker</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3C!-- Cocktail glass --%3E%3Cpath fill='%23667EEA' d='M25 95 L50 70 L75 95 Z' /%3E%3Cpath fill='%23B2A0E8' d='M48 70 L52 70 L52 100 L48 100 Z' /%3E%3C!-- Drink content (light blue/purple for cocktail) --%3E%3Crect x='30' y='30' width='40' height='40' fill='%2385A9E1' rx='5' ry='5'/%3E%3C!-- Cherry --%3E%3Ccircle cx='70' cy='30' r='10' fill='%23DC2626'/%3E%3Cpath d='M68 25 L60 15' stroke='%234F46E5' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+    <!-- Tailwind CSS CDN -->
+    <!-- <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script> -->
+
+    <!-- <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" /> -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+   <link href="output.css" rel="stylesheet">
+</head>
+<body class="flex flex-col items-center min-h-screen p-4 bg-gradient-to-br from-purple-100 to-blue-200 pt-8">
+
+    <div class="max-w-4xl w-full bg-white p-8 rounded-xl shadow-2xl flex flex-col gap-8">
+        <h1 class="text-4xl font-extrabold text-center text-purple-700 mb-6 flex items-center justify-center">
+            <svg width="30px" height="30px" viewBox="0 -150 1324 1324" class="icon"  
+            version="1.1" xmlns="http://www.w3.org/2000/svg">
+            <path d="M1063.833162 59.714474l20.128194 6.950892-161.497271 467.693579-20.126724-6.950891z" fill="#541018" />
+            <path d="M205.117419 301.797997h1098.226113L753.135673 668.049712 205.117419 301.797997z" fill="#60D7FF" />
+            <path d="M753.076892 675.823541l-569.473436-380.609052h1141.254039zM226.572601 308.308028l526.504291 351.909073 528.737981-351.909073z" 
+            fill="#541018" /><path d="M738.719555 563.668781h28.626503v448.016532h-28.626503z" fill="#541018" />
+            <path d="M545.887431 995.505755h416.671393v28.494245H545.887431z" fill="#541018" />
+            <path d="M821.101576 452.572085m-26.304641 0a26.304641 26.304641 0 1 0 52.609282 0 26.304641 26.304641 0 1 0-52.609282 0Z" 
+            fill="#FFFFFF" /><path d="M186.366178 252.965414V83.689906h-1.337275a181.898797 181.898797 0 0 0-121.574467 46.378462z" 
+            fill="#FCF67E" /><path d="M188.776212 258.858242l-128.878046-128.907437 1.925088-1.719354a184.734996 184.734996 0 0 1 
+            123.205649-47.025056h3.7767zM66.981315 130.171235l116.901352 116.901352V86.12933A179.841451 179.841451 0 0 0 67.010706 130.171235z" 
+            fill="#541018" /><path d="M192.788037 83.851554v172.332138l120.178411-120.163716a181.928188 181.928188 0 0 0-120.178411-52.168422z" 
+            fill="#FCF67E" /><path d="M190.348612 262.076519v-180.752562l2.542292 0.102868a184.529262 184.529262 0 0 1 121.780202 52.903188l1.76344 
+            1.734049z m4.87885-175.653282v163.867627l114.256192-114.241497a179.532849 179.532849 0 0 0-114.256192-49.62613z" fill="#541018" />
+            <path d="M367.603685 267.161103H200.532476l120.707442 120.633966a181.913493 181.913493 0 0 0 46.363767-120.633966z" fill="#FCF67E" />
+            <path d="M321.32809 391.395425l-126.673746-126.673747h175.403461v2.454121a184.852559 184.852559 0 0 1-47.025056 122.294538z m-114.917482-121.780202l114.623576 114.623576a179.929623 179.929623 0 0 0 44.012514-114.623576z" fill="#541018" /><path d="M197.343589 260.739244h170.171924a181.913493 181.913493 0 0 0-50.037599-120.14902z" fill="#FCF67E" /><path d="M370.04311 263.178669H191.450762l126.071238-126.085933 1.719354 1.822221a184.573347 184.573347 0 0 1 50.713584 121.75081z m-166.806693-4.87885h161.7515A179.723889 179.723889 0 0 0 317.419133 144.102408z" fill="#541018" /><path d="M186.366178 271.70196l-127.011739 126.997044a181.986969 181.986969 0 0 0 125.674464 50.140467h1.337275z" fill="#FCF67E" /><path d="M185.028903 451.293591a184.279441 184.279441 0 0 1-127.349732-50.801757l-1.822221-1.734049 132.919262-132.933957v185.425677z m-122.16228-52.638673a179.283029 179.283029 0 0 0 121.045435 47.745128V277.580092z" fill="#541018" /><path d="M2.45412 267.161103a181.942883 181.942883 0 0 0 52.315376 127.04113l127.041129-127.04113z" fill="#FCF67E" /><path d="M54.7548 397.670331l-1.719353-1.76344a183.985534 183.985534 0 0 1-53.020752-128.731092v-2.454121h187.688758zM4.922936 269.615223a179.018513 179.018513 0 0 0 49.87595 121.118912l121.118912-121.104216z" fill="#541018" /><path d="M192.788037 268.498378v180.179444a182.001665 182.001665 0 0 0 124.072673-56.106771z" fill="#FCF67E" /><path d="M190.348612 451.220114V262.605551l129.93611 129.93611-1.660572 1.719353a184.02962 184.02962 0 0 1-125.733246 56.856233z m4.87885-176.828908v171.714933a179.047903 179.047903 0 0 0 118.209236-53.505697z" fill="#541018" /><path d="M58.72254 134.418185a182.075141 182.075141 0 0 0-56.194943 126.37984h182.501306z" fill="#FCF67E" /><path d="M190.92173 263.178669H0.014695l0.073477-2.512902a183.853276 183.853276 0 0 1 56.944405-127.996326l1.719353-1.660572zM5.084584 258.299819H179.136075l-120.501707-120.501708a178.871559 178.871559 0 0 0-53.549784 120.501708z" fill="#541018" /><path d="M432.248443 308.748888m-20.279556 0a20.279556 20.279556 0 1 0 40.559112 0 20.279556 20.279556 0 1 0-40.559112 0Z" fill="#FFFFFF" /><path d="M519.99426 338.242416m-34.313596 0a34.313596 34.313596 0 1 0 68.627192 0 34.313596 34.313596 0 1 0-68.627192 0Z" fill="#FFFFFF" /><path d="M1026.086737 478.553428L753.135673 661.186992 481.360237 478.553428h544.7265z" fill="#FFB6CE" /><path d="M668.799173 502.8742m-26.304641 0a26.304641 26.304641 0 1 0 52.609282 0 26.304641 26.304641 0 1 0-52.609282 0Z" fill="#FFFFFF" /><path d="M1064.135886 59.640998L1265.123917 0.029391l5.094871 17.174432-200.989501 59.611607z" fill="#541018" /></svg>
+            <span>Decent Cocktail Maker</span>
+        </h1>
+
+        <!-- Search Bar Section -->
+        <div class="flex flex-col sm:flex-row gap-4 mb-8">
+            <input
+                type="text"
+                id="searchInput"
+                placeholder="Search by name or ingredient (e.g., Margarita, lime)"
+                spellcheck = "true"
+                maxlength="30"
+                class="flex-grow  p-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-md text-gray-700 text-lg"
+            />
+            <!-- <button
+                id="searchButton"
+                class="px-6 py-3 bg-purple-600 text-white font-semibold rounded-lg shadow-lg hover:bg-purple-700 transition-all duration-300 ease-in-out transform hover:scale-105 active:scale-95 text-lg"
+            >
+                Search
+            </button> -->
+            <button                 
+            id="searchButton"
+            class="btn btn-primary">Search</button>
+
+        </div>
+
+        <!-- Search Results Section -->
+        <div id="searchResults" class="hidden w-full">
+            <h2 class="text-3xl font-bold text-gray-800 mb-6 border-b-2 pb-2 border-purple-300">
+                Search Results
+            </h2>
+            <div id="searchResultsContent" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Search results will be dynamically inserted here -->
+            </div>
+            <button
+                id="backToAllButton"
+                class="mt-8 px-6 py-3 bg-gray-200 text-gray-700 font-semibold rounded-lg shadow-md hover:bg-gray-300 transition-all duration-300 ease-in-out transform hover:scale-105 active:scale-95 text-lg"
+            >
+                ← Back to All Cocktails
+            </button>
+        </div>
+
+        <!-- All Cocktails Section -->
+        <div id="allCocktails" class="w-full">
+            <h2 class="text-3xl font-bold text-gray-800 mb-6 border-b-2 pb-2 border-purple-300">
+                All Available Cocktails
+            </h2>
+            <div id="allCocktailsContent" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- All cocktails will be dynamically inserted here -->
+            </div>
+        </div>
+    </div>
+    <button id="btn-back-to-top" class="fixed bottom-6 right-6 p-3 bg-purple-600 text-white rounded-full shadow-lg opacity-0 invisible transition-all duration-300 ease-in-out z-20 hover:bg-purple-700 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path>
+        </svg>
+    </button>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const backToTopButton = document.getElementById("btn-back-to-top");
+
+        if (backToTopButton) {
+            const scrollFunction = () => {
+                // Show button when scrolling down 100px
+                if (document.body.scrollTop > 100 || document.documentElement.scrollTop > 100) {
+                    backToTopButton.classList.remove("opacity-0", "invisible");
+                } else {
+                    backToTopButton.classList.add("opacity-0", "invisible");
+                }
+            };
+
+            window.addEventListener("scroll", scrollFunction);
+            backToTopButton.addEventListener("click", () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+        }
+    });
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.13.0/sql-wasm.js"></script>
+
+    <script type="module" src="./main.js"></script>
+    <footer class="text-center py-4">
+        <div id="dbstatus" class="mb-4 text-center"></div>
+    </footer>
+ 
+</body>
+</html>

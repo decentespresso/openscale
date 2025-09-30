@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Cocktail Details</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="connect-src 'self' ws://hds.local/snapshot;">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3C!-- Cocktail glass --%3E%3Cpath fill='%23667EEA' d='M25 95 L50 70 L75 95 Z' /%3E%3Cpath fill='%23B2A0E8' d='M48 70 L52 70 L52 100 L48 100 Z' /%3E%3C!-- Drink content (light blue/purple for cocktail) --%3E%3Crect x='30' y='30' width='40' height='40' fill='%2385A9E1' rx='5' ry='5'/%3E%3C!-- Cherry --%3E%3Ccircle cx='70' cy='30' r='10' fill='%23DC2626'/%3E%3Cpath d='M68 25 L60 15' stroke='%234F46E5' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+    <link href="./output.css" rel="stylesheet">
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-4 bg-gradient-to-br from-purple-100 to-blue-200">
+  <div class="max-w-2xl w-full bg-white p-8 rounded-xl shadow-2xl flex flex-col gap-2">
+
+    <div id="cocktailHeader" class="flex flex-col items-center gap-4 mb-4">
+
+    </div>
+
+    <div id="globalRecipeInfo" class="">
+      <div class="flex flex-col items-center gap-2">
+        <h1 id="drinkTitle" class="text-3xl font-extrabold text-purple-700 mb-2">Making ...</h1>
+        <div class="flex flex-row items-center gap-4 justify-center mb-2">
+          <span id="finalWeight" class="text-lg font-semibold text-gray-700"></span>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-4 mb-2">
+          <div id="progressFill" class="bg-purple-500 h-4 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+            <div class = "flex gap-4">
+                <div id="progressPercent" class="text-center text-gray-700 ">0%</div>
+                <div id="weight" class="text-center text-gray-700 mb-2">Current Weight: 0.0g</div>
+            </div>
+      </div>
+    </div>
+
+    <!-- STEP-BY-STEP BOX -->
+    <div id="stepsSection" class="">
+      <div class="mb-8 p- bg-purple-50 rounded-lg shadow-md">
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mb-4">
+          <button id="connect" class="bg-purple-100 font-extralight text-purple-800 hover:bg-purple-200 border-dashed border-purple-950 px-2 py-1 shadow-lg 
+          rounded-lg transition-all duration-300 ease-in-out transform hover:scale-105 active:scale-95 text-lg">
+            Connect to Scale
+          </button>
+          <button id="previewStepsButton" class="btn btn-secondary">Preview Steps</button>
+
+          <button id="startCocktailButton" class=" bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition-transform transform hover:scale-105">
+            Start Making Cocktail
+          </button>
+          <button id="tareButton" style="display: none;" class=" mt-2 bg-yellow-500 hover:bg-yellow-600 text-white  py-2 px-4 rounded-lg shadow-lg">
+            Tare Scale
+          </button>
+          <button id="prevStepButton" style="display: none;" class="mt-2 bg-blue-300 hover:bg-blue-500 border-blue-600 text-white py-2 px-4 rounded-lg shadow-lg">
+            Previous Step
+          </button>
+          <button id="nextStepButton" style="display: none;" class=" mt-2 bg-blue-600 hover:bg-blue-700 border-blue-800 text-white font-bold py-2 px-4 rounded-lg shadow-lg">
+            Next Step
+          </button>
+        </div>
+        <div id="guidance" class="mb-4 text-xl font-bold text-purple-800 text-center"></div>
+        <div id="finalComparison" class="text-center mt-2 text-lg"></div>
+      </div>
+      <ul id="stepsList" class="list-decimal list-inside space-y-4"></ul>
+    </div>
+  </div>
+  <script src="sql-wasm.js"></script>
+  <script src="./connections/reconnecting-websocket.js"></script>
+  <script type="module" src="./modules/cocktail.js"></script>
+</body>
+<footer>
+    <button
+                id="backToAllButton"
+                class="hidden mt-8 px-2 py-1 bg-gray-200 text-gray-700  rounded-lg shadow-md hover:bg-gray-300 transition-all duration-300 ease-in-out transform hover:scale-105 active:scale-95 text-lg"
+            >
+                ← Back to All
+            </button>
+    <div id="dbstatus" class="hidden mb-4 text-center"></div>
+    <h2 id="status" class="text-sm text-gray-500"></h2>
+
+</footer>
+</html>

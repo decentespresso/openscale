@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["chrome-devtools-mcp@latest"]
+		},
+    "github": {
+            "httpUrl": "https://api.githubcopilot.com/mcp/",
+            "trust": true,
+            "headers": {
+                "Authorization": "Bearer $GITHUB_PAT"
+            }
+    }
+  }
+}
