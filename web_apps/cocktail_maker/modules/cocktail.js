@@ -211,7 +211,7 @@ function guideUserThroughSteps(steps) {
         backToAllButton.classList.remove('hidden');
         backToAllButton.addEventListener('click', () => {
             // Navigate back to the main page
-            window.location.href = 'index.adp';
+            window.location.href = 'index.html';
         });
     }
     function showStep(index) {

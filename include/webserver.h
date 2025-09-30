@@ -13,7 +13,6 @@ static AsyncWebServer server(80);
 static AsyncWebSocket websocket("/snapshot");
 
 void startWebServer() {
-  server.begin();
   Serial.println("HTTP server started");
   AsyncCallbackJsonWebHandler *wifiHandler = new AsyncCallbackJsonWebHandler(
       "/setup/wifi", [](AsyncWebServerRequest *request, JsonVariant &json) {
@@ -52,9 +51,14 @@ void startWebServer() {
     return;
   }
 
+  server.on("/*.wasm", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(LittleFS, request->url(), "application/wasm");
+  });
+
   server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
 
   Serial.println("Serving web-apps");
+  server.begin();
 }
 
 void stopWebServer() {
