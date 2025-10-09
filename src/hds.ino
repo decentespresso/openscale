@@ -1031,56 +1031,64 @@ void chargingOLED(int perc, float voltage) {
     t_oled_refresh = millis();
     u8g2.firstPage();
     do {
-      if (b_screenFlipped)
-        u8g2.setDisplayRotation(U8G2_R0);
-      else
-        u8g2.setDisplayRotation(U8G2_R2);
-
-      // Get the display width and height
-      int16_t displayWidth = u8g2.getDisplayWidth();
-      int16_t displayHeight = u8g2.getDisplayHeight();
-
-      // Set the size of the battery outline and inner rectangle
-      int16_t width = 100, height = 30;
-      int16_t innerWidth = width - 2;    // Width of the inner rectangle
-      int16_t innerHeight = height - 2;  // Height of the inner rectangle
-
-      // Calculate the centered position for the battery outline and inner rectangle
-      int16_t x = (displayWidth - width) / 2;
-      int16_t y = (displayHeight - height) / 2 - 6;
-
-      u8g2.setFontMode(1);
-      u8g2.setDrawColor(1);
-      // Draw the battery outline (rounded rectangle)
-      u8g2.drawRFrame(x, y, width, height, 5);  // Outline with a corner radius of 5
-
-      // Calculate the height for the inner rectangle based on percentage
-      int16_t innerY = y + 1 + innerHeight * (1 - (perc / 100.0));  // Y position of the inner rectangle
-      //u8g2.drawBox(x + 1, y + 1, innerWidth * (perc / 100.0), innerHeight);  // Inner rectangle, filled to show charge level
-      u8g2.drawVLine(x + width + 2, y + 7, height - 7 * 2);
-      for (int i = 0; i < innerWidth - 1; i = i + 2) {
-        if (i < (innerWidth * (perc / 100.0))) {
-          u8g2.drawVLine(x + 2 + i, y + 2, innerHeight - 2);
-        }
-      }
-
-      u8g2.setDrawColor(2);
-      // Display the battery percentage
-      char batteryText[10];
-      snprintf(batteryText, sizeof(batteryText), "%d%%", (perc > 100) ? 100 : perc);
-      if (perc > 100) {
-        strcat(batteryText, "+");
-      }
-      u8g2.setFont(u8g2_font_ncenB12_tr);                                                                 // Set font
-      u8g2.drawStr(x + (width / 4) - (u8g2.getStrWidth(batteryText) / 2), y + height + 15, batteryText);  // Center the percentage text
-
-      // Display the voltage
-      char voltageText[10];
-      snprintf(voltageText, sizeof(voltageText), "%.1fV", voltage);
-      u8g2.drawStr(x + (width / 4) + (width / 2) - (u8g2.getStrWidth(voltageText) / 2), y + height + 15, voltageText);  // Center the voltage text
-
+      u8g2.drawXBM(121, 51, 7, 12, image_battery_charging);  // charging icon
     } while (u8g2.nextPage());
   }
+  // if (millis() > t_oled_refresh + 1000) {
+  //   // Refresh the OLED at the specified interval
+  //   t_oled_refresh = millis();
+  //   u8g2.firstPage();
+  //   do {
+  //     if (b_screenFlipped)
+  //       u8g2.setDisplayRotation(U8G2_R0);
+  //     else
+  //       u8g2.setDisplayRotation(U8G2_R2);
+
+  //     // Get the display width and height
+  //     int16_t displayWidth = u8g2.getDisplayWidth();
+  //     int16_t displayHeight = u8g2.getDisplayHeight();
+
+  //     // Set the size of the battery outline and inner rectangle
+  //     int16_t width = 100, height = 30;
+  //     int16_t innerWidth = width - 2;    // Width of the inner rectangle
+  //     int16_t innerHeight = height - 2;  // Height of the inner rectangle
+
+  //     // Calculate the centered position for the battery outline and inner rectangle
+  //     int16_t x = (displayWidth - width) / 2;
+  //     int16_t y = (displayHeight - height) / 2 - 6;
+
+  //     u8g2.setFontMode(1);
+  //     u8g2.setDrawColor(1);
+  //     // Draw the battery outline (rounded rectangle)
+  //     u8g2.drawRFrame(x, y, width, height, 5);  // Outline with a corner radius of 5
+
+  //     // Calculate the height for the inner rectangle based on percentage
+  //     int16_t innerY = y + 1 + innerHeight * (1 - (perc / 100.0));  // Y position of the inner rectangle
+  //     //u8g2.drawBox(x + 1, y + 1, innerWidth * (perc / 100.0), innerHeight);  // Inner rectangle, filled to show charge level
+  //     u8g2.drawVLine(x + width + 2, y + 7, height - 7 * 2);
+  //     for (int i = 0; i < innerWidth - 1; i = i + 2) {
+  //       if (i < (innerWidth * (perc / 100.0))) {
+  //         u8g2.drawVLine(x + 2 + i, y + 2, innerHeight - 2);
+  //       }
+  //     }
+
+  //     u8g2.setDrawColor(2);
+  //     // Display the battery percentage
+  //     char batteryText[10];
+  //     snprintf(batteryText, sizeof(batteryText), "%d%%", (perc > 100) ? 100 : perc);
+  //     if (perc > 100) {
+  //       strcat(batteryText, "+");
+  //     }
+  //     u8g2.setFont(u8g2_font_ncenB12_tr);                                                                 // Set font
+  //     u8g2.drawStr(x + (width / 4) - (u8g2.getStrWidth(batteryText) / 2), y + height + 15, batteryText);  // Center the percentage text
+
+  //     // Display the voltage
+  //     char voltageText[10];
+  //     snprintf(voltageText, sizeof(voltageText), "%.1fV", voltage);
+  //     u8g2.drawStr(x + (width / 4) + (width / 2) - (u8g2.getStrWidth(voltageText) / 2), y + height + 15, voltageText);  // Center the voltage text
+
+  //   } while (u8g2.nextPage());
+  // }
 }
 
 
