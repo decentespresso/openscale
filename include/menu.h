@@ -752,38 +752,38 @@ void calibration(int input) {
       if (newDataReady) {
         float current_weight = scale.getData();
         Serial.println(current_weight);
-        bool valid_mass = false;
-        for (int i = 1; i <= 40; i++) {
-          // check from 50g to 2kg
-          if (current_weight > i * 50 - 2 && current_weight < i * 50 + 2) {
-            // check if the weight is within 2g
-            known_mass = i * 50;
-            valid_mass = true;
-            break;
-          }
-        }
+//         bool valid_mass = false;
+//         for (int i = 1; i <= 40; i++) {
+//           // check from 50g to 2kg
+//           if (current_weight > i * 50 - 2 && current_weight < i * 50 + 2) {
+//             // check if the weight is within 2g
+//             known_mass = i * 50;
+//             valid_mass = true;
+//             break;
+//           }
+//         }
 
-        if (!valid_mass) {
-          char buffer[50];
-          snprintf(buffer, sizeof(buffer), "%f.0g weight detected",
-                   current_weight);
-          Serial.println(F("Error: Invalid weight detected"));
-          u8g2.firstPage();
-          u8g2.setFont(FONT_S);
-          do {
-            u8g2.drawUTF8(AC((char *)"Error: Invalid"),
-                          u8g2.getMaxCharHeight() + i_margin_top,
-                          (char *)"Error: Invalid");
-            u8g2.drawUTF8(AC((char *)trim(buffer)), LCDHeight - i_margin_bottom,
-                          (char *)trim(buffer));
-          } while (u8g2.nextPage());
-#ifdef BUZZER
-          buzzer.off();
-#endif
-          delay(1000);
-          b_calibration = false;
-          return;  // exit calibration
-        }
+//         if (!valid_mass) {
+//           char buffer[50];
+//           snprintf(buffer, sizeof(buffer), "%f.0g weight detected",
+//                    current_weight);
+//           Serial.println(F("Error: Invalid weight detected"));
+//           u8g2.firstPage();
+//           u8g2.setFont(FONT_S);
+//           do {
+//             u8g2.drawUTF8(AC((char *)"Error: Invalid"),
+//                           u8g2.getMaxCharHeight() + i_margin_top,
+//                           (char *)"Error: Invalid");
+//             u8g2.drawUTF8(AC((char *)trim(buffer)), LCDHeight - i_margin_bottom,
+//                           (char *)trim(buffer));
+//           } while (u8g2.nextPage());
+// #ifdef BUZZER
+//           buzzer.off();
+// #endif
+//           delay(1000);
+//           b_calibration = false;
+//           return;  // exit calibration
+//         }
 
         char buffer[50];
         snprintf(buffer, sizeof(buffer), "Place %.0fg weight", known_mass);
