@@ -3,6 +3,7 @@
 
 //functions
 void sendUsbVoltage();
+void sendUsbLedResponse();
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendUsbGyro();
 #endif
@@ -84,10 +85,12 @@ public:
             Serial.println("LED off detected. Turn off OLED.");
             u8g2.setPowerSave(1);
             b_u8g2Sleep = true;
+            sendUsbLedResponse();
           } else if (data[2] == 0x01) {
             Serial.print("LED on detected. Turn on OLED.");
             u8g2.setPowerSave(0);
             b_u8g2Sleep = false;
+            sendUsbLedResponse();
             if (data[5] == 0x00) {
               b_requireHeartBeat = false;
               Serial.println(" *** Heartbeat detection Off ***");
@@ -379,5 +382,68 @@ void sendUsbButton(int buttonNumber, int buttonShortPress) {
 
   // Use Serial.write to send data via USB (serial)
   Serial.write(data, 7);  // 7 bytes of data
+}
+
+void sendUsbLedResponse() {
+  byte data[7];
+  int major = 0, minor = 0, patch = 0;
+
+  // 1. Extract firmware version from LINE1 (e.g., "FW: 3.0.0")
+  if (sscanf(LINE1, "FW: %d.%d.%d", &major, &minor, &patch) != 3) {
+    major = 0;
+    minor = 0;
+    patch = 0;
+  }
+
+  // Convert version numbers to BCD format
+  byte verHigh = (byte)((major / 10 << 4) | (major % 10));  // Major
+  byte verLow  = (byte)((minor << 4) | patch);              // Minor+Patch
+
+  // 2. Get current weight
+  float weight = f_displayedValue;
+  byte weightByte1, weightByte2;
+  encodeWeight(weight, weightByte1, weightByte2);
+
+  // 3. Detect charging status
+  bool b_is_charging = false;
+#if defined(USB_DET)
+  if (digitalRead(USB_DET) == LOW) {
+    b_is_charging = true;
+  } else {
+    b_is_charging = false;
+  }
+#else
+  if (digitalRead(BATTERY_CHARGING) == LOW) {
+    b_is_charging = true;
+  } else {
+    b_is_charging = false;
+  }
+#endif
+
+  // 4. Calculate battery level if not charging
+  byte batteryByte;
+  if (b_is_charging) {
+    batteryByte = 0xFF;  // Charging
+  } else {
+    float voltage = getVoltage(BATTERY_PIN);  // Read battery voltage
+    float perc = (voltage - showEmptyBatteryBelowVoltage) / 
+                 (showFullBatteryAboveVoltage - showEmptyBatteryBelowVoltage) * 100.0f;
+    if (perc < 0) perc = 0;
+    if (perc > 100) perc = 100;
+    batteryByte = (byte)perc;  // 0~100%
+  }
+
+  // 5. Build USB data packet
+  // Format: 03 0A [weight high] [weight low] [battery] [version high] [version low]
+  data[0] = 0x03;          // Header
+  data[1] = 0x0A;          // Type (LED response / weight data)
+  data[2] = weightByte1;   // Weight high byte
+  data[3] = weightByte2;   // Weight low byte
+  data[4] = batteryByte;   // Battery level or charging
+  data[5] = verHigh;       // Firmware version major (BCD)
+  data[6] = verLow;        // Firmware version minor.patch (BCD)
+
+  // 6. Send USB data
+  Serial.write(data, 7);   // 7 bytes
 }
 #endif

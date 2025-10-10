@@ -14,6 +14,7 @@ const unsigned long HEARTBEAT_TIMEOUT = 5000;  // 5 seconds
 
 //functions
 void sendBleVoltage();
+void sendBleLedResponse();
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendBleGyro();
 #endif
@@ -197,10 +198,12 @@ class MyCallbacks : public BLECharacteristicCallbacks {
             Serial.println("LED off detected. Turn off OLED.");
             u8g2.setPowerSave(1);
             b_u8g2Sleep = true;
+            sendBleLedResponse();//include weight voltage version
           } else if (data[2] == 0x01) {
             Serial.println("LED on detected. Turn on OLED.");
             u8g2.setPowerSave(0);
             b_u8g2Sleep = false;
+            sendBleLedResponse();//including weight voltage version
             if (data[5] == 0x00) {
               b_requireHeartBeat = false;
               Serial.println("*** Heartbeat detection Off ***");
@@ -590,4 +593,80 @@ void sendBlePowerOff(int i_reason) {
     pReadCharacteristic->notify();
   }
 }
+
+/*
+Automatic firmware version extraction from LINE1 (FW: x.y.z)
+BCD encoding for firmware version
+Weight encoding using encodeWeight()
+Charging detection (USB_DET or BATTERY_CHARGING)
+Battery byte: 0xFF if charging, 0x64 (100%) otherwise
+No XOR checksum
+*/
+void sendBleLedResponse() {
+  if (!b_ble_enabled || !deviceConnected) return;
+
+  byte data[7];
+  int major = 0, minor = 0, patch = 0;
+
+  // 1. Extract firmware version from LINE1 (e.g., "FW: 3.0.0")
+  if (sscanf(LINE1, "FW: %d.%d.%d", &major, &minor, &patch) != 3) {
+    major = 0;
+    minor = 0;
+    patch = 0;
+  }
+
+  // Convert version numbers to BCD format
+  byte verHigh = (byte)((major / 10 << 4) | (major % 10));  // e.g., 3 → 0x03
+  byte verLow  = (byte)((minor << 4) | patch);              // e.g., 0.0 → 0x00
+
+  // 2. Get current weight
+  float weight = f_displayedValue;
+  byte weightByte1, weightByte2;
+  encodeWeight(weight, weightByte1, weightByte2);
+
+  // 3. Detect charging status
+  bool b_is_charging = false;
+#if defined(USB_DET)
+  if (digitalRead(USB_DET) == LOW) {
+    b_is_charging = true;
+  } else {
+    b_is_charging = false;
+  }
+#else
+  if (digitalRead(BATTERY_CHARGING) == LOW) {
+    b_is_charging = true;
+  } else {
+    b_is_charging = false;
+  }
+#endif
+
+  // 4. Calculate battery level if not charging
+  byte batteryByte;
+  if (b_is_charging) {
+    batteryByte = 0xFF;  // Charging
+  } else {
+    float voltage = getVoltage(BATTERY_PIN);  // Read battery voltage
+    float perc = (voltage - showEmptyBatteryBelowVoltage) / 
+                 (showFullBatteryAboveVoltage - showEmptyBatteryBelowVoltage) * 100.0f;
+    if (perc < 0) perc = 0;
+    if (perc > 100) perc = 100;
+    batteryByte = (byte)perc;  // 0~100%
+  }
+
+  // 5. Build BLE data packet
+  // Format:
+  // 03 0A [weight bytes] [battery] [firmware version bytes]
+  data[0] = 0x03;          // Command header
+  data[1] = 0x0A;          // Command type (response to LED command)
+  data[2] = weightByte1;   // Weight high byte
+  data[3] = weightByte2;   // Weight low byte
+  data[4] = batteryByte;   // Battery or charging indicator
+  data[5] = verHigh;       // Firmware version major (BCD)
+  data[6] = verLow;        // Firmware version minor.patch (BCD)
+
+  // 6. Send BLE data
+  pReadCharacteristic->setValue(data, 7);
+  pReadCharacteristic->notify();
+}
+
 #endif
