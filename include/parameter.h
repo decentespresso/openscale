@@ -73,6 +73,7 @@ unsigned long t_tareByBle = 0;
 bool b_tareByBle = false;
 unsigned long t_tareStatus = 0;  //tare done time stamp
 unsigned long t_power_off;       //关机倒计时
+bool b_powerOff = false;
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 unsigned long t_power_off_gyro = 0;  //侧放关机倒计时
 #endif
