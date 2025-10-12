@@ -105,7 +105,7 @@ public:
             }
           } else if (data[2] == 0x02) {
             Serial.println("Power off detected.");
-            shut_down_now_nobeep();
+            b_powerOff = true;
           } else if (data[2] == 0x03) {
             if (data[3] == 0x01) {
               Serial.println("Start Low Power Mode.");
