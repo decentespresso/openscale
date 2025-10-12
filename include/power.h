@@ -72,7 +72,6 @@ void ADS_init() {
     //   delay(5000);
     // }
   } else {
-    b_ads1115InitFail = false;
     ads.setGain(GAIN_ONE);  // +/- 4_096V range
     ads.setDataRate(RATE_ADS1115_860SPS);
   }
@@ -249,14 +248,14 @@ void shut_down_now_accidentTouch() {
   esp32_sleep();
 }
 
-void updateBattery(int batteryPin){
+float getVoltage(int batteryPin) {
   //#ifdef ADS1115ADC
   if (!b_ads1115InitFail) {
     int16_t adc0;
     float volts0;
     adc0 = ads.readADC_SingleEnded(0);
     volts0 = ads.computeVolts(adc0);
-    f_batteryVoltage = volts0 * 2.0;
+    return volts0 * 2.0;
   }
   //#else
   else {
@@ -264,7 +263,7 @@ void updateBattery(int batteryPin){
     float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;  // Calculate voltage at ADC pin
     float batteryVoltage = voltageAtPin * dividerRatio;                  // Calculate the actual battery voltage
     float correctedVoltage = batteryVoltage * f_batteryCalibrationFactor;
-    f_batteryVoltage = correctedVoltage;
+    return correctedVoltage;
   }
   //#endif
 }
@@ -281,17 +280,17 @@ int i_lowBatteryCount = 0;
 int i_lowBatteryCountTotal = 0;
 void power_off(int min) {
   if (!b_is_charging) {
-    if (f_batteryVoltage > lowBatteryThreshold) {
+    if (getVoltage(BATTERY_PIN) > lowBatteryThreshold) {
       i_lowBatteryCount = 0;
     }
 
-    if (f_batteryVoltage < lowBatteryThreshold) {
+    if (getVoltage(BATTERY_PIN) < lowBatteryThreshold) {
       i_lowBatteryCount++;
       i_lowBatteryCountTotal++;
     }
 
     if (i_lowBatteryCount > 50) {
-      shut_down_low_battery(f_batteryVoltage);
+      shut_down_low_battery(getVoltage(BATTERY_PIN));
       return;
     }
 
@@ -332,17 +331,17 @@ void power_off_gyro(int sec) {
 
 void power_off(double sec) {
   if (!b_is_charging) {
-    if (f_batteryVoltage > lowBatteryThreshold) {
+    if (getVoltage(BATTERY_PIN) > lowBatteryThreshold) {
       i_lowBatteryCount = 0;
     }
 
-    if (f_batteryVoltage < lowBatteryThreshold) {
+    if (getVoltage(BATTERY_PIN) < lowBatteryThreshold) {
       i_lowBatteryCount++;
       i_lowBatteryCountTotal++;
     }
 
     if (i_lowBatteryCount > 50) {
-      shut_down_low_battery(f_batteryVoltage);
+      shut_down_low_battery(getVoltage(BATTERY_PIN));
       return;
     }
 
@@ -378,8 +377,8 @@ float get_bat_voltage() {
 
 void checkBattery() {
   // Serial.print("Battery Voltage:");
-  // Serial.print(f_batteryVoltage);
-  float perc = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);  //map funtion doesn't take float as input.
+  // Serial.print(getVoltage(BATTERY_PIN));
+  float perc = map(getVoltage(BATTERY_PIN) * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);  //map funtion doesn't take float as input.
 #if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
   //if (getUsbVoltage(USB_DET) > 4.0) {
   if (digitalRead(USB_DET) == LOW) {

@@ -3,7 +3,6 @@
 
 //functions
 void sendUsbVoltage();
-void sendUsbLedResponse();
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendUsbGyro();
 #endif
@@ -85,12 +84,10 @@ public:
             Serial.println("LED off detected. Turn off OLED.");
             u8g2.setPowerSave(1);
             b_u8g2Sleep = true;
-            sendUsbLedResponse();
           } else if (data[2] == 0x01) {
             Serial.print("LED on detected. Turn on OLED.");
             u8g2.setPowerSave(0);
             b_u8g2Sleep = false;
-            sendUsbLedResponse();
             if (data[5] == 0x00) {
               b_requireHeartBeat = false;
               Serial.println(" *** Heartbeat detection Off ***");
@@ -269,32 +266,90 @@ public:
   }
 };
 
-// Send voltage via USB
 void sendUsbVoltage() {
-  byte data[7];
-  buildVoltagePacket(data);
-  Serial.write(data, 7);
+  Serial.print("Battery Voltage:");
+  float voltage = getVoltage(BATTERY_PIN);
+  Serial.print(voltage);
+//#ifndef ADS1115ADC
+if (b_ads1115InitFail){
+  int adcValue = analogRead(BATTERY_PIN);                              // Read the value from ADC
+  float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;  // Calculate voltage at ADC pin
+  Serial.print("\tADC Voltage:");
+  Serial.print(voltageAtPin);
+  Serial.print("\tbatteryCalibrationFactor: ");
+  Serial.print(f_batteryCalibrationFactor);
 }
+//#endif
+  Serial.print("\tlowBatteryCounterTotal: ");
+  Serial.print(i_lowBatteryCountTotal);
 
-// Send heartbeat via USB
-void sendUsbHeartBeat() {
   byte data[7];
-  buildHeartBeatPacket(data);
-  Serial.write(data, 7);
+  // float weight = scale.getData();
+  byte voltageByte1, voltageByte2;
+
+  encodeWeight(voltage, voltageByte1, voltageByte2);
+
+  data[0] = modelByte;
+  data[1] = 0x22;  // Type byte for voltage data
+  data[2] = voltageByte1;
+  data[3] = voltageByte2;
+  // Fill the rest with dummy data or real data as needed
+  data[4] = 0x00;
+  data[5] = 0x00;
+  data[6] = calculateXOR(data, 6);  // Last byte is XOR validation
+
+  // Use Serial.write to send data via USB (serial)
+  Serial.write(data, 7);  // 7 bytes of data
 }
 
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendUsbGyro() {
   byte data[7];
-  buildGyroPacket(data);
-  Serial.write(data, 7);
+  // float weight = scale.getData();
+  float gyro = gyro_z();
+  byte gyroByte1, gyroByte2;
+
+  encodeWeight(gyro, gyroByte1, gyroByte2);
+
+  data[0] = modelByte;
+  data[1] = 0x21;  // Type byte for gyro data
+  data[2] = gyroByte1;
+  data[3] = gyroByte2;
+  // Fill the rest with dummy data or real data as needed
+  data[4] = 0x00;
+  data[5] = 0x00;
+  data[6] = calculateXOR(data, 6);  // Last byte is XOR validation
+
+  // Use Serial.write to send data via USB (serial)
+  Serial.write(data, 7);  // 7 bytes of data
 }
 #endif
 
 void sendUsbWeight() {
-  byte data[7];
-  buildWeightPacket(data);
-  Serial.write(data, 7);
+  unsigned long currentMillis = millis();
+  if (currentMillis - lastUsbWeightNotifyTime >= weightUsbNotifyInterval) {
+    // Save the last time you sent the weight notification
+    lastUsbWeightNotifyTime = currentMillis;
+
+    byte data[7];
+    // float weight = scale.getData();
+    float weight = f_displayedValue;
+    byte weightByte1, weightByte2;
+
+    encodeWeight(weight, weightByte1, weightByte2);
+
+    data[0] = modelByte;
+    data[1] = 0xCE;  // Type byte for weight stable
+    data[2] = weightByte1;
+    data[3] = weightByte2;
+    // Fill the rest with dummy data or real data as needed
+    data[4] = 0x00;
+    data[5] = 0x00;
+    data[6] = calculateXOR(data, 6);  // Last byte is XOR validation
+
+    // Use Serial.write to send data via USB (serial)
+    Serial.write(data, 7);  // 7 bytes of data
+  }
 }
 
 void sendUsbTextWeight() {
@@ -309,14 +364,20 @@ void sendUsbTextWeight() {
 }
 
 void sendUsbButton(int buttonNumber, int buttonShortPress) {
+  // buttonNumber 1 for button O, 2 for button[]
+  // buttonShortPress 1 for short press, 2 for long press
   byte data[7];
-  buildButtonPacket(data, buttonNumber, buttonShortPress);
-  Serial.write(data, 7);
-}
 
-void sendUsbLedResponse() {
-  byte data[7];
-  buildLedResponsePacket(data);
-  Serial.write(data, 7);
+  data[0] = modelByte;
+  data[1] = 0xAA;  // Type byte for button press
+  data[2] = buttonNumber;
+  data[3] = buttonShortPress;
+  // Fill the rest with dummy data or real data as needed
+  data[4] = 0x00;
+  data[5] = 0x00;
+  data[6] = calculateXOR(data, 6);  // Last byte is XOR validation
+
+  // Use Serial.write to send data via USB (serial)
+  Serial.write(data, 7);  // 7 bytes of data
 }
 #endif

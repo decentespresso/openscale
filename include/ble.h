@@ -14,7 +14,6 @@ const unsigned long HEARTBEAT_TIMEOUT = 5000;  // 5 seconds
 
 //functions
 void sendBleVoltage();
-void sendBleLedResponse();
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendBleGyro();
 #endif
@@ -198,12 +197,10 @@ class MyCallbacks : public BLECharacteristicCallbacks {
             Serial.println("LED off detected. Turn off OLED.");
             u8g2.setPowerSave(1);
             b_u8g2Sleep = true;
-            sendBleLedResponse();//include weight voltage version
           } else if (data[2] == 0x01) {
             Serial.println("LED on detected. Turn on OLED.");
             u8g2.setPowerSave(0);
             b_u8g2Sleep = false;
-            sendBleLedResponse();//including weight voltage version
             if (data[5] == 0x00) {
               b_requireHeartBeat = false;
               Serial.println("*** Heartbeat detection Off ***");
@@ -409,7 +406,7 @@ void ble_init() {
     CUUID_DECENTSCALE_READ,
     BLECharacteristic::PROPERTY_READ
       | BLECharacteristic::PROPERTY_NOTIFY);
-  pReadCharacteristic->addDescriptor(new BLE2902()); //this line could be removed in the future
+  pReadCharacteristic->addDescriptor(new BLE2902());
   pService->start();
   // Start advertising
   pAdvertising = BLEDevice::getAdvertising();
@@ -426,231 +423,171 @@ void disconnectBLE() {
   }
 }
 
-// Build voltage data packet
-void buildVoltagePacket(byte data[7]) {
-  byte voltageByte1, voltageByte2;
-  encodeWeight(f_batteryVoltage, voltageByte1, voltageByte2);
-
-  data[0] = modelByte;
-  data[1] = 0x22;  // Voltage type
-  data[2] = voltageByte1;
-  data[3] = voltageByte2;
-  data[4] = 0x00;
-  data[5] = 0x00;
-  data[6] = calculateXOR(data, 6);
-}
-
-// Send voltage via BLE
 void sendBleVoltage() {
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
-  byte data[7];
-  buildVoltagePacket(data);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
+  if (deviceConnected) {
+    Serial.print("Battery Voltage:");
+    float voltage = getVoltage(BATTERY_PIN);
+    Serial.print(voltage);
+    //#ifndef ADS1115ADC
+    if (b_ads1115InitFail) {
+      int adcValue = analogRead(BATTERY_PIN);                              // Read the value from ADC
+      float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;  // Calculate voltage at ADC pin
+      Serial.print("\tADC Voltage:");
+      Serial.print(voltageAtPin);
+      Serial.print("\tbatteryCalibrationFactor: ");
+      Serial.print(f_batteryCalibrationFactor);
+    }
+    //#endif
+    Serial.print("\tlowBatteryCounterTotal: ");
+    Serial.print(i_lowBatteryCountTotal);
+
+    byte data[7];
+    // float weight = scale.getData();
+    byte voltageByte1, voltageByte2;
+
+    encodeWeight(voltage, voltageByte1, voltageByte2);
+
+    data[0] = modelByte;
+    data[1] = 0x22;  // Type byte for voltage data
+    data[2] = voltageByte1;
+    data[3] = voltageByte2;
+    // Fill the rest with dummy data or real data as needed
+    data[4] = 0x00;
+    data[5] = 0x00;
+    data[6] = calculateXOR(data, 6);  // Last byte is XOR validation
+
+    pReadCharacteristic->setValue(data, 7);
+    pReadCharacteristic->notify();
+  }
 }
 
-// Build heartbeat packet
-void buildHeartBeatPacket(byte data[7]) {
-  data[0] = modelByte;
-  data[1] = 0x0A;  // Heartbeat type
-  data[2] = 0x03;
-  data[3] = 0xFF;
-  data[4] = 0xFF;
-  data[5] = 0x00;
-  data[6] = 0x0A;  // Checksum (can also use calculateXOR)
-}
 
-// Send heartbeat via BLE
-void sendBleHeartBeat() {
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
-  byte data[7];
-  buildHeartBeatPacket(data);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
+void sendHeartBeat() {
+  if (deviceConnected) {
+    byte data[7];
+    data[0] = modelByte;
+    data[1] = 0x0A;  // Type byte for heart beat
+    data[2] = 0x03;
+    data[3] = 0xFF;
+    data[4] = 0xFF;
+    data[5] = 0x00;
+    data[6] = 0x0A;
+
+    pReadCharacteristic->setValue(data, 7);
+    pReadCharacteristic->notify();
+  }
 }
 
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
-void buildGyroPacket(byte data[7]) {
-  float gyro = gyro_z();
-  byte gyroByte1, gyroByte2;
-  encodeWeight(gyro, gyroByte1, gyroByte2);
-
-  data[0] = modelByte;
-  data[1] = 0x21;  // Gyro type
-  data[2] = gyroByte1;
-  data[3] = gyroByte2;
-  data[4] = 0x00;
-  data[5] = 0x00;
-  data[6] = calculateXOR(data, 6);
-}
-
 void sendBleGyro() {
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
-  byte data[7];
-  buildGyroPacket(data);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
+  if (deviceConnected) {
+    byte data[7];
+    // float weight = scale.getData();
+    float gyro = gyro_z();
+    byte gyroByte1, gyroByte2;
+
+    encodeWeight(gyro, gyroByte1, gyroByte2);
+
+    data[0] = modelByte;
+    data[1] = 0x21;  // Type byte for gyro data
+    data[2] = gyroByte1;
+    data[3] = gyroByte2;
+    // Fill the rest with dummy data or real data as needed
+    data[4] = 0x00;
+    data[5] = 0x00;
+    data[6] = calculateXOR(data, 6);  // Last byte is XOR validation
+
+    pReadCharacteristic->setValue(data, 7);
+    pReadCharacteristic->notify();
+  }
 }
 #endif
 
-void buildWeightPacket(byte data[7]) {
-  float weight = f_displayedValue;
-  byte weightByte1, weightByte2;
-  encodeWeight(weight, weightByte1, weightByte2);
-
-  data[0] = modelByte;
-  data[1] = 0xCE;  // Weight type
-  data[2] = weightByte1;
-  data[3] = weightByte2;
-  data[4] = 0x00;
-  data[5] = 0x00;
-  data[6] = calculateXOR(data, 6);
-}
-
 void sendBleWeight() {
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (deviceConnected) {
+    unsigned long currentMillis = millis();
 
-  unsigned long currentMillis = millis();
-  if (currentMillis - lastBleWeightNotifyTime < weightBleNotifyInterval) return;
-  lastBleWeightNotifyTime = currentMillis;
+    if (currentMillis - lastBleWeightNotifyTime >= weightBleNotifyInterval) {
+      // Save the last time you sent the weight notification
+      lastBleWeightNotifyTime = currentMillis;
 
-  byte data[7];
-  buildWeightPacket(data);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
-}
+      byte data[7];
+      //float weight = scale.getData();
+      float weight = f_displayedValue;
+      byte weightByte1, weightByte2;
 
-void buildButtonPacket(byte data[7], int buttonNumber, int buttonShortPress) {
-  //buttonNumber 1 for button O, 2 for button[]
-  //buttonShortPress 1 for short press, 2 for long press
-  data[0] = modelByte;
-  data[1] = 0xAA;  // Button byte
-  data[2] = buttonNumber;
-  data[3] = buttonShortPress;
-  // 0 for release, 1 for click, 2 for long press
-  // Fill the rest with dummy data or real data as needed
-  data[4] = 0x00;
-  data[5] = 0x00;
-  data[6] = calculateXOR(data, 6);
+      encodeWeight(weight, weightByte1, weightByte2);
+
+      data[0] = modelByte;
+      data[1] = 0xCE;  // Type byte for weight stable
+      data[2] = weightByte1;
+      data[3] = weightByte2;
+      // Fill the rest with dummy data or real data as needed
+      data[4] = 0x00;
+      data[5] = 0x00;
+      data[6] = calculateXOR(data, 6);  // Last byte is XOR validation
+
+      pReadCharacteristic->setValue(data, 7);
+      pReadCharacteristic->notify();
+    }
+  }
 }
 
 void sendBleButton(int buttonNumber, int buttonShortPress) {
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
-  byte data[7];
-  buildButtonPacket(data, buttonNumber, buttonShortPress);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
-}
+  if (b_ble_enabled && deviceConnected) {
+    //buttonNumber 1 for button O, 2 for button[]
+    //buttonShortPress 1 for short press, 2 for long press
+    byte data[7];
 
-// Build PowerOff packet into provided data array
-void buildPowerOffPacket(byte data[7], int i_reason) {
-  data[0] = modelByte;       // Model byte
-  data[1] = 0x2A;            // Command ID for PowerOff
+    data[0] = modelByte;
+    data[1] = 0xAA;  // Type byte for weight stable
+    data[2] = buttonNumber;
+    data[3] = buttonShortPress;
+    // 0 for release, 1 for click, 2 for long press
+    // Fill the rest with dummy data or real data as needed
+    data[4] = 0x00;
+    data[5] = 0x00;
+    data[6] = calculateXOR(data, 6);  // Last byte is XOR validation
 
-  // Initialize default values
-  data[2] = 0x00;
-  data[3] = 0x00;
-  data[4] = 0x00;
-  data[5] = 0x00;
-
-  // Fill reason codes
-  switch (i_reason) {
-    case 0: data[2] = 0x00; break; // Power off failed: disabled
-    case 1: data[2] = 0x10; break; // "O" button double-click
-    case 2: data[2] = 0x11; break; // "[]" button double-click
-    case 3: data[3] = 0x20; break; // Low battery
-#if defined(ACC_MPU6050) || defined(ACC_BMA400)
-    case 4: data[2] = 0x30; break; // Power off from gyro
-#endif
-    default: data[2] = 0x00; break; // Invalid reason
+    pReadCharacteristic->setValue(data, 7);
+    pReadCharacteristic->notify();
   }
-
-  // XOR checksum
-  data[6] = calculateXOR(data, 6);
 }
 
 void sendBlePowerOff(int i_reason) {
-  // Check BLE enabled, device connected, characteristic exists
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
-
-  byte data[7];
-  buildPowerOffPacket(data, i_reason);
-
-  // Send BLE notification
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
-}
-
-
-/*
-Automatic firmware version extraction from LINE1 (FW: x.y.z)
-BCD encoding for firmware version
-Weight encoding using encodeWeight()
-Charging detection (USB_DET or BATTERY_CHARGING)
-Battery byte: 0xFF if charging, 0x64 (100%) otherwise
-No XOR checksum
-*/
-
-// -----------------------------
-// Build common LED response packet
-// -----------------------------
-void buildLedResponsePacket(byte data[7]) {
-  int major = 0, minor = 0, patch = 0;
-
-  // 1. Extract firmware version
-  if (sscanf(LINE1, "FW: %d.%d.%d", &major, &minor, &patch) != 3) {
-    major = 0;
-    minor = 0;
-    patch = 0;
-  }
-
-  // Convert to BCD format
-  byte verHigh = (byte)(((major / 10) << 4) | (major % 10));
-  byte verLow  = (byte)((minor << 4) | patch);
-
-  // 2. Get current weight
-  float weight = f_displayedValue;
-  byte weightByte1, weightByte2;
-  encodeWeight(weight, weightByte1, weightByte2);
-
-  // 3. Detect charging status
-  bool b_is_charging = false;
-#if defined(USB_DET)
-  b_is_charging = (digitalRead(USB_DET) == LOW);
-#else
-  b_is_charging = (digitalRead(BATTERY_CHARGING) == LOW);
+  if (b_ble_enabled && deviceConnected) {
+    byte data[7];
+    data[0] = modelByte;
+    data[1] = 0x2A;
+    switch (i_reason) {
+      case 0:
+        data[2] = 0x00;  //power off failed because it's disabled.
+        break;
+      case 1:
+        data[2] = 0x10;  //power off from from "O" button double-click.
+        break;
+      case 2:
+        data[2] = 0x11;  //power off from from "[]" button double-click.
+        break;
+      case 3:
+        data[3] = 0x20;  //power off low battery.
+        break;
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
+      case 4:
+        data[2] = 0x30;  //power off from gyro.
+        break;
 #endif
+      default:
+        data[2] = 0x00;  //Don't power off because i_reason is not valid.
+        break;
+    }
+    data[3] = 0x00;
+    data[4] = 0x00;
+    data[5] = 0x00;
+    data[6] = calculateXOR(data, 6);  // Last byte is XOR validation
 
-  // 4. Compute battery level
-  byte batteryByte;
-  if (b_is_charging) {
-    batteryByte = 0xFF; // Charging
-  } else {
-    float perc = (f_batteryVoltage - showEmptyBatteryBelowVoltage) /
-                 (showFullBatteryAboveVoltage - showEmptyBatteryBelowVoltage) * 100.0f;
-    if (perc < 0) perc = 0;
-    if (perc > 100) perc = 100;
-    batteryByte = (byte)perc;
+    pReadCharacteristic->setValue(data, 7);
+    pReadCharacteristic->notify();
   }
-
-  // 5. Fill packet
-  data[0] = 0x03;         // Header
-  data[1] = 0x0A;         // Type (LED response)
-  data[2] = weightByte1;  // Weight high
-  data[3] = weightByte2;  // Weight low
-  data[4] = batteryByte;  // Battery / charging indicator
-  data[5] = verHigh;      // Firmware version high
-  data[6] = verLow;       // Firmware version low
 }
-
-void sendBleLedResponse() {
-  // Check BLE enabled, device connected, characteristic exists
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
-
-  byte data[7];
-  buildLedResponsePacket(data);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
-}
-
 #endif
