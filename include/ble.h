@@ -409,7 +409,6 @@ void ble_init() {
     CUUID_DECENTSCALE_READ,
     BLECharacteristic::PROPERTY_READ
       | BLECharacteristic::PROPERTY_NOTIFY);
-  pReadCharacteristic->addDescriptor(new BLE2902());
   pService->start();
   // Start advertising
   pAdvertising = BLEDevice::getAdvertising();
