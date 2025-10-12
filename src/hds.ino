@@ -421,11 +421,6 @@ void setup() {
 #ifdef HW_SPI
   SPI.begin(OLED_SCLK, -1, OLED_SDIN, OLED_CS);
 #endif
-#ifdef ADS1115ADC
-  ADS_init();
-#endif
-  delay(50);
-  updateBattery(BATTERY_PIN);
   if (b_ble_enabled) {
     ble_init();
   }
@@ -437,6 +432,9 @@ void setup() {
   }
   Serial.println("EEPROM init success");
   Serial.println("Begin!");
+#ifdef ADS1115ADC
+  ADS_init();
+#endif
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
   ACC_init();
   Serial.println("ACC_init complete");
@@ -790,7 +788,7 @@ void serialCommand() {
 
     if (inputString.startsWith("v")) {  //电压
       Serial.print("Battery Voltage:");
-      Serial.print(f_batteryVoltage);
+      Serial.print(getVoltage(BATTERY_PIN));
       //#ifndef ADS1115ADC
       if (b_ads1115InitFail) {
         int adcValue = analogRead(BATTERY_PIN);                              // Read the value from ADC
@@ -945,19 +943,20 @@ void loop() {
 #if defined(DEBUG) && defined(CHECKBATTERY)
     debugData();
 #endif  //DEBUG
-    if (millis() - t_batteryRefresh > i_batteryRefreshTareInterval){
-      updateBattery(BATTERY_PIN);
-    }
     checkBattery();
     if (b_menu) {
       showMenu();
     } else if (GPIO_power_on_with == BATTERY_CHARGING) {
       if (b_chargingOLED) {
         if (digitalRead(BATTERY_CHARGING) == LOW && !b_calibration) {
-          float perc = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);  //map funtion doesn't take float as input.
-          chargingOLED((int)perc, f_batteryVoltage);                                                                                   //show charging ui
+          //read voltage
+          float voltage = getVoltage(BATTERY_PIN);
+          float perc = map(voltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);  //map funtion doesn't take float as input.
+          chargingOLED((int)perc, voltage);                                                                                   //show charging ui
         } else {
-          if (f_batteryVoltage > 4.1) {
+          //read voltage
+          float voltage = getVoltage(BATTERY_PIN);
+          if (voltage > 4.1) {
             //charging complete
             Serial.println("Charging compelete.");
           } else {
@@ -1032,64 +1031,56 @@ void chargingOLED(int perc, float voltage) {
     t_oled_refresh = millis();
     u8g2.firstPage();
     do {
-      u8g2.drawXBM(121, 51, 7, 12, image_battery_charging);  // charging icon
+      if (b_screenFlipped)
+        u8g2.setDisplayRotation(U8G2_R0);
+      else
+        u8g2.setDisplayRotation(U8G2_R2);
+
+      // Get the display width and height
+      int16_t displayWidth = u8g2.getDisplayWidth();
+      int16_t displayHeight = u8g2.getDisplayHeight();
+
+      // Set the size of the battery outline and inner rectangle
+      int16_t width = 100, height = 30;
+      int16_t innerWidth = width - 2;    // Width of the inner rectangle
+      int16_t innerHeight = height - 2;  // Height of the inner rectangle
+
+      // Calculate the centered position for the battery outline and inner rectangle
+      int16_t x = (displayWidth - width) / 2;
+      int16_t y = (displayHeight - height) / 2 - 6;
+
+      u8g2.setFontMode(1);
+      u8g2.setDrawColor(1);
+      // Draw the battery outline (rounded rectangle)
+      u8g2.drawRFrame(x, y, width, height, 5);  // Outline with a corner radius of 5
+
+      // Calculate the height for the inner rectangle based on percentage
+      int16_t innerY = y + 1 + innerHeight * (1 - (perc / 100.0));  // Y position of the inner rectangle
+      //u8g2.drawBox(x + 1, y + 1, innerWidth * (perc / 100.0), innerHeight);  // Inner rectangle, filled to show charge level
+      u8g2.drawVLine(x + width + 2, y + 7, height - 7 * 2);
+      for (int i = 0; i < innerWidth - 1; i = i + 2) {
+        if (i < (innerWidth * (perc / 100.0))) {
+          u8g2.drawVLine(x + 2 + i, y + 2, innerHeight - 2);
+        }
+      }
+
+      u8g2.setDrawColor(2);
+      // Display the battery percentage
+      char batteryText[10];
+      snprintf(batteryText, sizeof(batteryText), "%d%%", (perc > 100) ? 100 : perc);
+      if (perc > 100) {
+        strcat(batteryText, "+");
+      }
+      u8g2.setFont(u8g2_font_ncenB12_tr);                                                                 // Set font
+      u8g2.drawStr(x + (width / 4) - (u8g2.getStrWidth(batteryText) / 2), y + height + 15, batteryText);  // Center the percentage text
+
+      // Display the voltage
+      char voltageText[10];
+      snprintf(voltageText, sizeof(voltageText), "%.1fV", voltage);
+      u8g2.drawStr(x + (width / 4) + (width / 2) - (u8g2.getStrWidth(voltageText) / 2), y + height + 15, voltageText);  // Center the voltage text
+
     } while (u8g2.nextPage());
   }
-  // if (millis() > t_oled_refresh + 1000) {
-  //   // Refresh the OLED at the specified interval
-  //   t_oled_refresh = millis();
-  //   u8g2.firstPage();
-  //   do {
-  //     if (b_screenFlipped)
-  //       u8g2.setDisplayRotation(U8G2_R0);
-  //     else
-  //       u8g2.setDisplayRotation(U8G2_R2);
-
-  //     // Get the display width and height
-  //     int16_t displayWidth = u8g2.getDisplayWidth();
-  //     int16_t displayHeight = u8g2.getDisplayHeight();
-
-  //     // Set the size of the battery outline and inner rectangle
-  //     int16_t width = 100, height = 30;
-  //     int16_t innerWidth = width - 2;    // Width of the inner rectangle
-  //     int16_t innerHeight = height - 2;  // Height of the inner rectangle
-
-  //     // Calculate the centered position for the battery outline and inner rectangle
-  //     int16_t x = (displayWidth - width) / 2;
-  //     int16_t y = (displayHeight - height) / 2 - 6;
-
-  //     u8g2.setFontMode(1);
-  //     u8g2.setDrawColor(1);
-  //     // Draw the battery outline (rounded rectangle)
-  //     u8g2.drawRFrame(x, y, width, height, 5);  // Outline with a corner radius of 5
-
-  //     // Calculate the height for the inner rectangle based on percentage
-  //     int16_t innerY = y + 1 + innerHeight * (1 - (perc / 100.0));  // Y position of the inner rectangle
-  //     //u8g2.drawBox(x + 1, y + 1, innerWidth * (perc / 100.0), innerHeight);  // Inner rectangle, filled to show charge level
-  //     u8g2.drawVLine(x + width + 2, y + 7, height - 7 * 2);
-  //     for (int i = 0; i < innerWidth - 1; i = i + 2) {
-  //       if (i < (innerWidth * (perc / 100.0))) {
-  //         u8g2.drawVLine(x + 2 + i, y + 2, innerHeight - 2);
-  //       }
-  //     }
-
-  //     u8g2.setDrawColor(2);
-  //     // Display the battery percentage
-  //     char batteryText[10];
-  //     snprintf(batteryText, sizeof(batteryText), "%d%%", (perc > 100) ? 100 : perc);
-  //     if (perc > 100) {
-  //       strcat(batteryText, "+");
-  //     }
-  //     u8g2.setFont(u8g2_font_ncenB12_tr);                                                                 // Set font
-  //     u8g2.drawStr(x + (width / 4) - (u8g2.getStrWidth(batteryText) / 2), y + height + 15, batteryText);  // Center the percentage text
-
-  //     // Display the voltage
-  //     char voltageText[10];
-  //     snprintf(voltageText, sizeof(voltageText), "%.1fV", voltage);
-  //     u8g2.drawStr(x + (width / 4) + (width / 2) - (u8g2.getStrWidth(voltageText) / 2), y + height + 15, voltageText);  // Center the voltage text
-
-  //   } while (u8g2.nextPage());
-  // }
 }
 
 
@@ -1297,7 +1288,7 @@ void drawBattery() {
     // Serial.println("Battery is charging");
   } else {
     b_is_charging = false;
-    int i_batteryPercent = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
+    int i_batteryPercent = map(getVoltage(BATTERY_PIN) * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
     if (i_batteryPercent <= 5) {
       if (b_showBatteryIcon)
         u8g2.drawXBM(121, 52, 7, 12, image_battery_0);  // 0% or very low battery
@@ -1355,14 +1346,15 @@ void drawDebug() {
       snprintf(chargingText, sizeof(chargingText), "Not charging");
 
     char batteryText[10];
-    int perc = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);  //map funtion doesn't take float as input.
+    float voltage = getVoltage(BATTERY_PIN);
+    int perc = map(voltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);  //map funtion doesn't take float as input.
     snprintf(batteryText, sizeof(batteryText), "%d%%", (perc > 100) ? 100 : perc);
 
     char voltageText[10];
     if (perc > 100) {
       strcat(batteryText, "+");
     }
-    snprintf(voltageText, sizeof(voltageText), "%.1fV", f_batteryVoltage);
+    snprintf(voltageText, sizeof(voltageText), "%.1fV", voltage);
 
     char gpioText[10];
     snprintf(gpioText, sizeof(gpioText), "GPIO:%d", i_wakeupPin);
@@ -1393,7 +1385,7 @@ void drawDebug() {
     u8g2.drawStr(AR(sec2sec(stopWatch.elapsed())), lineHeight * 2, sec2sec(stopWatch.elapsed()));
 
     // char c_bat[10] = "";
-    // dtostrf(f_batteryVoltage, 7, 2, c_bat);
+    // dtostrf(getVoltage(BATTERY_PIN), 7, 2, c_bat);
     // u8g2.setFont(FONT_S);
     // u8g2.drawUTF8(14, 60, (char *)trim(c_bat));
     // #if defined(V7_4)
