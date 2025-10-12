@@ -421,6 +421,9 @@ void setup() {
 #ifdef HW_SPI
   SPI.begin(OLED_SCLK, -1, OLED_SDIN, OLED_CS);
 #endif
+#ifdef ADS1115ADC
+  ADS_init();
+#endif
   if (b_ble_enabled) {
     ble_init();
   }
@@ -432,9 +435,6 @@ void setup() {
   }
   Serial.println("EEPROM init success");
   Serial.println("Begin!");
-#ifdef ADS1115ADC
-  ADS_init();
-#endif
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
   ACC_init();
   Serial.println("ACC_init complete");
