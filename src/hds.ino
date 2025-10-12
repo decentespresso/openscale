@@ -424,6 +424,8 @@ void setup() {
 #ifdef ADS1115ADC
   ADS_init();
 #endif
+  delay(50);
+  updateBattery(BATTERY_PIN);
   if (b_ble_enabled) {
     ble_init();
   }
@@ -788,7 +790,7 @@ void serialCommand() {
 
     if (inputString.startsWith("v")) {  //电压
       Serial.print("Battery Voltage:");
-      Serial.print(getVoltage(BATTERY_PIN));
+      Serial.print(f_batteryVoltage);
       //#ifndef ADS1115ADC
       if (b_ads1115InitFail) {
         int adcValue = analogRead(BATTERY_PIN);                              // Read the value from ADC
@@ -943,20 +945,19 @@ void loop() {
 #if defined(DEBUG) && defined(CHECKBATTERY)
     debugData();
 #endif  //DEBUG
+    if (millis() - t_batteryRefresh > i_batteryRefreshTareInterval){
+      updateBattery(BATTERY_PIN);
+    }
     checkBattery();
     if (b_menu) {
       showMenu();
     } else if (GPIO_power_on_with == BATTERY_CHARGING) {
       if (b_chargingOLED) {
         if (digitalRead(BATTERY_CHARGING) == LOW && !b_calibration) {
-          //read voltage
-          float voltage = getVoltage(BATTERY_PIN);
-          float perc = map(voltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);  //map funtion doesn't take float as input.
-          chargingOLED((int)perc, voltage);                                                                                   //show charging ui
+          float perc = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);  //map funtion doesn't take float as input.
+          chargingOLED((int)perc, f_batteryVoltage);                                                                                   //show charging ui
         } else {
-          //read voltage
-          float voltage = getVoltage(BATTERY_PIN);
-          if (voltage > 4.1) {
+          if (f_batteryVoltage > 4.1) {
             //charging complete
             Serial.println("Charging compelete.");
           } else {
@@ -1296,7 +1297,7 @@ void drawBattery() {
     // Serial.println("Battery is charging");
   } else {
     b_is_charging = false;
-    int i_batteryPercent = map(getVoltage(BATTERY_PIN) * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
+    int i_batteryPercent = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
     if (i_batteryPercent <= 5) {
       if (b_showBatteryIcon)
         u8g2.drawXBM(121, 52, 7, 12, image_battery_0);  // 0% or very low battery
@@ -1354,15 +1355,14 @@ void drawDebug() {
       snprintf(chargingText, sizeof(chargingText), "Not charging");
 
     char batteryText[10];
-    float voltage = getVoltage(BATTERY_PIN);
-    int perc = map(voltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);  //map funtion doesn't take float as input.
+    int perc = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);  //map funtion doesn't take float as input.
     snprintf(batteryText, sizeof(batteryText), "%d%%", (perc > 100) ? 100 : perc);
 
     char voltageText[10];
     if (perc > 100) {
       strcat(batteryText, "+");
     }
-    snprintf(voltageText, sizeof(voltageText), "%.1fV", voltage);
+    snprintf(voltageText, sizeof(voltageText), "%.1fV", f_batteryVoltage);
 
     char gpioText[10];
     snprintf(gpioText, sizeof(gpioText), "GPIO:%d", i_wakeupPin);
@@ -1393,7 +1393,7 @@ void drawDebug() {
     u8g2.drawStr(AR(sec2sec(stopWatch.elapsed())), lineHeight * 2, sec2sec(stopWatch.elapsed()));
 
     // char c_bat[10] = "";
-    // dtostrf(getVoltage(BATTERY_PIN), 7, 2, c_bat);
+    // dtostrf(f_batteryVoltage, 7, 2, c_bat);
     // u8g2.setFont(FONT_S);
     // u8g2.drawUTF8(14, 60, (char *)trim(c_bat));
     // #if defined(V7_4)
