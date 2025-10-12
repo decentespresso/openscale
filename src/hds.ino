@@ -172,7 +172,7 @@ void buttonSquare_Pressed() {
   if (deviceConnected && millis() - t_shutdownFailBle < 3000) {
     stopWebServer();
     stopWifi();
-    shut_down_now_nobeep();
+    b_powerOff = true;
   }
   if (!b_menu && !b_calibration && (!deviceConnected || b_btnFuncWhileConnected)) {
     scaleTimer();
@@ -212,7 +212,7 @@ void buttonCircle_DoubleClicked() {
     sendBlePowerOff(1);
     stopWebServer();
     stopWifi();
-    shut_down_now_nobeep();
+    b_powerOff = true;
   } else {
     if (deviceConnected) {
       t_shutdownFailBle = millis();
@@ -233,7 +233,7 @@ void buttonSquare_DoubleClicked() {
     sendBlePowerOff(2);
     stopWebServer();
     stopWifi();
-    shut_down_now_nobeep();
+    b_powerOff = true;
   } else {
     if (deviceConnected) {
       t_shutdownFailBle = millis();
@@ -398,7 +398,8 @@ void setup() {
         Serial.println("Going to sleep now.");
         stopWebServer();
         stopWifi();
-        shut_down_now_nobeep();
+        esp32_sleep();
+        //shut_down_now_nobeep();
         break;  // Exit loop to enter sleep mode
       }
       b_button_pressed = false;  // Reset mark
@@ -899,6 +900,11 @@ void serialCommand() {
 }
 
 void loop() {
+  if (b_powerOff){
+    shut_down_now_nobeep();
+    return;
+  }
+
   if (bleState == CONNECTED && b_requireHeartBeat) {
     if (millis() - t_heartBeat > HEARTBEAT_TIMEOUT) {
       disconnectBLE();
@@ -966,7 +972,7 @@ void loop() {
           }
           stopWebServer();
           stopWifi();
-          shut_down_now_nobeep();  //deepsleep
+          b_powerOff = true;  //deepsleep
         }
       }
     } else {
