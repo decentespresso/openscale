@@ -84,7 +84,7 @@ float f_temp_tare = 0;
 int i_icon = 0;  //充电指示电量数字0-6
 int i_setContainerWeight = 0;
 float f_filtered_temperature = 0;
-bool b_ads1115InitFail = true;  //ads1115 not detected flag
+bool b_ads1115InitFail = false;  //ads1115 not detected flag
 bool b_wifiOnBoot = false;
 bool b_autoSleep = true;
 
