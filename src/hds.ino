@@ -356,6 +356,8 @@ void setup() {
   pinMode(USB_DET, INPUT_PULLUP);
   // either esp32 rev change or diff in SDK? We get 
   // warnings in logs about incorrect pinMode
+  pinMode(CHRG_CTRL, OUTPUT);
+  digitalWrite(CHRG_CTRL, LOW);
   pinMode(OLED_CS, OUTPUT);
   pinMode(OLED_DC, OUTPUT);
   pinMode(SCALE_PDWN, OUTPUT);
@@ -951,8 +953,36 @@ void loop() {
 #if defined(DEBUG) && defined(CHECKBATTERY)
     debugData();
 #endif  //DEBUG
-    if (millis() - t_batteryRefresh > i_batteryRefreshTareInterval){
+    // Check if battery voltage reached refresing time
+    // 判断是否到达电池刷新周期
+    if (millis() - t_batteryRefresh > i_batteryRefreshTareInterval) {
+      // Check if USB is plugged-in
+      if (digitalRead(USB_DET) == LOW) {
+        // Temporarily disable charging by pulling CHRG_CTRL low
+        updateBattery(BATTERY_PIN);
+        Serial.print("Plugged-in voltage:");
+        Serial.println(f_batteryVoltage);
+        digitalWrite(CHRG_CTRL, HIGH);
+        t_chargeDisableStart = millis();
+        b_chargeDisabled = true;
+        
+      } else {
+        // If USB not inserted, just read battery normally
+        updateBattery(BATTERY_PIN);
+      }
+      t_batteryRefresh = millis();
+    }
+
+    // Non-blocking delay of 100ms before measuring voltage
+    if (b_chargeDisabled && (millis() - t_chargeDisableStart >= 100)) {
+      // Measure the actual battery voltage
       updateBattery(BATTERY_PIN);
+      Serial.print("Pause charging voltage:");
+      Serial.println(f_batteryVoltage);
+      // Re-enable charging
+      digitalWrite(CHRG_CTRL, LOW);
+      t_batteryRefresh = millis();
+      b_chargeDisabled = false;
     }
     checkBattery();
     if (b_menu) {

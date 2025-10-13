@@ -88,6 +88,7 @@
 #define I2C_SCL 4
 #define I2C_SDA 5
 #define BATTERY_PIN 6 //wasn't used but to keep getVoltage(battery_pin) working. Any number is good for that.
+#define CHRG_CTRL 6 //Introduced in PCB v8.3.1 to control TP4056 charging for bettery battery voltage sampling.
 #define OLED_SDIN 7
 #define OLED_SCLK 15
 #define OLED_DC 16

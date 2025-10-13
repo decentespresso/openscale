@@ -190,6 +190,8 @@ int i_battery = 0;                          //电池充电循环变量
 int i_batteryRefreshTareInterval = 30 * 1000;  //Refresh battery every 30 seconds
 unsigned long t_batteryRefresh = 0;         //Battery refresh timestamp
 float f_batteryVoltage = 0;
+unsigned long t_chargeDisableStart = 0;
+bool b_chargeDisabled = false;
 #ifdef AVR
 float f_vref = 4.72;                  //5V pin true reading
 float f_true_battery_reading = 4.72;  //需测量usb vcc电压（不一定是usb，可以是电池电压）
