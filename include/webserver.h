@@ -1,6 +1,7 @@
 #ifndef SCALE_WEBSERVER_H
 #define SCALE_WEBSERVER_H
 
+#include "esp_system.h"
 #include "wifi_setup.h"
 #include <ArduinoJson.h>
 #include <AsyncJson.h>
@@ -32,6 +33,7 @@ void startWebServer() {
         saveCredentials(ssid, pass);
         Serial.println("new ssid saved");
         request->send(200);
+        esp_restart();
       });
   server.addHandler(wifiHandler);
 
