@@ -959,9 +959,9 @@ void loop() {
       // Check if USB is plugged-in
       if (digitalRead(USB_DET) == LOW) {
         // Temporarily disable charging by pulling CHRG_CTRL low
-        updateBattery(BATTERY_PIN);
-        Serial.print("Plugged-in voltage:");
-        Serial.println(f_batteryVoltage);
+        // updateBattery(BATTERY_PIN);
+        // Serial.print("Plugged-in voltage:");
+        // Serial.println(f_batteryVoltage);
         digitalWrite(CHRG_CTRL, HIGH);
         t_chargeDisableStart = millis();
         b_chargeDisabled = true;
@@ -977,8 +977,8 @@ void loop() {
     if (b_chargeDisabled && (millis() - t_chargeDisableStart >= 100)) {
       // Measure the actual battery voltage
       updateBattery(BATTERY_PIN);
-      Serial.print("Pause charging voltage:");
-      Serial.println(f_batteryVoltage);
+      // Serial.print("Pause charging voltage:");
+      // Serial.println(f_batteryVoltage);
       // Re-enable charging
       digitalWrite(CHRG_CTRL, LOW);
       t_batteryRefresh = millis();
