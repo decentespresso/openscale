@@ -30,22 +30,24 @@
     }
 
     /* WiFi popup styling */
-    #wifi-popup {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      width: 100%;
-      background: #fff;
-      border-top: 1px solid #ccc;
-      padding: 1rem;
-      box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
-    }
+    /* #wifi-popup { */
+    /*   position: fixed; */
+    /*   bottom: 0; */
+    /*   left: 0; */
+    /*   width: 100%; */
+    /*   background: #fff; */
+    /*   border-top: 1px solid #ccc; */
+    /*   margin-top: 1rem; */
+    /*   padding: 1rem; */
+    /*   box-shadow: 0 -2px 10px rgba(0,0,0,0.1); */
+    /* } */
     #wifi-popup input {
       padding: 0.4rem;
       font-size: 1rem;
     }
     #wifi-popup button {
       padding: 0.5rem 1rem;
+      margin-top: 0.5rem;
       font-size: 1rem;
       cursor: pointer;
     }
@@ -55,7 +57,7 @@
     }
 
     /* Weight display */
-    #weight-display {
+    .weight-display {
       margin-top: 2rem;
       padding: 1rem;
       background: #fff;
@@ -107,20 +109,21 @@
     </ul>
 
   <!-- Weight Display and Tare Button -->
-  <div id="weight-display">
+  <div class="weight-display">
     <h2>Weight</h2>
     <div id="weight-value">-- g</div>
     <button id="tare-button">Tare</button>
   </div>
 
   <!-- WiFi Setup Popup -->
-  <div id="wifi-popup">
+  <div id="wifi-popup" class="weight-display">
     <h2>Setup WiFi</h2>
-    <form id="wifi-form">
-      <input type="text" id="ssid" placeholder="WiFi SSID" required style="margin-right: 1rem;" />
-      <input type="password" id="password" placeholder="WiFi Password" style="margin-right: 1rem;" />
-      <button type="submit">Connect</button>
-    </form>
+          <form id="wifi-form">
+            <input type="text" id="ssid" placeholder="WiFi SSID" required style="margin-right: 1rem;" />
+            <input type="password" id="password" placeholder="WiFi Password" style="margin-right: 1rem;" />
+            <button type="submit">Connect</button>
+          </form>
+          <button id="reset-wifi-button">Reset WiFi settings</button>
     <p id="wifi-status"></p>
   </div>
 
@@ -184,6 +187,30 @@
       weightValue.textContent = 'Disconnected';
       weightValue.style.color = 'gray';
     });
+
+    document.getElementById('reset-wifi-button').addEventListener('click', async function (e) {
+
+      const status = document.getElementById('wifi-status');
+      try {
+        const response = await fetch(`http://${window.location.host}/setup/wifi`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ 'ssid': '' })
+        });
+
+        if (response.ok) {
+          status.textContent = 'WiFi reset request sent successfully! Please restart the scale';
+        } else {
+          status.textContent = 'Failed to send WiFi reset request.';
+          status.style.color = 'red';
+        }
+      } catch (err) {
+        status.textContent = 'Error connecting to server.';
+        status.style.color = 'red';
+      }
+    })
   </script>
 </body>
 </html>
