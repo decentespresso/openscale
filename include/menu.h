@@ -3,6 +3,7 @@
 
 #include "esp32-hal.h"
 #include "parameter.h"
+#include "wifi_setup.h"
 const char *weights[] = { "Exit", "50g", "100g", "200g", "500g", "1000g" };
 const float weight_values[] = { 0.0, 50.0, 100.0, 200.0, 500.0, 1000.0 };
 bool b_showAbout = false;
@@ -33,6 +34,7 @@ void buzzerOff();
 #endif
 void toggleWifiOff();
 void toggleWifiOn();
+void resetWifi();
 void showWifiStatus();
 void heartbeatOn();
 void heartbeatOff();
@@ -91,11 +93,14 @@ Menu menuWiFiUpdateBack = { "Back", NULL, NULL, &menuWifi };
 Menu menuWiFiOnOption = { "WiFi On", toggleWifiOn, NULL, &menuWifi };
 Menu menuWiFiOffOption = { "WiFi Off", toggleWifiOff, NULL, &menuWifi };
 Menu menuWiFiStatusOption = { "WiFi Status", showWifiStatus, NULL, &menuWifi };
+Menu menuWiFiResetOption = { "Reset WiFi", resetWifi, NULL, &menuWifi };
+
 Menu *wifiUpdateMenu[] = {
   &menuWiFiUpdateBack,
   &menuWiFiOnOption,
   &menuWiFiOffOption,
   &menuWiFiStatusOption,
+  &menuWiFiResetOption,
 };
 
 // Heartbeat detection
@@ -272,6 +277,14 @@ void showWifiStatus() {
       b_showWifiData = false;
     }
   }
+}
+
+void resetWifi() {
+  saveCredentials("", "");
+  actionMessage = "WiFi Reset";
+  actionMessage2 = "Restart scale";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
 }
 
 void heartbeatOn() {
