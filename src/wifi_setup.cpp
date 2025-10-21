@@ -38,6 +38,11 @@ void setupAP() {
                     IPAddress(255, 255, 255, 0));
 
   WiFi.setTxPower(WIFI_POWER_8_5dBm);
+
+  WiFi.printDiag(Serial);
+  Serial.println("WiFi: DecentScale");
+  Serial.print("IP: ");
+  Serial.println(WiFi.softAPIP());
 }
 
 void connectToWifi() {
@@ -79,7 +84,7 @@ void setupWifi() {
   WiFi.setHostname(hostname);
 
   if (params.hasCredentials()) {
-    Serial.println("trying to connect to wifi");
+    Serial.printf("trying to connect to wifi: %s\n", params.getSSID());
     connectToWifi();
   } else {
     Serial.println("no wifi data found, setting up AP");
