@@ -699,30 +699,6 @@ void setup() {
   b_bootTare = true;
 }
 
-// Enhanced tracking system global variables
-static float f_tracking_offset = 0.0;              // Current tracking offset
-static float f_tracking_target = 0.0;              // Current tracking target weight
-static unsigned long t_last_tracking_update = 0;   // Last tracking update time
-static const unsigned long TRACKING_UPDATE_INTERVAL = 5000; // Tracking update interval 5 seconds
-static const float TRACKING_THRESHOLD = 0.1;      // Tracking stability threshold
-static const int i_STABLE_COUNT_THRESHOLD = 5;     // Stable count threshold
-static const float MAX_TRACKING_ADJUSTMENT = 0.5;  // Maximum single adjustment
-
-static unsigned long t_last_status_display = 0;
-static const unsigned long STATUS_DISPLAY_INTERVAL = 5000;
-static bool b_weight_in_serial = true;
-
-static int i_stable_count = 0;                     // Stable state counter
-static bool b_tracking_enabled = true;          // Tracking enable flag
-static bool b_tracking_active = false;          // Whether tracking is currently active
-
-// Stable output system global variables
-static float f_previous_stable_value = 0.0;        // Previous stable output value
-static float f_current_raw_value = 0.0;            // Current raw input value
-static float STABLE_OUTPUT_THRESHOLD = 0.1;       // Minimum change to update output
-static bool b_stable_output_enabled = true;     // Stable output enable flag
-static unsigned long t_last_stable_change = 0;     // Time of last stable change
-
 /**
  * Enhanced adaptive tracking system
  * Tracks both zero and stable weights to prevent oscillation
