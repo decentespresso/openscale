@@ -493,7 +493,7 @@ void setup() {
   //adc init
   unsigned long stabilizingtime = 500;
   //taring duration. longer for better reading.
-  boolean _tare = true;  //电子秤初始化去皮，如果不想去皮则设为false
+  bool _tare = true;  //电子秤初始化去皮，如果不想去皮则设为false
   //whether the scale will tare on start.
   scale.begin();
   scale.setSamplesInUse(4);  //设置灵敏度
@@ -699,6 +699,380 @@ void setup() {
   b_bootTare = true;
 }
 
+// Enhanced tracking system global variables
+static float f_tracking_offset = 0.0;              // Current tracking offset
+static float f_tracking_target = 0.0;              // Current tracking target weight
+static unsigned long t_last_tracking_update = 0;   // Last tracking update time
+static const unsigned long TRACKING_UPDATE_INTERVAL = 5000; // Tracking update interval 5 seconds
+static const float TRACKING_THRESHOLD = 0.1;      // Tracking stability threshold
+static const int i_STABLE_COUNT_THRESHOLD = 5;     // Stable count threshold
+static const float MAX_TRACKING_ADJUSTMENT = 0.5;  // Maximum single adjustment
+
+static unsigned long t_last_status_display = 0;
+static const unsigned long STATUS_DISPLAY_INTERVAL = 5000;
+static bool b_weight_in_serial = true;
+
+static int i_stable_count = 0;                     // Stable state counter
+static bool b_tracking_enabled = true;          // Tracking enable flag
+static bool b_tracking_active = false;          // Whether tracking is currently active
+
+// Stable output system global variables
+static float f_previous_stable_value = 0.0;        // Previous stable output value
+static float f_current_raw_value = 0.0;            // Current raw input value
+static float STABLE_OUTPUT_THRESHOLD = 0.1;       // Minimum change to update output
+static bool b_stable_output_enabled = true;     // Stable output enable flag
+static unsigned long t_last_stable_change = 0;     // Time of last stable change
+
+/**
+ * Enhanced adaptive tracking system
+ * Tracks both zero and stable weights to prevent oscillation
+ */
+void updateAdaptiveTracking(float current_weight) {
+  unsigned long current_time = millis();
+  
+  if (!b_tracking_enabled) {
+    return;
+  }
+  
+  // Calculate weight difference from current tracking target
+  float weight_diff = current_weight - f_tracking_target;
+  
+  // Check if weight is stable (within tracking threshold)
+  if (fabs(weight_diff) <= TRACKING_THRESHOLD) {
+    i_stable_count++;
+    
+    // Update tracking target to slowly follow stable weights
+    if (i_stable_count >= 3) { // Start adjusting target after 3 stable readings
+      float adjustment = weight_diff * 0.1; // Slow adaptation
+      
+      // Limit maximum adjustment to prevent large jumps
+      if (fabs(adjustment) > MAX_TRACKING_ADJUSTMENT) {
+        adjustment = (adjustment > 0) ? MAX_TRACKING_ADJUSTMENT : -MAX_TRACKING_ADJUSTMENT;
+      }
+      
+      f_tracking_target += adjustment;
+    }
+    
+  } else {
+    // Weight changed significantly - likely a real weight change
+    i_stable_count = 0;
+    b_tracking_active = false;
+    
+    // If weight change is large and persistent, update tracking target
+    if (fabs(weight_diff) > TRACKING_THRESHOLD * 2) {
+      // Consider this as a new stable weight after verification
+      if (verifyWeightStability(current_weight)) {
+        f_tracking_target = current_weight;
+        b_tracking_active = true;
+        if (b_weight_in_serial) {
+          Serial.print("New weight target set: ");
+          Serial.println(f_tracking_target, 4);
+        }
+      }
+    }
+  }
+  
+  // Perform tracking adjustment when conditions are met
+  if (i_stable_count >= i_STABLE_COUNT_THRESHOLD) {
+    if (current_time - t_last_tracking_update >= TRACKING_UPDATE_INTERVAL) {
+      performTrackingAdjustment(current_weight);
+    }
+  }
+}
+
+/**
+ * Perform the actual tracking adjustment
+ */
+void performTrackingAdjustment(float current_weight) {
+  float old_offset = f_tracking_offset;
+  
+  // Calculate new offset based on current weight and target
+  float calculated_offset = current_weight - f_tracking_target;
+  
+  // Apply slow adaptation to prevent sudden changes
+  f_tracking_offset = f_tracking_offset * 0.8 + calculated_offset * 0.2;
+  
+  // Activate tracking if not already active
+  if (!b_tracking_active) {
+    b_tracking_active = true;
+  }
+  
+  // Debug output
+  if (b_weight_in_serial) {
+    Serial.print("Tracking adjustment: Offset ");
+    Serial.print(old_offset, 4);
+    Serial.print("g -> ");
+    Serial.print(f_tracking_offset, 4);
+    Serial.print("g | Target: ");
+    Serial.print(f_tracking_target, 4);
+    Serial.print("g | Raw: ");
+    Serial.print(current_weight, 4);
+    Serial.println("g");
+  }
+  
+  // Reset counters
+  i_stable_count = i_STABLE_COUNT_THRESHOLD - 2; // Keep near threshold for continuous tracking
+  t_last_tracking_update = millis();
+}
+
+/**
+ * Verify if a weight is stable enough to be considered a new target
+ */
+bool verifyWeightStability(float current_weight) {
+  static float last_verified_weight = 0.0;
+  static int verification_count = 0;
+  
+  if (fabs(current_weight - last_verified_weight) <= TRACKING_THRESHOLD) {
+    verification_count++;
+  } else {
+    verification_count = 0;
+  }
+  
+  last_verified_weight = current_weight;
+  
+  // Require 3 consecutive stable readings to verify new weight
+  return (verification_count >= 3);
+}
+
+/**
+ * Apply tracking compensation to raw weight
+ */
+float applyTrackingCompensation(float raw_weight) {
+  if (b_tracking_active && b_tracking_enabled) {
+    return raw_weight - f_tracking_offset;
+  }
+  return raw_weight;
+}
+
+/**
+ * Apply stable output filtering
+ * Returns the same value if change is below threshold
+ */
+float applyStableOutput(float current_value) {
+  if (!b_stable_output_enabled) {
+    return current_value; // Bypass stable filtering if disabled
+  }
+  
+  float change = fabs(current_value - f_previous_stable_value);
+  
+  // If change is significant, update the stable value
+  if (change >= STABLE_OUTPUT_THRESHOLD) {
+    f_previous_stable_value = current_value;
+    t_last_stable_change = millis();
+    
+    // Debug output for significant changes
+    if (b_weight_in_serial) {
+      Serial.print("Output updated: ");
+      Serial.print(current_value, 4);
+      Serial.print("g (Change: ");
+      Serial.print(change, 4);
+      Serial.println("g)");
+    }
+  }
+  
+  // Always return the stable value (may be same as previous)
+  return f_previous_stable_value;
+}
+
+/**
+ * Enhanced pureScale function with all features
+ */
+void pureScale() {
+  static bool b_newDataReady = 0;
+  
+  if (scale.update()) b_newDataReady = true;
+  
+  if (b_newDataReady) {
+    float raw_weight = scale.getData();
+    f_current_raw_value = raw_weight; // Store for status display
+    
+    // Apply adaptive tracking compensation
+    float compensated_weight = applyTrackingCompensation(raw_weight);
+    
+    // Apply stable output filtering
+    float stable_weight = applyStableOutput(compensated_weight);
+    
+    // Dead zone processing (apply to stable weight)
+    if (stable_weight >= -0.14 && stable_weight <= 0.14) {
+      f_displayedValue = 0.0;
+    } else {
+      f_displayedValue = stable_weight;
+    }
+    
+    f_weight_before_input = f_displayedValue;
+    
+    // Update adaptive tracking (use compensated weight, not stable weight)
+    updateAdaptiveTracking(compensated_weight);
+    
+    // Convert and display
+    dtostrf(f_displayedValue, 7, i_decimal_precision, c_weight);
+    if (b_weight_in_serial == true) {
+      //Serial.println(trim(c_weight));
+      
+      // Display status periodically
+      unsigned long current_time = millis();
+      if (current_time - t_last_status_display >= STATUS_DISPLAY_INTERVAL) {
+        displayEnhancedStatus(raw_weight, compensated_weight, stable_weight);
+        t_last_status_display = current_time;
+      }
+    }
+    b_newDataReady = false;
+  }
+  
+  // Handle tare operation
+  if (scale.getTareStatus()) {
+    t_tareStatus = millis();
+    b_weight_quick_zero = false;
+    resetTracking();
+    resetStableOutput(); // Also reset stable output
+  }
+  
+  // Quick zero handling
+  if (b_weight_quick_zero || b_bootTare) {
+    f_displayedValue = 0.0;
+    resetTracking();
+    resetStableOutput(); // Also reset stable output
+  }
+}
+
+/**
+ * Reset tracking system (for tare/zero operations)
+ */
+void resetTracking() {
+  f_tracking_offset = 0.0;
+  f_tracking_target = 0.0;
+  i_stable_count = 0;
+  b_tracking_active = false;
+  t_last_tracking_update = millis();
+  if (b_weight_in_serial) {
+    Serial.println("Tracking system reset");
+  }
+}
+
+/**
+ * Reset stable output system
+ */
+void resetStableOutput() {
+  f_previous_stable_value = 0.0;
+  t_last_stable_change = millis();
+  if (b_weight_in_serial) {
+    Serial.println("Stable output reset");
+  }
+}
+
+/**
+ * Enable/disable stable output
+ */
+void setStableOutputEnabled(bool enabled) {
+  b_stable_output_enabled = enabled;
+  if (!enabled) {
+    resetStableOutput();
+  }
+  Serial.print("Stable output ");
+  Serial.println(enabled ? "enabled" : "disabled");
+}
+
+/**
+ * Set stable output threshold
+ */
+void setStableOutputThreshold(float threshold) {
+  STABLE_OUTPUT_THRESHOLD = threshold;
+  Serial.print("Stable threshold set to: ");
+  Serial.println(threshold, 4);
+}
+
+/**
+ * Enable/disable tracking system
+ */
+void setTrackingEnabled(bool enabled) {
+  b_tracking_enabled = enabled;
+  if (!enabled) {
+    resetTracking();
+  }
+  Serial.print("Tracking system ");
+  Serial.println(enabled ? "enabled" : "disabled");
+}
+
+/**
+ * Enhanced status display with all system info
+ */
+void displayEnhancedStatus(float raw_weight, float compensated_weight, float stable_weight) {
+  Serial.println("=== Enhanced Scale Status ===");
+  Serial.print("Raw Input: ");
+  Serial.print(raw_weight, 4);
+  Serial.print("g | Compensated: ");
+  Serial.print(compensated_weight, 4);
+  Serial.print("g | Stable Output: ");
+  Serial.print(stable_weight, 4);
+  Serial.println("g");
+  
+  Serial.print("Stable Output: ");
+  Serial.print(b_stable_output_enabled ? "ON" : "OFF");
+  Serial.print(" | Threshold: ±");
+  Serial.print(STABLE_OUTPUT_THRESHOLD, 4);
+  Serial.println("g");
+  
+  Serial.print("Last Stable Change: ");
+  Serial.print((millis() - t_last_stable_change) / 1000);
+  Serial.println("s ago");
+  
+  // Tracking status
+  Serial.print("Tracking System: ");
+  Serial.print(b_tracking_enabled ? "ON" : "OFF");
+  Serial.print(" | Active: ");
+  Serial.println(b_tracking_active ? "YES" : "NO");
+  
+  Serial.print("Tracking Offset: ");
+  Serial.print(f_tracking_offset, 4);
+  Serial.print("g | Target: ");
+  Serial.print(f_tracking_target, 4);
+  Serial.println("g");
+  
+  Serial.print("Stable Count: ");
+  Serial.print(i_stable_count);
+  Serial.print("/");
+  Serial.println(i_STABLE_COUNT_THRESHOLD);
+  
+  Serial.println("=============================");
+}
+
+/**
+ * Get current tracking offset
+ */
+float getTrackingOffset() {
+  return f_tracking_offset;
+}
+
+/**
+ * Get current stable output value
+ */
+float getStableOutputValue() {
+  return f_previous_stable_value;
+}
+
+// Optional: Manual control functions
+/**
+ * Manual override - set specific tracking offset
+ */
+void setManualTrackingOffset(float offset) {
+  f_tracking_offset = offset;
+  b_tracking_active = true;
+  Serial.print("Manual tracking offset set: ");
+  Serial.println(offset, 4);
+}
+
+/**
+ * Manual override - set specific stable value
+ */
+void setManualStableValue(float value) {
+  f_previous_stable_value = value;
+  t_last_stable_change = millis();
+  Serial.print("Manual stable value set: ");
+  Serial.println(value, 4);
+}
+
+
+/*
 void pureScale() {
   static boolean newDataReady = 0;
   static boolean scaleStable = 0;
@@ -764,6 +1138,7 @@ void pureScale() {
     ratio_temp = 0.0;
   dtostrf(ratio_temp, 7, i_decimal_precision, c_brew_ratio);
 }
+*/
 
 void serialCommand() {
   if (Serial.available()) {
