@@ -427,7 +427,6 @@ void setup() {
 #endif
   delay(50);
   updateBattery(BATTERY_PIN);
-  updateNTCTemperature(2);
   if (b_ble_enabled) {
     ble_init();
   }
@@ -1305,6 +1304,7 @@ void loop() {
 #endif  //DEBUG
     if (millis() - t_batteryRefresh > i_batteryRefreshTareInterval){
       updateBattery(BATTERY_PIN);
+      t_battery = millis();
     }
     checkBattery();
     updateNTCTemperature(2);
