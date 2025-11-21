@@ -303,7 +303,11 @@ void sendUsbTextWeight() {
     // Save the last time you sent the weight notification
     lastWeightTextNotifyTime = currentMillis;
     Serial.print(lastWeightTextNotifyTime);
-    Serial.print(" Weight: ");  // 7 bytes of data
+    Serial.print(" NTC:");
+    Serial.print(f_ntc_temperature);
+    Serial.print("c NTC_v:");
+    Serial.print(f_ntc_voltage);
+    Serial.print("v Weight: ");  // 7 bytes of data
     Serial.println(f_displayedValue);
   }
 }

@@ -249,6 +249,60 @@ void shut_down_now_accidentTouch() {
   esp32_sleep();
 }
 
+// Steinhart-Hart方程计算温度
+float calculateTemperature(float resistance) {
+  // NTC参数 - 需要根据实际的NTC型号调整这些值
+  float A = 1.129148e-3;
+  float B = 2.34125e-4;
+  float C = 8.76741e-8;
+  
+  float logR = log(resistance);
+  float tempK = 1.0 / (A + B * logR + C * logR * logR * logR);
+  float tempC = tempK - 273.15;
+  
+  return tempC;
+}
+
+void updateNTCTemperature(int ntcPin) {
+  //#ifdef ADS1115ADC
+  if (!b_ads1115InitFail) {
+    int16_t adc2, adc3;
+    float volts2, volts3;
+    
+    // 读取NTC电压 (ADC2) 和3.3V参考电压 (ADC3)
+    adc2 = ads.readADC_SingleEnded(2);
+    adc3 = ads.readADC_SingleEnded(3);
+    
+    volts2 = ads.computeVolts(adc2);  // NTC分压电压
+    volts3 = ads.computeVolts(adc3);  // 3.3V参考电压
+    
+    // 如果参考电压读取异常，返回-1
+    if (volts3 <= 0) {
+      f_ntc_temperature = -1.0;
+      f_ntc_voltage = -1.0;
+      return;
+    }
+    
+    // 计算NTC电阻值
+    float seriesResistor = 10000.0; // 10k串联电阻
+    
+    // 计算NTC电阻值: R_ntc = R_series * (V_ntc / (V_ref - V_ntc))
+    float ntcResistance = seriesResistor * (volts2 / (volts3 - volts2));
+    
+    // 使用Steinhart-Hart方程计算温度
+    f_ntc_temperature = calculateTemperature(ntcResistance);
+    f_ntc_voltage = volts2;
+  }
+  //#else
+  else {
+    // 非ADS1115模式，返回-1
+    f_ntc_temperature = -1.0;
+    f_ntc_voltage = -1.0;
+  }
+  //#endif
+}
+
+
 void updateBattery(int batteryPin){
   //#ifdef ADS1115ADC
   if (!b_ads1115InitFail) {

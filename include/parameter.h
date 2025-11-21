@@ -102,11 +102,15 @@ static const float MAX_TRACKING_ADJUSTMENT = 0.5;  // Maximum single adjustment
 
 static unsigned long t_last_status_display = 0;
 static const unsigned long STATUS_DISPLAY_INTERVAL = 5000;
-static bool b_weight_in_serial = true;
+static bool b_weight_in_serial = false;
 
 static int i_stable_count = 0;                     // Stable state counter
 static bool b_tracking_enabled = true;          // Tracking enable flag
 static bool b_tracking_active = false;          // Whether tracking is currently active
+
+//NTC Compensation
+float f_ntc_temperature = -2.0;
+float f_ntc_voltage = -2.0;
 
 // Stable output system global variables
 static float f_previous_stable_value = 0.0;        // Previous stable output value

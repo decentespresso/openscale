@@ -427,6 +427,7 @@ void setup() {
 #endif
   delay(50);
   updateBattery(BATTERY_PIN);
+  updateNTCTemperature(2);
   if (b_ble_enabled) {
     ble_init();
   }
@@ -1306,6 +1307,7 @@ void loop() {
       updateBattery(BATTERY_PIN);
     }
     checkBattery();
+    updateNTCTemperature(2);
     if (b_menu) {
       showMenu();
     } else if (GPIO_power_on_with == BATTERY_CHARGING) {
