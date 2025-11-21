@@ -599,7 +599,9 @@ void setup() {
     //calibration value is not valid, go to calibration procedure.
   }
 #endif
-  wifi_init();
+  if (b_ble_enabled) {
+    wifi_init();
+  }
   // //wifiota
   // #ifdef WIFI
   if (digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW) {
