@@ -306,7 +306,7 @@ void button_init() {
   config1.setLongPressDelay(LONGCLICK);
 }
 
-void wifi_init() {
+void _wifi_init(void *args) {
   if (!readBoolEEPROMWithValidation(i_addr_enableWifiOnBoot, false)) {
     return;
   }
@@ -342,8 +342,11 @@ void wifi_init() {
       }
     }
   });
+  vTaskDelete(NULL);
 }
-
+void wifi_init() {
+  xTaskCreate(_wifi_init, "Wifi Init Task", configMINIMAL_STACK_SIZE + 2048, NULL, 0, NULL);
+}
 
 void setup() {
   Serial.begin(115200);
