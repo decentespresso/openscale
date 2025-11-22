@@ -401,7 +401,7 @@ void calibrate() {
 void calibration(int input) {
   if (b_calibration == true) {
     bool newDataReady = false;
-    char *c_calval = (char *)"";
+    char c_calval[25];
     if (i_button_cal_status == 1) {
       if (input == 0) {
         scale.setSamplesInUse(16);
