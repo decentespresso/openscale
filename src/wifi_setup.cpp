@@ -43,6 +43,7 @@ void setupAP() {
   Serial.println("WiFi: DecentScale");
   Serial.print("IP: ");
   Serial.println(WiFi.softAPIP());
+  b_wifiEnabled = true;
 }
 
 void connectToWifi() {
@@ -60,9 +61,11 @@ void connectToWifi() {
     wifiCounter++;
     delay(1000);
     Serial.println(".");
+    // Toggle, to emulate blinking?
+    b_wifiEnabled = !b_wifiEnabled;
     if (wifiCounter > 20) {
       WiFi.disconnect(true);
-      delay(100);
+      delay(200);
       setupAP();
       break;
     }
@@ -72,6 +75,7 @@ void connectToWifi() {
   Serial.println(WiFi.SSID().c_str());
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP().toString().c_str());
+  b_wifiEnabled = true;
 }
 
 void stopWifi() { WiFi.disconnect(true); }
