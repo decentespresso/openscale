@@ -908,17 +908,15 @@ void wifiUpdate() {
 
 void showAbout() {
   actionMessage = FIRMWARE_VER;
-  // actionMessage2 = PCB_VER;
+  actionMessage2 = LINE3;
   b_showAbout = true;
-  u8g2.setFont(FONT_M);
+  u8g2.setFont(FONT_S);
   u8g2.firstPage();
   do {
-    if (AC(actionMessage.c_str()) < 0)
-      u8g2.setFont(FONT_S);
-    // u8g2.drawStr(AC(actionMessage.c_str()), AM() - 12,
-    // actionMessage.c_str()); u8g2.drawStr(AC(actionMessage2.c_str()), AM() +
-    // 12, actionMessage2.c_str());
-    u8g2.drawStr(AC(actionMessage.c_str()), AM(), actionMessage.c_str());
+    u8g2.setFont(FONT_S);
+    u8g2.drawStr(AC(actionMessage.c_str()), AM() - 24, actionMessage.c_str()); 
+    u8g2.drawStr(AC(actionMessage2.c_str()), AM(), actionMessage2.c_str());
+    u8g2.drawStr(AC(GIT_REV), AM()+ 24, GIT_REV);
   } while (u8g2.nextPage());
 #ifdef BUZZER
   buzzer.off();

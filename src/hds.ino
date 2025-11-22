@@ -637,8 +637,10 @@ void setup() {
   Serial.print(LINE1);
   Serial.print("\t");
   Serial.print(LINE2);
-  // Serial.print("\t");
-  // Serial.println(LINE3);
+  Serial.print("\t");
+  Serial.print(LINE3);
+  Serial.print("\t");
+  Serial.println(GIT_REV);
   Serial.print("\tCal_Val: ");
   Serial.print(f_calibration_value);
   Serial.print("\tHB_DET: ");
