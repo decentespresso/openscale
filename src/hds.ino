@@ -307,9 +307,6 @@ void button_init() {
 }
 
 void _wifi_init(void *args) {
-  if (!readBoolEEPROMWithValidation(i_addr_enableWifiOnBoot, false)) {
-    return;
-  }
   b_wifiEnabled = true;
   setupWifi();
   startWebServer();
@@ -345,6 +342,9 @@ void _wifi_init(void *args) {
   vTaskDelete(NULL);
 }
 void wifi_init() {
+  if (!readBoolEEPROMWithValidation(i_addr_enableWifiOnBoot, false)) {
+    return;
+  }
   xTaskCreate(_wifi_init, "Wifi Init Task", configMINIMAL_STACK_SIZE + 2048, NULL, 0, NULL);
 }
 
