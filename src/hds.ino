@@ -429,7 +429,6 @@ void setup() {
   ADS_init();
 #endif
   delay(50);
-  updateBattery(BATTERY_PIN);
   if (b_ble_enabled) {
     ble_init();
   }
@@ -704,6 +703,7 @@ void setup() {
   Serial.println("Setup complete...");
   t_bootTare = millis();
   b_bootTare = true;
+  updateBattery(BATTERY_PIN);
 }
 
 /**
@@ -1311,6 +1311,7 @@ void loop() {
 #endif  //DEBUG
     if (millis() - t_batteryRefresh > i_batteryRefreshTareInterval){
       updateBattery(BATTERY_PIN);
+      t_batteryRefresh = millis();
     }
     checkBattery();
     if (b_menu) {

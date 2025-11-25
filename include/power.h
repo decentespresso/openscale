@@ -200,21 +200,23 @@ void shut_down_now() {
 
 
 void shut_down_low_battery(float voltage) {
-  Serial.print("Low battery, voltage:");
-  Serial.println(voltage);
-  refreshOLED((char*)"Low battery", FONT_M);
+  if (t_batteryRefresh > 0){
+    Serial.print("Low battery, voltage:");
+    Serial.println(voltage);
+    refreshOLED((char*)"Low battery", FONT_M);
 #ifdef ESPNOW
-  if (b_espnow) {
-    b_power_off = 1;
-    updateEspnow(1);
-  }
-  sendBlePowerOff(3);
+    if (b_espnow) {
+      b_power_off = 1;
+      updateEspnow(1);
+    }
+    sendBlePowerOff(3);
 #endif
 #ifdef BUZZER
-  buzzer.off();
+    buzzer.off();
 #endif
-  delay(1000);
-  esp32_sleep();
+    delay(1000);
+    esp32_sleep();
+  }
 }
 
 void shut_down_now_nobeep() {
