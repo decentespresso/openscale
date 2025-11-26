@@ -145,6 +145,15 @@ void buttonCircle_Released() {
 }
 
 void buttonCircle_Pressed() {
+  if (b_showChargingUI && i_buttonBootDelay == 0) {
+    //change GPIO_power_on_with from BATTERY_CHARGING to enter scale loop
+    GPIO_power_on_with = BUTTON_CIRCLE;
+    b_showChargingUI = false;
+    b_ble_enabled = true;
+    ble_init();
+    wifi_init();
+  }
+
   if (b_menu) {
     navigateMenu(1);  // Navigate to next menu item
   }
@@ -160,6 +169,11 @@ void buttonCircle_Pressed() {
 }
 
 void buttonSquare_Pressed() {
+  if (b_showChargingUI && i_buttonBootDelay == 0) {
+    //change GPIO_power_on_with from BATTERY_CHARGING to enter scale loop
+    GPIO_power_on_with = BUTTON_SQUARE;
+  }
+
   if (b_menu) {
     selectMenu();  // Select current menu item
   }
@@ -342,7 +356,7 @@ void _wifi_init(void *args) {
   vTaskDelete(NULL);
 }
 void wifi_init() {
-  if (!readBoolEEPROMWithValidation(i_addr_enableWifiOnBoot, false)) {
+  if (!b_wifiOnBoot) {
     return;
   }
   xTaskCreate(_wifi_init, "Wifi Init Task", configMINIMAL_STACK_SIZE + 2048, NULL, 0, NULL);
@@ -352,6 +366,17 @@ void setup() {
   Serial.begin(115200);
   while (!Serial)  // Wait for the Serial port to initialize (typically used in Arduino to ensure the Serial monitor is ready)
     ;
+  if (!EEPROM.begin(512)) {
+    Serial.println("EEPROM init failed!");
+    while (1) {
+      delay(1000);
+    }
+  }
+
+  if (readBoolEEPROMWithValidation(i_addr_quickBoot, false))
+        i_buttonBootDelay = 0;
+
+  Serial.println("EEPROM init success");
   button_init();
   linkSubmenus();
   pinMode(BATTERY_CHARGING, INPUT_PULLUP);
@@ -388,7 +413,7 @@ void setup() {
         b_button_pressed = true;  // Mark button as pressed
       }
 
-      if (millis() - t_power_on_button >= 500) {
+      if (millis() - t_power_on_button >= i_buttonBootDelay) {
         Serial.println("Button held for 0.5 second. Powering on...");
         // Execute power on logic
         break;  // Exit loop to continue with other code
@@ -432,13 +457,6 @@ void setup() {
   if (b_ble_enabled) {
     ble_init();
   }
-  if (!EEPROM.begin(512)) {
-    Serial.println("EEPROM init failed!");
-    while (1) {
-      delay(1000);
-    }
-  }
-  Serial.println("EEPROM init success");
   Serial.println("Begin!");
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
   ACC_init();
@@ -598,20 +616,16 @@ void setup() {
     //calibration value is not valid, go to calibration procedure.
   }
 #endif
-  if (b_ble_enabled) {
+  b_wifiOnBoot = readBoolEEPROMWithValidation(i_addr_enableWifiOnBoot, false);
+  if (b_wifiOnBoot) {
     wifi_init();
   }
-  // //wifiota
-  // #ifdef WIFI
+  // Enter Menu
   if (digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW) {
-    //wifiOta();
-
     b_menu = true;
     refreshOLED((char *)"HDS Setup", FONT_EXTRACTION);
     delay(1000);
-    //showMenu();
   }
-  // #endif
 
 #if DEBUG
   Serial.print("digitalRead(BUTTON_CIRCLE):");
@@ -913,8 +927,6 @@ void pureScale() {
   // Quick zero handling
   if (b_weight_quick_zero || b_bootTare) {
     f_displayedValue = 0.0;
-    resetTracking();
-    resetStableOutput(); // Also reset stable output
   }
 }
 
@@ -1320,8 +1332,10 @@ void loop() {
       if (b_chargingOLED) {
         if (digitalRead(BATTERY_CHARGING) == LOW && !b_calibration) {
           float perc = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);  //map funtion doesn't take float as input.
-          chargingOLED((int)perc, f_batteryVoltage);                                                                                   //show charging ui
+          chargingOLED((int)perc, f_batteryVoltage);
+          b_showChargingUI = true;                                                                                  //show charging ui
         } else {
+          b_showChargingUI = false;
           if (f_batteryVoltage > 4.1) {
             //charging complete
             Serial.println("Charging compelete.");
