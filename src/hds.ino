@@ -407,6 +407,12 @@ void setup() {
     b_ble_enabled = true;
   }
   while (true && GPIO_power_on_with > 0) {
+    if (i_buttonBootDelay == 0){
+      Serial.println("Quick boot. Powering on...");
+        // Execute power on logic
+      break;  // Exit loop to continue with other code
+    }
+
     if (digitalRead(GPIO_power_on_with) == LOW) {  // Button is pressed
       if (!b_button_pressed) {
         t_power_on_button = millis();
@@ -419,17 +425,12 @@ void setup() {
         break;  // Exit loop to continue with other code
       }
     } else {
-      // If the button is released
-      if (b_button_pressed) {
-        //Power on by button press
-        Serial.println("Button released before 0.5 second.");
-        Serial.println("Going to sleep now.");
-        stopWebServer();
-        stopWifi();
-        esp32_sleep();
-        //shut_down_now_nobeep();
-        break;  // Exit loop to enter sleep mode
-      }
+      Serial.println("Button released before 0.5 second.");
+      Serial.println("Going to sleep now.");
+      stopWebServer();
+      stopWifi();
+      esp32_sleep();
+      break;  // Exit loop to enter sleep mode
       b_button_pressed = false;  // Reset mark
     }
   }
