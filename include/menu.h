@@ -56,6 +56,8 @@ void btnFuncWhileConnectedOn();
 void btnFuncWhileConnectedOff();
 void autoSleepOn();
 void autoSleepOff();
+void quickBootOn();
+void quickBootOff();
 
 // Top-level menu options
 // 1/5 define the 1st level menu
@@ -74,6 +76,7 @@ Menu menuFlipScreen = { "Flip Screen", NULL, NULL, NULL };
 Menu menuTimeOnTop = { "Time On Top", NULL, NULL, NULL };
 Menu menuBtnFuncWhileConnected = { "Button with BLE", NULL, NULL, NULL };
 Menu menuAutoSleep = { "Auto Sleep", NULL, NULL, NULL };
+Menu menuQuickBoot = { "Quick Boot", NULL, NULL, NULL };
 
 // 2/5 define the 2st level menu
 #ifdef BUZZER
@@ -124,7 +127,7 @@ Menu menuTimeOnTopOff = { "Weight On Top", timeOnTopOff, NULL, &menuTimeOnTop };
 Menu *timeOnTopMenu[] = { &menuTimeOnTopBack, &menuTimeOnTopOn,
                           &menuTimeOnTopOff };
 
-// Enable button fucntion while BLE connected
+// Enable button function while BLE connected
 Menu menuBtnFuncWhileConnectedBack = { "Back", NULL, NULL,
                                        &menuBtnFuncWhileConnected };
 Menu menuBtnFuncWhileConnectedOn = { "Enable Buttons", btnFuncWhileConnectedOn,
@@ -136,10 +139,17 @@ Menu *btnFuncWhileConnectedMenu[] = { &menuBtnFuncWhileConnectedBack,
                                       &menuBtnFuncWhileConnectedOn,
                                       &menuBtnFuncWhileConnectedOff };
 
+// Auto sleep function
 Menu menuAutoSleepBack = { "Back", NULL, NULL, &menuAutoSleep };
 Menu menuAutoSleepOn = { "Auto Sleep On", autoSleepOn, NULL, &menuAutoSleep };
 Menu menuAutoSleepOff = { "Auto Sleep Off", autoSleepOff, NULL, &menuAutoSleep };
 Menu *autoSleepMenu[] = { &menuAutoSleepBack, &menuAutoSleepOn, &menuAutoSleepOff };
+
+// Quick boot function(aka no delay when pressing the button to boot the scale)
+Menu menuQuickBootBack = { "Back", NULL, NULL, &menuQuickBoot };
+Menu menuQuickBootOn = { "Quick Boot On", quickBootOn, NULL, &menuQuickBoot };
+Menu menuQuickBootOff = { "Quick Boot Off", quickBootOff, NULL, &menuQuickBoot };
+Menu *quickBootMenu[] = { &menuQuickBootBack, &menuQuickBootOn, &menuQuickBootOff };
 
 // Menu menuFactoryBack = { "Back", NULL, NULL, &menuFactory };
 // Menu menuCalibrateVoltage = { "Calibrate 4.2v", calibrateVoltage, NULL,
@@ -157,7 +167,7 @@ Menu *mainMenu[] = {
   &menuCalibration, &menuWifi,
   // &menuWiFiUpdate,
   &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen, &menuTimeOnTop,
-  &menuBtnFuncWhileConnected, &menuAutoSleep,
+  &menuBtnFuncWhileConnected, &menuAutoSleep, &menuQuickBoot,
   //, &menuFactory
 };
 //  &menuHolder1, &menuHolder2, &menuHolder3, &menuHolder4,
@@ -184,6 +194,7 @@ void linkSubmenus() {
   menuTimeOnTop.subMenu = timeOnTopMenu[0];
   menuBtnFuncWhileConnected.subMenu = btnFuncWhileConnectedMenu[0];
   menuAutoSleep.subMenu = autoSleepMenu[0];
+  menuQuickBoot.subMenu = quickBootMenu[0];
   // menuFactory.subMenu = factoryMenu[0];
 }
 
@@ -387,6 +398,26 @@ void autoSleepOff() {
   EEPROM.put(i_addr_autoSleep, b_autoSleep);
   EEPROM.commit();
   Serial.println("Autosleep off stored in EEPROM.");
+}
+
+void quickBootOn() {
+  b_quickBoot = true;
+  actionMessage = "Quick Boot On";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  EEPROM.put(i_addr_quickBoot, b_quickBoot);
+  EEPROM.commit();
+  Serial.println("Quick boot on stored in EEPROM.");
+}
+
+void quickBootOff() {
+  b_quickBoot = false;
+  actionMessage = "Quick Boot Off";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  EEPROM.put(i_addr_quickBoot, b_quickBoot);
+  EEPROM.commit();
+  Serial.println("Quick boot off stored in EEPROM.");
 }
 
 void calibrate() {
@@ -1120,6 +1151,9 @@ void selectMenu() {
     } else if (currentSelection == &menuAutoSleep) {
       currentMenu = autoSleepMenu;
       currentMenuSize = getMenuSize(autoSleepMenu);
+    } else if (currentSelection == &menuQuickBoot) {
+      currentMenu = quickBootMenu;
+      currentMenuSize = getMenuSize(quickBootMenu);
     }
     // else if (currentSelection == &menuFactory) {
     //   currentMenu = factoryMenu;

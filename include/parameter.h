@@ -88,7 +88,9 @@ float f_filtered_temperature = 0;
 bool b_ads1115InitFail = true;  //ads1115 not detected flag
 bool b_wifiOnBoot = false;
 bool b_autoSleep = true;
-
+bool b_quickBoot = false;
+unsigned int i_buttonBootDelay = 500;
+bool b_showChargingUI = false;
 
 //电子秤参数和计时点
 // Enhanced tracking system global variables
@@ -246,6 +248,7 @@ int i_addr_timeOnTop = i_addr_screenFlipped + sizeof(b_screenFlipped);          
 int i_addr_btnFuncWhileConnected = i_addr_timeOnTop + sizeof(b_timeOnTop);                           //b_btnFuncWhileConnected
 int i_addr_enableWifiOnBoot = i_addr_btnFuncWhileConnected + sizeof(b_btnFuncWhileConnected);        //b_wifiOnBoot
 int i_addr_autoSleep = i_addr_enableWifiOnBoot + sizeof(b_wifiOnBoot);
+int i_addr_quickBoot = i_addr_autoSleep + sizeof(b_autoSleep);
 
 //int i_addr_enableWifiOnBoot = i_addr_btnFuncWhileConnected + sizeof(b_wifiOnBoot);
 
