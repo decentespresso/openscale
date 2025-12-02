@@ -61,10 +61,9 @@
 
 #define ACEBUTTON  //ACEBUTTON ACEBUTTONT
 #define DEBOUNCE 100
-#define LONGCLICK 1000
-#define DOUBLECLICK 300
-#define CLICK 200
-#define BUTTON_KEY_DELAY 150
+#define LONGPRESS_DELAY 900 // threshold for long press
+#define DOUBLECLICK_DELAY 600 // max gap between two clicks
+#define CLICK_DELAY 250 // max press time that still counts as a click
 
 //DISPLAY
 #define Margin_Top 0  //显示边框

@@ -273,9 +273,7 @@ void buttonCircle_LongPressed() {
       b_ble_enabled = true;
       ble_init();
       wifi_init();
-    } else if (GPIO_power_on_with == BUTTON_CIRCLE || GPIO_power_on_with == BUTTON_SQUARE) {
-      buttonCircle_DoubleClicked();
-    }
+    }     
     // sendUsbButton(1, 2);
     // if (deviceConnected) {
     //   Serial.println("Send O button long pressed BLE command");
@@ -310,14 +308,17 @@ void button_init() {
   buttonCircle.init(BUTTON_CIRCLE);
   buttonSquare.init(BUTTON_SQUARE);
   config1.setEventHandler(aceButtonHandleEvent);
-  //config1.setFeature(ButtonConfig::kFeatureClick);
+  config1.setFeature(ButtonConfig::kFeatureClick);
   //config1.setFeature(ButtonConfig::kFeatureSuppressAfterClick);
   config1.setFeature(ButtonConfig::kFeatureDoubleClick);
-  config1.setFeature(ButtonConfig::kFeatureSuppressClickBeforeDoubleClick);
+  // config1.setFeature(ButtonConfig::kFeatureSuppressClickBeforeDoubleClick);
   config1.setFeature(ButtonConfig::kFeatureLongPress);
   //config1.setFeature(ButtonConfig::kFeatureSuppressAfterLongPress);
-  config1.setDoubleClickDelay(DOUBLECLICK);
-  config1.setLongPressDelay(LONGCLICK);
+  // config1.setDoubleClickDelay(DOUBLECLICK);
+  // config1.setLongPressDelay(LONGCLICK);
+  config1.setClickDelay(CLICK_DELAY);
+  config1.setDoubleClickDelay(DOUBLECLICK_DELAY);
+  config1.setLongPressDelay(LONGPRESS_DELAY);
 }
 
 void _wifi_init(void *args) {
