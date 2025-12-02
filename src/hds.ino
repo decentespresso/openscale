@@ -618,7 +618,7 @@ void setup() {
   }
 #endif
   b_wifiOnBoot = readBoolEEPROMWithValidation(i_addr_enableWifiOnBoot, false);
-  if (b_wifiOnBoot) {
+  if (b_wifiOnBoot && GPIO_power_on_with != BATTERY_CHARGING) {
     wifi_init();
   }
   // Enter Menu
