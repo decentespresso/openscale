@@ -189,8 +189,11 @@ void buttonSquare_Pressed() {
     b_powerOff = true;
   }
   if (!b_menu && !b_calibration && (!deviceConnected || b_btnFuncWhileConnected)) {
-    scaleTimer();
+    if (millis() - t_menuExitTime > 500)
+      // Check if enough time has passed since menu exit (500ms protection period)
+      scaleTimer();
   }
+
 
   Serial.println("[] button pressed");
   sendUsbButton(2, 1);

@@ -184,6 +184,10 @@ bool b_extraction = false;  //萃取模式标识
 int b_mode = 0;             //0 = pourover; 1 = espresso;
 
 bool b_menu = false;
+unsigned long t_menuExitTime = 0;
+// Timestamp recording when the menu exit process started
+// Used to implement a protection period preventing unintended operations
+
 bool b_calibration = false;  //Calibration flag
 bool b_ota = false;          //wifi ota flag
 int i_calibration = 0;       //0 for manual cal, 1 for smart cal
