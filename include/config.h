@@ -63,7 +63,7 @@
 #define DEBOUNCE 100
 #define LONGPRESS_DELAY 900 // threshold for long press
 #define DOUBLECLICK_DELAY 600 // max gap between two clicks
-#define CLICK_DELAY 250 // max press time that still counts as a click
+#define CLICK_DELAY 180 // max press time that still counts as a click
 
 //DISPLAY
 #define Margin_Top 0  //显示边框
