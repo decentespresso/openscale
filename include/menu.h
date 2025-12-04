@@ -211,6 +211,9 @@ void exitMenu() {
   delay(1000);
   b_menu = false;
   // Optionally reset or perform an exit action
+  t_menuExitTime = millis();
+  // Capture the moment when menu exit begins to establish a reference point
+  // This enables timing-based protection against unintended triggers
 }
 
 #ifdef BUZZER
