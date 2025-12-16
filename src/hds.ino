@@ -900,9 +900,7 @@ void pureScale() {
     } else {
       f_displayedValue = stable_weight;
     }
-    
-    f_weight_before_input = f_displayedValue;
-    
+        
     // Update adaptive tracking (use compensated weight, not stable weight)
     updateAdaptiveTracking(compensated_weight);
     
@@ -975,11 +973,27 @@ void setStableOutputEnabled(bool enabled) {
 /**
  * Set stable output threshold
  */
+
+bool b_tempDisablePowerOff = true;
+
 void setStableOutputThreshold(float threshold) {
   STABLE_OUTPUT_THRESHOLD = threshold;
   Serial.print("Stable threshold set to: ");
   Serial.println(threshold, 4);
 }
+
+void setTrackingThreshold(float threshold) {
+  TRACKING_THRESHOLD = threshold;
+  Serial.print("Tracking threshold set to: ");
+  Serial.println(threshold, 4);
+}
+
+void setTrackingUpdateInterval(float interval) {
+  TRACKING_UPDATE_INTERVAL = interval;
+  Serial.print("Tracking update interval set to: ");
+  Serial.println(interval, 4);
+}
+
 
 /**
  * Enable/disable tracking system
@@ -1202,6 +1216,21 @@ void serialCommand() {
       EEPROM.commit();
     }
 
+    if (inputString.startsWith("sot ")) {
+      setStableOutputThreshold(inputString.substring(4).toFloat());
+      b_tempDisablePowerOff = true;
+    }
+
+    if (inputString.startsWith("tt ")) {
+      setTrackingThreshold(inputString.substring(3).toFloat());
+      b_tempDisablePowerOff = true;
+    }
+
+    if (inputString.startsWith("tui ")) {
+      setTrackingUpdateInterval(inputString.substring(4).toFloat());
+      b_tempDisablePowerOff = true;
+    }
+
     if (inputString.startsWith("oled ")) {                     // 校准值
       int i_oled_contrast = inputString.substring(5).toInt();  // Parse the input as an integer
 
@@ -1290,9 +1319,10 @@ void loop() {
   if (deviceConnected) {
     power_off(-1);  //reset power off timer
   } else {
-    power_off(15);  //power off after 15 minutes
+    if (!b_tempDisablePowerOff)
+      power_off(15);  //power off after 15 minutes
   }
-  //serialCommand();
+  serialCommand();
   if (Serial.available()) {
     uint8_t data[32];  // 假设最大接收 32 字节数据
     size_t len = 0;
@@ -1503,6 +1533,7 @@ void updateOled() {
       drawShutdownFail();
       drawAbout();
       drawDebug();
+      drawDriftFactor();
 
     } while (u8g2.nextPage());
   }
@@ -1795,4 +1826,15 @@ void drawTare() {
     // u8g2.drawStr(AC((char *)"TARE"), 60, (char *)"TARE");
     u8g2.drawBox(30, 62, 128 - 30 * 2, 2);
   }
+}
+
+void drawDriftFactor() {
+  char factorText[20];
+  u8g2.setFont(u8g2_font_6x13_tr);
+  snprintf(factorText, sizeof(factorText), "TUI:%lums", TRACKING_UPDATE_INTERVAL);
+  u8g2.drawStr(0, 13, (char *)trim(factorText));
+  snprintf(factorText, sizeof(factorText), "TT:%.2f", TRACKING_THRESHOLD);
+  u8g2.drawStr(AR((char *)trim(factorText)), 13, (char *)trim(factorText));
+  snprintf(factorText, sizeof(factorText), "SOT:%.2f", STABLE_OUTPUT_THRESHOLD);
+  u8g2.drawStr(AC((char *)trim(factorText)), 64, (char *)trim(factorText));
 }
