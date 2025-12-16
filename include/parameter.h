@@ -97,8 +97,8 @@ bool b_showChargingUI = false;
 static float f_tracking_offset = 0.0;              // Current tracking offset
 static float f_tracking_target = 0.0;              // Current tracking target weight
 static unsigned long t_last_tracking_update = 0;   // Last tracking update time
-static const unsigned long TRACKING_UPDATE_INTERVAL = 5000; // Tracking update interval 5 seconds
-static const float TRACKING_THRESHOLD = 0.1;      // Tracking stability threshold
+static unsigned long TRACKING_UPDATE_INTERVAL = 5000; // Tracking update interval 5 seconds
+static float TRACKING_THRESHOLD = 0.1;      // Tracking stability threshold
 static const int i_STABLE_COUNT_THRESHOLD = 5;     // Stable count threshold
 static const float MAX_TRACKING_ADJUSTMENT = 0.5;  // Maximum single adjustment
 
@@ -144,8 +144,6 @@ float f_weight_adc = 0.0;  //原始读出值（g）
 float f_weight_smooth;
 float f_displayedValue;
 float f_flow_rate;
-
-float f_weight_before_input;  //按录入按钮之前的第几个读数（重量）
 
 unsigned long t_auto_tare = 0;        //自动归零打点
 unsigned long t_auto_stop = 0;        //下液停止打点
