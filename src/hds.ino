@@ -1922,11 +1922,11 @@ void drawDriftFactor() {
   snprintf(factorText, sizeof(factorText), "TT:%.2f", TRACKING_THRESHOLD);
   u8g2.drawStr(AR((char *)trim(factorText)), 13, (char *)trim(factorText));
 
-  snprintf(factorText, sizeof(factorText), "%.1f", f_maxDriftCompensation);
+  snprintf(factorText, sizeof(factorText), "%.3f", f_maxDriftCompensation);
   u8g2.drawStr(0, 26, (char *)"MDC");
   u8g2.drawStr(0, 39, (char *)trim(factorText));
 
-  snprintf(factorText, sizeof(factorText), "TDC:%.2f", f_temperature_drift_compensation);
+  snprintf(factorText, sizeof(factorText), "TDC:%.2f", f_temperature_drift_compensation * -1);
   u8g2.drawStr(AR((char *)trim(factorText)), 26, (char *)trim(factorText));
 
   snprintf(factorText, sizeof(factorText), "RAW:%.2f", f_current_raw_value);
