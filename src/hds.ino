@@ -1831,10 +1831,17 @@ void drawTare() {
 void drawDriftFactor() {
   char factorText[20];
   u8g2.setFont(u8g2_font_6x13_tr);
+  
   snprintf(factorText, sizeof(factorText), "TUI:%lums", TRACKING_UPDATE_INTERVAL);
   u8g2.drawStr(0, 13, (char *)trim(factorText));
   snprintf(factorText, sizeof(factorText), "TT:%.2f", TRACKING_THRESHOLD);
   u8g2.drawStr(AR((char *)trim(factorText)), 13, (char *)trim(factorText));
-  snprintf(factorText, sizeof(factorText), "SOT:%.2f", STABLE_OUTPUT_THRESHOLD);
-  u8g2.drawStr(AC((char *)trim(factorText)), 64, (char *)trim(factorText));
+
+  snprintf(factorText, sizeof(factorText), "TO:%.2f", f_tracking_offset);
+  u8g2.drawStr(AR((char *)trim(factorText)), 26, (char *)trim(factorText));
+
+  snprintf(factorText, sizeof(factorText), "RAW:%.2f", f_current_raw_value);
+  u8g2.drawStr(12, 64, (char *)trim(factorText));
+  snprintf(factorText, sizeof(factorText), "%.2f", f_displayedValue);
+  u8g2.drawStr(80, 64, (char *)trim(factorText));
 }
