@@ -58,6 +58,10 @@ void autoSleepOn();
 void autoSleepOff();
 void quickBootOn();
 void quickBootOff();
+void driftCompOff();
+void driftComp1();
+void driftComp2();
+
 
 // Top-level menu options
 // 1/5 define the 1st level menu
@@ -77,6 +81,8 @@ Menu menuTimeOnTop = { "Time On Top", NULL, NULL, NULL };
 Menu menuBtnFuncWhileConnected = { "Button with BLE", NULL, NULL, NULL };
 Menu menuAutoSleep = { "Auto Sleep", NULL, NULL, NULL };
 Menu menuQuickBoot = { "Quick Boot", NULL, NULL, NULL };
+Menu menuDriftComp = { "Drift Comp", NULL, NULL, NULL };
+
 
 // 2/5 define the 2st level menu
 #ifdef BUZZER
@@ -151,6 +157,12 @@ Menu menuQuickBootOn = { "Quick Boot On", quickBootOn, NULL, &menuQuickBoot };
 Menu menuQuickBootOff = { "Quick Boot Off", quickBootOff, NULL, &menuQuickBoot };
 Menu *quickBootMenu[] = { &menuQuickBootBack, &menuQuickBootOn, &menuQuickBootOff };
 
+Menu menuDriftCompBack = { "Back", NULL, NULL, &menuDriftComp };
+Menu menuDriftCompOff = { "Drift Comp Off", driftCompOff, NULL, &menuDriftComp };
+Menu menuQuickBoot1 = { "0.1g", driftComp1, NULL, &menuDriftComp };
+Menu menuQuickBoot2 = { "0.2g", driftComp2, NULL, &menuDriftComp };
+Menu *driftCompMenu[] = { &menuDriftCompBack, &menuDriftCompOff, &menuQuickBoot1, &menuQuickBoot2 };
+
 // Menu menuFactoryBack = { "Back", NULL, NULL, &menuFactory };
 // Menu menuCalibrateVoltage = { "Calibrate 4.2v", calibrateVoltage, NULL,
 // &menuFactory }; Menu menuFactoryDebug = { "Debug Info", enableDebug, NULL,
@@ -167,7 +179,7 @@ Menu *mainMenu[] = {
   &menuCalibration, &menuWifi,
   // &menuWiFiUpdate,
   &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen, &menuTimeOnTop,
-  &menuBtnFuncWhileConnected, &menuAutoSleep, &menuQuickBoot,
+  &menuBtnFuncWhileConnected, &menuAutoSleep, &menuQuickBoot, &menuDriftComp,
   //, &menuFactory
 };
 //  &menuHolder1, &menuHolder2, &menuHolder3, &menuHolder4,
@@ -195,6 +207,7 @@ void linkSubmenus() {
   menuBtnFuncWhileConnected.subMenu = btnFuncWhileConnectedMenu[0];
   menuAutoSleep.subMenu = autoSleepMenu[0];
   menuQuickBoot.subMenu = quickBootMenu[0];
+  menuDriftComp.subMenu = driftCompMenu[0];
   // menuFactory.subMenu = factoryMenu[0];
 }
 
@@ -421,6 +434,36 @@ void quickBootOff() {
   EEPROM.put(i_addr_quickBoot, b_quickBoot);
   EEPROM.commit();
   Serial.println("Quick boot off stored in EEPROM.");
+}
+
+void driftCompOff() {
+  f_maxDriftCompensation = 0.0;
+  actionMessage = "Drift Comp Off";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  EEPROM.put(i_addr_driftCompensation, f_maxDriftCompensation);
+  EEPROM.commit();
+  Serial.println("Drift Comp Off stored in EEPROM.");
+}
+
+void driftComp1() {
+  f_maxDriftCompensation = 0.1;
+  actionMessage = "Drift Comp 0.1g";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  EEPROM.put(i_addr_driftCompensation, f_maxDriftCompensation);
+  EEPROM.commit();
+  Serial.println("Drift Comp 0.1g stored in EEPROM.");
+}
+
+void driftComp2() {
+  f_maxDriftCompensation = 0.2;
+  actionMessage = "Drift Comp 0.1g";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  EEPROM.put(i_addr_driftCompensation, f_maxDriftCompensation);
+  EEPROM.commit();
+  Serial.println("Drift Comp 0.1g stored in EEPROM.");
 }
 
 void calibrate() {
@@ -1157,6 +1200,9 @@ void selectMenu() {
     } else if (currentSelection == &menuQuickBoot) {
       currentMenu = quickBootMenu;
       currentMenuSize = getMenuSize(quickBootMenu);
+    } else if (currentSelection == &menuDriftComp) {
+      currentMenu = driftCompMenu;
+      currentMenuSize = getMenuSize(driftCompMenu);
     }
     // else if (currentSelection == &menuFactory) {
     //   currentMenu = factoryMenu;
