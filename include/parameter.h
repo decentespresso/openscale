@@ -116,8 +116,10 @@ static float f_current_raw_value = 0.0;            // Current raw input value
 static float STABLE_OUTPUT_THRESHOLD = 0.1;       // Minimum change to update output
 static bool b_stable_output_enabled = true;     // Stable output enable flag
 static unsigned long t_last_stable_change = 0;     // Time of last stable change
-
-
+static float f_temperature_drift_compensation = 0.1;  // Continuous temperature drift compensation
+static float f_maxDriftCompensation = 0.0;  // Maximum micro-drift range for temperature compensation (g)
+// Range: 0.01g to this value will be considered as temperature drift
+// Values above this are considered as real weight changes, not drift
 
 bool b_negativeWeight = false;
 
@@ -250,7 +252,8 @@ int i_addr_timeOnTop = i_addr_screenFlipped + sizeof(b_screenFlipped);          
 int i_addr_btnFuncWhileConnected = i_addr_timeOnTop + sizeof(b_timeOnTop);                           //b_btnFuncWhileConnected
 int i_addr_enableWifiOnBoot = i_addr_btnFuncWhileConnected + sizeof(b_btnFuncWhileConnected);        //b_wifiOnBoot
 int i_addr_autoSleep = i_addr_enableWifiOnBoot + sizeof(b_wifiOnBoot);
-int i_addr_quickBoot = i_addr_autoSleep + sizeof(b_autoSleep);
+int i_addr_quickBoot = i_addr_autoSleep + sizeof(b_autoSleep);//b_quickBoot
+int i_addr_driftCompensation = i_addr_quickBoot + sizeof(b_quickBoot);//f_maxDriftCompensation
 
 //int i_addr_enableWifiOnBoot = i_addr_btnFuncWhileConnected + sizeof(b_wifiOnBoot);
 

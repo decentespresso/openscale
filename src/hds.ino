@@ -538,6 +538,8 @@ void setup() {
   EEPROM.get(INPUTCOFFEEESPRESSO_ADDRESS, INPUTCOFFEEESPRESSO);
   EEPROM.get(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);
   EEPROM.get(i_addr_mode, b_mode);
+  EEPROM.get(i_addr_driftCompensation, f_maxDriftCompensation);
+
 
   //EEPROM.get(i_addr_debug, b_debug);
 
@@ -549,6 +551,11 @@ void setup() {
   if (isnan(INPUTCOFFEEESPRESSO)) {
     INPUTCOFFEEESPRESSO = 18.0;
     EEPROM.put(INPUTCOFFEEESPRESSO_ADDRESS, INPUTCOFFEEESPRESSO);
+    EEPROM.commit();
+  }
+  if (isnan(f_maxDriftCompensation)) {
+    f_maxDriftCompensation = 0.0;
+    EEPROM.put(i_addr_driftCompensation, f_maxDriftCompensation);
     EEPROM.commit();
   }
 #ifdef V7_2
@@ -876,11 +883,9 @@ float applyStableOutput(float current_value) {
   return f_previous_stable_value;
 }
 
-/**
- * Enhanced pureScale function with all features
- */
 void pureScale() {
   static bool b_newDataReady = 0;
+  static float f_last_displayed = 0.0;  // Last displayed value
   
   if (scale.update()) b_newDataReady = true;
   
@@ -888,49 +893,129 @@ void pureScale() {
     float raw_weight = scale.getData();
     f_current_raw_value = raw_weight; // Store for status display
     
-    // Apply adaptive tracking compensation
-    float compensated_weight = applyTrackingCompensation(raw_weight);
+    // Continuous temperature drift detection and compensation
+    // 1. Calculate difference between current raw and displayed value
+    float current_diff = raw_weight - f_displayedValue - f_temperature_drift_compensation;
     
-    // Apply stable output filtering
-    float stable_weight = applyStableOutput(compensated_weight);
-    
-    // Dead zone processing (apply to stable weight)
-    if (stable_weight >= -0.14 && stable_weight <= 0.14) {
-      f_displayedValue = 0.0;
-    } else {
-      f_displayedValue = stable_weight;
-    }
+    // 2. If difference is small (0.01g-0.1g), accumulate to continuous compensation
+    if (fabs(current_diff) > 0.01 && fabs(current_diff) < f_maxDriftCompensation) {
+      static int f_similar_diff_count = 0;
+      static float f_last_diff = current_diff;
+      
+      // Check if continuous same direction change
+      if ((f_last_diff * current_diff) > 0) {  // Same direction
+        f_similar_diff_count++;
         
-    // Update adaptive tracking (use compensated weight, not stable weight)
-    updateAdaptiveTracking(compensated_weight);
+        // If continuous micro changes, increase continuous compensation
+        if (f_similar_diff_count >= 3) {
+          // Increase continuous compensation (slowly)
+          f_temperature_drift_compensation += current_diff * 0.3;  // Compensate 30% each time
+          
+          // Limit compensation range
+          if (fabs(f_temperature_drift_compensation) > 2.0) {
+            f_temperature_drift_compensation = (f_temperature_drift_compensation > 0) ? 2.0 : -2.0;
+          }
+          
+          if (b_weight_in_serial) {
+            Serial.print("TEMP-DRIFT-COMP: diff=");
+            Serial.print(current_diff, 4);
+            Serial.print("g, total_comp=");
+            Serial.print(f_temperature_drift_compensation, 4);
+            Serial.print("g, count=");
+            Serial.println(f_similar_diff_count);
+          }
+          
+          f_similar_diff_count = 2;  // Keep partial count for continued detection
+        }
+      } else {
+        // Direction changed, reset
+        f_similar_diff_count = 1;
+      }
+      
+      f_last_diff = current_diff;
+    } else {
+      // Difference too large or too small, reset detection
+      static int f_similar_diff_count = 0;
+      f_similar_diff_count = 0;
+    }
     
-    // Convert and display
+    // 3. Apply continuous temperature compensation
+    float temperature_compensated = raw_weight - f_temperature_drift_compensation;
+    
+    // 4. Original processing pipeline
+    float tracking_compensated = applyTrackingCompensation(temperature_compensated);
+    float stable_output = applyStableOutput(tracking_compensated);
+    
+    // Update displayed value
+    f_displayedValue = stable_output;
+    
+    // Update adaptive tracking (use temperature compensated value)
+    updateAdaptiveTracking(tracking_compensated);
+    
+    // Display and debugging
     dtostrf(f_displayedValue, 7, i_decimal_precision, c_weight);
     if (b_weight_in_serial == true) {
-      //Serial.println(trim(c_weight));
-      
-      // Display status periodically
       unsigned long current_time = millis();
       if (current_time - t_last_status_display >= STATUS_DISPLAY_INTERVAL) {
-        displayEnhancedStatus(raw_weight, compensated_weight, stable_weight);
+        Serial.println("=== Temperature Drift Status ===");
+        Serial.print("Raw: ");
+        Serial.print(raw_weight, 4);
+        Serial.print("g | TempComp: ");
+        Serial.print(f_temperature_drift_compensation, 4);
+        Serial.print("g | AfterTempComp: ");
+        Serial.print(temperature_compensated, 4);
+        Serial.println("g");
+        
+        Serial.print("Displayed: ");
+        Serial.print(f_displayedValue, 4);
+        Serial.print("g | Raw-Display Diff: ");
+        Serial.print(raw_weight - f_displayedValue, 4);
+        Serial.println("g");
+        
+        displayEnhancedStatus(temperature_compensated, tracking_compensated, stable_output);
         t_last_status_display = current_time;
       }
     }
+    
     b_newDataReady = false;
   }
   
-  // Handle tare operation
+  // Reset temperature compensation on TARE
   if (scale.getTareStatus()) {
     t_tareStatus = millis();
     b_weight_quick_zero = false;
     resetTracking();
-    resetStableOutput(); // Also reset stable output
+    resetStableOutput();
+    f_temperature_drift_compensation = 0.0;
+    f_displayedValue = 0.0;
+    if (b_weight_in_serial) {
+      Serial.println("TARE: Temperature drift compensation reset");
+    }
   }
   
   // Quick zero handling
   if (b_weight_quick_zero || b_bootTare) {
     f_displayedValue = 0.0;
+    f_temperature_drift_compensation = 0.0;
   }
+}
+
+/**
+ * Get current temperature compensation value
+ */
+float getTemperatureDriftCompensation() {
+  return f_temperature_drift_compensation;
+}
+
+/**
+ * Manually adjust temperature compensation
+ */
+void adjustTemperatureDriftCompensation(float amount) {
+  f_temperature_drift_compensation += amount;
+  Serial.print("Manual temp-comp adjust: ");
+  Serial.print(amount, 4);
+  Serial.print("g, total: ");
+  Serial.println(f_temperature_drift_compensation, 4);
 }
 
 /**
@@ -1837,7 +1922,11 @@ void drawDriftFactor() {
   snprintf(factorText, sizeof(factorText), "TT:%.2f", TRACKING_THRESHOLD);
   u8g2.drawStr(AR((char *)trim(factorText)), 13, (char *)trim(factorText));
 
-  snprintf(factorText, sizeof(factorText), "TO:%.2f", f_tracking_offset);
+  snprintf(factorText, sizeof(factorText), "%.1f", f_maxDriftCompensation);
+  u8g2.drawStr(0, 26, (char *)"MDC");
+  u8g2.drawStr(0, 39, (char *)trim(factorText));
+
+  snprintf(factorText, sizeof(factorText), "TDC:%.2f", f_temperature_drift_compensation);
   u8g2.drawStr(AR((char *)trim(factorText)), 26, (char *)trim(factorText));
 
   snprintf(factorText, sizeof(factorText), "RAW:%.2f", f_current_raw_value);
