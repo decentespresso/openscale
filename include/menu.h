@@ -59,8 +59,10 @@ void autoSleepOff();
 void quickBootOn();
 void quickBootOff();
 void driftCompOff();
-void driftComp1();
-void driftComp2();
+void driftComp0050();
+void driftComp0075();
+void driftComp0100();
+void driftComp0200();
 
 
 // Top-level menu options
@@ -159,9 +161,11 @@ Menu *quickBootMenu[] = { &menuQuickBootBack, &menuQuickBootOn, &menuQuickBootOf
 
 Menu menuDriftCompBack = { "Back", NULL, NULL, &menuDriftComp };
 Menu menuDriftCompOff = { "Drift Comp Off", driftCompOff, NULL, &menuDriftComp };
-Menu menuQuickBoot1 = { "0.1g", driftComp1, NULL, &menuDriftComp };
-Menu menuQuickBoot2 = { "0.2g", driftComp2, NULL, &menuDriftComp };
-Menu *driftCompMenu[] = { &menuDriftCompBack, &menuDriftCompOff, &menuQuickBoot1, &menuQuickBoot2 };
+Menu menuQuickBoot0050 = { "0.05g", driftComp0050, NULL, &menuDriftComp };
+Menu menuQuickBoot0075 = { "0.075g", driftComp0075, NULL, &menuDriftComp };
+Menu menuQuickBoot0100 = { "0.1g", driftComp0100, NULL, &menuDriftComp };
+Menu menuQuickBoot0200 = { "0.2g", driftComp0200, NULL, &menuDriftComp };
+Menu *driftCompMenu[] = { &menuDriftCompBack, &menuDriftCompOff, &menuQuickBoot0050, &menuQuickBoot0075, &menuQuickBoot0100, &menuQuickBoot0200 };
 
 // Menu menuFactoryBack = { "Back", NULL, NULL, &menuFactory };
 // Menu menuCalibrateVoltage = { "Calibrate 4.2v", calibrateVoltage, NULL,
@@ -446,7 +450,27 @@ void driftCompOff() {
   Serial.println("Drift Comp Off stored in EEPROM.");
 }
 
-void driftComp1() {
+void driftComp0050() {
+  f_maxDriftCompensation = 0.05;
+  actionMessage = "Drift Comp 0.05g";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  EEPROM.put(i_addr_driftCompensation, f_maxDriftCompensation);
+  EEPROM.commit();
+  Serial.println("Drift Comp 0.05g stored in EEPROM.");
+}
+
+void driftComp0075() {
+  f_maxDriftCompensation = 0.075;
+  actionMessage = "Drift Comp 0.075g";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  EEPROM.put(i_addr_driftCompensation, f_maxDriftCompensation);
+  EEPROM.commit();
+  Serial.println("Drift Comp 0.075g stored in EEPROM.");
+}
+
+void driftComp0100() {
   f_maxDriftCompensation = 0.1;
   actionMessage = "Drift Comp 0.1g";
   t_actionMessage = millis();
@@ -456,14 +480,14 @@ void driftComp1() {
   Serial.println("Drift Comp 0.1g stored in EEPROM.");
 }
 
-void driftComp2() {
+void driftComp0200() {
   f_maxDriftCompensation = 0.2;
-  actionMessage = "Drift Comp 0.1g";
+  actionMessage = "Drift Comp 0.2g";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
   EEPROM.put(i_addr_driftCompensation, f_maxDriftCompensation);
   EEPROM.commit();
-  Serial.println("Drift Comp 0.1g stored in EEPROM.");
+  Serial.println("Drift Comp 0.2g stored in EEPROM.");
 }
 
 void calibrate() {
