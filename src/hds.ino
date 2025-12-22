@@ -554,7 +554,7 @@ void setup() {
     EEPROM.commit();
   }
   if (isnan(f_maxDriftCompensation)) {
-    f_maxDriftCompensation = 0.0;
+    f_maxDriftCompensation = 0.05;
     EEPROM.put(i_addr_driftCompensation, f_maxDriftCompensation);
     EEPROM.commit();
   }
@@ -895,7 +895,7 @@ void pureScale() {
     
     // Continuous temperature drift detection and compensation
     // 1. Calculate difference between current raw and displayed value
-    float current_diff = raw_weight - f_displayedValue - f_temperature_drift_compensation;
+    float current_diff = raw_weight - f_displayedValue - f_driftCompensation;
     
     // 2. If difference is small (0.01g-0.1g), accumulate to continuous compensation
     if (fabs(current_diff) > 0.01 && fabs(current_diff) < f_maxDriftCompensation) {
@@ -909,18 +909,18 @@ void pureScale() {
         // If continuous micro changes, increase continuous compensation
         if (f_similar_diff_count >= 3) {
           // Increase continuous compensation (slowly)
-          f_temperature_drift_compensation += current_diff * 0.3;  // Compensate 30% each time
+          f_driftCompensation += current_diff * 0.3;  // Compensate 30% each time
           
           // Limit compensation range
-          if (fabs(f_temperature_drift_compensation) > 2.0) {
-            f_temperature_drift_compensation = (f_temperature_drift_compensation > 0) ? 2.0 : -2.0;
+          if (fabs(f_driftCompensation) > 2.0) {
+            f_driftCompensation = (f_driftCompensation > 0) ? 2.0 : -2.0;
           }
           
           if (b_weight_in_serial) {
             Serial.print("TEMP-DRIFT-COMP: diff=");
             Serial.print(current_diff, 4);
             Serial.print("g, total_comp=");
-            Serial.print(f_temperature_drift_compensation, 4);
+            Serial.print(f_driftCompensation, 4);
             Serial.print("g, count=");
             Serial.println(f_similar_diff_count);
           }
@@ -940,15 +940,18 @@ void pureScale() {
     }
     
     // 3. Apply continuous temperature compensation
-    float temperature_compensated = raw_weight - f_temperature_drift_compensation;
+    float temperature_compensated = raw_weight - f_driftCompensation;
     
     // 4. Original processing pipeline
     float tracking_compensated = applyTrackingCompensation(temperature_compensated);
     float stable_output = applyStableOutput(tracking_compensated);
     
-    // Update displayed value
-    f_displayedValue = stable_output;
-    
+    if (stable_output >= -0.14 && stable_output <= 0.14) {
+      f_displayedValue = 0.0;
+    } else {
+      // scale value is outside tolerance range, update displayed value
+      f_displayedValue = stable_output;
+    }
     // Update adaptive tracking (use temperature compensated value)
     updateAdaptiveTracking(tracking_compensated);
     
@@ -961,7 +964,7 @@ void pureScale() {
         Serial.print("Raw: ");
         Serial.print(raw_weight, 4);
         Serial.print("g | TempComp: ");
-        Serial.print(f_temperature_drift_compensation, 4);
+        Serial.print(f_driftCompensation, 4);
         Serial.print("g | AfterTempComp: ");
         Serial.print(temperature_compensated, 4);
         Serial.println("g");
@@ -986,7 +989,7 @@ void pureScale() {
     b_weight_quick_zero = false;
     resetTracking();
     resetStableOutput();
-    f_temperature_drift_compensation = 0.0;
+    f_driftCompensation = 0.0;
     f_displayedValue = 0.0;
     if (b_weight_in_serial) {
       Serial.println("TARE: Temperature drift compensation reset");
@@ -996,7 +999,7 @@ void pureScale() {
   // Quick zero handling
   if (b_weight_quick_zero || b_bootTare) {
     f_displayedValue = 0.0;
-    f_temperature_drift_compensation = 0.0;
+    f_driftCompensation = 0.0;
   }
 }
 
@@ -1004,18 +1007,18 @@ void pureScale() {
  * Get current temperature compensation value
  */
 float getTemperatureDriftCompensation() {
-  return f_temperature_drift_compensation;
+  return f_driftCompensation;
 }
 
 /**
  * Manually adjust temperature compensation
  */
 void adjustTemperatureDriftCompensation(float amount) {
-  f_temperature_drift_compensation += amount;
+  f_driftCompensation += amount;
   Serial.print("Manual temp-comp adjust: ");
   Serial.print(amount, 4);
   Serial.print("g, total: ");
-  Serial.println(f_temperature_drift_compensation, 4);
+  Serial.println(f_driftCompensation, 4);
 }
 
 /**
@@ -1058,9 +1061,6 @@ void setStableOutputEnabled(bool enabled) {
 /**
  * Set stable output threshold
  */
-
-bool b_tempDisablePowerOff = true;
-
 void setStableOutputThreshold(float threshold) {
   STABLE_OUTPUT_THRESHOLD = threshold;
   Serial.print("Stable threshold set to: ");
@@ -1303,17 +1303,17 @@ void serialCommand() {
 
     if (inputString.startsWith("sot ")) {
       setStableOutputThreshold(inputString.substring(4).toFloat());
-      b_tempDisablePowerOff = true;
+      //b_tempDisablePowerOff = true;
     }
 
     if (inputString.startsWith("tt ")) {
       setTrackingThreshold(inputString.substring(3).toFloat());
-      b_tempDisablePowerOff = true;
+      //b_tempDisablePowerOff = true;
     }
 
     if (inputString.startsWith("tui ")) {
       setTrackingUpdateInterval(inputString.substring(4).toFloat());
-      b_tempDisablePowerOff = true;
+      //b_tempDisablePowerOff = true;
     }
 
     if (inputString.startsWith("oled ")) {                     // 校准值
@@ -1404,10 +1404,10 @@ void loop() {
   if (deviceConnected) {
     power_off(-1);  //reset power off timer
   } else {
-    if (!b_tempDisablePowerOff)
-      power_off(15);  //power off after 15 minutes
+    //if (!b_tempDisablePowerOff)
+    power_off(15);  //power off after 15 minutes
   }
-  serialCommand();
+  //serialCommand();
   if (Serial.available()) {
     uint8_t data[32];  // 假设最大接收 32 字节数据
     size_t len = 0;
@@ -1618,7 +1618,7 @@ void updateOled() {
       drawShutdownFail();
       drawAbout();
       drawDebug();
-      drawDriftFactor();
+      //drawDriftCompensationInfo();
 
     } while (u8g2.nextPage());
   }
@@ -1913,7 +1913,7 @@ void drawTare() {
   }
 }
 
-void drawDriftFactor() {
+void drawDriftCompensationInfo() {
   char factorText[20];
   u8g2.setFont(u8g2_font_6x13_tr);
   
@@ -1926,7 +1926,7 @@ void drawDriftFactor() {
   u8g2.drawStr(0, 26, (char *)"MDC");
   u8g2.drawStr(0, 39, (char *)trim(factorText));
 
-  snprintf(factorText, sizeof(factorText), "TDC:%.2f", f_temperature_drift_compensation * -1);
+  snprintf(factorText, sizeof(factorText), "TDC:%.2f", f_driftCompensation * -1);
   u8g2.drawStr(AR((char *)trim(factorText)), 26, (char *)trim(factorText));
 
   snprintf(factorText, sizeof(factorText), "RAW:%.2f", f_current_raw_value);

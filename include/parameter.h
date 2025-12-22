@@ -116,10 +116,11 @@ static float f_current_raw_value = 0.0;            // Current raw input value
 static float STABLE_OUTPUT_THRESHOLD = 0.1;       // Minimum change to update output
 static bool b_stable_output_enabled = true;     // Stable output enable flag
 static unsigned long t_last_stable_change = 0;     // Time of last stable change
-static float f_temperature_drift_compensation = 0.1;  // Continuous temperature drift compensation
-static float f_maxDriftCompensation = 0.0;  // Maximum micro-drift range for temperature compensation (g)
+static float f_driftCompensation = 0.0;  // Continuous temperature drift compensation
+static float f_maxDriftCompensation = 0.05;  // Maximum micro-drift range for temperature compensation (g)
 // Range: 0.01g to this value will be considered as temperature drift
 // Values above this are considered as real weight changes, not drift
+//bool b_tempDisablePowerOff = true;
 
 bool b_negativeWeight = false;
 
