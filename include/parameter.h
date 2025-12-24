@@ -97,8 +97,8 @@ bool b_showChargingUI = false;
 static float f_tracking_offset = 0.0;              // Current tracking offset
 static float f_tracking_target = 0.0;              // Current tracking target weight
 static unsigned long t_last_tracking_update = 0;   // Last tracking update time
-static const unsigned long TRACKING_UPDATE_INTERVAL = 5000; // Tracking update interval 5 seconds
-static const float TRACKING_THRESHOLD = 0.1;      // Tracking stability threshold
+static unsigned long TRACKING_UPDATE_INTERVAL = 1000; // Tracking update interval 1 seconds
+static float TRACKING_THRESHOLD = 0.1;      // Tracking stability threshold
 static const int i_STABLE_COUNT_THRESHOLD = 5;     // Stable count threshold
 static const float MAX_TRACKING_ADJUSTMENT = 0.5;  // Maximum single adjustment
 
@@ -116,8 +116,11 @@ static float f_current_raw_value = 0.0;            // Current raw input value
 static float STABLE_OUTPUT_THRESHOLD = 0.1;       // Minimum change to update output
 static bool b_stable_output_enabled = true;     // Stable output enable flag
 static unsigned long t_last_stable_change = 0;     // Time of last stable change
-
-
+static float f_driftCompensation = 0.0;  // Continuous temperature drift compensation
+static float f_maxDriftCompensation = 0.05;  // Maximum micro-drift range for temperature compensation (g)
+// Range: 0.01g to this value will be considered as temperature drift
+// Values above this are considered as real weight changes, not drift
+//bool b_tempDisablePowerOff = true;
 
 bool b_negativeWeight = false;
 
@@ -144,8 +147,6 @@ float f_weight_adc = 0.0;  //原始读出值（g）
 float f_weight_smooth;
 float f_displayedValue;
 float f_flow_rate;
-
-float f_weight_before_input;  //按录入按钮之前的第几个读数（重量）
 
 unsigned long t_auto_tare = 0;        //自动归零打点
 unsigned long t_auto_stop = 0;        //下液停止打点
@@ -252,7 +253,8 @@ int i_addr_timeOnTop = i_addr_screenFlipped + sizeof(b_screenFlipped);          
 int i_addr_btnFuncWhileConnected = i_addr_timeOnTop + sizeof(b_timeOnTop);                           //b_btnFuncWhileConnected
 int i_addr_enableWifiOnBoot = i_addr_btnFuncWhileConnected + sizeof(b_btnFuncWhileConnected);        //b_wifiOnBoot
 int i_addr_autoSleep = i_addr_enableWifiOnBoot + sizeof(b_wifiOnBoot);
-int i_addr_quickBoot = i_addr_autoSleep + sizeof(b_autoSleep);
+int i_addr_quickBoot = i_addr_autoSleep + sizeof(b_autoSleep);//b_quickBoot
+int i_addr_driftCompensation = i_addr_quickBoot + sizeof(b_quickBoot);//f_maxDriftCompensation
 
 //int i_addr_enableWifiOnBoot = i_addr_btnFuncWhileConnected + sizeof(b_wifiOnBoot);
 
