@@ -515,14 +515,14 @@ void calibration(int input) {
           u8g2.setFontMode(1);
           u8g2.setDrawColor(1);
           u8g2.setFont(FONT_S);
-          if (b_is_charging) {
-            u8g2.drawUTF8(AC((char *)"Unplug scale"),
-                          u8g2.getMaxCharHeight() + i_margin_top,
-                          (char *)"Unplug scale");
-            u8g2.drawUTF8(AC((char *)"to start calibration"),
-                          LCDHeight - i_margin_bottom,
-                          (char *)"to start calibration");
-          } else {
+          // if (b_is_charging) {
+          //   u8g2.drawUTF8(AC((char *)"Unplug scale"),
+          //                 u8g2.getMaxCharHeight() + i_margin_top,
+          //                 (char *)"Unplug scale");
+          //   u8g2.drawUTF8(AC((char *)"to start calibration"),
+          //                 LCDHeight - i_margin_bottom,
+          //                 (char *)"to start calibration");
+          // } else {
             int x, y;
             x = 0;
             y = u8g2.getMaxCharHeight();
@@ -558,7 +558,7 @@ void calibration(int input) {
             int y1 = y;
             int y2 = y - (y1 - y0) / 2;
             u8g2.drawTriangle(x0, y0, x1, y1, x2, y2);
-          }
+          // }
 
           u8g2.setDrawColor(2);
           drawButton();
@@ -584,7 +584,7 @@ void calibration(int input) {
     if (i_button_cal_status == 2) {
       Serial.println("Before if check, i_cal_weight = " + String(i_cal_weight));
 
-      if (i_cal_weight == 0 || b_is_charging) {
+      if (i_cal_weight == 0 /*|| b_is_charging */) {
         // exit was selected, exit the calibration.
         i_button_cal_status = 0;
         b_calibration = false;
