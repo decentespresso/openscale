@@ -11,6 +11,9 @@
 #include "webserver.h"
 #include "wifi_ota.h"
 
+#ifdef ESP32
+#include "esp_task_wdt.h"
+#endif
 
 #include "menu.h"
 #include "ble.h"
@@ -20,14 +23,20 @@
 // Reads a boolean value from EEPROM with validation.
 // If the stored value is not 0 or 1 (i.e., invalid or uninitialized data),
 // it will be replaced with the provided default value.
+// FIXED: Only writes to EEPROM if value is actually invalid to prevent flash wear
 bool readBoolEEPROMWithValidation(int addr, bool defaultVal) {
   uint8_t val;
   EEPROM.get(addr, val);  // Read raw byte from EEPROM
   if (val == 0 || val == 1) {
-    // Valid boolean value found
+    // Valid boolean value found - no write needed
     return val;
   }
-  // Invalid value, overwrite with default
+  // Invalid value detected - write default ONLY if current value is invalid
+  // This prevents unnecessary EEPROM writes on every boot
+  Serial.print("EEPROM validation: Invalid value at addr ");
+  Serial.print(addr);
+  Serial.print(", writing default: ");
+  Serial.println(defaultVal);
   EEPROM.put(addr, (uint8_t)defaultVal);
   EEPROM.commit();
   return defaultVal;
@@ -363,13 +372,24 @@ void wifi_init() {
   if (!b_wifiOnBoot) {
     return;
   }
-  xTaskCreate(_wifi_init, "Wifi Init Task", configMINIMAL_STACK_SIZE + 2048, NULL, 0, NULL);
+  // Increased stack size from 2.5KB to 8KB for WiFi/WebServer stability
+  // Priority 1 to avoid interfering with idle tasks, Core 0 for network operations
+  xTaskCreatePinnedToCore(_wifi_init, "Wifi Init Task", 8192, NULL, 1, NULL, 0);
 }
 
 void setup() {
   Serial.begin(115200);
   while (!Serial)  // Wait for the Serial port to initialize (typically used in Arduino to ensure the Serial monitor is ready)
     ;
+  
+#ifdef ESP32
+  // Enable hardware watchdog timer (10 second timeout)
+  // This will reset the device if the main loop hangs
+  esp_task_wdt_init(10, true);
+  esp_task_wdt_add(NULL);  // Add current task (loop task) to watchdog
+  Serial.println("Watchdog timer enabled (10s timeout)");
+#endif
+  
   if (!EEPROM.begin(512)) {
     Serial.println("EEPROM init failed!");
     while (1) {
@@ -1389,19 +1409,33 @@ void serialCommand() {
 }
 
 void loop() {
+#ifdef ESP32
+  // Reset watchdog timer to prevent device reset
+  esp_task_wdt_reset();
+#endif
+  
   if (b_powerOff){
     shut_down_now_nobeep();
     return;
   }
 
-  if (bleState == CONNECTED && b_requireHeartBeat) {
+  // Thread-safe BLE state check
+  bool isConnected = false;
+  BleState currentBleState = DISCONNECTED;
+  if (bleMutex != NULL && xSemaphoreTake(bleMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+    isConnected = deviceConnected;
+    currentBleState = bleState;
+    xSemaphoreGive(bleMutex);
+  }
+
+  if (currentBleState == CONNECTED && b_requireHeartBeat) {
     if (millis() - t_heartBeat > HEARTBEAT_TIMEOUT) {
       disconnectBLE();
       t_heartBeat = millis() + 10000;
     }
   }
 
-  if (deviceConnected) {
+  if (isConnected) {
     power_off(-1);  //reset power off timer
   } else {
     //if (!b_tempDisablePowerOff)

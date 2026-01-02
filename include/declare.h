@@ -26,6 +26,9 @@ BLECharacteristic *pReadCharacteristic = NULL;
 BLECharacteristic *pWriteCharacteristic = NULL;
 bool deviceConnected = false;
 
+// Mutex for thread-safe BLE state access
+SemaphoreHandle_t bleMutex = NULL;
+
 // The model byte is always 03 for Decent scales
 const byte modelByte = 0x03;
 

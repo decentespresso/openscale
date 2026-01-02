@@ -177,7 +177,7 @@ const int autoTareInterval = 500;       //自动归零检测间隔（毫秒）
 const int autoStopInterval = 500;       //下液停止检测间隔（毫秒）
 const int scaleStableInterval = 500;    //稳定状态监测间隔（毫秒）
 const int timeOutInterval = 30 * 1000;  //超时检测间隔（毫秒）
-const int i_oled_print_interval = 0;    //oled刷新间隔（毫秒）
+const int i_oled_print_interval = 50;   //oled刷新间隔（毫秒）- Changed from 0 to 50ms for stability
 const int i_esp_now_interval = 100;     //espnow刷新间隔（毫秒）
 const int i_serial_print_interval = 0;  //称重输出间隔（毫秒）
 //flags 模式标识

@@ -41,10 +41,14 @@ void encodeWeight(float weight, byte &byte1, byte &byte2) {
 // This callback will be invoked when a device connects or disconnects
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer *pServer) {
-    connId = pServer->getConnId();  // 保存连接 ID
-    t_heartBeat = millis();
-    bleState = CONNECTED;
-    deviceConnected = true;
+    // Thread-safe BLE state modification
+    if (bleMutex != NULL && xSemaphoreTake(bleMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+      connId = pServer->getConnId();  // 保存连接 ID
+      t_heartBeat = millis();
+      bleState = CONNECTED;
+      deviceConnected = true;
+      xSemaphoreGive(bleMutex);
+    }
 #ifdef BUZZER
     b_beep = false;  //disable buzzer once when connected, and wait for ble command to enable it
 #endif
@@ -52,10 +56,13 @@ class MyServerCallbacks : public BLEServerCallbacks {
   }
 
   void onDisconnect(BLEServer *pServer) {
-    connId = 0;
-
-    deviceConnected = false;
-    bleState = DISCONNECTED;
+    // Thread-safe BLE state modification
+    if (bleMutex != NULL && xSemaphoreTake(bleMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+      connId = 0;
+      deviceConnected = false;
+      bleState = DISCONNECTED;
+      xSemaphoreGive(bleMutex);
+    }
 
 //Serial.println("ble 01");
 #ifdef BUZZER
@@ -396,6 +403,16 @@ class MyCallbacks : public BLECharacteristicCallbacks {
 
 
 void ble_init() {
+  // Create mutex for BLE state protection (only create once)
+  if (bleMutex == NULL) {
+    bleMutex = xSemaphoreCreateMutex();
+    if (bleMutex == NULL) {
+      Serial.println("ERROR: Failed to create BLE mutex!");
+    } else {
+      Serial.println("BLE mutex created successfully");
+    }
+  }
+  
   //turn on ble
   BLEDevice::init("Decent Scale");
   // Create BLE Server
