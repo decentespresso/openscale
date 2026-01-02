@@ -385,7 +385,9 @@ void setup() {
 #ifdef ESP32
   // Enable hardware watchdog timer (10 second timeout)
   // This will reset the device if the main loop hangs
-  esp_task_wdt_init(10, true);
+  esp_task_wdt_config_t wdt_config;
+  wdt_config.timeout_ms = 10000;
+  esp_task_wdt_init(&wdt_config);
   esp_task_wdt_add(NULL);  // Add current task (loop task) to watchdog
   Serial.println("Watchdog timer enabled (10s timeout)");
 #endif
