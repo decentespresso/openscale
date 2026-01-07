@@ -32,347 +32,6 @@ bool readBoolEEPROMWithValidation(int addr, bool defaultVal) {
   EEPROM.commit();
   return defaultVal;
 }
-// ============================================
-// Finger Press Recognition Algorithm for HDS
-// ============================================
-
-#define TOTAL_SAMPLES 50           // Total samples
-#define POST_RELEASE_DURATION 400 // Sample 500ms after release
-
-enum SamplingPhase {
-  PHASE_IDLE = 0,
-  PHASE_PRESSING,
-  PHASE_RECOVERING
-};
-
-struct PressSample {
-  float weight;
-  unsigned long timestamp;
-  SamplingPhase phase;
-  bool is_release_point;
-};
-
-PressSample press_samples[TOTAL_SAMPLES];
-int sample_index = 0;
-SamplingPhase current_phase = PHASE_IDLE;
-unsigned long press_start_time = 0;
-unsigned long release_time = 0;
-float release_weight = 0;
-float last_sampled_weight = 0;
-unsigned long last_sample_real_time = 0;
-
-// based on HDS finger touch data analysis
-#define FINGER_PRESS_MIN_PEAK 3.0      // Minimum peak change(g) - from data, light press has 14g+
-#define FINGER_PRESS_MAX_NET 2.0       // Maximum net change(g) - your data all <1g
-#define FINGER_PRESS_MIN_RECOVERY 0.85 // Minimum recovery ratio - your data all >99%
-#define FINGER_PRESS_MAX_PRESS_TIME 800 // Maximum press time(ms)
-#define FINGER_PRESS_MIN_TOTAL_TIME 300 // Minimum total time(ms)
-
-// Finger press detection function
-bool isFingerPress() {
-  if (sample_index < 5) {
-    // Too few samples, use simplified detection
-    return isQuickTap();
-  }
-  
-  // Find key points
-  int release_index = -1;
-  float start_weight = press_samples[0].weight;
-  float peak_weight = start_weight;
-  int peak_index = 0;
-  
-  for (int i = 0; i < sample_index; i++) {
-    if (press_samples[i].is_release_point) {
-      release_index = i;
-    }
-    if (press_samples[i].weight > peak_weight) {
-      peak_weight = press_samples[i].weight;
-      peak_index = i;
-    }
-  }
-  
-  if (release_index < 0) release_index = sample_index - 1;
-  
-  float final_weight = press_samples[sample_index-1].weight;
-  
-  // Calculate key metrics
-  unsigned long press_duration = press_samples[release_index].timestamp;
-  unsigned long total_duration = press_samples[sample_index-1].timestamp;
-  
-  float peak_change = peak_weight - start_weight;
-  float net_change = final_weight - start_weight;
-  
-  // Your scale's characteristic judgment
-  bool has_significant_peak = (peak_change >= FINGER_PRESS_MIN_PEAK);
-  bool has_good_recovery = (fabs(net_change) <= FINGER_PRESS_MAX_NET);
-  bool reasonable_press_time = (press_duration <= FINGER_PRESS_MAX_PRESS_TIME);
-  bool reasonable_total_time = (total_duration >= FINGER_PRESS_MIN_TOTAL_TIME);
-  
-  // Calculate recovery ratio
-  float recovery_ratio = 0;
-  if (peak_change > 0.1) {
-    float recovery_amount = peak_weight - final_weight;
-    recovery_ratio = recovery_amount / peak_change;
-  }
-  bool has_good_recovery_ratio = (recovery_ratio >= FINGER_PRESS_MIN_RECOVERY);
-  
-  // Your scale's special feature: peak may appear after release
-  bool peak_after_release = (peak_index > release_index);
-  
-  // Comprehensive judgment (based on your data characteristics)
-  bool is_finger_press = has_significant_peak && 
-                        has_good_recovery && 
-                        has_good_recovery_ratio &&
-                        reasonable_total_time;
-  
-  // Output detailed analysis
-  Serial.println("\n🔍 Finger Press Analysis:");
-  Serial.print("Samples: ");
-  Serial.println(sample_index);
-  Serial.print("Peak change: ");
-  Serial.print(peak_change, 2);
-  Serial.print("g (min=");
-  Serial.print(FINGER_PRESS_MIN_PEAK);
-  Serial.print("g) ");
-  Serial.println(has_significant_peak ? "✅" : "❌");
-  
-  Serial.print("Net change: ");
-  Serial.print(net_change, 2);
-  Serial.print("g (max=");
-  Serial.print(FINGER_PRESS_MAX_NET);
-  Serial.print("g) ");
-  Serial.println(has_good_recovery ? "✅" : "❌");
-  
-  Serial.print("Recovery ratio: ");
-  Serial.print(recovery_ratio * 100, 1);
-  Serial.print("% (min=");
-  Serial.print(FINGER_PRESS_MIN_RECOVERY * 100, 0);
-  Serial.print("%) ");
-  Serial.println(has_good_recovery_ratio ? "✅" : "❌");
-  
-  Serial.print("Total time: ");
-  Serial.print(total_duration);
-  Serial.print("ms (min=");
-  Serial.print(FINGER_PRESS_MIN_TOTAL_TIME);
-  Serial.print("ms) ");
-  Serial.println(reasonable_total_time ? "✅" : "❌");
-  
-  Serial.print("Peak position: ");
-  Serial.print(peak_after_release ? "After release" : "Before release");
-  Serial.print(" (sample ");
-  Serial.print(peak_index);
-  Serial.print(")");
-  
-  Serial.print("\n🎯 Result: ");
-  if (is_finger_press) {
-    Serial.println("✅ FINGER PRESS");
-    if (!deviceConnected || b_btnFuncWhileConnected) {
-      b_weight_quick_zero = true;
-      t_tareByButton = millis();
-      b_tareByButton = true;
-  }
-  } else {
-    Serial.println("❌ NOT FINGER PRESS");
-  }
-  
-  return is_finger_press;
-}
-
-// quick tap detection
-bool isQuickTap() {
-  if (sample_index < 2) return false;
-  
-  float start_weight = press_samples[0].weight;
-  float final_weight = press_samples[sample_index-1].weight;
-  float net_change = final_weight - start_weight;
-  
-  bool is_quick = (fabs(net_change) < 1.5);
-  
-  Serial.print("Quick tap detection: Net change ");
-  Serial.print(net_change, 2);
-  Serial.print("g -> ");
-  Serial.println(is_quick ? "✅ Likely quick tap" : "❌ Not quick tap");
-  
-  return is_quick;
-}
-
-/// Modified analyzeCompletePressData function with finger press recognition
-void analyzeCompletePressData() {
-  if (sample_index <= 3) {
-    Serial.println("Samples <= 3, likely hand press");
-    return;
-  }
-  
-  Serial.println("\n" + String(70, '='));
-  Serial.println("📊 SCALE BUTTON PRESS ANALYSIS");
-  Serial.println(String(70, '='));
-  
-  // Original data analysis code remains unchanged
-  int release_index = -1;
-  float start_weight = press_samples[0].weight;
-  float peak_weight = start_weight;
-  int peak_index = 0;
-  
-  for (int i = 0; i < sample_index; i++) {
-    if (press_samples[i].is_release_point) {
-      release_index = i;
-    }
-    if (press_samples[i].weight > peak_weight) {
-      peak_weight = press_samples[i].weight;
-      peak_index = i;
-    }
-  }
-  
-  if (release_index < 0) release_index = sample_index - 1;
-  
-  float final_weight = press_samples[sample_index-1].weight;
-  
-  // Calculate average sampling interval
-  float avg_interval = 0;
-  if (sample_index > 1) {
-    avg_interval = press_samples[sample_index-1].timestamp / (float)(sample_index-1);
-  }
-  
-  Serial.print("Samples: ");
-  Serial.print(sample_index);
-  Serial.print(" | Avg interval: ");
-  Serial.print(avg_interval, 1);
-  Serial.println("ms");
-  
-  // Original data output (keep as is)
-  // ... your original output code ...
-  
-  // Key metrics
-  Serial.println("\n--- KEY METRICS ---");
-  
-  float press_duration = press_samples[release_index].timestamp;
-  float total_duration = press_samples[sample_index-1].timestamp;
-  float recovery_duration = total_duration - press_duration;
-  
-  float press_increase = peak_weight - start_weight;
-  float recovery_decrease = peak_weight - final_weight;
-  float net_change = final_weight - start_weight;
-  
-  Serial.print("Press duration: ");
-  Serial.print(press_duration);
-  Serial.print("ms | Total duration: ");
-  Serial.print(total_duration);
-  Serial.println("ms");
-  
-  Serial.print("Peak increase: +");
-  Serial.print(press_increase, 2);
-  Serial.print("g | Recovery decrease: ");
-  Serial.print(recovery_decrease, 2);
-  Serial.print("g | Net change: ");
-  if (net_change >= 0) Serial.print("+");
-  Serial.print(net_change, 2);
-  Serial.println("g");
-  
-  if (press_increase > 0.1) {
-    float recovery_ratio = recovery_decrease / press_increase;
-    float recovery_rate = 0;
-    if (recovery_duration > 0) {
-      recovery_rate = recovery_decrease / (recovery_duration / 1000.0);
-    }
-    
-    Serial.print("Recovery ratio: ");
-    Serial.print(recovery_ratio * 100, 1);
-    Serial.print("% | Recovery rate: ");
-    Serial.print(recovery_rate, 1);
-    Serial.println("g/s");
-  }
-  
-  // ============ Add finger press recognition ============
-  Serial.println("\n--- FINGER PRESS RECOGNITION ---");
-  bool is_finger = isFingerPress();
-  // =====================================================
-  
-  Serial.println(String(70, '=') + "\n");
-}
-
-
-void startPressSampling() {
-  current_phase = PHASE_PRESSING;
-  sample_index = 0;
-  press_start_time = millis();
-  last_sample_real_time = press_start_time;
-  last_sampled_weight = f_current_raw_value;
-  
-  // Record first sample
-  if (sample_index < TOTAL_SAMPLES) {
-    press_samples[sample_index].weight = f_current_raw_value;
-    press_samples[sample_index].timestamp = 0;
-    press_samples[sample_index].phase = PHASE_PRESSING;
-    press_samples[sample_index].is_release_point = false;
-    sample_index++;
-  }
-  
-  Serial.println("=== Finger Touch Button Weight Sampling Started ===");
-  Serial.print("Start weight: ");
-  Serial.println(f_current_raw_value, 3);
-}
-
-// Button release handling
-void onButtonReleased() {
-  if (current_phase != PHASE_PRESSING) return;
-  
-  release_time = millis();
-  release_weight = f_current_raw_value;
-  current_phase = PHASE_RECOVERING;
-  
-  // Record release point
-  if (sample_index < TOTAL_SAMPLES) {
-    press_samples[sample_index].weight = release_weight;
-    press_samples[sample_index].timestamp = release_time - press_start_time;
-    press_samples[sample_index].phase = PHASE_RECOVERING;
-    press_samples[sample_index].is_release_point = true;
-    sample_index++;
-  }
-  
-  Serial.println("=== Button Released, starting recovery sampling ===");
-}
-
-// Update sampling (called at high frequency in main loop)
-void updatePressSampling() {
-  if (current_phase == PHASE_IDLE) return;
-  
-  unsigned long current_time = millis();
-  
-  // Debounce: minimum sampling interval 10ms (~100Hz)
-  if (current_time - last_sample_real_time < 10) return;
-  
-  // Check for timeout
-  if (current_phase == PHASE_PRESSING) {
-    if (current_time - press_start_time > 2000) { // Max press duration 2 seconds
-      Serial.println("Press phase timeout");
-      current_phase = PHASE_IDLE;
-      return;
-    }
-  } else if (current_phase == PHASE_RECOVERING) {
-    if (current_time - release_time > POST_RELEASE_DURATION) { // Recovery phase 500ms
-      current_phase = PHASE_IDLE;
-      analyzeCompletePressData();
-      return;
-    }
-  }
-  
-  // Record sample
-  if (sample_index < TOTAL_SAMPLES) {
-    float current_weight = f_current_raw_value;
-    
-    press_samples[sample_index].weight = current_weight;
-    press_samples[sample_index].timestamp = current_time - press_start_time;
-    press_samples[sample_index].phase = current_phase;
-    press_samples[sample_index].is_release_point = false;
-    
-    sample_index++;
-    last_sample_real_time = current_time;
-    last_sampled_weight = current_weight;
-  } else {
-    Serial.println("Sampling buffer full");
-    current_phase = PHASE_IDLE;
-  }
-}
 
 //buttons
 
@@ -473,17 +132,17 @@ void scaleTimer() {
 
 void buttonCircle_Released() {
   //trigger tare after released to avoid to judge where the tare should be placed.
-  // if (!deviceConnected || b_btnFuncWhileConnected) {
-  //   b_weight_quick_zero = true;
-  //   t_tareByButton = millis();
-  //   b_tareByButton = true;
-  // }
+  if (!deviceConnected || b_btnFuncWhileConnected) {
+    b_weight_quick_zero = true;
+    t_tareByButton = millis();
+    b_tareByButton = true;
+  }
   Serial.println("O button released");
   sendUsbButton(1, 1);
   if (deviceConnected) {
     sendBleButton(1, 1);
   }
-  if (!b_calibration) { 
+  if (!b_calibration) { // 校准模式不分析
     onButtonReleased();
   }
 }
@@ -510,7 +169,7 @@ void buttonCircle_Pressed() {
     //This will increment i_cal_weight by 1 and wrap around to 0 when it reaches 4, effectively keeping it within the range of 0 to 3.
     // return;
   }
-  if (!b_calibration) {
+  if (!b_calibration) { // 校准模式不检测
     startPressSampling();
   }
 }
@@ -1230,6 +889,333 @@ float applyStableOutput(float current_value) {
   return f_previous_stable_value;
 }
 
+// ============================================
+// 手指按压检测 - 完整版（包含恢复阶段采样）
+// ============================================
+
+// ============================================
+// 手指按压检测 - 完整版（高频采样）
+// ============================================
+
+#define TOTAL_SAMPLES 50           // 增加采样点数（因为采样频率高了）
+#define POST_RELEASE_DURATION 1000 // 1000ms的抬起后检测
+// 采样阶段
+enum SamplingPhase {
+  PHASE_IDLE = 0,
+  PHASE_PRESSING,
+  PHASE_RECOVERING
+};
+
+// 采样点结构
+struct PressSample {
+  float weight;
+  unsigned long timestamp;
+  SamplingPhase phase;
+  bool is_release_point;
+};
+
+// 全局变量
+PressSample press_samples[TOTAL_SAMPLES];
+int sample_index = 0;
+SamplingPhase current_phase = PHASE_IDLE;
+unsigned long press_start_time = 0;
+unsigned long release_time = 0;
+float release_weight = 0;
+float last_sampled_weight = 0;
+unsigned long last_sample_real_time = 0; // 实际时间防抖
+
+// ============================================
+// 采样管理函数（高频版本）
+// ============================================
+
+// 开始采样（按钮按下时调用）
+void startPressSampling() {
+  current_phase = PHASE_PRESSING;
+  sample_index = 0;
+  press_start_time = millis();
+  last_sample_real_time = press_start_time;
+  last_sampled_weight = f_current_raw_value;
+  
+  // 记录第一个样本
+  if (sample_index < TOTAL_SAMPLES) {
+    press_samples[sample_index].weight = f_current_raw_value;
+    press_samples[sample_index].timestamp = 0;
+    press_samples[sample_index].phase = PHASE_PRESSING;
+    press_samples[sample_index].is_release_point = false;
+    sample_index++;
+  }
+  
+  Serial.println("=== High-Freq Sampling Started ===");
+  Serial.print("Start weight: ");
+  Serial.println(f_current_raw_value, 3);
+}
+
+// 按钮释放处理
+void onButtonReleased() {
+  if (current_phase != PHASE_PRESSING) return;
+  
+  release_time = millis();
+  release_weight = f_current_raw_value;
+  current_phase = PHASE_RECOVERING;
+  
+  // 记录释放点
+  if (sample_index < TOTAL_SAMPLES) {
+    press_samples[sample_index].weight = release_weight;
+    press_samples[sample_index].timestamp = release_time - press_start_time;
+    press_samples[sample_index].phase = PHASE_RECOVERING;
+    press_samples[sample_index].is_release_point = true;
+    sample_index++;
+  }
+  
+  Serial.println("=== Button Released, starting recovery sampling ===");
+}
+
+// 更新采样（在主循环中高频调用）
+void updatePressSampling() {
+  if (current_phase == PHASE_IDLE) return;
+  
+  unsigned long current_time = millis();
+  
+  // 防抖：最小采样间隔10ms（约100Hz）
+  if (current_time - last_sample_real_time < 10) return;
+  
+  // 检查是否超时
+  if (current_phase == PHASE_PRESSING) {
+    if (current_time - press_start_time > 2000) { // 按压最长2秒
+      Serial.println("Press phase timeout");
+      current_phase = PHASE_IDLE;
+      return;
+    }
+  } else if (current_phase == PHASE_RECOVERING) {
+    if (current_time - release_time > POST_RELEASE_DURATION) { // 恢复阶段500ms
+      current_phase = PHASE_IDLE;
+      analyzeCompletePressData();
+      return;
+    }
+  }
+  
+  // 记录样本
+  if (sample_index < TOTAL_SAMPLES) {
+    float current_weight = f_current_raw_value;
+    
+    press_samples[sample_index].weight = current_weight;
+    press_samples[sample_index].timestamp = current_time - press_start_time;
+    press_samples[sample_index].phase = current_phase;
+    press_samples[sample_index].is_release_point = false;
+    
+    sample_index++;
+    last_sample_real_time = current_time;
+    last_sampled_weight = current_weight;
+  } else {
+    Serial.println("Sampling buffer full");
+    current_phase = PHASE_IDLE;
+  }
+}
+
+// ============================================
+// 数据分析函数（保持不变）
+// ============================================
+
+// 分析完整数据（按压+恢复）
+void analyzeCompletePressData() {
+  if (sample_index < 5) {
+    Serial.println("Not enough samples");
+    return;
+  }
+  
+  Serial.println("\n" + String(70, '='));
+  Serial.println("📊 HIGH-FREQ ANALYSIS (Press + Recovery)");
+  Serial.println("Sampling rate: ~10Hz");
+  Serial.println(String(70, '='));
+  
+  // 找出释放点
+  int release_index = -1;
+  float start_weight = press_samples[0].weight;
+  float peak_weight = start_weight;
+  int peak_index = 0;
+  
+  for (int i = 0; i < sample_index; i++) {
+    if (press_samples[i].is_release_point) {
+      release_index = i;
+    }
+    if (press_samples[i].weight > peak_weight) {
+      peak_weight = press_samples[i].weight;
+      peak_index = i;
+    }
+  }
+  
+  if (release_index < 0) release_index = sample_index - 1;
+  
+  float final_weight = press_samples[sample_index-1].weight;
+  
+  // 计算平均采样间隔
+  float avg_interval = 0;
+  if (sample_index > 1) {
+    avg_interval = press_samples[sample_index-1].timestamp / (float)(sample_index-1);
+  }
+  
+  Serial.print("Samples: ");
+  Serial.print(sample_index);
+  Serial.print(" | Avg interval: ");
+  Serial.print(avg_interval, 1);
+  Serial.println("ms");
+  
+  // 输出数据表格（前10个和后5个样本）
+  Serial.println("\n--- Sample Data (first 10 + last 5) ---");
+  Serial.println("Idx | Time(ms) | Phase | Weight(g) | Δ from start");
+  Serial.println("----+----------+-------+-----------+-------------");
+  
+  int show_count = min(sample_index, 15);
+  for (int i = 0; i < show_count; i++) {
+    if (i == 10 && sample_index > 15) {
+      Serial.println("... (more samples) ...");
+      i = sample_index - 5; // 跳到最后5个
+    }
+    
+    Serial.print(i < 10 ? "0" : "");
+    Serial.print(i);
+    Serial.print(" | ");
+    
+    Serial.print(press_samples[i].timestamp);
+    if (press_samples[i].timestamp < 100) Serial.print(" ");
+    if (press_samples[i].timestamp < 10) Serial.print(" ");
+    Serial.print("  | ");
+    
+    if (press_samples[i].is_release_point) {
+      Serial.print("REL  | ");
+    } else if (press_samples[i].phase == PHASE_PRESSING) {
+      Serial.print("P    | ");
+    } else {
+      Serial.print("R    | ");
+    }
+    
+    Serial.print(press_samples[i].weight, 2);
+    if (fabs(press_samples[i].weight) < 100) Serial.print(" ");
+    if (fabs(press_samples[i].weight) < 10) Serial.print(" ");
+    Serial.print(" | ");
+    
+    float delta = press_samples[i].weight - start_weight;
+    if (delta >= 0) Serial.print("+");
+    Serial.print(delta, 2);
+    
+    if (i == 0) Serial.print(" START");
+    else if (i == peak_index) Serial.print(" PEAK");
+    else if (press_samples[i].is_release_point) Serial.print(" RELEASE");
+    else if (i == sample_index - 1) Serial.print(" FINAL");
+    
+    Serial.println();
+  }
+  
+  // 输出柱状图（简化版）
+  Serial.println("\n--- Visual Chart ---");
+  
+  float min_w = start_weight;
+  float max_w = peak_weight;
+  for (int i = 0; i < sample_index; i++) {
+    if (press_samples[i].weight < min_w) min_w = press_samples[i].weight;
+    if (press_samples[i].weight > max_w) max_w = press_samples[i].weight;
+  }
+  
+  float range = max_w - min_w;
+  if (range < 0.5) range = 10.0;
+  
+  const int BAR_WIDTH = 40;
+  
+  // 简化显示：每5个样本显示一个点
+  int display_step = max(1, sample_index / 20); // 最多显示20个点
+  for (int i = 0; i < sample_index; i += display_step) {
+    Serial.print("[");
+    if (i < 10) Serial.print("0");
+    Serial.print(i);
+    Serial.print("] ");
+    
+    if (press_samples[i].timestamp < 100) Serial.print(" ");
+    if (press_samples[i].timestamp < 10) Serial.print(" ");
+    Serial.print(press_samples[i].timestamp);
+    Serial.print("ms ");
+    
+    // 标记关键点
+    if (i == 0) Serial.print("S");
+    else if (i == peak_index) Serial.print("P");
+    else if (press_samples[i].is_release_point) Serial.print("R");
+    else if (i == sample_index - 1) Serial.print("F");
+    else Serial.print(" ");
+    Serial.print(" ");
+    
+    // 柱状图
+    int bar = (int)((press_samples[i].weight - min_w) / range * BAR_WIDTH);
+    for (int j = 0; j < bar; j++) {
+      if (i == peak_index) Serial.print("█");
+      else if (press_samples[i].is_release_point) Serial.print("●");
+      else if (press_samples[i].phase == PHASE_PRESSING) Serial.print("▓");
+      else Serial.print("░");
+    }
+    
+    Serial.print(" ");
+    Serial.print(press_samples[i].weight, 1);
+    Serial.println("g");
+  }
+  
+  // 关键指标
+  Serial.println("\n--- Key Metrics ---");
+  
+  float press_duration = press_samples[release_index].timestamp;
+  float total_duration = press_samples[sample_index-1].timestamp;
+  float recovery_duration = total_duration - press_duration;
+  
+  float press_increase = peak_weight - start_weight;
+  float recovery_decrease = peak_weight - final_weight;
+  float net_change = final_weight - start_weight;
+  
+  Serial.print("Press duration: ");
+  Serial.print(press_duration);
+  Serial.print("ms (");
+  Serial.print(release_index);
+  Serial.print(" samples)");
+  
+  if (release_index > 0) {
+    float press_sample_rate = release_index / (press_duration / 1000.0);
+    Serial.print(" | Sample rate: ");
+    Serial.print(press_sample_rate, 0);
+    Serial.print(" Hz");
+  }
+  Serial.println();
+  
+  Serial.print("Peak increase: +");
+  Serial.print(press_increase, 2);
+  Serial.print("g | Recovery: ");
+  Serial.print(recovery_decrease, 2);
+  Serial.print("g | Net: ");
+  if (net_change >= 0) Serial.print("+");
+  Serial.print(net_change, 2);
+  Serial.println("g");
+  
+  if (press_increase > 0.1) {
+    float recovery_ratio = recovery_decrease / press_increase;
+    float recovery_rate = 0;
+    if (recovery_duration > 0) {
+      recovery_rate = recovery_decrease / (recovery_duration / 1000.0);
+    }
+    
+    Serial.print("Recovery ratio: ");
+    Serial.print(recovery_ratio * 100, 1);
+    Serial.print("% | Recovery rate: ");
+    Serial.print(recovery_rate, 1);
+    Serial.println("g/s");
+    
+    // 判断
+    if (press_increase < 5.0 && recovery_ratio > 0.7) {
+      Serial.println("👆 Likely FINGER PRESS (small spike, good recovery)");
+    } else if (press_increase > 20.0 && recovery_ratio < 0.3) {
+      Serial.println("🖐️ Likely HAND PLACED (large increase, little recovery)");
+    } else {
+      Serial.println("❓ Mixed pattern");
+    }
+  }
+  
+  Serial.println(String(70, '=') + "\n");
+}
+
 void pureScale() {
   static bool b_newDataReady = 0;
   static float f_last_displayed = 0.0;  // Last displayed value
@@ -1855,7 +1841,7 @@ void loop() {
         } else if (b_tareByButton) {
           // Tare by button, ensure 500ms delay to avoid touch interference
           if (millis() - t_tareByButton > i_tareDelay) {
-            scale.tareNoDelay();
+            //scale.tareNoDelay();
             b_tareByButton = false;  // reset status
             Serial.println("Tare by button");
           }
