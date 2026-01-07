@@ -66,7 +66,8 @@ bool b_u8g2Sleep = true;
 unsigned long t_bootTare = 0;
 bool b_bootTare = false;
 int i_bootTareDelay = 1000;
-int i_tareDelay = 200;             //tare delay for button
+//int i_tareDelay = 200;             //tare delay for button
+int i_tareDelay = 0;             //tare delay 0ms for finger detection
 unsigned long t_tareByButton = 0;  //tare time stamp used by button to mimic delay
 bool b_tareByButton = false;
 unsigned long t_tareByBle = 0;
@@ -104,7 +105,7 @@ static const float MAX_TRACKING_ADJUSTMENT = 0.5;  // Maximum single adjustment
 
 static unsigned long t_last_status_display = 0;
 static const unsigned long STATUS_DISPLAY_INTERVAL = 5000;
-static bool b_weight_in_serial = true;
+static bool b_weight_in_serial = false;
 
 static int i_stable_count = 0;                     // Stable state counter
 static bool b_tracking_enabled = true;          // Tracking enable flag
@@ -177,7 +178,7 @@ const int autoTareInterval = 500;       //自动归零检测间隔（毫秒）
 const int autoStopInterval = 500;       //下液停止检测间隔（毫秒）
 const int scaleStableInterval = 500;    //稳定状态监测间隔（毫秒）
 const int timeOutInterval = 30 * 1000;  //超时检测间隔（毫秒）
-const int i_oled_print_interval = 0;    //oled刷新间隔（毫秒）
+const int i_oled_print_interval = 100;    //oled刷新间隔（毫秒）
 const int i_esp_now_interval = 100;     //espnow刷新间隔（毫秒）
 const int i_serial_print_interval = 0;  //称重输出间隔（毫秒）
 //flags 模式标识
