@@ -247,7 +247,7 @@ bool isFingerPress(int button) {
           sendBleButton(2, 1);
         }
         if (!b_menu && !b_calibration && (!deviceConnected || b_btnFuncWhileConnected)) {
-          if (millis() - t_menuExitTime > 500)
+          if (millis() - t_menuExitTime > 1000)
             // Check if enough time has passed since menu exit (500ms protection period)
             scaleTimer();
         }
@@ -1229,7 +1229,7 @@ void updateAdaptiveTracking(float current_weight) {
       }
       
       f_tracking_target += adjustment;
-    }
+   }
     
   } else {
     // Weight changed significantly - likely a real weight change
