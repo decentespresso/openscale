@@ -67,14 +67,14 @@ ButtonPressData circle_press_data = {0};
 ButtonPressData square_press_data = {0};
 
 // Two independent sets of configuration parameters
-#define CIRCLE_POST_RELEASE_DURATION 400      // Circle button post-release sampling duration(ms)
+#define CIRCLE_POST_RELEASE_DURATION 500      // Circle button post-release sampling duration(ms)
 #define CIRCLE_FINGER_PRESS_MIN_PEAK 3.0      // Circle button minimum peak change(g)
 #define CIRCLE_FINGER_PRESS_MAX_NET 2.0       // Circle button maximum net change(g)
 #define CIRCLE_FINGER_PRESS_MIN_RECOVERY 0.85 // Circle button minimum recovery ratio
 #define CIRCLE_FINGER_PRESS_MAX_PRESS_TIME 800 // Circle button maximum press time(ms)
 #define CIRCLE_FINGER_PRESS_MIN_TOTAL_TIME 300 // Circle button minimum total time(ms)
 
-#define SQUARE_POST_RELEASE_DURATION 400      // Square button post-release sampling duration(ms)
+#define SQUARE_POST_RELEASE_DURATION 500      // Square button post-release sampling duration(ms)
 #define SQUARE_FINGER_PRESS_MIN_PEAK 3.0      // Square button minimum peak change(g)
 #define SQUARE_FINGER_PRESS_MAX_NET 2.0       // Square button maximum net change(g)
 #define SQUARE_FINGER_PRESS_MIN_RECOVERY 0.85 // Square button minimum recovery ratio
