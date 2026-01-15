@@ -15,6 +15,7 @@
 #include "menu.h"
 #include "ble.h"
 #include "usbcomm.h"
+#include "finger_detection.h"
 //#include "wificomm.h"
 
 // Reads a boolean value from EEPROM with validation.
@@ -32,6 +33,7 @@ bool readBoolEEPROMWithValidation(int addr, bool defaultVal) {
   EEPROM.commit();
   return defaultVal;
 }
+
 
 //buttons
 
@@ -104,6 +106,9 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
         case BUTTON_CIRCLE:
           buttonCircle_Released();
           break;
+        case BUTTON_SQUARE:
+          buttonSquare_Released();
+          break;
       }
       break;
   }
@@ -131,17 +136,8 @@ void scaleTimer() {
 }
 
 void buttonCircle_Released() {
-  //trigger tare after released to avoid to judge where the tare should be placed.
-  if (!deviceConnected || b_btnFuncWhileConnected) {
-    b_weight_quick_zero = true;
-    t_tareByButton = millis();
-    b_tareByButton = true;
-  }
   Serial.println("O button released");
-  sendUsbButton(1, 1);
-  if (deviceConnected) {
-    sendBleButton(1, 1);
-  }
+  onButtonReleased(BUTTON_CIRCLE);
 }
 
 void buttonCircle_Pressed() {
@@ -166,40 +162,53 @@ void buttonCircle_Pressed() {
     //This will increment i_cal_weight by 1 and wrap around to 0 when it reaches 4, effectively keeping it within the range of 0 to 3.
     // return;
   }
+  if (!b_calibration) {
+    startPressSampling(BUTTON_CIRCLE);
+  }
+}
+void buttonSquare_Released() {
+  Serial.println("□ button released");
+  if (!b_calibration) { 
+    onButtonReleased(BUTTON_SQUARE);
+  }
 }
 
 void buttonSquare_Pressed() {
   if (b_showChargingUI && i_buttonBootDelay == 0) {
-    //change GPIO_power_on_with from BATTERY_CHARGING to enter scale loop
     GPIO_power_on_with = BUTTON_SQUARE;
   }
 
   if (b_menu) {
-    selectMenu();  // Select current menu item
+    selectMenu();
   }
   if (b_calibration) {
     i_button_cal_status++;
     Serial.print("i_button_cal_status:");
     Serial.println(i_button_cal_status);
-    //return;
   }
   if (deviceConnected && millis() - t_shutdownFailBle < 3000) {
     stopWebServer();
     stopWifi();
     b_powerOff = true;
   }
-  if (!b_menu && !b_calibration && (!deviceConnected || b_btnFuncWhileConnected)) {
-    if (millis() - t_menuExitTime > 500)
-      // Check if enough time has passed since menu exit (500ms protection period)
-      scaleTimer();
-  }
+  startPressSampling(BUTTON_SQUARE);
+}
 
-
-  Serial.println("[] button pressed");
-  sendUsbButton(2, 1);
-  if (deviceConnected) {
-    sendBleButton(2, 1);
-  }
+// Individually set sensitivity parameters for each button
+void setButtonPressConfig(int button, float min_peak, float max_net, 
+                         float min_recovery, unsigned long max_press_time,
+                         unsigned long min_total_time) {
+  // Can add code here to save configurations via EEPROM or other methods
+  // Currently using predefined macros, can be changed to variables later
+  Serial.print("Button config updated for ");
+  Serial.print(button == BUTTON_CIRCLE ? "Circle" : "Square");
+  Serial.print(": min_peak=");
+  Serial.print(min_peak);
+  Serial.print(", max_net=");
+  Serial.print(max_net);
+  Serial.print(", min_recovery=");
+  Serial.print(min_recovery);
+  Serial.println();
 }
 
 // void buttonCircle_Clicked() {
@@ -760,7 +769,7 @@ void updateAdaptiveTracking(float current_weight) {
       }
       
       f_tracking_target += adjustment;
-    }
+   }
     
   } else {
     // Weight changed significantly - likely a real weight change
@@ -891,6 +900,7 @@ void pureScale() {
   
   if (b_newDataReady) {
     float raw_weight = scale.getData();
+    updatePressSampling();
     f_current_raw_value = raw_weight; // Store for status display
     
     // Continuous temperature drift detection and compensation
@@ -1169,75 +1179,6 @@ void setManualStableValue(float value) {
   Serial.print("Manual stable value set: ");
   Serial.println(value, 4);
 }
-
-
-/*
-void pureScale() {
-  static boolean newDataReady = 0;
-  static boolean scaleStable = 0;
-  float f_weight_adc_raw = 0;
-  if (scale.update()) newDataReady = true;
-  if (newDataReady) {
-    f_weight_adc = scale.getData();
-    //Serial.println(f_weight_adc);
-    // circularBuffer[bufferIndex] = f_weight_adc;
-    // bufferIndex = (bufferIndex + 1) % windowLength;
-    // calculate moving average
-    // f_weight_smooth = 0;
-    // for (int i = 0; i < windowLength; i++) {
-    //   f_weight_smooth += circularBuffer[i];
-    // }
-    // f_weight_smooth /= windowLength;
-
-    // if (f_weight_smooth >= f_displayedValue - OledTolerance && f_weight_smooth <= f_displayedValue + OledTolerance) {
-    //   // scale value is within tolerance range, do nothing
-    //   // or weight is around 0, then set to 0.
-    //   if (f_weight_smooth > -0.1 && f_weight_smooth < 0.1)
-    //     f_displayedValue = 0.0;
-    // } else {
-    //   // scale value is outside tolerance range, update displayed value
-    //   f_displayedValue = f_weight_smooth;
-    //   // print result to serial monitor
-    // }
-
-    if (f_weight_adc >= -0.14 && f_weight_adc <= 0.14) {
-      f_displayedValue = 0.0;
-    } else {
-      // scale value is outside tolerance range, update displayed value
-      f_displayedValue = f_weight_adc;
-      // print result to serial monitor
-    }
-
-    f_weight_before_input = f_displayedValue;
-
-    //串口输出原始重量读数
-    // Adafruit_Sensor *mpu_accel;
-    // sensors_event_t a;
-    // mpu_accel = mpu.getAccelerometerSensor();
-    // mpu_accel->getEvent(&a);
-
-    dtostrf(f_displayedValue, 7, i_decimal_precision, c_weight);
-    if (b_weight_in_serial == true)
-      Serial.println(trim(c_weight));
-    newDataReady = false;
-  }
-  if (scale.getTareStatus()) {
-    //buzzer.beep(2, 50);
-    t_tareStatus = millis();
-    b_weight_quick_zero = false;
-  }
-  //记录咖啡粉时，将重量固定为0
-  if (b_weight_quick_zero || b_bootTare)
-    f_displayedValue = 0.0;
-
-  float ratio_temp = f_displayedValue / f_weight_dose;
-  if (ratio_temp < 0)
-    ratio_temp = 0.0;
-  if (f_weight_dose < 0.1)
-    ratio_temp = 0.0;
-  dtostrf(ratio_temp, 7, i_decimal_precision, c_brew_ratio);
-}
-*/
 
 void serialCommand() {
   if (Serial.available()) {
