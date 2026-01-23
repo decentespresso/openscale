@@ -71,9 +71,24 @@ class MyServerCallbacks : public BLEServerCallbacks {
 
     // re-advertising after connection lost
     u8g2.setPowerSave(0);
-    //Serial.println("ble 3");
 
-    delay(100);  // 推荐加一点延时再开始广播
+    delay(100);  // advertise after a short delay
+    
+    // maybe remove delay in future version or use somthing like this:
+    /*
+    void onDisconnect(BLEServer *pServer) {
+    deviceConnected = false;
+    restartAdvertising = true; // Just set the flag
+    }
+
+    void loop() {
+        if (restartAdvertising) {
+            delay(10); // Very short delay outside the callback is safer
+            pAdvertising->start();
+            restartAdvertising = false;
+            Serial.println("Advertising restarted safely in loop");
+        }
+    }*/
     pAdvertising->start();
     //Serial.println("ble 5");
   }
@@ -149,6 +164,11 @@ class MyCallbacks : public BLECharacteristicCallbacks {
     //this is what the esp32 received via ble
     Serial.print("Timer");
     Serial.print(millis());
+    /* 
+    millis() function returns an unsigned long. It will overflow (roll over back to zero) after approximately 49.7 days.
+    This will NOT overflow for 290,000 years:
+    uint64_t permanent_millis = esp_timer_get_time() / 1000; 
+    */
     Serial.print(" onWrite counter:");
     Serial.print(i_onWrite_counter++);
     Serial.print(" ");
