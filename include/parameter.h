@@ -14,6 +14,7 @@ unsigned long weightUsbNotifyInterval = 100;  // Interval at which to send weigh
 unsigned long weightTextNotifyInterval = 1000;
 int i_onWrite_counter = 0;
 unsigned long t_heartBeat = 0;
+unsigned long t_firstConnect = 0;
 bool b_requireHeartBeat = true;
 bool b_screenFlipped = false;
 bool b_timeOnTop = false;

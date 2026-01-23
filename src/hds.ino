@@ -1335,16 +1335,16 @@ void loop() {
     return;
   }
 
-  if (bleState == CONNECTED && b_requireHeartBeat) {
+  if (bleState == CONNECTED && b_requireHeartBeat && millis() - t_firstConnect > HEARTBEAT_TIMEOUT) {
     if (millis() - t_heartBeat > HEARTBEAT_TIMEOUT) {
       disconnectBLE();
-      t_heartBeat = millis() + 10000;
-      b_heartBeatIcon = false;
-    } else {
-      if (millis() - t_heartBeat < 1000)
-        b_heartBeatIcon = true;
-    }
+      t_heartBeat = millis() + 10000; //only disconnect after 10 seconds, avoid frequent disconnecting.
+    } 
   }
+  if (millis() - t_heartBeat < 1000)
+    b_heartBeatIcon = true;
+  else
+    b_heartBeatIcon = false;
 
   if (deviceConnected) {
     power_off(-1);  //reset power off timer
