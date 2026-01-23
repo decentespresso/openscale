@@ -20,7 +20,7 @@ void sendBleLedResponse();
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendBleGyro();
 #endif
-uint16_t connId = 0;
+uint16_t connId = 0xFFFF; // not set to 0 because 0 could be a valid client id.
 
 
 //ble
@@ -56,7 +56,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
   }
 
   void onDisconnect(BLEServer *pServer) {
-    connId = 0;
+    connId = 0xFFFF; // not set to 0 because 0 could be a valid client id
 
     deviceConnected = false;
     bleState = DISCONNECTED;
