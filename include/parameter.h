@@ -60,6 +60,7 @@ float f_up_battery;          //开机时电池电压
 unsigned long t_up_battery;  //开机到现在时间
 
 bool b_chargingOLED = true;
+bool b_heartBeatIcon = false; //debug ble heart icon
 unsigned long t_shutdownFailBle = 0;  //for popping up shut down fail due to ble is connected.
 bool b_shutdownFailBle = false;
 bool b_u8g2Sleep = true;
