@@ -1339,6 +1339,10 @@ void loop() {
     if (millis() - t_heartBeat > HEARTBEAT_TIMEOUT) {
       disconnectBLE();
       t_heartBeat = millis() + 10000;
+      b_heartBeatIcon = false;
+    } else {
+      if (millis() - t_heartBeat < 1000)
+        b_heartBeatIcon = true;
     }
   }
 
@@ -1555,6 +1559,7 @@ void updateOled() {
       drawBattery();
       drawButton();
       drawBle();
+      drawHeartBeat();
       drawTare();
       drawShutdownFail();
       drawAbout();
@@ -1720,6 +1725,11 @@ void drawBle() {
   } else {
     u8g2.drawXBM(0, 51, 10, 13, image_ble_disabled);
   }
+}
+
+void drawHeartBeat(){
+  if (b_heartBeatIcon)
+    u8g2.drawXBM(30, 51, 13, 13, image_heart_13x13);
 }
 
 void drawBattery() {
