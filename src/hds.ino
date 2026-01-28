@@ -1341,7 +1341,7 @@ void loop() {
       t_heartBeat = millis() + 10000; //only disconnect after 10 seconds, avoid frequent disconnecting.
     } 
   }
-  if (millis() - t_heartBeat < 1000)
+  if (millis() - t_heartBeat < 500)
     b_heartBeatIcon = true;
   else
     b_heartBeatIcon = false;
