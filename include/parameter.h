@@ -14,6 +14,7 @@ unsigned long weightUsbNotifyInterval = 100;  // Interval at which to send weigh
 unsigned long weightTextNotifyInterval = 1000;
 int i_onWrite_counter = 0;
 unsigned long t_heartBeat = 0;
+unsigned long t_firstConnect = 0;
 bool b_requireHeartBeat = true;
 bool b_screenFlipped = false;
 bool b_timeOnTop = false;
@@ -60,6 +61,7 @@ float f_up_battery;          //开机时电池电压
 unsigned long t_up_battery;  //开机到现在时间
 
 bool b_chargingOLED = true;
+bool b_heartBeatIcon = false; //debug ble heart icon
 unsigned long t_shutdownFailBle = 0;  //for popping up shut down fail due to ble is connected.
 bool b_shutdownFailBle = false;
 bool b_u8g2Sleep = true;

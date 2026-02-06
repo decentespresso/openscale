@@ -11,6 +11,8 @@ enum BleState {
 };
 BleState bleState = DISCONNECTED;
 const unsigned long HEARTBEAT_TIMEOUT = 5000;  // 5 seconds
+unsigned long t_lastDisconnectAttempt = 0;
+unsigned long t_lastDisconnectAttemptNotice = 0;
 
 //functions
 void sendBleVoltage();
@@ -18,7 +20,7 @@ void sendBleLedResponse();
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendBleGyro();
 #endif
-uint16_t connId = 0;
+uint16_t connId = 0xFFFF; // not set to 0 because 0 could be a valid client id.
 
 
 //ble
@@ -42,7 +44,9 @@ void encodeWeight(float weight, byte &byte1, byte &byte2) {
 class MyServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer *pServer) {
     connId = pServer->getConnId();  // 保存连接 ID
-    t_heartBeat = millis();
+    Serial.print("BLE connID is: ");
+    Serial.println(connId);
+    t_firstConnect = millis();
     bleState = CONNECTED;
     deviceConnected = true;
 #ifdef BUZZER
@@ -52,7 +56,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
   }
 
   void onDisconnect(BLEServer *pServer) {
-    connId = 0;
+    connId = 0xFFFF; // not set to 0 because 0 could be a valid client id
 
     deviceConnected = false;
     bleState = DISCONNECTED;
@@ -67,9 +71,24 @@ class MyServerCallbacks : public BLEServerCallbacks {
 
     // re-advertising after connection lost
     u8g2.setPowerSave(0);
-    //Serial.println("ble 3");
 
-    delay(100);  // 推荐加一点延时再开始广播
+    delay(100);  // advertise after a short delay
+    
+    // maybe remove delay in future version or use somthing like this:
+    /*
+    void onDisconnect(BLEServer *pServer) {
+    deviceConnected = false;
+    restartAdvertising = true; // Just set the flag
+    }
+
+    void loop() {
+        if (restartAdvertising) {
+            delay(10); // Very short delay outside the callback is safer
+            pAdvertising->start();
+            restartAdvertising = false;
+            Serial.println("Advertising restarted safely in loop");
+        }
+    }*/
     pAdvertising->start();
     //Serial.println("ble 5");
   }
@@ -145,6 +164,11 @@ class MyCallbacks : public BLECharacteristicCallbacks {
     //this is what the esp32 received via ble
     Serial.print("Timer");
     Serial.print(millis());
+    /* 
+    millis() function returns an unsigned long. It will overflow (roll over back to zero) after approximately 49.7 days.
+    This will NOT overflow for 290,000 years:
+    uint64_t permanent_millis = esp_timer_get_time() / 1000; 
+    */
     Serial.print(" onWrite counter:");
     Serial.print(i_onWrite_counter++);
     Serial.print(" ");
@@ -421,9 +445,18 @@ void ble_init() {
 }
 
 void disconnectBLE() {
-  if (deviceConnected && pServer->getConnectedCount() > 0) {
+  if (deviceConnected) {
     Serial.println("***No heartbeat for 5 seconds. Disconnecting BLE...***");
-    pServer->disconnect(0);  // 只有一台设备时可直接用 0
+    // Only try disconnecting every 5 seconds.
+    if (millis() - t_lastDisconnectAttempt < 5000) {
+      if (millis() - t_lastDisconnectAttemptNotice > 1000){
+        Serial.println("Disconnect attempt too frequent, skipping...");
+        t_lastDisconnectAttemptNotice = millis();
+      }
+      return;
+    }
+    t_lastDisconnectAttempt = millis();
+    pServer->disconnect(connId, 0x13); // must prove connID for proper disconnecting. 0x13 for disconnect from remote device ESP_GAP_BLE_UPDATE_CONN_PARAMS_ERR_REMOTE_DEVICE_DISCONN. 
   }
 }
 

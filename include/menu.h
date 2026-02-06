@@ -745,25 +745,6 @@ void calibration(int input) {
         }
         Serial.print("weight is ");
         Serial.println(d_weight);
-        if (abs(d_weight) < 5) {
-          u8g2.firstPage();
-          u8g2.setFont(FONT_S);
-          do {
-            // 2行
-            // FONT_M = u8g2_font_fub14_tn;
-            u8g2.drawUTF8(AC((char *)"No weight detected"), AM(),
-                          (char *)"No weight detected");
-          } while (u8g2.nextPage());
-#ifdef BUZZER
-          buzzer.off();
-#endif
-          delay(1000);
-          // reject the weight and exit
-          i_button_cal_status = 0;
-          b_calibration = false;
-          b_menu = true;
-          return;
-        }
         scale.refreshDataSet();  // refresh the dataset to be sure that the known
                                  // mass is measured correct
 

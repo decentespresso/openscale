@@ -177,7 +177,6 @@ void buttonSquare_Pressed() {
   if (b_showChargingUI && i_buttonBootDelay == 0) {
     GPIO_power_on_with = BUTTON_SQUARE;
   }
-
   if (b_menu) {
     selectMenu();
   }
@@ -186,7 +185,9 @@ void buttonSquare_Pressed() {
     Serial.print("i_button_cal_status:");
     Serial.println(i_button_cal_status);
   }
-  if (deviceConnected && millis() - t_shutdownFailBle < 3000) {
+  if (deviceConnected && millis() - t_shutdownFailBle < 3000 && !b_menu && millis() - t_menuExitTime > 1000) {
+    //millis() - t_menuExitTime > 1000 is to avoid instant Off when exiting menu.
+    Serial.println("Going to sleep now by SquarePress");
     stopWebServer();
     stopWifi();
     b_powerOff = true;
@@ -234,7 +235,7 @@ void setButtonPressConfig(int button, float min_peak, float max_net,
 void buttonCircle_DoubleClicked() {
   Serial.println("O button double clicked");
   if (!deviceConnected && !b_menu && !b_calibration) {
-    Serial.println("Going to sleep now.");
+    Serial.println("Going to sleep now by CircleDoubleClick");
     sendBlePowerOff(1);
     stopWebServer();
     stopWifi();
@@ -255,7 +256,7 @@ void buttonCircle_DoubleClicked() {
 void buttonSquare_DoubleClicked() {
   Serial.println("[] button double clicked");
   if (!deviceConnected && !b_menu && !b_calibration) {
-    Serial.println("Going to sleep now.");
+    Serial.println("Going to sleep now by SquareDoubleClick");
     sendBlePowerOff(2);
     stopWebServer();
     stopWifi();
@@ -1335,13 +1336,18 @@ void loop() {
     return;
   }
 
-  if (bleState == CONNECTED && b_requireHeartBeat) {
+  if (bleState == CONNECTED && b_requireHeartBeat && millis() - t_firstConnect > HEARTBEAT_TIMEOUT) {
     if (millis() - t_heartBeat > HEARTBEAT_TIMEOUT) {
       disconnectBLE();
-      t_heartBeat = millis() + 10000;
-    }
+      t_heartBeat = millis() + 10000; //only disconnect after 10 seconds, avoid frequent disconnecting.
+    } 
   }
-
+#ifdef HEARTBEATICON
+  if (millis() - t_heartBeat < 500)
+    b_heartBeatIcon = true;
+  else
+    b_heartBeatIcon = false;
+#endif
   if (deviceConnected) {
     power_off(-1);  //reset power off timer
   } else {
@@ -1407,6 +1413,7 @@ void loop() {
           stopWebServer();
           stopWifi();
           b_powerOff = true;  //deepsleep
+          Serial.println("Going to sleep now by BatteryFull");
         }
       }
     } else {
@@ -1555,6 +1562,7 @@ void updateOled() {
       drawBattery();
       drawButton();
       drawBle();
+      drawHeartBeat();
       drawTare();
       drawShutdownFail();
       drawAbout();
@@ -1566,7 +1574,8 @@ void updateOled() {
 }
 
 void drawShutdownFail() {
-  if (b_shutdownFailBle && millis() - t_shutdownFailBle < 3000) {
+  if (b_shutdownFailBle && millis() - t_shutdownFailBle < 3000 && millis() - t_menuExitTime > 1000) {
+    //millis() - t_menuExitTime > 1000 is to avoid showing ble connected press again to power off message
     u8g2.setFont(FONT_S);
     u8g2.setDrawColor(0);
     u8g2.drawBox(0, 0, 128, 64);
@@ -1720,6 +1729,11 @@ void drawBle() {
   } else {
     u8g2.drawXBM(0, 51, 10, 13, image_ble_disabled);
   }
+}
+
+void drawHeartBeat(){
+  if (b_heartBeatIcon)
+    u8g2.drawXBM(30, 51, 13, 13, image_heart_13x13);
 }
 
 void drawBattery() {
