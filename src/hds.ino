@@ -1645,41 +1645,47 @@ void drawWeight(float input) {
   u8g2.setFont(FONT_GRAM);
   u8g2.drawStr(x_gram, y - 5, "g");
   */
-
-  separateFloat(input);
-  char integerStr[10] = "-0";  // to save the - sign if the input is between -1 to 0
-  char decimalStr[10] = "0";
-  if (input >= 0 || input <= -1) {
-    dtostrf(i_weightInt, 7, 0, integerStr);  // Integer part, no decimal
-  }
-  dtostrf(i_weightFirstDecimal, 7, 0, decimalStr);
-
-  u8g2.setFont(FONT_TIMER);
-  int y_timer = u8g2.getMaxCharHeight();
-  u8g2.setFont(FONT_GRAM);
-  int gramWidth = u8g2.getUTF8Width("g");  // Width of the "g" character
-  u8g2.setFont(FONT_WEIGHT);
-  int integerWidth = u8g2.getUTF8Width(trim(integerStr));
-  int decimalWidth = u8g2.getUTF8Width(trim(decimalStr));
-  int decimalPointWidth = u8g2.getUTF8Width(".");
-  if (input <= -1000.0)
-    gramWidth = 0;
-  int x_integer = (128 - (integerWidth + decimalWidth + gramWidth + decimalPointWidth - 6 - 1)) / 2;
-  int x_decimalPoint = x_integer + integerWidth - 4;
-  int x_decimal = x_decimalPoint + decimalPointWidth - 4;
-  int x_gram = x_decimal + decimalWidth - 1;
-  int y = AT() - 15;  // Weight y when timer is shown.
-  if (b_timeOnTop)
-    y = AT() + 9;
-  if (String(sec2sec(stopWatch.elapsed())) == "0s") {
-    y = AT();  //Weight y when timer is hidden.
-  }
-  u8g2.drawStr(x_decimalPoint, y, ".");
-  u8g2.drawStr(x_integer, y, trim(integerStr));  // Assuming vertical position at 28, adjust as needed
-  u8g2.drawStr(x_decimal, y, trim(decimalStr));
-  if (input > -1000.0) {
+  if (input > OVER_WEIGHT){
     u8g2.setFont(FONT_GRAM);
-    u8g2.drawStr(x_gram, y - 5, "g");
+    u8g2.drawStr(AC((char *)"Over"), AT(), (char *)"Over");
+    u8g2.drawStr(AC((char *)"Weight"), AT() + 20, (char *)"Weight");
+  }
+  else {
+    separateFloat(input);
+    char integerStr[10] = "-0";  // to save the - sign if the input is between -1 to 0
+    char decimalStr[10] = "0";
+    if (input >= 0 || input <= -1) {
+      dtostrf(i_weightInt, 7, 0, integerStr);  // Integer part, no decimal
+    }
+    dtostrf(i_weightFirstDecimal, 7, 0, decimalStr);
+
+    u8g2.setFont(FONT_TIMER);
+    int y_timer = u8g2.getMaxCharHeight();
+    u8g2.setFont(FONT_GRAM);
+    int gramWidth = u8g2.getUTF8Width("g");  // Width of the "g" character
+    u8g2.setFont(FONT_WEIGHT);
+    int integerWidth = u8g2.getUTF8Width(trim(integerStr));
+    int decimalWidth = u8g2.getUTF8Width(trim(decimalStr));
+    int decimalPointWidth = u8g2.getUTF8Width(".");
+    if (input <= -1000.0)
+      gramWidth = 0;
+    int x_integer = (128 - (integerWidth + decimalWidth + gramWidth + decimalPointWidth - 6 - 1)) / 2;
+    int x_decimalPoint = x_integer + integerWidth - 4;
+    int x_decimal = x_decimalPoint + decimalPointWidth - 4;
+    int x_gram = x_decimal + decimalWidth - 1;
+    int y = AT() - 15;  // Weight y when timer is shown.
+    if (b_timeOnTop)
+      y = AT() + 9;
+    if (String(sec2sec(stopWatch.elapsed())) == "0s") {
+      y = AT();  //Weight y when timer is hidden.
+    }
+    u8g2.drawStr(x_decimalPoint, y, ".");
+    u8g2.drawStr(x_integer, y, trim(integerStr));  // Assuming vertical position at 28, adjust as needed
+    u8g2.drawStr(x_decimal, y, trim(decimalStr));
+    if (input > -1000.0) {
+      u8g2.setFont(FONT_GRAM);
+      u8g2.drawStr(x_gram, y - 5, "g");
+    }
   }
 }
 
