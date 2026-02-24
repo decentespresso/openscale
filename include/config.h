@@ -39,6 +39,8 @@
 #define WELCOME WELCOME1, FONT_EXTRACTION
 #define BUZZER_DURATION 5
 
+#define OVER_WEIGHT 1500
+
 #define PositiveTolerance 25  // positive tolerance range in grams
 #define NegativeTolerance 5   // negative tolerance range in grams
 #define OledTolerance 0.09
