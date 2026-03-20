@@ -51,6 +51,29 @@ Note: ADS1232_ADC configuration values has been moved to file config.h
 
 #define SIGNAL_TIMEOUT 100
 
+// Debug info structure
+struct ADS1232DebugInfo {
+  unsigned long timestamp;        // millis() when debug info was captured
+  long rawValue;                  // Latest raw 24-bit value read
+  long smoothedValue;             // Smoothed value after filtering
+  long tareOffset;                // Current tare offset
+  float conversionTime;           // Latest conversion time in ms
+  float sps;                      // Samples per second
+  int readIndex;                  // Current read index in dataset
+  int samplesInUse;              // Number of samples being averaged
+  bool dataOutOfRange;           // If data exceeded valid range
+  bool signalTimeout;            // If DOUT signal timed out
+  bool tareInProgress;           // If tare operation is running
+  int tareTimes;                 // Tare sample counter
+  long dataMin;                  // Min value in current dataset
+  long dataMax;                  // Max value in current dataset
+  long dataAvg;                  // Average of dataset
+  float dataStdDev;              // Standard deviation (noise indicator)
+};
+
+// Debug callback function type
+typedef void (*DebugCallback)(const ADS1232DebugInfo& info);
+
 class ADS1232_ADC {
 
 public:
@@ -93,10 +116,19 @@ public:
   void setReverseOutput();                    //reverse the output value
   void setChannelInUse(int channel);          //select channel from 0 or 1, channel 0 is default
   int getChannelInUse();                      //returns current channel number
+  
+  // Debug functions
+  void setDebugCallback(DebugCallback callback);  //set callback function for debug output
+  void setDebugEnabled(bool enabled);             //enable/disable debug mode
+  bool getDebugEnabled();                         //check if debug is enabled
+  void captureDebugInfo();                        //manually trigger debug info capture
+  ADS1232DebugInfo getDebugInfo();                //get current debug info without callback
 
 protected:
   void conversion24bit();                     //if conversion is ready: returns 24 bit data and starts the next conversion
   long smoothedData();                        //returns the smoothed data value calculated from the dataset
+  void calculateDebugStats(ADS1232DebugInfo& info); //calculate statistics for debug info
+  
   uint8_t sckPin;                             //ADS1232 pd_sck pin
   uint8_t doutPin;                            //ADS1232 dout pin
   uint8_t GAIN;                               //ADS1232 GAIN
@@ -130,6 +162,11 @@ protected:
   bool signalTimeoutFlag = 0;
   bool reverseVal = 0;
   bool dataWaiting = 0;
+  
+  // Debug members
+  bool debugEnabled = false;
+  DebugCallback debugCallback = nullptr;
+  long lastRawValue = 0;                      //store last raw value for debug
 };
 
 #endif
