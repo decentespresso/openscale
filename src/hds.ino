@@ -579,7 +579,7 @@ void setup() {
   bool _tare = true;  //电子秤初始化去皮，如果不想去皮则设为false
   //whether the scale will tare on start.
   scale.begin();
-  scale.setSamplesInUse(4);  //设置灵敏度
+  scale.setSamplesInUse(1);  //设置灵敏度 (SAMPLES=4 allows runtime change via hex cmd)
   scale.start(stabilizingtime, _tare);
   scale.setCalFactor(f_calibration_value);  //设置偏移量
   //set the calibration value
