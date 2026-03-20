@@ -11,6 +11,7 @@ void sendUsbVoltage();
 void sendUsbLedResponse();
 void sendUsbAdsDebug();
 void sendUsbAdsResetResponse(uint8_t mode, uint8_t status);
+void handleAdsReset(uint8_t mode);
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendUsbGyro();
 #endif
@@ -297,6 +298,15 @@ public:
       } else if (data[2] == 0x02) {
         Serial.println("ADS debug info via hex");
         sendUsbAdsDebug();
+      }
+    }
+    else if (data[1] == 0x26) {
+      // ADS1232 Reset command
+      if (data[2] <= 0x02) {
+        handleAdsReset(data[2]);
+      } else {
+        Serial.print("ADS reset: unknown mode 0x");
+        Serial.println(data[2], HEX);
       }
     }
   }
