@@ -18,6 +18,45 @@
 #include "finger_detection.h"
 //#include "wificomm.h"
 
+// ADS1232 Debug Callback - called every time a new conversion is ready
+void adsDebugCallback(const ADS1232DebugInfo& info) {
+  // This will be called frequently, so you may want to throttle output
+  static unsigned long lastDebugPrint = 0;
+  unsigned long now = millis();
+  
+  // Print debug info every 1000ms (adjust as needed)
+  if (now - lastDebugPrint >= 1000) {
+    Serial.println("=== ADS1232 Debug Info ===");
+    Serial.print("Timestamp: "); Serial.println(info.timestamp);
+    Serial.print("Raw Value: "); Serial.print(info.rawValue);
+    Serial.print(" | Smoothed: "); Serial.println(info.smoothedValue);
+    Serial.print("Tare Offset: "); Serial.println(info.tareOffset);
+    Serial.print("Conv Time: "); Serial.print(info.conversionTime, 3);
+    Serial.print("ms | SPS: "); Serial.println(info.sps, 2);
+    Serial.print("Samples: "); Serial.print(info.samplesInUse);
+    Serial.print(" | Read Index: "); Serial.println(info.readIndex);
+    
+    // Data statistics - useful for detecting noise/instability
+    Serial.print("Dataset - Min: "); Serial.print(info.dataMin);
+    Serial.print(" | Max: "); Serial.print(info.dataMax);
+    Serial.print(" | Avg: "); Serial.println(info.dataAvg);
+    Serial.print("Std Dev: "); Serial.print(info.dataStdDev, 2);
+    Serial.println(" (lower = more stable)");
+    
+    // Error flags
+    Serial.print("Flags - OutOfRange: "); Serial.print(info.dataOutOfRange);
+    Serial.print(" | SignalTimeout: "); Serial.print(info.signalTimeout);
+    Serial.print(" | Tare: "); Serial.print(info.tareInProgress);
+    if (info.tareInProgress) {
+      Serial.print(" ("); Serial.print(info.tareTimes); Serial.print("/"); Serial.print(DATA_SET); Serial.print(")");
+    }
+    Serial.println();
+    Serial.println("==========================");
+    
+    lastDebugPrint = now;
+  }
+}
+
 // Reads a boolean value from EEPROM with validation.
 // If the stored value is not 0 or 1 (i.e., invalid or uninitialized data),
 // it will be replaced with the provided default value.
@@ -545,6 +584,10 @@ void setup() {
   scale.setCalFactor(f_calibration_value);  //设置偏移量
   //set the calibration value
   //scale.setSamplesInUse(sample[i_sample]);  //设置灵敏度
+  
+  // Setup ADS1232 debug callback
+  scale.setDebugCallback(adsDebugCallback);
+  // Debug is off by default, enable with "adsdebug on" command
 
   // if (GPIO_power_on_with != BATTERY_CHARGING) {
   //   delay(500);
@@ -1755,4 +1798,6 @@ void drawDriftCompensationInfo() {
   snprintf(factorText, sizeof(factorText), "%.2f", f_displayedValue);
   u8g2.drawStr(80, 64, (char *)trim(factorText));
 }
+
+
 

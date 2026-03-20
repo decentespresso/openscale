@@ -303,6 +303,7 @@ void ADS1232_ADC::conversion24bit()  //read 24 bit data, store in dataset and st
   unsigned long data = 0;
   uint8_t dout;
   convRslt = 0;
+  dataOutOfRange = 0; // Reset flag each conversion
   if (SCK_DISABLE_INTERRUPTS) noInterrupts();
 
   for (uint8_t i = 0; i < (24 + GAIN); i++) {  //read 24 bit data + set gain and start next conversion
@@ -345,6 +346,8 @@ void ADS1232_ADC::conversion24bit()  //read 24 bit data, store in dataset and st
   if (data > 0) {
     convRslt++;
     dataSampleSet[readIndex] = (long)data;
+    lastRawValue = (long)data; // Store for debug
+    
     if (doTare) {
       if (tareTimes < DATA_SET) {
         tareTimes++;
@@ -355,6 +358,11 @@ void ADS1232_ADC::conversion24bit()  //read 24 bit data, store in dataset and st
         tareStatus = 1;
         convRslt++;
       }
+    }
+    
+    // Trigger debug callback if enabled
+    if (debugEnabled && debugCallback != nullptr) {
+      captureDebugInfo();
     }
   }
 }
@@ -519,3 +527,75 @@ void ADS1232_ADC::setChannelInUse(int channel) {
 int ADS1232_ADC::getChannelInUse() {
   return channelInUse;
 }
+
+// Debug functions implementation
+
+void ADS1232_ADC::setDebugCallback(DebugCallback callback) {
+  debugCallback = callback;
+}
+
+void ADS1232_ADC::setDebugEnabled(bool enabled) {
+  debugEnabled = enabled;
+}
+
+bool ADS1232_ADC::getDebugEnabled() {
+  return debugEnabled;
+}
+
+void ADS1232_ADC::calculateDebugStats(ADS1232DebugInfo& info) {
+  // Calculate min, max, and average of current dataset
+  long sum = 0;
+  long minVal = 0x7FFFFFFF; // Max positive long
+  long maxVal = 0;
+  
+  int numSamples = samplesInUse + IGN_HIGH_SAMPLE + IGN_LOW_SAMPLE;
+  
+  for (int i = 0; i < numSamples; i++) {
+    long val = dataSampleSet[i];
+    sum += val;
+    if (val < minVal) minVal = val;
+    if (val > maxVal) maxVal = val;
+  }
+  
+  info.dataMin = minVal;
+  info.dataMax = maxVal;
+  info.dataAvg = sum / numSamples;
+  
+  // Calculate standard deviation (measure of noise/stability)
+  long variance = 0;
+  for (int i = 0; i < numSamples; i++) {
+    long diff = dataSampleSet[i] - info.dataAvg;
+    variance += (diff * diff) / numSamples;
+  }
+  info.dataStdDev = sqrt(variance);
+}
+
+ADS1232DebugInfo ADS1232_ADC::getDebugInfo() {
+  ADS1232DebugInfo info;
+  
+  info.timestamp = millis();
+  info.rawValue = lastRawValue;
+  info.smoothedValue = smoothedData();
+  info.tareOffset = tareOffset;
+  info.conversionTime = conversionTime / 1000.0;
+  info.sps = (conversionTime > 0) ? (1000000.0 / conversionTime) : 0;
+  info.readIndex = readIndex;
+  info.samplesInUse = samplesInUse;
+  info.dataOutOfRange = dataOutOfRange;
+  info.signalTimeout = signalTimeoutFlag;
+  info.tareInProgress = doTare;
+  info.tareTimes = tareTimes;
+  
+  calculateDebugStats(info);
+  
+  return info;
+}
+
+void ADS1232_ADC::captureDebugInfo() {
+  if (debugCallback != nullptr) {
+    ADS1232DebugInfo info = getDebugInfo();
+    debugCallback(info);
+  }
+}
+
+
