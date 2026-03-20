@@ -128,6 +128,49 @@ def print_debug_info(info):
         print()
     print("==========================\n")
 
+def decode_ads_reset_response(data):
+    """Decode a 5-byte ADS reset response packet
+    
+    Packet format (5 bytes):
+    [0] = 0x03 (model byte)
+    [1] = 0x26 (reset response type)
+    [2] = mode (0x00=soft, 0x01=refresh, 0x02=refresh+tare)
+    [3] = status (0x00=success, 0x01=fail)
+    [4] = checksum (XOR of bytes 0-3)
+    """
+    if len(data) != 5:
+        print(f"Error: Expected 5 bytes, got {len(data)}")
+        return None
+    
+    # Verify header
+    if data[0] != 0x03 or data[1] != 0x26:
+        print(f"Error: Invalid header! Expected 0x03 0x26, got 0x{data[0]:02X} 0x{data[1]:02X}")
+        return None
+    
+    # Verify checksum
+    checksum = data[0] ^ data[1] ^ data[2] ^ data[3]
+    if checksum != data[4]:
+        print(f"Error: Checksum mismatch! Calculated: 0x{checksum:02X}, Got: 0x{data[4]:02X}")
+        return None
+    
+    mode_names = {0x00: "Soft reset", 0x01: "Reset + refresh", 0x02: "Reset + refresh + tare"}
+    
+    return {
+        'mode': data[2],
+        'mode_name': mode_names.get(data[2], f"Unknown (0x{data[2]:02X})"),
+        'status': data[3],
+        'success': data[3] == 0x00,
+    }
+
+def print_reset_response(info):
+    """Pretty print reset response"""
+    status_str = "SUCCESS" if info['success'] else "FAILED (DOUT timeout)"
+    print(f"\n=== ADS1232 Reset Response ===")
+    print(f"Mode:   0x{info['mode']:02X} ({info['mode_name']})")
+    print(f"Status: {status_str}")
+    print(f"==============================\n")
+
+
 if __name__ == "__main__":
     # When run directly, decode from stdin or command line
     if len(sys.argv) > 1:
