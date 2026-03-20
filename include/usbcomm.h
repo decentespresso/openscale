@@ -1,9 +1,15 @@
 #ifndef USBCOMM_H
 #define USBCOMM_H
 
+#include "ADS1232_ADC.h"
+
+// Forward declaration of scale object (defined in declare.h)
+extern ADS1232_ADC scale;
+
 //functions
 void sendUsbVoltage();
 void sendUsbLedResponse();
+void sendUsbAdsDebug();
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendUsbGyro();
 #endif
@@ -279,12 +285,27 @@ public:
     else if (data[1] == 0x22) {
       sendUsbVoltage();
     }
+    else if (data[1] == 0x25) {
+      // ADS1232 Debug commands
+      if (data[2] == 0x00) {
+        Serial.println("ADS debug off via hex");
+        scale.setDebugEnabled(false);
+      } else if (data[2] == 0x01) {
+        Serial.println("ADS debug on via hex");
+        scale.setDebugEnabled(true);
+      } else if (data[2] == 0x02) {
+        Serial.println("ADS debug info via hex");
+        sendUsbAdsDebug();
+      }
+    }
   }
     
   
 
 
   void handleStringCommand(String inputString) {
+    inputString.trim(); // Remove leading/trailing whitespace
+    Serial.printf("handling %s\n", inputString.c_str());
     if (inputString.startsWith("welcome ")) {
       //strcpy(str_welcome, inputString.substring(8).c_str());
       EEPROM.put(i_addr_welcome, inputString.substring(8));
@@ -418,6 +439,31 @@ public:
       //EEPROM.put(i_addr_debug, b_debug);
       //EEPROM.commit();
     }
+    
+    if (inputString.startsWith("adsd ")) {
+      String cmd = inputString.substring(5);
+      cmd.trim(); // Remove any whitespace/newlines
+      if (cmd == "on" || cmd == "1") {
+        scale.setDebugEnabled(true);
+        Serial.println("ADS1232 debug enabled");
+      } else if (cmd == "off" || cmd == "0") {
+        scale.setDebugEnabled(false);
+        Serial.println("ADS1232 debug disabled");
+      } else if (cmd == "info") {
+        // Get one-time debug snapshot without enabling continuous mode
+        ADS1232DebugInfo info = scale.getDebugInfo();
+        Serial.println("=== ADS1232 Debug Snapshot ===");
+        Serial.print("Raw: "); Serial.print(info.rawValue);
+        Serial.print(" | Smooth: "); Serial.print(info.smoothedValue);
+        Serial.print(" | Tare: "); Serial.println(info.tareOffset);
+        Serial.print("SPS: "); Serial.print(info.sps, 2);
+        Serial.print(" | StdDev: "); Serial.println(info.dataStdDev, 2);
+        Serial.print("Range: "); Serial.print(info.dataMin);
+        Serial.print(" to "); Serial.println(info.dataMax);
+        Serial.println("==============================");
+      }
+    }
+    
 #ifdef BUZZER
     if (inputString.startsWith("beep")) {  //蜂鸣器
       b_beep = !b_beep;
@@ -484,6 +530,128 @@ void sendUsbLedResponse() {
   buildLedResponsePacket(data);
   Serial.write(data, 7);
 }
+
+// Build ADS1232 debug packet
+// Packet format (39 bytes total):
+// [0]    = 0x03 (model byte)
+// [1]    = 0x25 (debug packet type)
+// [2-5]  = timestamp (4 bytes, unsigned long)
+// [6-9]  = rawValue (4 bytes, signed long)
+// [10-13] = smoothedValue (4 bytes, signed long)
+// [14-17] = tareOffset (4 bytes, signed long)
+// [18-19] = conversionTime (2 bytes, float * 100 to get 0.01ms precision)
+// [20-21] = sps (2 bytes, float * 100)
+// [22]    = readIndex (1 byte)
+// [23]    = samplesInUse (1 byte)
+// [24-27] = dataMin (4 bytes, signed long)
+// [28-31] = dataMax (4 bytes, signed long)
+// [32-35] = dataAvg (4 bytes, signed long)
+// [36-37] = dataStdDev (2 bytes, float * 10)
+// [38]    = flags (bits: 0=dataOutOfRange, 1=signalTimeout, 2=tareInProgress)
+// [39]    = tareTimes (1 byte)
+// [40]    = checksum (XOR of bytes 0-39)
+void buildAdsDebugPacket(byte data[41]) {
+  ADS1232DebugInfo info = scale.getDebugInfo();
+  
+  data[0] = 0x03;  // model byte
+  data[1] = 0x25;  // debug packet type
+  
+  // Timestamp (4 bytes)
+  data[2] = (info.timestamp >> 24) & 0xFF;
+  data[3] = (info.timestamp >> 16) & 0xFF;
+  data[4] = (info.timestamp >> 8) & 0xFF;
+  data[5] = info.timestamp & 0xFF;
+  
+  // Raw value (4 bytes, signed)
+  data[6] = (info.rawValue >> 24) & 0xFF;
+  data[7] = (info.rawValue >> 16) & 0xFF;
+  data[8] = (info.rawValue >> 8) & 0xFF;
+  data[9] = info.rawValue & 0xFF;
+  
+  // Smoothed value (4 bytes, signed)
+  data[10] = (info.smoothedValue >> 24) & 0xFF;
+  data[11] = (info.smoothedValue >> 16) & 0xFF;
+  data[12] = (info.smoothedValue >> 8) & 0xFF;
+  data[13] = info.smoothedValue & 0xFF;
+  
+  // Tare offset (4 bytes, signed)
+  data[14] = (info.tareOffset >> 24) & 0xFF;
+  data[15] = (info.tareOffset >> 16) & 0xFF;
+  data[16] = (info.tareOffset >> 8) & 0xFF;
+  data[17] = info.tareOffset & 0xFF;
+  
+  // Conversion time (2 bytes, float * 100 for 0.01ms precision)
+  uint16_t convTime = (uint16_t)(info.conversionTime * 100);
+  data[18] = (convTime >> 8) & 0xFF;
+  data[19] = convTime & 0xFF;
+  
+  // SPS (2 bytes, float * 100)
+  uint16_t sps = (uint16_t)(info.sps * 100);
+  data[20] = (sps >> 8) & 0xFF;
+  data[21] = sps & 0xFF;
+  
+  // Read index (1 byte)
+  data[22] = info.readIndex & 0xFF;
+  
+  // Samples in use (1 byte)
+  data[23] = info.samplesInUse & 0xFF;
+  
+  // Data min (4 bytes, signed)
+  data[24] = (info.dataMin >> 24) & 0xFF;
+  data[25] = (info.dataMin >> 16) & 0xFF;
+  data[26] = (info.dataMin >> 8) & 0xFF;
+  data[27] = info.dataMin & 0xFF;
+  
+  // Data max (4 bytes, signed)
+  data[28] = (info.dataMax >> 24) & 0xFF;
+  data[29] = (info.dataMax >> 16) & 0xFF;
+  data[30] = (info.dataMax >> 8) & 0xFF;
+  data[31] = info.dataMax & 0xFF;
+  
+  // Data avg (4 bytes, signed)
+  data[32] = (info.dataAvg >> 24) & 0xFF;
+  data[33] = (info.dataAvg >> 16) & 0xFF;
+  data[34] = (info.dataAvg >> 8) & 0xFF;
+  data[35] = info.dataAvg & 0xFF;
+  
+  // StdDev (2 bytes, float * 10 for 0.1 precision)
+  uint16_t stdDev = (uint16_t)(info.dataStdDev * 10);
+  data[36] = (stdDev >> 8) & 0xFF;
+  data[37] = stdDev & 0xFF;
+  
+  // Flags (1 byte: bit 0=dataOutOfRange, bit 1=signalTimeout, bit 2=tareInProgress)
+  data[38] = (info.dataOutOfRange ? 0x01 : 0x00) |
+             (info.signalTimeout ? 0x02 : 0x00) |
+             (info.tareInProgress ? 0x04 : 0x00);
+  
+  // Tare times (1 byte)
+  data[39] = info.tareTimes & 0xFF;
+  
+  // Checksum (XOR of all previous bytes)
+  byte checksum = 0;
+  for (int i = 0; i < 40; i++) {
+    checksum ^= data[i];
+  }
+  data[40] = checksum;
+}
+
+// Send ADS debug info via USB
+void sendUsbAdsDebug() {
+  byte data[41];
+  buildAdsDebugPacket(data);
+  Serial.write(data, 41);
+  
+  // Also print human-readable version to Serial
+  Serial.println("ADS Debug packet sent (41 bytes)");
+}
+
 #endif
+
+
+
+
+
+
+
 
 
