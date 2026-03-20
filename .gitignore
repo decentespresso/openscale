@@ -3,3 +3,13 @@
 .vscode/extensions.json
 .vscode/launch.json
 .DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
