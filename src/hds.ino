@@ -400,7 +400,6 @@ void setup() {
   usbCallbacks.setTrackingUpdateInterval = setTrackingUpdateInterval;
   usbCallbacks.buttonSquare_Pressed = buttonSquare_Pressed;
   usbCallbacks.buttonCircle_Pressed = buttonCircle_Pressed;
-  usbCallbacks.buttonCircle_Released = buttonCircle_Released;
   button_init();
   linkSubmenus();
   pinMode(BATTERY_CHARGING, INPUT_PULLUP);
