@@ -10,6 +10,7 @@ extern ADS1232_ADC scale;
 void sendUsbVoltage();
 void sendUsbLedResponse();
 void sendUsbAdsDebug();
+void sendUsbAdsResetResponse(uint8_t mode, uint8_t status);
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendUsbGyro();
 #endif
@@ -633,6 +634,23 @@ void buildAdsDebugPacket(byte data[41]) {
     checksum ^= data[i];
   }
   data[40] = checksum;
+}
+
+// Build ADS1232 reset response packet (5 bytes)
+// [0] = 0x03 (model), [1] = 0x26 (reset response), [2] = mode, [3] = status, [4] = checksum
+void buildAdsResetResponsePacket(byte data[5], uint8_t mode, uint8_t status) {
+  data[0] = 0x03;
+  data[1] = 0x26;
+  data[2] = mode;
+  data[3] = status;
+  // Checksum: XOR of bytes 0-3
+  data[4] = data[0] ^ data[1] ^ data[2] ^ data[3];
+}
+
+void sendUsbAdsResetResponse(uint8_t mode, uint8_t status) {
+  byte data[5];
+  buildAdsResetResponsePacket(data, mode, status);
+  Serial.write(data, 5);
 }
 
 // Send ADS debug info via USB
