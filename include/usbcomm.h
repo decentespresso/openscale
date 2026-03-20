@@ -677,9 +677,9 @@ void handleAdsReset(uint8_t mode) {
   scale.powerUp();
 
   // Step 2: Check if ADS came back (DOUT should go low when conversion ready)
-  unsigned long timeout = millis() + 500;
+  unsigned long startTime = millis();
   bool adsAlive = false;
-  while (millis() < timeout) {
+  while (millis() - startTime < 500) {
     if (digitalRead(scale.getDoutPin()) == LOW) {
       adsAlive = true;
       break;
