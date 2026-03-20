@@ -653,6 +653,55 @@ void sendUsbAdsResetResponse(uint8_t mode, uint8_t status) {
   Serial.write(data, 5);
 }
 
+// Handle ADS1232 reset command (0x26)
+// mode 0x00: soft reset (powerDown/powerUp only)
+// mode 0x01: reset + blocking refreshDataSet()
+// mode 0x02: reset + refreshDataSet() + tare
+void handleAdsReset(uint8_t mode) {
+  Serial.print("ADS reset mode 0x0");
+  Serial.println(mode);
+
+  // Step 1: Power cycle the ADS1232
+  scale.powerDown();
+  delay(500);
+  scale.powerUp();
+
+  // Step 2: Check if ADS came back (DOUT should go low when conversion ready)
+  unsigned long timeout = millis() + 500;
+  bool adsAlive = false;
+  while (millis() < timeout) {
+    if (digitalRead(scale.getDoutPin()) == LOW) {
+      adsAlive = true;
+      break;
+    }
+    yield();
+  }
+
+  if (!adsAlive) {
+    Serial.println("ADS reset FAILED: DOUT timeout");
+    sendUsbAdsResetResponse(mode, 0x01);
+    return;
+  }
+
+  Serial.println("ADS reset: DOUT went low, ADC alive");
+
+  // Step 3: Refresh dataset if mode >= 0x01
+  if (mode >= 0x01) {
+    scale.refreshDataSet();
+    Serial.println("ADS reset: dataset refreshed");
+  }
+
+  // Step 4: Tare + reset compensations if mode == 0x02
+  if (mode == 0x02) {
+    b_tareByBle = true;
+    t_tareByBle = millis();
+    Serial.println("ADS reset: tare requested");
+  }
+
+  sendUsbAdsResetResponse(mode, 0x00);
+  Serial.println("ADS reset complete");
+}
+
 // Send ADS debug info via USB
 void sendUsbAdsDebug() {
   byte data[41];
