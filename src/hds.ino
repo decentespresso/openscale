@@ -376,6 +376,8 @@ void wifi_init() {
   xTaskCreate(_wifi_init, "Wifi Init Task", configMINIMAL_STACK_SIZE + 2048, NULL, 0, NULL);
 }
 
+MyUsbCallbacks usbCallbacks;
+
 void setup() {
   Serial.begin(115200);
   while (!Serial)  // Wait for the Serial port to initialize (typically used in Arduino to ensure the Serial monitor is ready)
@@ -391,6 +393,14 @@ void setup() {
         i_buttonBootDelay = 0;
 
   Serial.println("EEPROM init success");
+  
+  // Initialize USB callback function pointers
+  usbCallbacks.setStableOutputThreshold = setStableOutputThreshold;
+  usbCallbacks.setTrackingThreshold = setTrackingThreshold;
+  usbCallbacks.setTrackingUpdateInterval = setTrackingUpdateInterval;
+  usbCallbacks.buttonSquare_Pressed = buttonSquare_Pressed;
+  usbCallbacks.buttonCircle_Pressed = buttonCircle_Pressed;
+  usbCallbacks.buttonCircle_Released = buttonCircle_Released;
   button_init();
   linkSubmenus();
   pinMode(BATTERY_CHARGING, INPUT_PULLUP);
@@ -1181,154 +1191,6 @@ void setManualStableValue(float value) {
   Serial.println(value, 4);
 }
 
-void serialCommand() {
-  if (Serial.available()) {
-    String inputString = Serial.readStringUntil('\n');
-    inputString.trim();
-
-    if (inputString.startsWith("welcome ")) {
-      //strcpy(str_welcome, inputString.substring(8).c_str());
-      EEPROM.put(i_addr_welcome, inputString.substring(8));
-      EEPROM.commit();
-    }
-#if defined(ACC_MPU6050) || defined(ACC_BMA400)
-    if (inputString.startsWith("gyro")) {
-      //strcpy(str_welcome, inputString.substring(8).c_str());
-      Serial.print("\tGyro:");
-      Serial.println(gyro_z());
-    }
-#endif
-
-    if (inputString.startsWith("cp ")) {  //手冲粉量
-      INPUTCOFFEEPOUROVER = inputString.substring(3).toFloat();
-      EEPROM.put(INPUTCOFFEEPOUROVER_ADDRESS, INPUTCOFFEEPOUROVER);
-      EEPROM.commit();
-    }
-
-    if (inputString.startsWith("v")) {  //电压
-      Serial.print("Battery Voltage:");
-      Serial.print(f_batteryVoltage);
-      //#ifndef ADS1115ADC
-      if (b_ads1115InitFail) {
-        int adcValue = analogRead(BATTERY_PIN);                              // Read the value from ADC
-        float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;  // Calculate voltage at ADC pin
-        Serial.print("\tADC Voltage:");
-        Serial.print(voltageAtPin);
-        Serial.print("\tbatteryCalibrationFactor: ");
-        Serial.print(f_batteryCalibrationFactor);
-      }
-      //#endif
-      Serial.print("\tlowBatteryCounterTotal: ");
-      Serial.print(i_lowBatteryCountTotal);
-    }
-
-    if (inputString.startsWith("vf ")) {                                                 // Command to set the battery voltage calibration factor
-      int adcValue = analogRead(BATTERY_PIN);                                            // Read the ADC value from the battery pin
-      float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;                // Calculate the voltage at the ADC pin
-      float batteryVoltage = voltageAtPin * dividerRatio;                                // Calculate the actual battery voltage using the voltage divider ratio
-      f_batteryCalibrationFactor = inputString.substring(3).toFloat() / batteryVoltage;  // Calculate the calibration factor from user input
-      EEPROM.put(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);           // Store the calibration factor in EEPROM
-
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
-      EEPROM.commit();  // Commit changes to EEPROM to save the calibration factor
-#endif
-
-      Serial.print("Battery Voltage Factor set to: ");  // Output the new calibration factor to the Serial Monitor
-      Serial.println(f_batteryCalibrationFactor);
-    }
-
-    if (inputString.startsWith("cv ")) {  //校准值
-      f_calibration_value = inputString.substring(3).toFloat();
-      EEPROM.put(i_addr_calibration_value, f_calibration_value);
-      EEPROM.commit();
-    }
-
-    if (inputString.startsWith("sot ")) {
-      setStableOutputThreshold(inputString.substring(4).toFloat());
-      //b_tempDisablePowerOff = true;
-    }
-
-    if (inputString.startsWith("tt ")) {
-      setTrackingThreshold(inputString.substring(3).toFloat());
-      //b_tempDisablePowerOff = true;
-    }
-
-    if (inputString.startsWith("tui ")) {
-      setTrackingUpdateInterval(inputString.substring(4).toFloat());
-      //b_tempDisablePowerOff = true;
-    }
-
-    if (inputString.startsWith("oled ")) {                     // 校准值
-      int i_oled_contrast = inputString.substring(5).toInt();  // Parse the input as an integer
-
-      // Clamp the contrast value between 0 and 255
-      i_oled_contrast = constrain(i_oled_contrast, 0, 255);
-
-      u8g2.setContrast(i_oled_contrast);
-
-      Serial.print("OLED contrast set to ");
-      Serial.println(i_oled_contrast);
-    }
-
-    if (inputString.startsWith("oledon")) {
-      u8g2.setPowerSave(0);
-    }
-    if (inputString.startsWith("oledoff")) {
-      u8g2.setPowerSave(1);
-    }
-
-    if (inputString.startsWith("reset")) {  //重启
-      reset();
-    }
-
-    if (inputString.startsWith("cal0")) {  //calibrate load cell 0
-      b_calibration = true;
-      i_calibration = 0;
-    }
-
-    if (inputString.startsWith("cal1")) {  ////calibrate load cell 1
-      b_calibration = true;
-      i_calibration = 1;
-    }
-
-    if (inputString.startsWith("ota")) {  //WiFi ota
-      wifiOta();
-    }
-
-    if (inputString.startsWith("tare")) {
-      buttonCircle_Pressed();
-      buttonCircle_Released();
-    }
-
-    if (inputString.startsWith("set")) {
-      buttonSquare_Pressed();
-    }
-
-    if (inputString.startsWith("debug ")) {
-      b_debug = inputString.substring(6).toInt();  // Parse the input as an integer
-      Serial.print("Debug:");
-      if (b_debug)
-        Serial.print("On ");
-      else
-        Serial.print("Off ");
-      //EEPROM.put(i_addr_debug, b_debug);
-      //EEPROM.commit();
-    }
-#ifdef BUZZER
-    if (inputString.startsWith("beep")) {  //蜂鸣器
-      b_beep = !b_beep;
-      EEPROM.put(i_addr_beep, b_beep);
-      EEPROM.commit();
-    }
-    // Send the updated values via USB serial
-    Serial.print("\tBuzzer:");
-    if (b_beep)
-      Serial.println("On");
-    else
-      Serial.println("Off");
-#endif
-  }
-}
 
 void loop() {
   if (b_powerOff){
@@ -1361,7 +1223,6 @@ void loop() {
     while (Serial.available() && len < sizeof(data)) {
       data[len++] = Serial.read();
     }
-    MyUsbCallbacks usbCallbacks;
     usbCallbacks.onWrite(data, len);  // 调用 onWrite 函数处理串口数据
   }
 
@@ -1895,3 +1756,4 @@ void drawDriftCompensationInfo() {
   snprintf(factorText, sizeof(factorText), "%.2f", f_displayedValue);
   u8g2.drawStr(80, 64, (char *)trim(factorText));
 }
+
