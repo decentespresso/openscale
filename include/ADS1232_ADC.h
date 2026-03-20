@@ -113,6 +113,7 @@ public:
   bool getDataSetStatus();                    //returns 'true' when the whole dataset has been filled up with conversions, i.e. after a reset/restart
   float getNewCalibration(float known_mass);  //returns and sets a new calibration value (calFactor) based on a known mass input
   bool getSignalTimeoutFlag();                //returns 'true' if it takes longer time then 'SIGNAL_TIMEOUT' for the dout pin to go low after a new conversion is started
+  uint8_t getDoutPin();                       //returns the DOUT pin number
   void setReverseOutput();                    //reverse the output value
   void setChannelInUse(int channel);          //select channel from 0 or 1, channel 0 is default
   int getChannelInUse();                      //returns current channel number

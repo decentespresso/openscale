@@ -504,6 +504,10 @@ bool ADS1232_ADC::getSignalTimeoutFlag() {
   return signalTimeoutFlag;
 }
 
+uint8_t ADS1232_ADC::getDoutPin() {
+  return doutPin;
+}
+
 //reverse the output value (flip positive/negative value)
 //tare/zero-offset must be re-set after calling this.
 void ADS1232_ADC::setReverseOutput() {
