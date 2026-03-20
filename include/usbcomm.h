@@ -16,7 +16,6 @@ public:
   void (*setTrackingUpdateInterval)(float);
   void (*buttonSquare_Pressed)();
   void (*buttonCircle_Pressed)();
-  void (*buttonCircle_Released)();
 
   uint8_t calculateChecksum(uint8_t *data, size_t len) {
     uint8_t xorSum = 0;
@@ -59,7 +58,7 @@ public:
       }
       Serial.print(data[i], HEX);  // 以 HEX 格式打印字节
     }
-    Serial.print(" ");
+    Serial.println(" ");
 
     if (data[0] != 0x03) {
       String input = String((char *)data);
@@ -397,17 +396,16 @@ public:
       i_calibration = 1;
     }
 
-    if (inputString.startsWith("ota")) {  //WiFi ota
-      wifiOta();
-    }
-
     if (inputString.startsWith("tare")) {
-      buttonCircle_Pressed();
-      buttonCircle_Released();
+      if (buttonCircle_Pressed != NULL) {
+        buttonCircle_Pressed();
+      }
     }
 
     if (inputString.startsWith("set")) {
-      buttonSquare_Pressed();
+      if (buttonSquare_Pressed != NULL) {
+        buttonSquare_Pressed();
+      }
     }
 
     if (inputString.startsWith("debug ")) {
