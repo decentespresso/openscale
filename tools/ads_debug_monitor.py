@@ -10,7 +10,7 @@ import serial
 import time
 import sys
 import argparse
-from decode_ads_debug import decode_ads_debug_packet, print_debug_info
+from decode_ads_debug import decode_ads_debug_packet, print_debug_info, decode_ads_reset_response, print_reset_response
 
 def calculate_checksum(data):
     """Calculate XOR checksum for command"""
@@ -37,6 +37,120 @@ def send_debug_command(ser, command_type):
     print(f"Sent: {cmd_names.get(command_type, 'UNKNOWN')} ({' '.join(f'{b:02X}' for b in cmd)})")
     
     return command_type == 2  # Return True if we expect a response
+
+def send_reset_command(ser, mode):
+    """
+    Send ADS reset command to scale
+    
+    Args:
+        ser: Serial port object
+        mode: 0=soft reset, 1=reset+refresh, 2=reset+refresh+tare
+    """
+    cmd = bytes([0x03, 0x26, mode])
+    checksum = calculate_checksum(cmd)
+    cmd += bytes([checksum])
+    
+    ser.write(cmd)
+    
+    mode_names = {0: "SOFT RESET", 1: "RESET + REFRESH", 2: "RESET + REFRESH + TARE"}
+    print(f"Sent: {mode_names.get(mode, 'UNKNOWN')} ({' '.join(f'{b:02X}' for b in cmd)})")
+
+def send_samples_command(ser, sample_count):
+    """
+    Send samples-in-use command to scale
+    
+    Args:
+        ser: Serial port object
+        sample_count: 1, 2, or 4
+    """
+    # Firmware mapping: 0x00=1, 0x01=2, 0x03=4
+    count_to_byte = {1: 0x00, 2: 0x01, 4: 0x03}
+    mode = count_to_byte[sample_count]
+    
+    cmd = bytes([0x03, 0x1D, mode])
+    checksum = calculate_checksum(cmd)
+    cmd += bytes([checksum])
+    
+    ser.write(cmd)
+    print(f"Sent: SET SAMPLES={sample_count} ({' '.join(f'{b:02X}' for b in cmd)})")
+
+def read_serial_text(ser, timeout=1.0):
+    """
+    Read and print any text/raw data from serial for a given duration.
+    Useful for seeing firmware log output after fire-and-forget commands.
+    
+    Args:
+        ser: Serial port object
+        timeout: How long to listen in seconds
+    """
+    start_time = time.time()
+    output = bytearray()
+    while time.time() - start_time < timeout:
+        if ser.in_waiting > 0:
+            data = ser.read(ser.in_waiting)
+            output.extend(data)
+        time.sleep(0.01)
+    
+    if output:
+        # Try to decode as text, fall back to hex
+        try:
+            text = output.decode('utf-8', errors='replace').strip()
+            if text:
+                print(f"Firmware: {text}")
+        except Exception:
+            print(f"Firmware (hex): {' '.join(f'{b:02X}' for b in output)}")
+
+def find_reset_response(buffer):
+    """
+    Search buffer for reset response packet (0x03 0x26 ... 5 bytes total)
+    
+    Returns:
+        tuple: (packet_data, remaining_buffer) or (None, buffer)
+    """
+    for i in range(len(buffer) - 1):
+        if buffer[i] == 0x03 and buffer[i+1] == 0x26:
+            if len(buffer) >= i + 5:
+                packet = buffer[i:i+5]
+                remaining = buffer[i+5:]
+                return (packet, remaining)
+            else:
+                return (None, buffer)
+    
+    if len(buffer) > 0:
+        return (None, buffer[-1:])
+    return (None, buffer)
+
+def read_reset_response(ser, timeout=5.0):
+    """
+    Read and decode reset response from serial port.
+    Uses longer default timeout since reset includes 500ms power-down + 500ms DOUT wait.
+    
+    Args:
+        ser: Serial port object
+        timeout: Timeout in seconds
+        
+    Returns:
+        dict: Decoded reset response or None if timeout/error
+    """
+    buffer = bytearray()
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        if ser.in_waiting > 0:
+            data = ser.read(ser.in_waiting)
+            buffer.extend(data)
+            
+            packet, buffer = find_reset_response(buffer)
+            if packet:
+                info = decode_ads_reset_response(packet)
+                return info
+        
+        time.sleep(0.01)
+    
+    print(f"Timeout waiting for reset response (received {len(buffer)} bytes)")
+    if len(buffer) > 0:
+        print(f"Buffer: {' '.join(f'{b:02X}' for b in buffer[:20])}...")
+    return None
 
 def find_debug_packet(buffer):
     """
@@ -160,11 +274,15 @@ def interactive_mode(ser):
     """
     print("\n=== Interactive Mode ===")
     print("Commands:")
-    print("  on      - Enable debug mode")
-    print("  off     - Disable debug mode")
-    print("  info    - Get debug info")
-    print("  monitor - Start continuous monitoring")
-    print("  quit    - Exit")
+    print("  on       - Enable debug mode")
+    print("  off      - Disable debug mode")
+    print("  info     - Get debug info")
+    print("  monitor  - Start continuous monitoring")
+    print("  reset 0    - ADS soft reset (power cycle only)")
+    print("  reset 1    - ADS reset + refresh dataset")
+    print("  reset 2    - ADS reset + refresh + tare")
+    print("  samples N  - Set samples in use (1, 2, or 4)")
+    print("  quit       - Exit")
     print()
     
     try:
@@ -193,8 +311,35 @@ def interactive_mode(ser):
                 except ValueError:
                     interval = 1.0
                 monitor_mode(ser, interval)
+            elif cmd.startswith("reset"):
+                parts = cmd.split()
+                if len(parts) == 2 and parts[1] in ("0", "1", "2"):
+                    mode = int(parts[1])
+                    if ser.in_waiting > 0:
+                        ser.read(ser.in_waiting)
+                    send_reset_command(ser, mode)
+                    print("Waiting for response...")
+                    info = read_reset_response(ser, timeout=5.0)
+                    if info:
+                        print_reset_response(info)
+                    else:
+                        print("No response received\n")
+                else:
+                    print("Usage: reset <0|1|2>")
+                    print("  0 = Soft reset (power cycle only)")
+                    print("  1 = Reset + refresh dataset")
+                    print("  2 = Reset + refresh + tare\n")
+            elif cmd.startswith("samples"):
+                parts = cmd.split()
+                if len(parts) == 2 and parts[1] in ("1", "2", "4"):
+                    if ser.in_waiting > 0:
+                        ser.read(ser.in_waiting)
+                    send_samples_command(ser, int(parts[1]))
+                    read_serial_text(ser)
+                else:
+                    print("Usage: samples <1|2|4>\n")
             elif cmd == "help":
-                print("Commands: on, off, info, monitor, quit")
+                print("Commands: on, off, info, monitor, reset <0|1|2>, samples <1|2|4>, quit")
             elif cmd == "":
                 continue
             else:
@@ -223,6 +368,15 @@ Examples:
   
   # Enable debug mode and exit
   python ads_debug_monitor.py /dev/cu.wchusbserial10 --debug-on
+  
+  # ADS reset (soft)
+  python ads_debug_monitor.py /dev/cu.wchusbserial10 --reset 0
+  
+  # ADS reset + refresh + tare
+  python ads_debug_monitor.py /dev/cu.wchusbserial10 --reset 2
+  
+  # Set samples in use to 1
+  python ads_debug_monitor.py /dev/cu.wchusbserial10 --samples 1
         """
     )
     
@@ -233,6 +387,10 @@ Examples:
     parser.add_argument('--interactive', action='store_true', help='Interactive command mode')
     parser.add_argument('--debug-on', action='store_true', help='Enable debug mode and exit')
     parser.add_argument('--debug-off', action='store_true', help='Disable debug mode and exit')
+    parser.add_argument('--reset', type=int, choices=[0, 1, 2], metavar='MODE',
+                        help='ADS reset: 0=soft, 1=refresh, 2=refresh+tare')
+    parser.add_argument('--samples', type=int, choices=[1, 2, 4], metavar='N',
+                        help='Set samples in use (1, 2, or 4)')
     
     args = parser.parse_args()
     
@@ -247,7 +405,24 @@ Examples:
         sys.exit(1)
     
     try:
-        if args.debug_on:
+        if args.samples is not None:
+            if ser.in_waiting > 0:
+                ser.read(ser.in_waiting)
+            send_samples_command(ser, args.samples)
+            read_serial_text(ser)
+        elif args.reset is not None:
+            if ser.in_waiting > 0:
+                ser.read(ser.in_waiting)
+            send_reset_command(ser, args.reset)
+            print("Waiting for response...")
+            info = read_reset_response(ser, timeout=5.0)
+            if info:
+                print_reset_response(info)
+                sys.exit(0 if info['success'] else 1)
+            else:
+                print("No response received")
+                sys.exit(1)
+        elif args.debug_on:
             send_debug_command(ser, 1)  # DEBUG ON
             print("Debug mode enabled")
         elif args.debug_off:
