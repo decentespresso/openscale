@@ -188,13 +188,17 @@ class MyCallbacks : public BLECharacteristicCallbacks {
       Serial.print(" ");
       if (data[0] == 0x03) {
         //check if it's a decent scale message
+
+        // Validate XOR checksum on all incoming commands.
+        // Rejects corrupted packets before they can trigger unintended actions
+        // (e.g. power off, tare, calibration, system reset).
+        if (!validateChecksum(data, len)) {
+          Serial.println("Invalid checksum. Ignoring command.");
+          return;
+        }
+
         if (data[1] == 0x0F) {
           //taring
-          if (validateChecksum(data, len)) {
-            Serial.println("Valid checksum for tare operation. Taring");
-          } else {
-            Serial.println("Invalid checksum for tare operation.");
-          }
           b_tareByBle = true;
           t_tareByBle = millis();
           if (data[5] == 0x00) {
