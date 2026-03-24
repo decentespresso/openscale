@@ -47,6 +47,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
     Serial.print("BLE connID is: ");
     Serial.println(connId);
     t_firstConnect = millis();
+    t_heartBeat = millis();
     bleState = CONNECTED;
     deviceConnected = true;
 #ifdef BUZZER
