@@ -73,7 +73,9 @@ int i_tareDelay = 0;             //tare delay 0ms for finger detection
 unsigned long t_tareByButton = 0;  //tare time stamp used by button to mimic delay
 bool b_tareByButton = false;
 unsigned long t_tareByBle = 0;
+uint8_t i_remoteTareRequests = 0;
 bool b_tareByBle = false;
+portMUX_TYPE remoteTareMux = portMUX_INITIALIZER_UNLOCKED;
 unsigned long t_tareStatus = 0;  //tare done time stamp
 unsigned long t_power_off;       //关机倒计时
 bool b_powerOff = false;
@@ -83,6 +85,35 @@ unsigned long t_power_off_gyro = 0;  //侧放关机倒计时
 unsigned long t_button_pressed;  //进入萃取模式的时间点
 unsigned long t_temp;            //上次更新温度和度数时间
 float f_temp_tare = 0;
+
+void requestRemoteTare() {
+  unsigned long now = millis();
+  portENTER_CRITICAL(&remoteTareMux);
+  if (i_remoteTareRequests < 255) {
+    i_remoteTareRequests++;
+  }
+  b_tareByBle = true;
+  t_tareByBle = now;
+  portEXIT_CRITICAL(&remoteTareMux);
+}
+
+bool hasRemoteTareRequest() {
+  bool hasRequest;
+  portENTER_CRITICAL(&remoteTareMux);
+  hasRequest = i_remoteTareRequests > 0;
+  portEXIT_CRITICAL(&remoteTareMux);
+  return hasRequest;
+}
+
+uint8_t consumeRemoteTareRequests() {
+  uint8_t requests;
+  portENTER_CRITICAL(&remoteTareMux);
+  requests = i_remoteTareRequests;
+  i_remoteTareRequests = 0;
+  b_tareByBle = false;
+  portEXIT_CRITICAL(&remoteTareMux);
+  return requests;
+}
 // int i_sample = 0;       //采样数0-7
 // int i_sample_step = 0;  //设置采样数的第几步
 int i_icon = 0;  //充电指示电量数字0-6
