@@ -125,10 +125,22 @@ void print_wakeup_reason() {
         GPIO_power_on_with = BUTTON_CIRCLE;
         Serial.println("Only GPIO " + String(BUTTON_CIRCLE));
         break;                                                                                                                                                                                                                                           // GPIO 33
-      case BUTTON_PIN_BITMASK(BATTERY_CHARGING) | BUTTON_PIN_BITMASK(BUTTON_SQUARE): Serial.println("Both GPIO " + String(BATTERY_CHARGING) + " + " + String(BUTTON_SQUARE)); break;                                                                     // GPIO 27 + 32
-      case BUTTON_PIN_BITMASK(BATTERY_CHARGING) | BUTTON_PIN_BITMASK(BUTTON_CIRCLE): Serial.println("Both GPIO " + String(BATTERY_CHARGING) + " + " + String(BUTTON_CIRCLE)); break;                                                                     // GPIO 27 + 33
-      case BUTTON_PIN_BITMASK(BUTTON_SQUARE) | BUTTON_PIN_BITMASK(BUTTON_CIRCLE): Serial.println("Both GPIO " + String(BUTTON_SQUARE) + " + " + String(BUTTON_CIRCLE)); break;                                                                           // GPIO 32 + 33
-      case BUTTON_PIN_BITMASK(BATTERY_CHARGING) | BUTTON_PIN_BITMASK(BUTTON_SQUARE) | BUTTON_PIN_BITMASK(BUTTON_CIRCLE): Serial.println("All GPIO " + String(BATTERY_CHARGING) + " + " + String(BUTTON_SQUARE) + " + " + String(BUTTON_CIRCLE)); break;  // GPIO 27 + 32 + 33
+      case BUTTON_PIN_BITMASK(BATTERY_CHARGING) | BUTTON_PIN_BITMASK(BUTTON_SQUARE):
+        GPIO_power_on_with = BUTTON_SQUARE;
+        Serial.println("Both GPIO " + String(BATTERY_CHARGING) + " + " + String(BUTTON_SQUARE));
+        break;  // GPIO 27 + 32
+      case BUTTON_PIN_BITMASK(BATTERY_CHARGING) | BUTTON_PIN_BITMASK(BUTTON_CIRCLE):
+        GPIO_power_on_with = BUTTON_CIRCLE;
+        Serial.println("Both GPIO " + String(BATTERY_CHARGING) + " + " + String(BUTTON_CIRCLE));
+        break;  // GPIO 27 + 33
+      case BUTTON_PIN_BITMASK(BUTTON_SQUARE) | BUTTON_PIN_BITMASK(BUTTON_CIRCLE):
+        GPIO_power_on_with = BUTTON_SQUARE;
+        Serial.println("Both GPIO " + String(BUTTON_SQUARE) + " + " + String(BUTTON_CIRCLE));
+        break;  // GPIO 32 + 33
+      case BUTTON_PIN_BITMASK(BATTERY_CHARGING) | BUTTON_PIN_BITMASK(BUTTON_SQUARE) | BUTTON_PIN_BITMASK(BUTTON_CIRCLE):
+        GPIO_power_on_with = BUTTON_SQUARE;
+        Serial.println("All GPIO " + String(BATTERY_CHARGING) + " + " + String(BUTTON_SQUARE) + " + " + String(BUTTON_CIRCLE));
+        break;  // GPIO 27 + 32 + 33
       default: Serial.println("Unknown pin"); break;
     }
   }

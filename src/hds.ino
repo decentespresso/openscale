@@ -948,8 +948,32 @@ float applyStableOutput(float current_value) {
 void pureScale() {
   static bool b_newDataReady = 0;
   static float f_last_displayed = 0.0;  // Last displayed value
-  
-  if (scale.update()) b_newDataReady = true;
+  static unsigned long t_lastScaleData = 0;
+  static unsigned long t_lastScaleRecovery = 0;
+
+  if (t_lastScaleData == 0) {
+    t_lastScaleData = millis();
+  }
+
+  if (scale.update()) {
+    b_newDataReady = true;
+    t_lastScaleData = millis();
+  } else if (scale.getSignalTimeoutFlag() &&
+             millis() - t_lastScaleData > 1500 &&
+             millis() - t_lastScaleRecovery > 5000) {
+    Serial.println("Scale ADC timeout. Power cycling ADC.");
+    scale.powerDown();
+    delay(5);
+    scale.powerUp();
+    scale.tareNoDelay();
+    resetTracking();
+    resetStableOutput();
+    f_driftCompensation = 0.0;
+    f_displayedValue = 0.0;
+    dtostrf(f_displayedValue, 7, i_decimal_precision, c_weight);
+    t_lastScaleRecovery = millis();
+    t_lastScaleData = millis();
+  }
   
   if (b_newDataReady) {
     float raw_weight = scale.getData();
@@ -1306,17 +1330,29 @@ void loop() {
           b_showChargingUI = true;                                                                                  //show charging ui
         } else {
           b_showChargingUI = false;
-          if (f_batteryVoltage > 4.1) {
-            //charging complete
-            Serial.println("Charging compelete.");
+          bool b_usbDisconnected = false;
+#ifdef USB_DET
+          b_usbDisconnected = digitalRead(USB_DET) == HIGH;
+#endif
+          if (b_usbDisconnected) {
+            Serial.println("USB unplugged. Entering scale mode.");
+            GPIO_power_on_with = BUTTON_SQUARE;
+            b_is_charging = false;
+            scale.powerUp();
+            scale.tareNoDelay();
           } else {
-            //charging not complete, but the serial maynot be ouput cause usb unplugged.
-            Serial.println("USB Unplugged, charging not compelete.");
+            if (f_batteryVoltage > 4.1) {
+              //charging complete
+              Serial.println("Charging complete.");
+            } else {
+              //charging not complete, but the serial maynot be ouput cause usb unplugged.
+              Serial.println("Charging stopped before full.");
+            }
+            stopWebServer();
+            stopWifi();
+            b_powerOff = true;  //deepsleep
+            Serial.println("Going to sleep now by BatteryFull");
           }
-          stopWebServer();
-          stopWifi();
-          b_powerOff = true;  //deepsleep
-          Serial.println("Going to sleep now by BatteryFull");
         }
       }
     } else {
