@@ -81,8 +81,7 @@ public:
       } else {
         Serial.println("Invalid checksum for tare operation.");
       }
-      b_tareByBle = true;
-      t_tareByBle = millis();
+      requestRemoteTare();
       if (data[5] == 0x00) {
         /*
         Tare the scale by sending "030F000000000C" (old version, disables heartbeat)
@@ -703,8 +702,7 @@ void handleAdsReset(uint8_t mode) {
 
   // Step 4: Tare + reset compensations if mode == 0x02
   if (mode == 0x02) {
-    b_tareByBle = true;
-    t_tareByBle = millis();
+    requestRemoteTare();
     Serial.println("ADS reset: tare requested");
   }
 
@@ -723,12 +721,4 @@ void sendUsbAdsDebug() {
 }
 
 #endif
-
-
-
-
-
-
-
-
 
