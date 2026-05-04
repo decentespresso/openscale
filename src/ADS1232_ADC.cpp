@@ -10,7 +10,7 @@
 #include <Arduino.h>
 #include "ADS1232_ADC.h"
 
-ADS1232_ADC::ADS1232_ADC(uint8_t dout, uint8_t sck, uint8_t pdwn, uint8_t a0)  //constructor
+ADS1232_ADC::ADS1232_ADC(uint8_t dout, uint8_t sck, uint8_t pdwn, int8_t a0)  //constructor
 {
   doutPin = dout;
   sckPin = sck;
@@ -38,7 +38,7 @@ void ADS1232_ADC::begin() {
   pinMode(sckPin, OUTPUT);
   pinMode(doutPin, INPUT);
   pinMode(pdwnPin, OUTPUT);
-  if(a0Pin != -1)
+  if (a0Pin != -1)
     pinMode(a0Pin, OUTPUT); // Set A0 pin as OUTPUT
 
   setGain(128);
@@ -50,15 +50,17 @@ void ADS1232_ADC::begin(uint8_t gain) {
   pinMode(sckPin, OUTPUT);
   pinMode(doutPin, INPUT);
   pinMode(pdwnPin, OUTPUT);
-  pinMode(a0Pin, OUTPUT); // Set A0 pin as OUTPUT
+  if (a0Pin != -1)
+    pinMode(a0Pin, OUTPUT); // Set A0 pin as OUTPUT
 
   setGain(gain);
   powerUp();
 }
 void ADS1232_ADC::start(unsigned long t) {
-  t += 400;
+  unsigned long waitTime = t + 400;
+  unsigned long startTime = millis();
   lastDoutLowTime = millis();
-  while (millis() < t) {
+  while (millis() - startTime < waitTime) {
     update();
     yield();
   }
@@ -70,9 +72,10 @@ void ADS1232_ADC::start(unsigned long t) {
 *	will do conversions continuously for 't' +400 milliseconds (400ms is min. settling time at 10SPS). 
 *   Running this for 1-5s in setup() - before tare() seems to improve the tare accuracy. */
 void ADS1232_ADC::start(unsigned long t, bool dotare) {
-  t += 400;
+  unsigned long waitTime = t + 400;
+  unsigned long startTime = millis();
   lastDoutLowTime = millis();
-  while (millis() < t) {
+  while (millis() - startTime < waitTime) {
     update();
     yield();
   }
@@ -97,23 +100,28 @@ int ADS1232_ADC::startMultiple(unsigned long t) {
         startMultipleWaitTime = t;
       }
       isFirst = 0;
+      startMultipleTareTimeStamp = 0;
     }
     if ((millis() - startMultipleTimeStamp) < startMultipleWaitTime) {
       update();  //do conversions during stabilization time
       yield();
       return 0;
     } else {  //do tare after stabilization time is up
-      static unsigned long timeout = millis() + tareTimeOut;
+      if (startMultipleTareTimeStamp == 0) {
+        startMultipleTareTimeStamp = millis();
+      }
       doTare = 1;
       update();
       if (convRslt == 2) {
         doTare = 0;
         convRslt = 0;
         startStatus = 1;
+        startMultipleTareTimeStamp = 0;
       }
       if (!tareTimeoutDisable) {
-        if (millis() > timeout) {
+        if (millis() - startMultipleTareTimeStamp > tareTimeOut) {
           tareTimeoutFlag = 1;
+          startMultipleTareTimeStamp = 0;
           return 1;  // Prevent endless loop if no ADS1232 is connected
         }
       }
@@ -138,6 +146,7 @@ int ADS1232_ADC::startMultiple(unsigned long t, bool dotare) {
         startMultipleWaitTime = t;
       }
       isFirst = 0;
+      startMultipleTareTimeStamp = 0;
     }
     if ((millis() - startMultipleTimeStamp) < startMultipleWaitTime) {
       update();  //do conversions during stabilization time
@@ -145,21 +154,28 @@ int ADS1232_ADC::startMultiple(unsigned long t, bool dotare) {
       return 0;
     } else {  //do tare after stabilization time is up
       if (dotare) {
-        static unsigned long timeout = millis() + tareTimeOut;
+        if (startMultipleTareTimeStamp == 0) {
+          startMultipleTareTimeStamp = millis();
+        }
         doTare = 1;
         update();
         if (convRslt == 2) {
           doTare = 0;
           convRslt = 0;
           startStatus = 1;
+          startMultipleTareTimeStamp = 0;
         }
         if (!tareTimeoutDisable) {
-          if (millis() > timeout) {
+          if (millis() - startMultipleTareTimeStamp > tareTimeOut) {
             tareTimeoutFlag = 1;
+            startMultipleTareTimeStamp = 0;
             return 1;  // Prevent endless loop if no ADS1232 is connected
           }
         }
-      } else return 1;
+      } else {
+        startMultipleTareTimeStamp = 0;
+        return 1;
+      }
     }
   }
   return startStatus;
@@ -468,13 +484,17 @@ void ADS1232_ADC::resetSamplesIndex() {
 //Fill the whole dataset up with new conversions, i.e. after a reset/restart (this function is blocking once started)
 bool ADS1232_ADC::refreshDataSet() {
   int s = getSamplesInUse() + IGN_HIGH_SAMPLE + IGN_LOW_SAMPLE;  // get number of samples in dataset
+  unsigned long startTime = millis();
+  unsigned long timeout = (unsigned long)s * SIGNAL_TIMEOUT * 2;
   resetSamplesIndex();
   while (s > 0) {
-    update();
-    yield();
-    if (digitalRead(doutPin) == LOW) {  // ADS1232 dout pin is pulled low when a new conversion is ready
-      getData();                        // add data to the set and start next conversion
+    if (update()) {
+      getData();
       s--;
+    }
+    yield();
+    if (millis() - startTime > timeout) {
+      return false;
     }
   }
   return true;
@@ -515,6 +535,11 @@ void ADS1232_ADC::setReverseOutput() {
 }
 
 void ADS1232_ADC::setChannelInUse(int channel) {
+  if (a0Pin == -1) {
+    Serial.println("Channel selection unavailable: A0 pin not configured.");
+    return;
+  }
+
   channelInUse = channel;
   if (channel == 0) {
     digitalWrite(a0Pin, LOW); // Set A0 pin LOW for Channel B
@@ -601,5 +626,3 @@ void ADS1232_ADC::captureDebugInfo() {
     debugCallback(info);
   }
 }
-
-
