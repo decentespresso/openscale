@@ -402,7 +402,7 @@ void _wifi_init(void *args) {
       Serial.print("Websocket recv: ");
       Serial.println(msg);
       if (msg == "tare") {
-        b_tareByBle = true;
+        requestRemoteTare();
       }
     }
   });
@@ -1362,11 +1362,17 @@ void loop() {
             b_tareByButton = false;  // reset status
             Serial.println("Tare by button");
           }
-        } else if (b_tareByBle) {
+        } else if (hasRemoteTareRequest()) {
           // Tare by BLE, performed instantly without delay
+          uint8_t remoteTareRequests = consumeRemoteTareRequests();
           scale.tareNoDelay();
-          b_tareByBle = false;  // reset status
-          Serial.println("Tare by BLE");
+          Serial.print("Tare by remote command");
+          if (remoteTareRequests > 1) {
+            Serial.print(" (");
+            Serial.print(remoteTareRequests);
+            Serial.print(" requests)");
+          }
+          Serial.println();
         }
         pureScale();
         updateOled();
