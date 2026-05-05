@@ -734,6 +734,7 @@ void handleAdsReset(uint8_t mode) {
   scale.powerDown();
   delay(500);
   scale.powerUp();
+  resetAdcRecoveryState();
 
   // Step 2: Check if ADS came back (DOUT should go low when conversion ready)
   unsigned long startTime = millis();
