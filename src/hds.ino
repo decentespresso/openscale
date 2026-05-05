@@ -581,6 +581,7 @@ void setup() {
   scale.begin();
   scale.setSamplesInUse(1);  //设置灵敏度 (SAMPLES=4 allows runtime change via hex cmd)
   scale.start(stabilizingtime, _tare);
+  resetAdcRecoveryState();
   scale.setCalFactor(f_calibration_value);  //设置偏移量
   //set the calibration value
   //scale.setSamplesInUse(sample[i_sample]);  //设置灵敏度
@@ -950,6 +951,7 @@ void pureScale() {
   static float f_last_displayed = 0.0;  // Last displayed value
   static unsigned long t_lastScaleData = 0;
   static unsigned long t_lastScaleRecovery = 0;
+  static unsigned long t_zeroDisplayMismatch = 0;
 
   if (t_lastScaleData == 0) {
     t_lastScaleData = millis();
@@ -958,10 +960,15 @@ void pureScale() {
   if (scale.update()) {
     b_newDataReady = true;
     t_lastScaleData = millis();
+    resetAdcRecoveryState();
   } else if (scale.getSignalTimeoutFlag() &&
              millis() - t_lastScaleData > 1500 &&
              millis() - t_lastScaleRecovery > 5000) {
     Serial.println("Scale ADC timeout. Power cycling ADC.");
+    b_adc_recovery_active = true;
+    if (i_adc_recovery_count < 255) {
+      i_adc_recovery_count++;
+    }
     scale.powerDown();
     delay(5);
     scale.powerUp();
@@ -1041,6 +1048,23 @@ void pureScale() {
     }
     // Update adaptive tracking (use temperature compensated value)
     updateAdaptiveTracking(tracking_compensated);
+
+    if (!b_bootTare && !b_weight_quick_zero &&
+        fabs(f_displayedValue) <= 0.14 &&
+        fabs(raw_weight) > ZERO_DISPLAY_MISMATCH_THRESHOLD) {
+      if (t_zeroDisplayMismatch == 0) {
+        t_zeroDisplayMismatch = millis();
+      } else if (millis() - t_zeroDisplayMismatch > ZERO_DISPLAY_MISMATCH_TIMEOUT) {
+        Serial.println("Display held at zero while raw weight moved. Resetting output filters.");
+        resetTracking();
+        resetStableOutput();
+        f_driftCompensation = 0.0;
+        f_displayedValue = raw_weight;
+        t_zeroDisplayMismatch = 0;
+      }
+    } else {
+      t_zeroDisplayMismatch = 0;
+    }
     
     // Display and debugging
     dtostrf(f_displayedValue, 7, i_decimal_precision, c_weight);
@@ -1082,6 +1106,14 @@ void pureScale() {
       Serial.println("TARE: Temperature drift compensation reset");
     }
   }
+  if (b_weight_quick_zero && millis() - t_quickZeroStart > QUICK_ZERO_HOLD_TIMEOUT) {
+    Serial.println("Quick zero timeout. Releasing display zero hold.");
+    b_weight_quick_zero = false;
+    resetTracking();
+    resetStableOutput();
+    f_driftCompensation = 0.0;
+  }
+
   
   // Quick zero handling
   if (b_weight_quick_zero || b_bootTare) {
@@ -1339,6 +1371,7 @@ void loop() {
             GPIO_power_on_with = BUTTON_SQUARE;
             b_is_charging = false;
             scale.powerUp();
+            resetAdcRecoveryState();
             scale.tareNoDelay();
           } else {
             if (f_batteryVoltage > 4.1) {
@@ -1366,11 +1399,13 @@ void loop() {
         //showing charging animation when powered off
         //charging();
       } else {
-        sendUsbTextWeight();
-        if (b_ble_enabled)
-          sendBleWeight();
-        if (b_usbweight_enabled)
-          sendUsbWeight();
+        if (!b_adc_recovery_active) {
+          sendUsbTextWeight();
+          if (b_ble_enabled)
+            sendBleWeight();
+          if (b_usbweight_enabled)
+            sendUsbWeight();
+        }
         if (b_wifiEnabled) {
           websocket.cleanupClients(1);
           ElegantOTA.loop();
@@ -1378,7 +1413,9 @@ void loop() {
           unsigned long current = millis();
           if (current - lastUpdate > 500) {
             if (websocket.availableForWriteAll() > 0) {
-              websocket.printfAll("{ \"grams\": %.2f, \"ms\": %lu }", f_displayedValue, current);
+              if (!b_adc_recovery_active) {
+                websocket.printfAll("{ \"grams\": %.2f, \"ms\": %lu }", f_displayedValue, current);
+              }
             } else {
               Serial.println("Websocket write unavailable");
             }
@@ -1499,8 +1536,12 @@ void updateOled() {
       u8g2.setFontMode(1);
       u8g2.setDrawColor(1);
       if (!b_debug) {
-        drawWeight(f_displayedValue);
-        drawTime();
+        if (b_adc_recovery_active) {
+          drawAdcRecovery();
+        } else {
+          drawWeight(f_displayedValue);
+          drawTime();
+        }
       }
       u8g2.setDrawColor(2);
 
@@ -1642,6 +1683,18 @@ void drawTime() {
       y = u8g2.getMaxCharHeight() - 8;
     u8g2.drawStr(AC(sec2sec(stopWatch.elapsed())), y, sec2sec(stopWatch.elapsed()));
   }
+}
+
+void drawAdcRecovery() {
+  u8g2.setFont(FONT_S);
+  const char* line1 = getAdcRecoveryDisplayText();
+  const char* line2 = "CHECK SCALE";
+  u8g2.drawStr(AC(line1), AM() - 12, line1);
+  u8g2.drawStr(AC(line2), AM() + 12, line2);
+}
+
+const char* getAdcRecoveryDisplayText() {
+  return i_adc_recovery_count >= ADC_ERROR_RECOVERY_COUNT ? "ADC ERROR" : "ADC RECOVER";
 }
 
 //button pressed box, left and right, added xor
