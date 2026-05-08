@@ -63,7 +63,7 @@ U8G2_SSD1306_128X64_NONAME_1_SW_I2C u8g2(U8G2_R0, /* clock=*/OLED_SCL, /* data=*
 //文本对齐 AC居中 AR右对齐 AL左对齐 T为要显示的文本
 #define LCDWidth u8g2.getDisplayWidth()
 #define LCDHeight u8g2.getDisplayHeight()
-#define AC(T) ((LCDWidth - u8g2.getUTF8Width((const char *)(T))) / 2 - Margin_Left - Margin_Right)
+#define AC(T) ((LCDWidth - u8g2.getUTF8Width(T)) / 2 - Margin_Left - Margin_Right)
 #define AR(T) (LCDWidth - u8g2.getUTF8Width(T) - Margin_Right)
 #define AL(T) (u8g2.getUTF8Width(T) + Margin_Left)
 #define AM() ((LCDHeight + u8g2.getMaxCharHeight()) / 2 - Margin_Top - Margin_Bottom)
