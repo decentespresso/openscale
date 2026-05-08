@@ -952,6 +952,8 @@ void pureScale() {
   static unsigned long t_lastScaleData = 0;
   static unsigned long t_lastScaleRecovery = 0;
   static unsigned long t_zeroDisplayMismatch = 0;
+  static int f_similar_diff_count = 0;
+  static float f_last_diff = 0.0;
 
   if (t_lastScaleData == 0) {
     t_lastScaleData = millis();
@@ -993,9 +995,6 @@ void pureScale() {
     
     // 2. If difference is small (0.01g-0.1g), accumulate to continuous compensation
     if (fabs(current_diff) > 0.01 && fabs(current_diff) < f_maxDriftCompensation) {
-      static int f_similar_diff_count = 0;
-      static float f_last_diff = current_diff;
-      
       // Check if continuous same direction change
       if ((f_last_diff * current_diff) > 0) {  // Same direction
         f_similar_diff_count++;
@@ -1029,8 +1028,8 @@ void pureScale() {
       f_last_diff = current_diff;
     } else {
       // Difference too large or too small, reset detection
-      static int f_similar_diff_count = 0;
       f_similar_diff_count = 0;
+      f_last_diff = 0.0;
     }
     
     // 3. Apply continuous temperature compensation
