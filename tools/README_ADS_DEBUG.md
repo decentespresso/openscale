@@ -21,15 +21,16 @@ adsd off      # Disable continuous debug output
 adsd info     # Get one-time debug snapshot
 ```
 
-## Hex/Binary Commands (via USB)
+## Hex/Binary Commands (via USB or BLE)
 
-Send these hex commands for programmatic access:
+Send these hex commands for programmatic access. The exact same `0x25`
+command set works over BLE (write characteristic `36f5`, notify on `fff4`).
 
-| Command | Hex Bytes | Description |
-|---------|-----------|-------------|
-| Debug ON | `03 25 01 XX` | Enable debug mode (XX = checksum) |
-| Debug OFF | `03 25 00 XX` | Disable debug mode (XX = checksum) |
-| Get Info | `03 25 02 XX` | Request debug packet (XX = checksum) |
+| Command | Hex Bytes | USB behavior | BLE behavior |
+|---------|-----------|--------------|--------------|
+| Debug OFF       | `03 25 00 XX` | Stops continuous text output     | Stops continuous notify stream |
+| Debug ON        | `03 25 01 XX` | Enables continuous text output   | Starts CONTINUOUS notify stream (~10 Hz) |
+| Get Info / SINGLE | `03 25 02 XX` | One 41-byte packet on Serial    | One 41-byte notify on `fff4`, auto-clears to OFF |
 
 **Checksum calculation:** XOR of all bytes except the last one.
 
@@ -38,6 +39,9 @@ Example for "Get Info":
 0x03 ^ 0x25 ^ 0x02 = 0x24
 Command: 03 25 02 24
 ```
+
+> BLE transport eliminates the mechanical drag the USB cable puts on the
+> scale during diagnostics, which can otherwise show up as false drift.
 
 ## Debug Packet Format
 
@@ -69,9 +73,9 @@ All multi-byte values are **big-endian** (network byte order).
 
 ## Using the Python Tools
 
-Two Python scripts are provided:
+Three Python scripts are provided:
 
-### 1. `ads_debug_monitor.py` - Serial Communication & Commands
+### 1. `ads_debug_monitor.py` - USB Serial Communication & Commands
 
 Connects to the scale, sends commands, and displays results.
 
@@ -96,9 +100,34 @@ python tools/ads_debug_monitor.py /dev/cu.wchusbserial10 --debug-on
 python tools/ads_debug_monitor.py /dev/cu.wchusbserial10 --debug-off
 ```
 
-### 2. `decode_ads_debug.py` - Packet Decoder
+### 2. `ads_debug_monitor_ble.py` - BLE Communication & Commands
 
-Decodes raw hex packets (used by ads_debug_monitor.py or standalone).
+Same commands as the USB version, but talks to the scale over BLE. Useful
+when the USB cable would mechanically interfere with the load cell.
+
+```bash
+# Install bleak if needed
+pip install bleak
+
+# Auto-scan for "Decent Scale" and request a single packet
+python tools/ads_debug_monitor_ble.py
+
+# Specify BLE address directly (skip scan)
+python tools/ads_debug_monitor_ble.py --address AA:BB:CC:DD:EE:FF
+
+# Continuous streaming, ~once per second printed, stops on Ctrl+C
+python tools/ads_debug_monitor_ble.py --monitor
+
+# Stream for 10 seconds and exit
+python tools/ads_debug_monitor_ble.py --monitor --duration 10
+
+# Interactive mode
+python tools/ads_debug_monitor_ble.py --interactive
+```
+
+### 3. `decode_ads_debug.py` - Packet Decoder
+
+Decodes raw 41-byte packets (used by both monitors above, or standalone).
 
 ```bash
 # Decode a hex string directly
