@@ -1405,6 +1405,14 @@ void loop() {
           if (b_usbweight_enabled)
             sendUsbWeight();
         }
+        if (b_ble_enabled && deviceConnected && bleDebugMode != DEBUG_OFF) {
+          // SINGLE fires once; CONTINUOUS rate-limited to ~10 Hz
+          if (bleDebugMode == DEBUG_SINGLE ||
+              millis() - t_lastBleDebugNotify >= BLE_DEBUG_MIN_INTERVAL) {
+            t_lastBleDebugNotify = millis();
+            sendAdsDebugInfoBLE();
+          }
+        }
         if (b_wifiEnabled) {
           websocket.cleanupClients(1);
           ElegantOTA.loop();
