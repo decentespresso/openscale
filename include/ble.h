@@ -14,9 +14,22 @@ const unsigned long HEARTBEAT_TIMEOUT = 5000;  // 5 seconds
 unsigned long t_lastDisconnectAttempt = 0;
 unsigned long t_lastDisconnectAttemptNotice = 0;
 
+// ADS1232 debug streaming mode over BLE (cmd 0x25)
+enum DebugMode {
+  DEBUG_OFF = 0,
+  DEBUG_SINGLE = 1,
+  DEBUG_CONTINUOUS = 2
+};
+DebugMode bleDebugMode = DEBUG_OFF;
+unsigned long t_lastBleDebugNotify = 0;
+const unsigned long BLE_DEBUG_MIN_INTERVAL = 100;  // ~10 Hz cap for continuous mode
+
 //functions
 void sendBleVoltage();
 void sendBleLedResponse();
+void sendAdsDebugInfoBLE();
+// Defined in usbcomm.h, included after ble.h in hds.ino
+void buildAdsDebugPacket(byte data[41]);
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendBleGyro();
 #endif
@@ -439,6 +452,22 @@ class MyCallbacks : public BLECharacteristicCallbacks {
         else if (data[1] == 0x22) {
           sendBleVoltage();
         }
+        else if (data[1] == 0x25) {
+          if (!requireLength(len, 3, "ADS debug BLE")) {
+            return;
+          }
+          // 0x25 ADS1232 debug streaming over BLE
+          if (data[2] == 0x00) {
+            Serial.println("BLE ADS debug: OFF");
+            bleDebugMode = DEBUG_OFF;
+          } else if (data[2] == 0x01) {
+            Serial.println("BLE ADS debug: CONTINUOUS");
+            bleDebugMode = DEBUG_CONTINUOUS;
+          } else if (data[2] == 0x02) {
+            Serial.println("BLE ADS debug: SINGLE");
+            bleDebugMode = DEBUG_SINGLE;
+          }
+        }
       }
     }
   }
@@ -711,6 +740,22 @@ void sendBleLedResponse() {
   buildLedResponsePacket(data);
   pReadCharacteristic->setValue(data, 7);
   pReadCharacteristic->notify();
+}
+
+// Send 41-byte ADS1232 debug packet via BLE notify on fff4.
+// In SINGLE mode, auto-clears bleDebugMode to OFF after sending.
+void sendAdsDebugInfoBLE() {
+  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (bleDebugMode == DEBUG_OFF) return;
+
+  byte data[41];
+  buildAdsDebugPacket(data);
+  pReadCharacteristic->setValue(data, 41);
+  pReadCharacteristic->notify();
+
+  if (bleDebugMode == DEBUG_SINGLE) {
+    bleDebugMode = DEBUG_OFF;
+  }
 }
 
 #endif
