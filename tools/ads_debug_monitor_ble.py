@@ -51,6 +51,11 @@ def build_debug_command(mode):
     return payload + bytes([xor_checksum(payload)])
 
 
+# Decent Scale heartbeat: firmware disconnects after 5s without one
+HEARTBEAT_CMD = bytes([0x03, 0x0A, 0x03, 0xFF, 0xFF, 0x00, 0x0A])
+HEARTBEAT_INTERVAL = 2.0
+
+
 async def find_device(name_filter, timeout):
     print(f"Scanning for BLE devices (filter='{name_filter}', timeout={timeout}s)...")
     devices = await BleakScanner.discover(timeout=timeout)
@@ -75,6 +80,7 @@ class BleMonitor:
         self.client = None
         # Notify packets are 41 bytes and fit a single MTU; assume one notify == one packet
         self._packet_handler = None
+        self._heartbeat_task = None
 
     async def __aenter__(self):
         self.client = BleakClient(self.address)
@@ -83,15 +89,37 @@ class BleMonitor:
             raise RuntimeError(f"Failed to connect to {self.address}")
         print(f"Connected to {self.address}")
         await self.client.start_notify(NOTIFY_UUID, self._on_notify)
+        self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except (asyncio.CancelledError, Exception):
+                pass
         try:
             await self.client.stop_notify(NOTIFY_UUID)
         except Exception:
             pass
-        await self.client.disconnect()
+        try:
+            await self.client.disconnect()
+        except Exception:
+            pass
         print("Disconnected.")
+
+    async def _heartbeat_loop(self):
+        # Keeps firmware-side b_requireHeartBeat timer fed (5s window).
+        try:
+            while self.client and self.client.is_connected:
+                try:
+                    await self.client.write_gatt_char(WRITE_UUID, HEARTBEAT_CMD, response=True)
+                except Exception:
+                    return
+                await asyncio.sleep(HEARTBEAT_INTERVAL)
+        except asyncio.CancelledError:
+            return
 
     def _on_notify(self, _char, data):
         # Filter to debug packets only (header 0x03 0x25, length 41).
@@ -105,7 +133,9 @@ class BleMonitor:
         cmd = build_debug_command(mode)
         mode_names = {0: "OFF", 1: "CONTINUOUS", 2: "SINGLE"}
         print(f"Sent: {mode_names.get(mode, '?')} ({' '.join(f'{b:02X}' for b in cmd)})")
-        await self.client.write_gatt_char(WRITE_UUID, cmd, response=False)
+        # Firmware characteristic 36f5 is PROPERTY_WRITE only (with response).
+        # Using response=False here would be silently dropped by some stacks.
+        await self.client.write_gatt_char(WRITE_UUID, cmd, response=True)
 
     def set_handler(self, handler):
         self._packet_handler = handler
