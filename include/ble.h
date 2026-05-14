@@ -53,12 +53,16 @@ void encodeWeight(float weight, byte &byte1, byte &byte2) {
   byte2 = (byte)(weightInt & 0xFF);
 }
 
-// This callback will be invoked when a device connects or disconnects
+// This callback will be invoked when a device connects or disconnects.
+//
+// The connection-aware (conn_handle) overloads are required: a transient
+// central reconnect can deliver the disconnect event for an old handle
+// *after* the new connection's onConnect. Tracking conn_handle lets us
+// ignore those stale disconnects instead of clearing state on a live link.
 class MyServerCallbacks : public BLEServerCallbacks {
-  void onConnect(BLEServer *pServer) {
-    connId = pServer->getConnId();  // 保存连接 ID
-    Serial.print("BLE connID is: ");
-    Serial.println(connId);
+#if defined(CONFIG_NIMBLE_ENABLED)
+  void onConnect(BLEServer *pServer, ble_gap_conn_desc *desc) {
+    connId = desc->conn_handle;
     t_firstConnect = millis();
     t_heartBeat = millis();
     bleState = CONNECTED;
@@ -66,46 +70,60 @@ class MyServerCallbacks : public BLEServerCallbacks {
 #ifdef BUZZER
     b_beep = false;  //disable buzzer once when connected, and wait for ble command to enable it
 #endif
-    Serial.println("Device connected");
+    pAdvertising->stop();  //single-client device — don't accept a second connection
+    Serial.print("Device connected, connId: ");
+    Serial.println(connId);
   }
 
-  void onDisconnect(BLEServer *pServer) {
-    connId = 0xFFFF; // not set to 0 because 0 could be a valid client id
-
+  void onDisconnect(BLEServer *pServer, ble_gap_conn_desc *desc) {
+    if (desc->conn_handle != connId) {
+      //stale disconnect for an old handle — a newer connection is still live
+      Serial.print("Ignoring stale BLE disconnect for conn_handle: ");
+      Serial.println(desc->conn_handle);
+      return;
+    }
+    connId = 0xFFFF;  //not set to 0 because 0 could be a valid client id
     deviceConnected = false;
     bleState = DISCONNECTED;
-
-//Serial.println("ble 01");
 #ifdef BUZZER
     EEPROM.get(i_addr_beep, b_beep);  //read buzzer state after disconnect
 #endif
-    //Serial.println("ble 02");
-
-    Serial.println("Device disconnected, restarting advertising...");
-
-    // re-advertising after connection lost
     u8g2.setPowerSave(0);
-
+    Serial.print("Device disconnected (connId: ");
+    Serial.print(desc->conn_handle);
+    Serial.println("), restarting advertising...");
     delay(100);  // advertise after a short delay
-    
-    // maybe remove delay in future version or use somthing like this:
-    /*
-    void onDisconnect(BLEServer *pServer) {
-    deviceConnected = false;
-    restartAdvertising = true; // Just set the flag
-    }
-
-    void loop() {
-        if (restartAdvertising) {
-            delay(10); // Very short delay outside the callback is safer
-            pAdvertising->start();
-            restartAdvertising = false;
-            Serial.println("Advertising restarted safely in loop");
-        }
-    }*/
     pAdvertising->start();
-    //Serial.println("ble 5");
   }
+#else
+  // Bluedroid fallback (classic ESP32). Not used for esp32s3 builds.
+  void onConnect(BLEServer *pServer) {
+    connId = pServer->getConnId();
+    t_firstConnect = millis();
+    t_heartBeat = millis();
+    bleState = CONNECTED;
+    deviceConnected = true;
+#ifdef BUZZER
+    b_beep = false;
+#endif
+    pAdvertising->stop();
+    Serial.print("Device connected, connId: ");
+    Serial.println(connId);
+  }
+
+  void onDisconnect(BLEServer *pServer) {
+    connId = 0xFFFF;
+    deviceConnected = false;
+    bleState = DISCONNECTED;
+#ifdef BUZZER
+    EEPROM.get(i_addr_beep, b_beep);
+#endif
+    u8g2.setPowerSave(0);
+    Serial.println("Device disconnected, restarting advertising...");
+    delay(100);
+    pAdvertising->start();
+  }
+#endif
 };
 /*  
         Weight received on	FFF4 (0000FFF4-0000-1000-8000-00805F9B34FB)
