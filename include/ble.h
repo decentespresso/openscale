@@ -529,8 +529,25 @@ void disconnectBLE() {
       return;
     }
     t_lastDisconnectAttempt = millis();
-    pServer->disconnect(connId, 0x13); // must prove connID for proper disconnecting. 0x13 for disconnect from remote device ESP_GAP_BLE_UPDATE_CONN_PARAMS_ERR_REMOTE_DEVICE_DISCONN. 
+    pServer->disconnect(connId, 0x13); // must prove connID for proper disconnecting. 0x13 for disconnect from remote device ESP_GAP_BLE_UPDATE_CONN_PARAMS_ERR_REMOTE_DEVICE_DISCONN.
   }
+}
+
+// Gracefully tear down BLE before power-off or restart. Sends an LL
+// terminate so the peer sees a clean disconnect instead of waiting out
+// the supervision timeout, then stops advertising and releases the
+// stack. Main-task use only — it blocks ~300 ms when a client is
+// connected. No-ops if BLE was never initialized.
+void bleShutdown() {
+  if (pServer == nullptr) return;
+  if (deviceConnected && connId != 0xFFFF) {
+    pServer->disconnect(connId, 0x13);
+    delay(300);  // let the LL terminate transmit and onDisconnect run
+  }
+  if (pAdvertising != nullptr) {
+    pAdvertising->stop();
+  }
+  BLEDevice::deinit(true);
 }
 
 // Build voltage data packet
