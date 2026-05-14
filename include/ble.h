@@ -299,9 +299,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
             }
           } else if (data[2] == 0x02) {
             Serial.println("Power off detected.");
-            stopWebServer();
-            stopWifi();
-            b_powerOff = true;
+            b_powerOff = true;  //teardown happens in esp32_sleep()
           } else if (data[2] == 0x03) {
             if (data[3] == 0x01) {
               Serial.println("Start Low Power Mode.");

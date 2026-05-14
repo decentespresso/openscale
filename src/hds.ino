@@ -227,8 +227,6 @@ void buttonSquare_Pressed() {
   if (deviceConnected && millis() - t_shutdownFailBle < 3000 && !b_menu && millis() - t_menuExitTime > 1000) {
     //millis() - t_menuExitTime > 1000 is to avoid instant Off when exiting menu.
     Serial.println("Going to sleep now by SquarePress");
-    stopWebServer();
-    stopWifi();
     b_powerOff = true;
   }
   startPressSampling(BUTTON_SQUARE);
@@ -276,8 +274,6 @@ void buttonCircle_DoubleClicked() {
   if (!deviceConnected && !b_menu && !b_calibration) {
     Serial.println("Going to sleep now by CircleDoubleClick");
     sendBlePowerOff(1);
-    stopWebServer();
-    stopWifi();
     b_powerOff = true;
   } else {
     if (deviceConnected) {
@@ -297,8 +293,6 @@ void buttonSquare_DoubleClicked() {
   if (!deviceConnected && !b_menu && !b_calibration) {
     Serial.println("Going to sleep now by SquareDoubleClick");
     sendBlePowerOff(2);
-    stopWebServer();
-    stopWifi();
     b_powerOff = true;
   } else {
     if (deviceConnected) {
@@ -489,8 +483,6 @@ void setup() {
     } else {
       Serial.println("Button released before 0.5 second.");
       Serial.println("Going to sleep now.");
-      stopWebServer();
-      stopWifi();
       esp32_sleep();
       break;  // Exit loop to enter sleep mode
       b_button_pressed = false;  // Reset mark
@@ -1380,8 +1372,6 @@ void loop() {
               //charging not complete, but the serial maynot be ouput cause usb unplugged.
               Serial.println("Charging stopped before full.");
             }
-            stopWebServer();
-            stopWifi();
             b_powerOff = true;  //deepsleep
             Serial.println("Going to sleep now by BatteryFull");
           }
