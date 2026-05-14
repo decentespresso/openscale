@@ -55,6 +55,12 @@ you can also send a simple `tare` String over the websocket and the scale will t
 In order to build and upload Web apps to HDS, you need to use `pio` to build and upload the filesystem image to the Esp32s3.  
 Simply run `pio run -t buildfs -t uploadfs` with the Esp32s3 connected to your computer
 
+# Development workflow
+
+Trunk-based: `main` is the single long-lived branch and is always releasable. Do work on short-lived feature branches and merge into `main` once CI passes.
+
+Releases: tag a known-good commit on `main` with the version (`vX.Y.Z`), then run the "Release firmware" workflow with that tag.
+
 # Automated builds
 
 With version 3, we have also started using GitHub actions to build the firmware and filesystem images. You can find the recent builds on the "Actions" tab on the GitHub page of this project. From there you can also download the firmware files (e.g. for development builds).
