@@ -21,6 +21,8 @@ Adafruit_ADS1115 ads;  // Create an ADS1115 object
 //prototype
 void sendBlePowerOff(int i_reason);
 void bleShutdown();  // defined in ble.h
+void stopWifi();  // defined in wifi_setup.cpp
+void stopWebServer();  // defined in webserver.h
 
 const int windowSize = 1000;
 float batteryLevels[windowSize];
@@ -54,6 +56,8 @@ void (*resetFunc)(void) = 0;  //AVR重启函数
 void reset() {
 #ifdef ESP32
   bleShutdown();
+  stopWebServer();
+  stopWifi();
   ESP.restart();
 #endif  // ESP32
 #ifdef AVR
@@ -160,7 +164,10 @@ void print_wakeup_reason() {
 
 void esp32_sleep() {
   //beep(4, 50);
-  bleShutdown();  // graceful BLE teardown — covers every shutdown path
+  // Network teardown — centralized here so every shutdown path is covered.
+  bleShutdown();    // graceful BLE teardown
+  stopWebServer();  // close websocket clients + stop HTTP server
+  stopWifi();       // disconnect WiFi / power down radio
   u8g2.setPowerSave(1);
 #ifdef ACC_MPU6050
   if (b_gyroEnabled) {
