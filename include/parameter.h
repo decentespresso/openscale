@@ -71,9 +71,12 @@ int i_bootTareDelay = 1000;
 //int i_tareDelay = 200;             //tare delay for button
 int i_tareDelay = 0;             //tare delay 0ms for finger detection
 unsigned long t_tareByButton = 0;  //tare time stamp used by button to mimic delay
+unsigned long t_quickZeroStart = 0;
 bool b_tareByButton = false;
 unsigned long t_tareByBle = 0;
+uint8_t i_remoteTareRequests = 0;
 bool b_tareByBle = false;
+portMUX_TYPE remoteTareMux = portMUX_INITIALIZER_UNLOCKED;
 unsigned long t_tareStatus = 0;  //tare done time stamp
 unsigned long t_power_off;       //关机倒计时
 bool b_powerOff = false;
@@ -83,6 +86,35 @@ unsigned long t_power_off_gyro = 0;  //侧放关机倒计时
 unsigned long t_button_pressed;  //进入萃取模式的时间点
 unsigned long t_temp;            //上次更新温度和度数时间
 float f_temp_tare = 0;
+
+void requestRemoteTare() {
+  unsigned long now = millis();
+  portENTER_CRITICAL(&remoteTareMux);
+  if (i_remoteTareRequests < 255) {
+    i_remoteTareRequests++;
+  }
+  b_tareByBle = true;
+  t_tareByBle = now;
+  portEXIT_CRITICAL(&remoteTareMux);
+}
+
+bool hasRemoteTareRequest() {
+  bool hasRequest;
+  portENTER_CRITICAL(&remoteTareMux);
+  hasRequest = i_remoteTareRequests > 0;
+  portEXIT_CRITICAL(&remoteTareMux);
+  return hasRequest;
+}
+
+uint8_t consumeRemoteTareRequests() {
+  uint8_t requests;
+  portENTER_CRITICAL(&remoteTareMux);
+  requests = i_remoteTareRequests;
+  i_remoteTareRequests = 0;
+  b_tareByBle = false;
+  portEXIT_CRITICAL(&remoteTareMux);
+  return requests;
+}
 // int i_sample = 0;       //采样数0-7
 // int i_sample_step = 0;  //设置采样数的第几步
 int i_icon = 0;  //充电指示电量数字0-6
@@ -123,6 +155,12 @@ static float f_driftCompensation = 0.0;  // Continuous temperature drift compens
 static float f_maxDriftCompensation = 0.05;  // Maximum micro-drift range for temperature compensation (g)
 // Range: 0.01g to this value will be considered as temperature drift
 // Values above this are considered as real weight changes, not drift
+static const unsigned long QUICK_ZERO_HOLD_TIMEOUT = 3000;
+static const unsigned long ZERO_DISPLAY_MISMATCH_TIMEOUT = 1500;
+static const float ZERO_DISPLAY_MISMATCH_THRESHOLD = 0.5;
+static const uint8_t ADC_ERROR_RECOVERY_COUNT = 2;
+static bool b_adc_recovery_active = false;
+static uint8_t i_adc_recovery_count = 0;
 //bool b_tempDisablePowerOff = true;
 
 bool b_negativeWeight = false;
@@ -130,6 +168,11 @@ bool b_negativeWeight = false;
 bool b_weight_quick_zero = false;           //Tare后快速显示为0优化
 char c_weight[10];                          //咖啡重量显示
 char c_brew_ratio[10];                      //粉水比显示
+
+static inline void resetAdcRecoveryState() {
+  b_adc_recovery_active = false;
+  i_adc_recovery_count = 0;
+}
 unsigned long t_extraction_begin = 0;       //开始萃取打点
 unsigned long t_extraction_first_drop = 0;  //下液第一滴打点
 unsigned long t_extraction_last_drop = 0;   //下液结束打点

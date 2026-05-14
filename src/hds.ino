@@ -402,7 +402,7 @@ void _wifi_init(void *args) {
       Serial.print("Websocket recv: ");
       Serial.println(msg);
       if (msg == "tare") {
-        b_tareByBle = true;
+        requestRemoteTare();
       }
     }
   });
@@ -581,6 +581,7 @@ void setup() {
   scale.begin();
   scale.setSamplesInUse(1);  //设置灵敏度 (SAMPLES=4 allows runtime change via hex cmd)
   scale.start(stabilizingtime, _tare);
+  resetAdcRecoveryState();
   scale.setCalFactor(f_calibration_value);  //设置偏移量
   //set the calibration value
   //scale.setSamplesInUse(sample[i_sample]);  //设置灵敏度
@@ -948,8 +949,40 @@ float applyStableOutput(float current_value) {
 void pureScale() {
   static bool b_newDataReady = 0;
   static float f_last_displayed = 0.0;  // Last displayed value
-  
-  if (scale.update()) b_newDataReady = true;
+  static unsigned long t_lastScaleData = 0;
+  static unsigned long t_lastScaleRecovery = 0;
+  static unsigned long t_zeroDisplayMismatch = 0;
+  static int f_similar_diff_count = 0;
+  static float f_last_diff = 0.0;
+
+  if (t_lastScaleData == 0) {
+    t_lastScaleData = millis();
+  }
+
+  if (scale.update()) {
+    b_newDataReady = true;
+    t_lastScaleData = millis();
+    resetAdcRecoveryState();
+  } else if (scale.getSignalTimeoutFlag() &&
+             millis() - t_lastScaleData > 1500 &&
+             millis() - t_lastScaleRecovery > 5000) {
+    Serial.println("Scale ADC timeout. Power cycling ADC.");
+    b_adc_recovery_active = true;
+    if (i_adc_recovery_count < 255) {
+      i_adc_recovery_count++;
+    }
+    scale.powerDown();
+    delay(5);
+    scale.powerUp();
+    scale.tareNoDelay();
+    resetTracking();
+    resetStableOutput();
+    f_driftCompensation = 0.0;
+    f_displayedValue = 0.0;
+    dtostrf(f_displayedValue, 7, i_decimal_precision, c_weight);
+    t_lastScaleRecovery = millis();
+    t_lastScaleData = millis();
+  }
   
   if (b_newDataReady) {
     float raw_weight = scale.getData();
@@ -962,9 +995,6 @@ void pureScale() {
     
     // 2. If difference is small (0.01g-0.1g), accumulate to continuous compensation
     if (fabs(current_diff) > 0.01 && fabs(current_diff) < f_maxDriftCompensation) {
-      static int f_similar_diff_count = 0;
-      static float f_last_diff = current_diff;
-      
       // Check if continuous same direction change
       if ((f_last_diff * current_diff) > 0) {  // Same direction
         f_similar_diff_count++;
@@ -998,8 +1028,8 @@ void pureScale() {
       f_last_diff = current_diff;
     } else {
       // Difference too large or too small, reset detection
-      static int f_similar_diff_count = 0;
       f_similar_diff_count = 0;
+      f_last_diff = 0.0;
     }
     
     // 3. Apply continuous temperature compensation
@@ -1017,6 +1047,23 @@ void pureScale() {
     }
     // Update adaptive tracking (use temperature compensated value)
     updateAdaptiveTracking(tracking_compensated);
+
+    if (!b_bootTare && !b_weight_quick_zero &&
+        fabs(f_displayedValue) <= 0.14 &&
+        fabs(raw_weight) > ZERO_DISPLAY_MISMATCH_THRESHOLD) {
+      if (t_zeroDisplayMismatch == 0) {
+        t_zeroDisplayMismatch = millis();
+      } else if (millis() - t_zeroDisplayMismatch > ZERO_DISPLAY_MISMATCH_TIMEOUT) {
+        Serial.println("Display held at zero while raw weight moved. Resetting output filters.");
+        resetTracking();
+        resetStableOutput();
+        f_driftCompensation = 0.0;
+        f_displayedValue = raw_weight;
+        t_zeroDisplayMismatch = 0;
+      }
+    } else {
+      t_zeroDisplayMismatch = 0;
+    }
     
     // Display and debugging
     dtostrf(f_displayedValue, 7, i_decimal_precision, c_weight);
@@ -1058,6 +1105,14 @@ void pureScale() {
       Serial.println("TARE: Temperature drift compensation reset");
     }
   }
+  if (b_weight_quick_zero && millis() - t_quickZeroStart > QUICK_ZERO_HOLD_TIMEOUT) {
+    Serial.println("Quick zero timeout. Releasing display zero hold.");
+    b_weight_quick_zero = false;
+    resetTracking();
+    resetStableOutput();
+    f_driftCompensation = 0.0;
+  }
+
   
   // Quick zero handling
   if (b_weight_quick_zero || b_bootTare) {
@@ -1306,17 +1361,30 @@ void loop() {
           b_showChargingUI = true;                                                                                  //show charging ui
         } else {
           b_showChargingUI = false;
-          if (f_batteryVoltage > 4.1) {
-            //charging complete
-            Serial.println("Charging compelete.");
+          bool b_usbDisconnected = false;
+#ifdef USB_DET
+          b_usbDisconnected = digitalRead(USB_DET) == HIGH;
+#endif
+          if (b_usbDisconnected) {
+            Serial.println("USB unplugged. Entering scale mode.");
+            GPIO_power_on_with = BUTTON_SQUARE;
+            b_is_charging = false;
+            scale.powerUp();
+            resetAdcRecoveryState();
+            scale.tareNoDelay();
           } else {
-            //charging not complete, but the serial maynot be ouput cause usb unplugged.
-            Serial.println("USB Unplugged, charging not compelete.");
+            if (f_batteryVoltage > 4.1) {
+              //charging complete
+              Serial.println("Charging complete.");
+            } else {
+              //charging not complete, but the serial maynot be ouput cause usb unplugged.
+              Serial.println("Charging stopped before full.");
+            }
+            stopWebServer();
+            stopWifi();
+            b_powerOff = true;  //deepsleep
+            Serial.println("Going to sleep now by BatteryFull");
           }
-          stopWebServer();
-          stopWifi();
-          b_powerOff = true;  //deepsleep
-          Serial.println("Going to sleep now by BatteryFull");
         }
       }
     } else {
@@ -1330,11 +1398,21 @@ void loop() {
         //showing charging animation when powered off
         //charging();
       } else {
-        sendUsbTextWeight();
-        if (b_ble_enabled)
-          sendBleWeight();
-        if (b_usbweight_enabled)
-          sendUsbWeight();
+        if (!b_adc_recovery_active) {
+          sendUsbTextWeight();
+          if (b_ble_enabled)
+            sendBleWeight();
+          if (b_usbweight_enabled)
+            sendUsbWeight();
+        }
+        if (b_ble_enabled && deviceConnected && bleDebugMode != DEBUG_OFF) {
+          // SINGLE fires once; CONTINUOUS rate-limited to ~10 Hz
+          if (bleDebugMode == DEBUG_SINGLE ||
+              millis() - t_lastBleDebugNotify >= BLE_DEBUG_MIN_INTERVAL) {
+            t_lastBleDebugNotify = millis();
+            sendAdsDebugInfoBLE();
+          }
+        }
         if (b_wifiEnabled) {
           websocket.cleanupClients(1);
           ElegantOTA.loop();
@@ -1342,7 +1420,9 @@ void loop() {
           unsigned long current = millis();
           if (current - lastUpdate > 500) {
             if (websocket.availableForWriteAll() > 0) {
-              websocket.printfAll("{ \"grams\": %.2f, \"ms\": %lu }", f_displayedValue, current);
+              if (!b_adc_recovery_active) {
+                websocket.printfAll("{ \"grams\": %.2f, \"ms\": %lu }", f_displayedValue, current);
+              }
             } else {
               Serial.println("Websocket write unavailable");
             }
@@ -1362,11 +1442,17 @@ void loop() {
             b_tareByButton = false;  // reset status
             Serial.println("Tare by button");
           }
-        } else if (b_tareByBle) {
+        } else if (hasRemoteTareRequest()) {
           // Tare by BLE, performed instantly without delay
+          uint8_t remoteTareRequests = consumeRemoteTareRequests();
           scale.tareNoDelay();
-          b_tareByBle = false;  // reset status
-          Serial.println("Tare by BLE");
+          Serial.print("Tare by remote command");
+          if (remoteTareRequests > 1) {
+            Serial.print(" (");
+            Serial.print(remoteTareRequests);
+            Serial.print(" requests)");
+          }
+          Serial.println();
         }
         pureScale();
         updateOled();
@@ -1457,8 +1543,12 @@ void updateOled() {
       u8g2.setFontMode(1);
       u8g2.setDrawColor(1);
       if (!b_debug) {
-        drawWeight(f_displayedValue);
-        drawTime();
+        if (b_adc_recovery_active) {
+          drawAdcRecovery();
+        } else {
+          drawWeight(f_displayedValue);
+          drawTime();
+        }
       }
       u8g2.setDrawColor(2);
 
@@ -1600,6 +1690,18 @@ void drawTime() {
       y = u8g2.getMaxCharHeight() - 8;
     u8g2.drawStr(AC(sec2sec(stopWatch.elapsed())), y, sec2sec(stopWatch.elapsed()));
   }
+}
+
+void drawAdcRecovery() {
+  u8g2.setFont(FONT_S);
+  const char* line1 = getAdcRecoveryDisplayText();
+  const char* line2 = "CHECK SCALE";
+  u8g2.drawStr(AC(line1), AM() - 12, line1);
+  u8g2.drawStr(AC(line2), AM() + 12, line2);
+}
+
+const char* getAdcRecoveryDisplayText() {
+  return i_adc_recovery_count >= ADC_ERROR_RECOVERY_COUNT ? "ADC ERROR" : "ADC RECOVER";
 }
 
 //button pressed box, left and right, added xor

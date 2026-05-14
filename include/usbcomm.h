@@ -44,6 +44,19 @@ public:
     return expectedChecksum == calculatedChecksum;
   }
 
+  bool requireLength(size_t actual, size_t required, const char *commandName) {
+    if (actual >= required) {
+      return true;
+    }
+    Serial.print("Ignoring short USB packet for ");
+    Serial.print(commandName);
+    Serial.print(": ");
+    Serial.print(actual);
+    Serial.print("/");
+    Serial.println(required);
+    return false;
+  }
+
   void onWrite(uint8_t *data, size_t len) {
     //this is what the esp32 received via usb
     Serial.print("Timer ");
@@ -69,20 +82,30 @@ public:
     Serial.println(" ");
 
     if (data[0] != 0x03) {
-      String input = String((char *)data);
+      String input;
+      input.reserve(len);
+      for (size_t i = 0; i < len; i++) {
+        input += (char)data[i];
+      }
       handleStringCommand(input);
+      return;
+    }
+    if (!requireLength(len, 2, "message header")) {
       return;
     }
     //check if it's a decent scale message
     if (data[1] == 0x0F) {
+      if (!requireLength(len, 7, "tare")) {
+        return;
+      }
       //taring
       if (validateChecksum(data, len)) {
         Serial.println("Valid checksum for tare operation. Taring");
       } else {
         Serial.println("Invalid checksum for tare operation.");
+        return;
       }
-      b_tareByBle = true;
-      t_tareByBle = millis();
+      requestRemoteTare();
       if (data[5] == 0x00) {
         /*
         Tare the scale by sending "030F000000000C" (old version, disables heartbeat)
@@ -104,6 +127,9 @@ public:
         Serial.println(" ***");
       }
     } else if (data[1] == 0x0A) {
+      if (!requireLength(len, 3, "LED/power")) {
+        return;
+      }
       if (data[2] == 0x00) {
         Serial.println("LED off detected. Turn off OLED.");
         u8g2.setPowerSave(1);
@@ -114,6 +140,9 @@ public:
         u8g2.setPowerSave(0);
         b_u8g2Sleep = false;
         sendUsbLedResponse();
+        if (!requireLength(len, 6, "LED on")) {
+          return;
+        }
         if (data[5] == 0x00) {
           b_requireHeartBeat = false;
           Serial.println(" *** Heartbeat detection Off ***");
@@ -130,6 +159,9 @@ public:
         Serial.println("Power off detected.");
         b_powerOff = true;
       } else if (data[2] == 0x03) {
+        if (!requireLength(len, 4, "low power")) {
+          return;
+        }
         if (data[3] == 0x01) {
           Serial.println("Start Low Power Mode.");
           u8g2.setContrast(0);
@@ -138,6 +170,9 @@ public:
           u8g2.setContrast(255);
         }
       } else if (data[2] == 0x04) {
+        if (!requireLength(len, 4, "soft sleep")) {
+          return;
+        }
         if (data[3] == 0x01) {
           Serial.println("Start Soft Sleep.");
           u8g2.setPowerSave(1);
@@ -157,6 +192,9 @@ public:
         }
       }
     } else if (data[1] == 0x0B) {
+      if (!requireLength(len, 3, "timer")) {
+        return;
+      }
       if (data[2] == 0x03) {
         Serial.println("Timer start detected.");
         stopWatch.reset();
@@ -169,6 +207,9 @@ public:
         stopWatch.reset();
       }
     } else if (data[1] == 0x1A) {
+      if (!requireLength(len, 3, "calibration")) {
+        return;
+      }
       if (data[2] == 0x00) {
         Serial.println("Manual Calibration via BLE");
         i_button_cal_status = 1;
@@ -186,6 +227,9 @@ public:
     }
 #ifdef BUZZER
     else if (data[1] == 0x1C) {  //buzzer settings
+      if (!requireLength(len, 3, "buzzer")) {
+        return;
+      }
       if (data[2] == 0x00) {
         Serial.println("Buzzer Off");
         b_beep = false;  // won't store into eeprom
@@ -199,6 +243,9 @@ public:
     }
 #endif
     else if (data[1] == 0x1D) {  //Sample settings
+      if (!requireLength(len, 3, "sample settings")) {
+        return;
+      }
       if (data[2] == 0x00) {
         scale.setSamplesInUse(1);
         Serial.print("Samples in use set to: ");
@@ -213,6 +260,9 @@ public:
         Serial.println(scale.getSamplesInUse());
       }
     } else if (data[1] == 0x1E) {
+      if (!requireLength(len, 4, "menu/about/debug")) {
+        return;
+      }
       if (data[2] == 0x00) {
         //menu control
         if (data[3] == 0x00) {
@@ -257,6 +307,9 @@ public:
     } else if (data[1] == 0x1F) {
       reset();
     } else if (data[1] == 0x20) {
+      if (!requireLength(len, 3, "USB weight")) {
+        return;
+      }
       if (data[2] == 0x00) {
         Serial.println("Weight by USB disabled");
         b_usbweight_enabled = false;
@@ -288,6 +341,9 @@ public:
       sendUsbVoltage();
     }
     else if (data[1] == 0x25) {
+      if (!requireLength(len, 3, "ADS debug")) {
+        return;
+      }
       // ADS1232 Debug commands
       if (data[2] == 0x00) {
         Serial.println("ADS debug off via hex");
@@ -301,6 +357,9 @@ public:
       }
     }
     else if (data[1] == 0x26) {
+      if (!requireLength(len, 3, "ADS reset")) {
+        return;
+      }
       // ADS1232 Reset command
       if (data[2] <= 0x02) {
         handleAdsReset(data[2]);
@@ -675,6 +734,7 @@ void handleAdsReset(uint8_t mode) {
   scale.powerDown();
   delay(500);
   scale.powerUp();
+  resetAdcRecoveryState();
 
   // Step 2: Check if ADS came back (DOUT should go low when conversion ready)
   unsigned long startTime = millis();
@@ -697,14 +757,17 @@ void handleAdsReset(uint8_t mode) {
 
   // Step 3: Refresh dataset if mode >= 0x01
   if (mode >= 0x01) {
-    scale.refreshDataSet();
+    if (!scale.refreshDataSet()) {
+      Serial.println("ADS reset FAILED: dataset refresh timeout");
+      sendUsbAdsResetResponse(mode, 0x02);
+      return;
+    }
     Serial.println("ADS reset: dataset refreshed");
   }
 
   // Step 4: Tare + reset compensations if mode == 0x02
   if (mode == 0x02) {
-    b_tareByBle = true;
-    t_tareByBle = millis();
+    requestRemoteTare();
     Serial.println("ADS reset: tare requested");
   }
 
@@ -723,12 +786,4 @@ void sendUsbAdsDebug() {
 }
 
 #endif
-
-
-
-
-
-
-
-
 

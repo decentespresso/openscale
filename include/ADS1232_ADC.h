@@ -77,7 +77,7 @@ typedef void (*DebugCallback)(const ADS1232DebugInfo& info);
 class ADS1232_ADC {
 
 public:
-  ADS1232_ADC(uint8_t dout, uint8_t sck, uint8_t pwdn, uint8_t a0);  //constructor
+  ADS1232_ADC(uint8_t dout, uint8_t sck, uint8_t pwdn, int8_t a0);  //constructor
   ADS1232_ADC(uint8_t dout, uint8_t sck, uint8_t pwdn);  //constructor
   void setGain(uint8_t gain = 128);                 //value must be 32, 64 or 128*
   void begin();                                     //set pinMode, ADS1232 gain and power up the ADS1232
@@ -134,7 +134,7 @@ protected:
   uint8_t doutPin;                            //ADS1232 dout pin
   uint8_t GAIN;                               //ADS1232 GAIN
   uint8_t pdwnPin;                            //ADS1232 PWDN for power down
-  uint8_t a0Pin;                              //ADS1232 A0 for choose channel
+  int8_t a0Pin;                               //ADS1232 A0 for choose channel
   float calFactor = 1.0;                      //calibration factor as given in function setCalFactor(float cal)
   float calFactorRecip = 1.0;                 //reciprocal calibration factor (1/calFactor), the ADS1232 raw data is multiplied by this value
   volatile long dataSampleSet[DATA_SET + 1];  // dataset, make voltile if interrupt is used
@@ -150,6 +150,7 @@ protected:
   bool startStatus = 0;
   unsigned long startMultipleTimeStamp = 0;
   unsigned long startMultipleWaitTime = 0;
+  unsigned long startMultipleTareTimeStamp = 0;
   uint8_t convRslt = 0;
   bool tareStatus = 0;
   unsigned int tareTimeOut = (SAMPLES + IGN_HIGH_SAMPLE + IGN_HIGH_SAMPLE) * 150;  // tare timeout time in ms, no of samples * 150ms (10SPS + 50% margin)

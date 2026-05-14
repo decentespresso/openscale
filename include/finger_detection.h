@@ -215,6 +215,7 @@ bool isFingerPress(int button) {
         }
         if (!deviceConnected || b_btnFuncWhileConnected) {
           b_weight_quick_zero = true;
+          t_quickZeroStart = millis();
           t_tareByButton = millis();
           b_tareByButton = true;
         }

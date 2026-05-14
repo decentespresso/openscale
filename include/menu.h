@@ -499,6 +499,22 @@ void calibrate() {
   // calibration
 }
 
+void calibrationRefreshFailed() {
+  Serial.println("Calibration failed: ADC dataset refresh timeout");
+  u8g2.firstPage();
+  u8g2.setFont(FONT_S);
+  do {
+    u8g2.drawUTF8(AC((char *)"Calibration failed"), AM(), (char *)"Calibration failed");
+  } while (u8g2.nextPage());
+#ifdef BUZZER
+  buzzer.off();
+#endif
+  delay(1000);
+  i_button_cal_status = 0;
+  b_calibration = false;
+  scale.setSamplesInUse(1);
+}
+
 void calibration(int input) {
   if (b_calibration == true) {
     bool newDataReady = false;
@@ -745,8 +761,10 @@ void calibration(int input) {
         }
         Serial.print("weight is ");
         Serial.println(d_weight);
-        scale.refreshDataSet();  // refresh the dataset to be sure that the known
-                                 // mass is measured correct
+        if (!scale.refreshDataSet()) {  // refresh the dataset to be sure that the known
+          calibrationRefreshFailed();   // mass is measured correct
+          return;
+        }
 
         f_calibration_value = scale.getNewCalibration(
           known_mass);  // get the new calibration value
@@ -936,8 +954,10 @@ void calibration(int input) {
         delay(1000);
 
         scale.setSamplesInUse(16);
-        scale.refreshDataSet();  // refresh the dataset to be sure that the known
-                                 // mass is measured correct
+        if (!scale.refreshDataSet()) {  // refresh the dataset to be sure that the known
+          calibrationRefreshFailed();   // mass is measured correct
+          return;
+        }
         f_calibration_value = scale.getNewCalibration(
           known_mass);  // get the new calibration value
         Serial.print(F("New calibration value f: "));
