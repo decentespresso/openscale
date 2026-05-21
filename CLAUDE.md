@@ -56,9 +56,9 @@ ESP32-S3 has two cores. The Arduino sketch runs on the main loop task. **`websoc
 
 | Resource | Safe to touch from AsyncTCP task? | Reason |
 | --- | --- | --- |
-| `u8g2.*` | **No** — I²C bus, races the OLED draws in `loop()` | Defer via `wsQueuePending` |
-| `digitalWrite(PWR_CTRL, …)`, `digitalWrite(ACC_PWR_CTRL, …)` | **No** — power-gating must be sequenced with `u8g2` ops | Defer |
-| `stopWatch.*` | Yes — just `bool` + `uint32_t` writes (ESP32 32-bit aligned writes are atomic) | |
+| `u8g2.*` | **No** — I²C bus, races OLED draws issued from the main-loop task (`loop()`, button callbacks, menu/display helpers) | Defer via `wsQueuePending` |
+| `digitalWrite(PWR_CTRL, …)`, `digitalWrite(ACC_PWR_CTRL, …)` | **No** — power-gating must be sequenced with the `u8g2` ops in the SLEEP_ON / SLEEP_OFF paths | Defer |
+| `stopWatch.*` | Yes — its state is an enum + a few `uint32_t` fields; each individual write is atomic on ESP32, so `.start()` / `.stop()` / `.reset()` from the AsyncTCP task can't tear a reader on the loop task | |
 | Single `bool` / aligned `uint32_t` flags shared with `loop()` | Yes — **but mark them `volatile`** | See `include/parameter.h` |
 | `Serial.print*`, `websocket.printfAll`, `client->printf` | Yes — library serializes internally | |
 
