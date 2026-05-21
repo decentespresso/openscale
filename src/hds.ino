@@ -483,6 +483,45 @@ bool parseWebsocketRgb(String input, uint8_t &r, uint8_t &g, uint8_t &b) {
   return true;
 }
 
+// Queue a pending hardware action so the main loop performs it on its own
+// task. The WS event callback runs on the AsyncTCP task and must not touch
+// u8g2, stopWatch, or power-rail GPIOs directly.
+inline void wsQueuePending(uint32_t bits) {
+  portENTER_CRITICAL(&wsPendingMux);
+  wsPendingMask |= bits;
+  portEXIT_CRITICAL(&wsPendingMux);
+}
+
+void processWsPendingCmds() {
+  portENTER_CRITICAL(&wsPendingMux);
+  uint32_t mask = wsPendingMask;
+  wsPendingMask = 0;
+  portEXIT_CRITICAL(&wsPendingMux);
+  if (mask == 0) return;
+
+  // Hardware ops only — touching u8g2 (I2C) or peripheral power rails from
+  // the AsyncTCP task can race the main loop. State flags (b_u8g2Sleep,
+  // b_softSleep, etc.) are already updated synchronously in the WS callback
+  // so status frames stay accurate.
+  if (mask & WSP_DISPLAY_ON)  { u8g2.setPowerSave(0); }
+  if (mask & WSP_DISPLAY_OFF) { u8g2.setPowerSave(1); }
+  if (mask & WSP_LOWPWR_ON)   { u8g2.setContrast(0); }
+  if (mask & WSP_LOWPWR_OFF)  { u8g2.setContrast(255); }
+  if (mask & WSP_SLEEP_OFF) {
+    digitalWrite(PWR_CTRL, HIGH);
+    digitalWrite(ACC_PWR_CTRL, HIGH);
+    u8g2.setPowerSave(0);
+  }
+  if (mask & WSP_SLEEP_ON) {
+    u8g2.setPowerSave(1);
+    digitalWrite(PWR_CTRL, LOW);
+    digitalWrite(ACC_PWR_CTRL, LOW);
+  }
+  if (mask & WSP_POWER_OFF) {
+    b_powerOff = true;
+  }
+}
+
 void setWebsocketLedRgb(uint8_t r, uint8_t g, uint8_t b) {
   i_websocketLedR = r;
   i_websocketLedG = g;
@@ -649,6 +688,8 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
   }
 
   if (command == "timer") {
+    // StopWatch is just bool/uint32 state — safe to mutate from the AsyncTCP
+    // task, no hardware bus involved.
     if (action == "start") {
       Serial.println("Websocket timer start detected.");
       stopWatch.reset();
@@ -691,17 +732,20 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
   }
 
   if (command == "display") {
+    // Update the state flag synchronously so the status frame we send next
+    // reflects the requested state. The u8g2 call (I2C, not thread-safe) is
+    // deferred and runs on the main loop one tick later.
     if (action == "on") {
       Serial.println("Websocket LED/display on detected.");
-      u8g2.setPowerSave(0);
       b_u8g2Sleep = false;
+      wsQueuePending(WSP_DISPLAY_ON);
       sendWebsocketStatus(client, "ok");
       return true;
     }
     if (action == "off") {
       Serial.println("Websocket display off detected.");
-      u8g2.setPowerSave(1);
       b_u8g2Sleep = true;
+      wsQueuePending(WSP_DISPLAY_OFF);
       sendWebsocketStatus(client, "ok");
       return true;
     }
@@ -712,15 +756,15 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
   if (command == "low_power") {
     if (action == "on") {
       Serial.println("Websocket low power mode on detected.");
-      u8g2.setContrast(0);
       b_websocketLowPowerEnabled = true;
+      wsQueuePending(WSP_LOWPWR_ON);
       sendWebsocketStatus(client, "ok");
       return true;
     }
     if (action == "off") {
       Serial.println("Websocket low power mode off detected.");
-      u8g2.setContrast(255);
       b_websocketLowPowerEnabled = false;
+      wsQueuePending(WSP_LOWPWR_OFF);
       sendWebsocketStatus(client, "ok");
       return true;
     }
@@ -731,20 +775,18 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
   if (command == "sleep" || command == "soft_sleep") {
     if (action == "on") {
       Serial.println("Websocket soft sleep on detected.");
-      u8g2.setPowerSave(1);
+      // Set state flags synchronously so status reflects the requested mode.
+      // u8g2 + GPIO power-rail writes are deferred to the main loop.
       b_softSleep = true;
-      digitalWrite(PWR_CTRL, LOW);
-      digitalWrite(ACC_PWR_CTRL, LOW);
+      wsQueuePending(WSP_SLEEP_ON);
       sendWebsocketStatus(client, "ok");
       return true;
     }
     if (action == "off" || action == "wake") {
       Serial.println("Websocket soft sleep off detected.");
-      digitalWrite(PWR_CTRL, HIGH);
-      digitalWrite(ACC_PWR_CTRL, HIGH);
-      u8g2.setPowerSave(0);
-      b_u8g2Sleep = false;
       b_softSleep = false;
+      b_u8g2Sleep = false;
+      wsQueuePending(WSP_SLEEP_OFF);
       sendWebsocketStatus(client, "ok");
       return true;
     }
@@ -755,7 +797,7 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
   if (command == "power" && action == "off") {
     Serial.println("Websocket power off detected.");
     sendWebsocketPowerOff(0);
-    b_powerOff = true;
+    wsQueuePending(WSP_POWER_OFF);
     sendWebsocketStatus(client, "ok");
     return true;
   }
@@ -912,16 +954,15 @@ void _wifi_init(void *args) {
       Serial.printf("Pong received from client %u\n", client->id());
     }
     if (type == WS_EVT_DATA) {
-
       AwsFrameInfo *info = (AwsFrameInfo *)arg;
-      String msg = "";
-
-      for (size_t i = 0; i < info->len; i++) {
-        msg += (char)data[i];
+      // Only handle complete, unfragmented text frames. Fragmented or binary
+      // frames would corrupt the parsers below.
+      if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+        String msg((const char *)data, len);
+        Serial.print("Websocket recv: ");
+        Serial.println(msg);
+        handleWebsocketRateCommand(client, msg);
       }
-      Serial.print("Websocket recv: ");
-      Serial.println(msg);
-      handleWebsocketRateCommand(client, msg);
     }
   });
   vTaskDelete(NULL);
@@ -1806,6 +1847,11 @@ void setManualStableValue(float value) {
 
 
 void loop() {
+  // Drain any deferred WS hardware actions before checking shutdown/sleep,
+  // so a SLEEP_OFF / POWER_OFF queued from the AsyncTCP task takes effect
+  // here on the loop task rather than racing peripheral drivers.
+  processWsPendingCmds();
+
   if (b_powerOff){
     shut_down_now_nobeep();
     return;
@@ -1930,7 +1976,7 @@ void loop() {
         if (b_wifiEnabled) {
           websocket.cleanupClients(1);
           ElegantOTA.loop();
-          static long lastUpdate = 0;
+          static unsigned long lastUpdate = 0;
           unsigned long current = millis();
           if (current - lastUpdate >= weightWebsocketNotifyInterval) {
             if (websocket.availableForWriteAll() > 0) {
