@@ -49,6 +49,164 @@ When WiFi mode is enabled on HDS, there is also a new WebSocket endpoint availab
 
 you can also send a simple `tare` String over the websocket and the scale will tare itself.
 
+For backwards compatibility, snapshot frames do not include a `type` field.
+Clients should treat the absence of `type` as a weight snapshot. Event and
+response frames always include `type`.
+
+By default, WiFi clients receive weight snapshots at 2 Hz. A connected client
+can negotiate one of the supported WiFi stream rates by sending one of these
+WebSocket messages:
+
+```text
+rate 2k
+rate 5k
+rate 10k
+```
+
+or JSON:
+
+```json
+{ "command": "rate", "value": "10k" }
+{ "rate": "10k" }
+```
+
+The supported rates are 2 Hz, 5 Hz, and 10 Hz. The firmware sends back a
+`type: "rate"` acknowledgement with the active interval and rate. The firmware
+does not automatically downgrade a requested rate on weak WiFi; if the socket is
+not writable for a tick, that frame is skipped rather than queued.
+
+WiFi snapshots are intentionally kept small, especially at 10 Hz:
+
+```json
+{
+  "grams": 25.66,
+  "ms": 12345
+}
+```
+
+Battery, charging, timer, and power/display state are sent in typed `status`
+frames instead of every snapshot. `status`, `battery`, and `info` return a
+status frame immediately. After `events on`, the firmware also sends a periodic
+`type: "status"` frame every 5 seconds.
+
+WiFi clients can send these text commands over the same WebSocket:
+
+```text
+tare
+events on
+events off
+timer start
+timer stop
+timer reset
+display on
+display off
+led 255 128 0
+led off
+low_power on
+low_power off
+soft_sleep on
+soft_sleep off
+power off
+status
+battery
+info
+```
+
+The legacy text `tare` command is intentionally silent for backwards
+compatibility. JSON `{ "command": "tare" }` returns a `type: "status"` ack.
+
+The same commands can be sent as JSON:
+
+```json
+{ "command": "tare" }
+{ "command": "timer", "action": "start" }
+{ "command": "led", "r": 255, "g": 128, "b": 0 }
+```
+
+Status frame shape:
+
+```json
+{
+  "type": "status",
+  "status": "ok",
+  "protocol_version": 1,
+  "firmware_version": "FW: 3.0.9",
+  "grams": 25.66,
+  "ms": 12345,
+  "battery_percent": 82,
+  "battery_voltage": 3.95,
+  "charging": false,
+  "timer_running": true,
+  "timer_seconds": 12,
+  "display_on": true,
+  "low_power": false,
+  "soft_sleep": false,
+  "events_enabled": true,
+  "rate_hz": 10,
+  "interval_ms": 100,
+  "led": {
+    "enabled": true,
+    "r": 255,
+    "g": 128,
+    "b": 0
+  }
+}
+```
+
+For backwards compatibility, WiFi only sends weight snapshots by default. A
+client must send `events on` before periodic status, local scale button presses,
+or power-off notifications are emitted. The event stream resets to off when the
+WebSocket disconnects.
+
+Button event fields:
+
+```json
+{
+  "type": "button",
+  "button": "circle",
+  "button_number": 1,
+  "press": "short",
+  "press_code": 1,
+  "ms": 12345
+}
+```
+
+Button numbers are `1 = circle` and `2 = square`. Press codes currently emitted
+over WiFi are `1 = short` and `2 = long`; the current finger-detection path only
+emits short-press events.
+
+Power event fields:
+
+```json
+{
+  "type": "power",
+  "event": "power_off",
+  "reason": "low_battery",
+  "reason_code": 3,
+  "ms": 12345
+}
+```
+
+Power reason codes are `0 = disabled/failed`, `1 = circle double-click`,
+`2 = square double-click`, `3 = low battery`, and `4 = gyro` when gyro support
+is compiled in.
+
+Power and display command semantics:
+
+- `display on` / `display off`: OLED power save on/off. The scale and WiFi stay
+  awake.
+- `led <r> <g> <b>`: sets rich LED RGB state with each channel clamped to
+  `0..255`. `led off` is equivalent to `led 0 0 0`.
+- `low_power on` / `low_power off`: sets OLED contrast to minimum/maximum. It
+  does not disable the WiFi modem or drop the WebSocket link.
+- `soft_sleep on`: turns off the OLED and sensor power rails and pauses normal
+  scale-loop work. WiFi remains configured so a later WebSocket command can wake
+  it, but weight snapshots stop while soft sleep is active.
+- `soft_sleep off` / `soft_sleep wake`: restores sensor power, OLED power, and
+  normal scale-loop work.
+- `power off`: full scale power-off. The WebSocket link will drop and cannot
+  wake the scale.
+
 
 # How to upload Web apps?
 

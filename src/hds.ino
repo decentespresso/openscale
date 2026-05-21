@@ -274,6 +274,7 @@ void buttonCircle_DoubleClicked() {
   if (!deviceConnected && !b_menu && !b_calibration) {
     Serial.println("Going to sleep now by CircleDoubleClick");
     sendBlePowerOff(1);
+    sendWebsocketPowerOff(1);
     b_powerOff = true;
   } else {
     if (deviceConnected) {
@@ -283,8 +284,10 @@ void buttonCircle_DoubleClicked() {
     }
     if (b_menu)
       Serial.println("Menu operating, not going to sleep.");
-    if (!b_menu)
+    if (!b_menu) {
       sendBlePowerOff(0);
+      sendWebsocketPowerOff(0);
+    }
   }
 }
 
@@ -293,6 +296,7 @@ void buttonSquare_DoubleClicked() {
   if (!deviceConnected && !b_menu && !b_calibration) {
     Serial.println("Going to sleep now by SquareDoubleClick");
     sendBlePowerOff(2);
+    sendWebsocketPowerOff(2);
     b_powerOff = true;
   } else {
     if (deviceConnected) {
@@ -302,8 +306,10 @@ void buttonSquare_DoubleClicked() {
     }
     if (b_menu)
       Serial.println("Menu operating, not going to sleep.");
-    if (!b_menu)
+    if (!b_menu) {
       sendBlePowerOff(0);
+      sendWebsocketPowerOff(0);
+    }
   }
 }
 
@@ -367,6 +373,523 @@ void button_init() {
   config1.setLongPressDelay(LONGPRESS_DELAY);
 }
 
+unsigned long websocketIntervalForRate(float hz) {
+  if (fabs(hz - 2.0) < 0.01) {
+    return WEBSOCKET_2HZ_NOTIFY_INTERVAL_MS;
+  }
+  if (fabs(hz - 5.0) < 0.01) {
+    return WEBSOCKET_5HZ_NOTIFY_INTERVAL_MS;
+  }
+  if (fabs(hz - 10.0) < 0.01) {
+    return WEBSOCKET_10HZ_NOTIFY_INTERVAL_MS;
+  }
+  return 0;
+}
+
+unsigned long websocketIntervalForLabel(String label) {
+  label.trim();
+  label.toLowerCase();
+  if (label == "2" || label == "2hz" || label == "2k") {
+    return WEBSOCKET_2HZ_NOTIFY_INTERVAL_MS;
+  }
+  if (label == "5" || label == "5hz" || label == "5k") {
+    return WEBSOCKET_5HZ_NOTIFY_INTERVAL_MS;
+  }
+  if (label == "10" || label == "10hz" || label == "10k") {
+    return WEBSOCKET_10HZ_NOTIFY_INTERVAL_MS;
+  }
+  return 0;
+}
+
+unsigned long websocketRateForInterval(unsigned long intervalMs) {
+  if (intervalMs == WEBSOCKET_2HZ_NOTIFY_INTERVAL_MS) {
+    return 2;
+  }
+  if (intervalMs == WEBSOCKET_5HZ_NOTIFY_INTERVAL_MS) {
+    return 5;
+  }
+  if (intervalMs == WEBSOCKET_10HZ_NOTIFY_INTERVAL_MS) {
+    return 10;
+  }
+  return 0;
+}
+
+const char *websocketButtonName(int buttonNumber) {
+  if (buttonNumber == 1) {
+    return "circle";
+  }
+  if (buttonNumber == 2) {
+    return "square";
+  }
+  return "unknown";
+}
+
+const char *websocketPressName(int buttonShortPress) {
+  if (buttonShortPress == 1) {
+    return "short";
+  }
+  if (buttonShortPress == 2) {
+    return "long";
+  }
+  return "release";
+}
+
+const char *websocketPowerOffReason(int reason) {
+  switch (reason) {
+    case 0: return "disabled";
+    case 1: return "circle_double_click";
+    case 2: return "square_double_click";
+    case 3: return "low_battery";
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
+    case 4: return "gyro";
+#endif
+    default: return "unknown";
+  }
+}
+
+bool websocketIsCharging() {
+#if defined(USB_DET)
+  return digitalRead(USB_DET) == LOW;
+#else
+  return digitalRead(BATTERY_CHARGING) == LOW;
+#endif
+}
+
+int websocketBatteryPercent() {
+  float perc = (f_batteryVoltage - showEmptyBatteryBelowVoltage) /
+               (showFullBatteryAboveVoltage - showEmptyBatteryBelowVoltage) * 100.0f;
+  if (perc < 0) perc = 0;
+  if (perc > 100) perc = 100;
+  return (int)perc;
+}
+
+uint8_t websocketClampColor(int value) {
+  if (value < 0) return 0;
+  if (value > 255) return 255;
+  return (uint8_t)value;
+}
+
+bool parseWebsocketRgb(String input, uint8_t &r, uint8_t &g, uint8_t &b) {
+  input.replace(",", " ");
+  int red;
+  int green;
+  int blue;
+  if (sscanf(input.c_str(), "%d %d %d", &red, &green, &blue) != 3) {
+    return false;
+  }
+  r = websocketClampColor(red);
+  g = websocketClampColor(green);
+  b = websocketClampColor(blue);
+  return true;
+}
+
+void setWebsocketLedRgb(uint8_t r, uint8_t g, uint8_t b) {
+  i_websocketLedR = r;
+  i_websocketLedG = g;
+  i_websocketLedB = b;
+  b_websocketLedEnabled = r > 0 || g > 0 || b > 0;
+  Serial.print("Websocket LED RGB set to ");
+  Serial.print(i_websocketLedR);
+  Serial.print(",");
+  Serial.print(i_websocketLedG);
+  Serial.print(",");
+  Serial.println(i_websocketLedB);
+}
+
+void sendWebsocketButton(int buttonNumber, int buttonShortPress) {
+  if (!b_wifiEnabled || !b_websocketEventsEnabled || websocket.count() == 0) return;
+  websocket.printfAll("{\"type\":\"button\",\"button\":\"%s\",\"button_number\":%d,\"press\":\"%s\",\"press_code\":%d,\"ms\":%lu}",
+                      websocketButtonName(buttonNumber),
+                      buttonNumber,
+                      websocketPressName(buttonShortPress),
+                      buttonShortPress,
+                      millis());
+}
+
+void sendWebsocketPowerOff(int i_reason) {
+  if (!b_wifiEnabled || !b_websocketEventsEnabled || websocket.count() == 0) return;
+  websocket.printfAll("{\"type\":\"power\",\"event\":\"power_off\",\"reason\":\"%s\",\"reason_code\":%d,\"ms\":%lu}",
+                      websocketPowerOffReason(i_reason),
+                      i_reason,
+                      millis());
+}
+
+void sendWebsocketRateInfo(AsyncWebSocketClient *client, const char *status) {
+  unsigned long hz = websocketRateForInterval(weightWebsocketNotifyInterval);
+  client->printf("{\"type\":\"rate\",\"status\":\"%s\",\"interval_ms\":%lu,\"hz\":%lu,\"supported_hz\":[2,5,10]}",
+                 status,
+                 weightWebsocketNotifyInterval,
+                 hz);
+}
+
+void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
+  client->printf("{\"type\":\"status\",\"status\":\"%s\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu,\"led\":{\"enabled\":%s,\"r\":%u,\"g\":%u,\"b\":%u}}",
+                 status,
+                 FIRMWARE_VER,
+                 f_displayedValue,
+                 millis(),
+                 websocketBatteryPercent(),
+                 f_batteryVoltage,
+                 websocketIsCharging() ? "true" : "false",
+                 stopWatch.isRunning() ? "true" : "false",
+                 stopWatch.elapsed(),
+                 b_u8g2Sleep ? "false" : "true",
+                 b_websocketLowPowerEnabled ? "true" : "false",
+                 b_softSleep ? "true" : "false",
+                 b_websocketEventsEnabled ? "true" : "false",
+                 websocketRateForInterval(weightWebsocketNotifyInterval),
+                 weightWebsocketNotifyInterval,
+                 b_websocketLedEnabled ? "true" : "false",
+                 i_websocketLedR,
+                 i_websocketLedG,
+                 i_websocketLedB);
+}
+
+void sendWebsocketStatusAll(const char *status) {
+  if (!b_wifiEnabled || !b_websocketEventsEnabled || websocket.count() == 0) return;
+  websocket.printfAll("{\"type\":\"status\",\"status\":\"%s\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu,\"led\":{\"enabled\":%s,\"r\":%u,\"g\":%u,\"b\":%u}}",
+                      status,
+                      FIRMWARE_VER,
+                      f_displayedValue,
+                      millis(),
+                      websocketBatteryPercent(),
+                      f_batteryVoltage,
+                      websocketIsCharging() ? "true" : "false",
+                      stopWatch.isRunning() ? "true" : "false",
+                      stopWatch.elapsed(),
+                      b_u8g2Sleep ? "false" : "true",
+                      b_websocketLowPowerEnabled ? "true" : "false",
+                      b_softSleep ? "true" : "false",
+                      b_websocketEventsEnabled ? "true" : "false",
+                      websocketRateForInterval(weightWebsocketNotifyInterval),
+                      weightWebsocketNotifyInterval,
+                      b_websocketLedEnabled ? "true" : "false",
+                      i_websocketLedR,
+                      i_websocketLedG,
+                      i_websocketLedB);
+}
+
+void sendWebsocketError(AsyncWebSocketClient *client, const char *code, const char *message) {
+  client->printf("{\"type\":\"error\",\"code\":\"%s\",\"message\":\"%s\",\"ms\":%lu}",
+                 code,
+                 message,
+                 millis());
+}
+
+bool setWebsocketRateFromInterval(AsyncWebSocketClient *client, unsigned long intervalMs) {
+  if (websocketRateForInterval(intervalMs) == 0) {
+    sendWebsocketRateInfo(client, "invalid");
+    return false;
+  }
+  weightWebsocketNotifyInterval = intervalMs;
+  Serial.print("Websocket notify interval set to ");
+  Serial.print(weightWebsocketNotifyInterval);
+  Serial.println(" ms");
+  sendWebsocketRateInfo(client, "ok");
+  return true;
+}
+
+bool setWebsocketRateFromHz(AsyncWebSocketClient *client, float hz) {
+  unsigned long intervalMs = websocketIntervalForRate(hz);
+  if (intervalMs == 0) {
+    sendWebsocketRateInfo(client, "invalid");
+    return false;
+  }
+  return setWebsocketRateFromInterval(client, intervalMs);
+}
+
+bool setWebsocketRateFromLabel(AsyncWebSocketClient *client, String label) {
+  unsigned long intervalMs = websocketIntervalForLabel(label);
+  if (intervalMs == 0) {
+    sendWebsocketRateInfo(client, "invalid");
+    return false;
+  }
+  return setWebsocketRateFromInterval(client, intervalMs);
+}
+
+bool setWebsocketRateFromValue(AsyncWebSocketClient *client, String value) {
+  unsigned long intervalMs = websocketIntervalForLabel(value);
+  if (intervalMs > 0) {
+    return setWebsocketRateFromInterval(client, intervalMs);
+  }
+  return setWebsocketRateFromHz(client, value.toFloat());
+}
+
+bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command, String action = "") {
+  command.trim();
+  action.trim();
+  command.toLowerCase();
+  action.toLowerCase();
+
+  if (command == "status" || command == "battery" || command == "info") {
+    sendWebsocketStatus(client, "ok");
+    return true;
+  }
+
+  if (command == "events") {
+    if (action == "on" || action == "enable" || action == "enabled") {
+      b_websocketEventsEnabled = true;
+      t_lastWebsocketStatusUpdate = millis();
+      sendWebsocketStatus(client, "ok");
+      return true;
+    }
+    if (action == "off" || action == "disable" || action == "disabled") {
+      b_websocketEventsEnabled = false;
+      sendWebsocketStatus(client, "ok");
+      return true;
+    }
+    sendWebsocketStatus(client, "invalid");
+    return true;
+  }
+
+  if (command == "tare") {
+    requestRemoteTare();
+    sendWebsocketStatus(client, "ok");
+    return true;
+  }
+
+  if (command == "timer") {
+    if (action == "start") {
+      Serial.println("Websocket timer start detected.");
+      stopWatch.reset();
+      stopWatch.start();
+      sendWebsocketStatus(client, "ok");
+      return true;
+    }
+    if (action == "stop") {
+      Serial.println("Websocket timer stop detected.");
+      stopWatch.stop();
+      sendWebsocketStatus(client, "ok");
+      return true;
+    }
+    if (action == "zero" || action == "reset") {
+      Serial.println("Websocket timer zero detected.");
+      stopWatch.reset();
+      sendWebsocketStatus(client, "ok");
+      return true;
+    }
+    sendWebsocketStatus(client, "invalid");
+    return true;
+  }
+
+  if (command == "led") {
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    if (parseWebsocketRgb(action, r, g, b)) {
+      setWebsocketLedRgb(r, g, b);
+      sendWebsocketStatus(client, "ok");
+      return true;
+    }
+    if (action == "off") {
+      setWebsocketLedRgb(0, 0, 0);
+      sendWebsocketStatus(client, "ok");
+      return true;
+    }
+    sendWebsocketStatus(client, "invalid");
+    return true;
+  }
+
+  if (command == "display") {
+    if (action == "on") {
+      Serial.println("Websocket LED/display on detected.");
+      u8g2.setPowerSave(0);
+      b_u8g2Sleep = false;
+      sendWebsocketStatus(client, "ok");
+      return true;
+    }
+    if (action == "off") {
+      Serial.println("Websocket display off detected.");
+      u8g2.setPowerSave(1);
+      b_u8g2Sleep = true;
+      sendWebsocketStatus(client, "ok");
+      return true;
+    }
+    sendWebsocketStatus(client, "invalid");
+    return true;
+  }
+
+  if (command == "low_power") {
+    if (action == "on") {
+      Serial.println("Websocket low power mode on detected.");
+      u8g2.setContrast(0);
+      b_websocketLowPowerEnabled = true;
+      sendWebsocketStatus(client, "ok");
+      return true;
+    }
+    if (action == "off") {
+      Serial.println("Websocket low power mode off detected.");
+      u8g2.setContrast(255);
+      b_websocketLowPowerEnabled = false;
+      sendWebsocketStatus(client, "ok");
+      return true;
+    }
+    sendWebsocketStatus(client, "invalid");
+    return true;
+  }
+
+  if (command == "sleep" || command == "soft_sleep") {
+    if (action == "on") {
+      Serial.println("Websocket soft sleep on detected.");
+      u8g2.setPowerSave(1);
+      b_softSleep = true;
+      digitalWrite(PWR_CTRL, LOW);
+      digitalWrite(ACC_PWR_CTRL, LOW);
+      sendWebsocketStatus(client, "ok");
+      return true;
+    }
+    if (action == "off" || action == "wake") {
+      Serial.println("Websocket soft sleep off detected.");
+      digitalWrite(PWR_CTRL, HIGH);
+      digitalWrite(ACC_PWR_CTRL, HIGH);
+      u8g2.setPowerSave(0);
+      b_u8g2Sleep = false;
+      b_softSleep = false;
+      sendWebsocketStatus(client, "ok");
+      return true;
+    }
+    sendWebsocketStatus(client, "invalid");
+    return true;
+  }
+
+  if (command == "power" && action == "off") {
+    Serial.println("Websocket power off detected.");
+    sendWebsocketPowerOff(0);
+    b_powerOff = true;
+    sendWebsocketStatus(client, "ok");
+    return true;
+  }
+
+  return false;
+}
+
+bool handleWebsocketTextCommand(AsyncWebSocketClient *client, String msg) {
+  msg.trim();
+  String lowerMsg = msg;
+  lowerMsg.toLowerCase();
+
+  if (lowerMsg == "tare") {
+    requestRemoteTare();
+    return true;
+  }
+
+  if (handleWebsocketControlCommand(client, lowerMsg)) {
+    return true;
+  }
+
+  int spaceIndex = lowerMsg.indexOf(' ');
+  if (spaceIndex > 0 &&
+      handleWebsocketControlCommand(client,
+                                    lowerMsg.substring(0, spaceIndex),
+                                    lowerMsg.substring(spaceIndex + 1))) {
+    return true;
+  }
+
+  if (lowerMsg == "rate" || lowerMsg == "get_rate") {
+    sendWebsocketRateInfo(client, "ok");
+    return true;
+  }
+
+  if (lowerMsg.startsWith("rate ")) {
+    unsigned long intervalMs = websocketIntervalForLabel(msg.substring(5));
+    if (intervalMs > 0) {
+      return setWebsocketRateFromInterval(client, intervalMs);
+    }
+    return setWebsocketRateFromHz(client, msg.substring(5).toFloat());
+  }
+
+  if (lowerMsg.startsWith("interval ")) {
+    return setWebsocketRateFromInterval(client, msg.substring(9).toInt());
+  }
+
+  return false;
+}
+
+bool handleWebsocketRateCommand(AsyncWebSocketClient *client, String msg) {
+  msg.trim();
+  String lowerMsg = msg;
+  lowerMsg.toLowerCase();
+
+  if (!msg.startsWith("{")) {
+    return handleWebsocketTextCommand(client, msg);
+  }
+
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, msg);
+  if (error) {
+    return false;
+  }
+
+  if (doc["rate_hz"].is<float>()) {
+    return setWebsocketRateFromHz(client, doc["rate_hz"].as<float>());
+  }
+
+  if (doc["hz"].is<float>()) {
+    return setWebsocketRateFromHz(client, doc["hz"].as<float>());
+  }
+
+  if (doc["rate"].is<const char *>()) {
+    unsigned long intervalMs = websocketIntervalForLabel(doc["rate"].as<String>());
+    if (intervalMs > 0) {
+      return setWebsocketRateFromInterval(client, intervalMs);
+    }
+  }
+
+  if (doc["interval_ms"].is<unsigned long>()) {
+    return setWebsocketRateFromInterval(client, doc["interval_ms"].as<unsigned long>());
+  }
+
+  if (doc["command"].is<const char *>()) {
+    String command = doc["command"].as<String>();
+    command.trim();
+    command.toLowerCase();
+    String action = "";
+    if (doc["action"].is<const char *>()) {
+      action = doc["action"].as<String>();
+    }
+    if (command == "rate" && doc["value"].is<const char *>()) {
+      return setWebsocketRateFromValue(client, doc["value"].as<String>());
+    }
+    if (command == "led" &&
+        doc["r"].is<int>() &&
+        doc["g"].is<int>() &&
+        doc["b"].is<int>()) {
+      setWebsocketLedRgb(websocketClampColor(doc["r"].as<int>()),
+                         websocketClampColor(doc["g"].as<int>()),
+                         websocketClampColor(doc["b"].as<int>()));
+      sendWebsocketStatus(client, "ok");
+      return true;
+    }
+    return handleWebsocketControlCommand(client, command, action);
+  }
+
+  if (doc["cmd"].is<const char *>()) {
+    String command = doc["cmd"].as<String>();
+    command.trim();
+    command.toLowerCase();
+    String action = "";
+    if (doc["action"].is<const char *>()) {
+      action = doc["action"].as<String>();
+    }
+    if (command == "rate" && doc["value"].is<const char *>()) {
+      return setWebsocketRateFromValue(client, doc["value"].as<String>());
+    }
+    if (command == "led" &&
+        doc["r"].is<int>() &&
+        doc["g"].is<int>() &&
+        doc["b"].is<int>()) {
+      setWebsocketLedRgb(websocketClampColor(doc["r"].as<int>()),
+                         websocketClampColor(doc["g"].as<int>()),
+                         websocketClampColor(doc["b"].as<int>()));
+      sendWebsocketStatus(client, "ok");
+      return true;
+    }
+    return handleWebsocketControlCommand(client, command, action);
+  }
+
+  return false;
+}
+
 void _wifi_init(void *args) {
   b_wifiEnabled = true;
   setupWifi();
@@ -380,6 +903,9 @@ void _wifi_init(void *args) {
       client->setCloseClientOnQueueFull(false);
     } else if (type == WS_EVT_DISCONNECT) {
       Serial.printf("Client %u disconnected\n", client->id());
+      weightWebsocketNotifyInterval = WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS;
+      b_websocketEventsEnabled = false;
+      t_lastWebsocketStatusUpdate = 0;
     } else if (type == WS_EVT_ERROR) {
       Serial.printf("WebSocket error on client %u\n", client->id());
     } else if (type == WS_EVT_PONG) {
@@ -395,9 +921,7 @@ void _wifi_init(void *args) {
       }
       Serial.print("Websocket recv: ");
       Serial.println(msg);
-      if (msg == "tare") {
-        requestRemoteTare();
-      }
+      handleWebsocketRateCommand(client, msg);
     }
   });
   vTaskDelete(NULL);
@@ -1408,15 +1932,24 @@ void loop() {
           ElegantOTA.loop();
           static long lastUpdate = 0;
           unsigned long current = millis();
-          if (current - lastUpdate > 500) {
+          if (current - lastUpdate >= weightWebsocketNotifyInterval) {
             if (websocket.availableForWriteAll() > 0) {
               if (!b_adc_recovery_active) {
-                websocket.printfAll("{ \"grams\": %.2f, \"ms\": %lu }", f_displayedValue, current);
+                websocket.printfAll("{\"grams\":%.2f,\"ms\":%lu}", f_displayedValue, current);
               }
             } else {
               Serial.println("Websocket write unavailable");
             }
             lastUpdate = current;
+          }
+          if (b_websocketEventsEnabled &&
+              current - t_lastWebsocketStatusUpdate >= WEBSOCKET_STATUS_NOTIFY_INTERVAL_MS) {
+            if (websocket.availableForWriteAll() > 0) {
+              sendWebsocketStatusAll("periodic");
+            } else {
+              Serial.println("Websocket status write unavailable");
+            }
+            t_lastWebsocketStatusUpdate = current;
           }
         }
         if (b_bootTare) {
@@ -1890,6 +2423,3 @@ void drawDriftCompensationInfo() {
   snprintf(factorText, sizeof(factorText), "%.2f", f_displayedValue);
   u8g2.drawStr(80, 64, (char *)trim(factorText));
 }
-
-
-

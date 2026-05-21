@@ -20,6 +20,7 @@ Adafruit_ADS1115 ads;  // Create an ADS1115 object
 
 //prototype
 void sendBlePowerOff(int i_reason);
+void sendWebsocketPowerOff(int i_reason);
 void bleShutdown();  // defined in ble.h
 void stopWifi();  // defined in wifi_setup.cpp
 void stopWebServer();  // defined in webserver.h
@@ -233,6 +234,7 @@ void shut_down_low_battery(float voltage) {
     }
     sendBlePowerOff(3);
 #endif
+    sendWebsocketPowerOff(3);
 #ifdef BUZZER
     buzzer.off();
 #endif
@@ -347,6 +349,7 @@ void power_off_gyro(int sec) {
       //Serial.println(" seconds to power off by gyro");
       if (d_timeleft <= 0) {
         sendBlePowerOff(4);
+        sendWebsocketPowerOff(4);
         shut_down_now();
       }
     }
