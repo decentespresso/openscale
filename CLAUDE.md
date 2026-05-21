@@ -1,0 +1,142 @@
+# CLAUDE.md — Half Decent Scale firmware
+
+Espresso-scale firmware for the HDS hardware: ESP32-S3 + load-cell amplifier (ADS1232 or HX711) + 128x64 OLED + BLE + WiFi. Built with PlatformIO + Arduino framework. The on-device web app at `/` talks to the firmware over a single `/snapshot` WebSocket.
+
+## Quick reference
+
+```sh
+# All commands run from the repo root.
+pio run -e esp32s3                                                # build
+pio run -e esp32s3 -t upload --upload-port /dev/cu.wchusbserial110 # flash firmware
+pio run -e esp32s3 -t uploadfs --upload-port /dev/cu.wchusbserial110 # flash LittleFS (web_apps/)
+```
+
+```sh
+# Serial monitor — pio device monitor needs a PTY. From a non-tty harness use
+# pyserial directly. Path is the PlatformIO-bundled python so pyserial is on
+# its sys.path; system python3 typically isn't.
+/opt/homebrew/Cellar/platformio/6.1.19_1/libexec/bin/python3 -u -c "
+import serial, sys
+s = serial.Serial('/dev/cu.wchusbserial110', 115200, timeout=1)
+while True:
+    line = s.readline()
+    if line:
+        sys.stdout.write(line.decode('utf-8', errors='replace'))
+        sys.stdout.flush()
+"
+```
+
+The scale advertises mDNS `hds.local`. On macOS use `curl -4` or `--resolve` — plain `curl http://hds.local/` blocks for ~5s on the AAAA lookup before falling back to A.
+
+If no WiFi credentials are stored, the device falls back to AP mode: SSID `DecentScale` / password `12345678` / IP `192.168.1.1`. Browse there and POST credentials to `/setup/wifi` (the on-device UI provides a form).
+
+## Code layout
+
+This codebase is unusual: **most logic lives in `include/*.h` as full implementations**, not just declarations. There's only one `.ino` and two `.cpp` files. Don't include the same header from two translation units; treat them as a unity build.
+
+| Location | Contents | Key line refs |
+| --- | --- | --- |
+| `src/hds.ino` | `setup()`, `loop()`, button callbacks, WS event handler, helpers — ~2400 lines | `setup()` ~992, `loop()` ~1862, WS handlers ~670–930 |
+| `src/wifi_setup.cpp` | STA/AP bring-up; credentials in NVS preferences | `connectToWifi`, `setupAP` |
+| `src/ADS1232_ADC.cpp` | Load-cell driver | |
+| `include/config.h` | **Per-board hardware config.** Selects `BUZZER`, `ACC_MPU6050` / `ACC_BMA400`, `ESPNOW`, `FIRMWARE_VER`, etc. Active board is chosen by `#if defined(BOARD_X)` branches. | |
+| `include/parameter.h` | All global state declarations — every `b_*`, `i_*`, `t_*`, `f_*` global lives here | |
+| `include/declare.h` | Object instances (`u8g2`, `stopWatch`, `scale`, `mpu`, …) | |
+| `include/ble.h` | BLE GATT server + decentespresso wire-protocol parser | |
+| `include/webserver.h` | AsyncWebServer + `/snapshot` WebSocket setup | |
+| `include/usbcomm.h` | USB binary protocol (decentespresso-compatible) | |
+| `include/power.h` | Battery monitoring, `shut_down_*`, `esp32_sleep()` — **centralized teardown chain** | `esp32_sleep()` ~166 |
+| `include/finger_detection.h` | Touch-button press classifier | |
+| `include/menu.h`, `display.h` | OLED UI | |
+| `web_apps/` | Static files served via LittleFS at `/` (Quality_Control_Assistant, Weigh_Save, dosing_assistant, index.html) | |
+
+## Threading model — the #1 footgun
+
+ESP32-S3 has two cores. The Arduino sketch runs on the main loop task. **`websocket.onEvent(…)` runs on the AsyncTCP task** — a different task, possibly a different core. Anything touched from both must be safe to share.
+
+| Resource | Safe to touch from AsyncTCP task? | Reason |
+| --- | --- | --- |
+| `u8g2.*` | **No** — I²C bus, races the OLED draws in `loop()` | Defer via `wsQueuePending` |
+| `digitalWrite(PWR_CTRL, …)`, `digitalWrite(ACC_PWR_CTRL, …)` | **No** — power-gating must be sequenced with `u8g2` ops | Defer |
+| `stopWatch.*` | Yes — just `bool` + `uint32_t` writes (ESP32 32-bit aligned writes are atomic) | |
+| Single `bool` / aligned `uint32_t` flags shared with `loop()` | Yes — **but mark them `volatile`** | See `include/parameter.h` |
+| `Serial.print*`, `websocket.printfAll`, `client->printf` | Yes — library serializes internally | |
+
+The deferral pattern (`src/hds.ino`):
+
+```c
+// AsyncTCP task (WS event callback):
+b_u8g2Sleep = true;                                  // visible-state update, atomic
+wsReplacePending(WSP_DISPLAY_OFF, WSP_DISPLAY_ON);   // queue hw op, supersede opposite
+
+// loop() — drained at the very top, before the b_softSleep guard, so
+// SLEEP_OFF / POWER_OFF queued on the AsyncTCP task can still wake/shut.
+processWsPendingCmds();
+```
+
+Use `wsQueuePending(bits)` to queue a single action; use `wsReplacePending(set, clear)` for mutually-exclusive pairs (display, low_power, sleep) so a stale opposing bit doesn't survive into the drain. Without this, a fast `off; on` burst can leave the hardware in the opposite state of what `b_u8g2Sleep` reports.
+
+New cross-task globals belong in `include/parameter.h` with `volatile`.
+
+## WiFi / BLE coexistence — the #2 footgun
+
+WiFi and BLE share the same 2.4 GHz radio. The Arduino-ESP32 default is `WIFI_PS_MIN_MODEM` (WiFi sleeps between DTIM beacons), and the BT coexistence layer needs those sleep windows for BLE slots.
+
+**Do not call `WiFi.setSleep(false)`.** Measured impact with BLE connected: ~8% packet loss, multi-second HTTP stalls, the AP retransmitting (`ping` shows `(DUP!)`). The Arduino default is correct.
+
+## ESPAsyncWebServer notes
+
+- `server.begin()` must be called **after** handlers are registered.
+- `server.end()` does **not** clear the handler list — guard repeat-init with `static bool handlersRegistered` (see `include/webserver.h`).
+- Don't `addHandler(&websocket)` twice. The library silently keeps both.
+- `LittleFS.begin()` is idempotent.
+- WebSocket has a single-client cap enforced by a 503-returning middleware. The second client gets `Server is busy`.
+
+WS frame parsing: only act on complete unfragmented text frames:
+
+```c
+if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+  String msg((const char *)data, len);  // NOT += char-by-char (O(N²))
+  ...
+}
+```
+
+## Style conventions
+
+| Prefix | Meaning |
+| --- | --- |
+| `b_` | bool |
+| `i_` | int / count / GPIO pin |
+| `t_` | timestamp (millis) |
+| `f_` | float |
+| `WSP_` | WebSocket pending-action bit |
+
+Functions and locals are camelCase. Some legacy snake_case remains; don't churn it. Timer deltas use `millis() - lastUpdate` with **`unsigned long`** for both — a signed `lastUpdate` wraps incorrectly across the 49.7-day rollover.
+
+## Build / OTA notes
+
+- `git_rev_macro.py` (referenced in `platformio.ini` `build_flags`) injects the current git rev as a compile-time macro.
+- `ELEGANTOTA_USE_ASYNC_WEBSERVER=1` is set; `ElegantOTA.loop()` is called in `loop()` and the OTA UI is available when `b_ota` is set.
+- `CONFIG_ASYNC_TCP_RUNNING_CORE=1` pins AsyncTCP's worker task to core 1.
+- `.gitattributes` enforces LF line-endings repo-wide. A 2026-Q2 commit normalized all files; bisecting across that point will show enormous diffs even for one-line changes.
+
+## When something is broken
+
+| Symptom | First place to look |
+| --- | --- |
+| Device pingable, HTTP times out mid-body | AsyncTCP task starvation from main-loop work — see `processWsPendingCmds` and the WS event callback. Don't move hardware ops back into the callback. |
+| HTTP fast, but `curl` reports ~5s constant delay | macOS resolver waiting on AAAA. Use `curl -4` or `--resolve`. Not a device problem. |
+| `ping` shows `(DUP!)` or 8%+ loss with BLE active | Someone re-introduced `WiFi.setSleep(false)`. Revert. |
+| Device unreachable after flash, USB still enumerates | WiFi failed to associate on this boot. Reset via RTS toggle (see Quick reference) and retry. Not deterministic; the router can rate-limit fast reconnects. |
+| Boot logs show `LittleFS mount failed` | Run `pio run -t uploadfs` to write the filesystem image — firmware-only flashes don't touch it. |
+| `pio device monitor` hangs in a non-PTY shell | Use the pyserial snippet in Quick reference. |
+| `pio` flash takes >60s instead of ~15s | Bad firmware is choking the bootloader handshake. Symptom of a serious bug on the device (WiFi coex, OLED stuck, etc.), not a hardware fault. |
+
+## Don't
+
+- Don't call I²C / SPI / blocking IO from the AsyncTCP task.
+- Don't force WiFi to never sleep while BLE is active.
+- Don't accumulate `String` byte-by-byte from a known-length buffer — use `String((const char*)buf, len)`.
+- Don't add new global state outside `include/parameter.h`.
+- Don't break the single-line `pio run` and `pio run -t upload` flows by adding required interactive steps.
+- Don't `--amend` or `git push --force` on `main`. The PR flow is trunk-based with squash merges via GitHub.
