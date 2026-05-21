@@ -39,16 +39,10 @@ void startWebServer() {
         });
     server.addHandler(wifiHandler);
 
-    server.addHandler(&websocket).addMiddleware([](AsyncWebServerRequest *request, ArMiddlewareNext next) {
-      // ws.count() is the current count of WS clients: this one is trying to upgrade its HTTP connection
-      if (websocket.count() > 0) {
-        // if we have 1 clients or more, prevent the next one to connect
-        request->send(503, "text/plain", "Server is busy");
-      } else {
-        // process next middleware and at the end the handler
-        next();
-      }
-    });
+    // Allow multiple concurrent WebSocket clients (e.g. the on-device web UI
+    // and a separate desktop/phone app at the same time). Per-loop the count
+    // is bounded by cleanupClients() in src/hds.ino.
+    server.addHandler(&websocket);
 
     if (!LittleFS.begin()) {
       Serial.println("LittleFS mount failed");

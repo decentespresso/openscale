@@ -958,9 +958,15 @@ void _wifi_init(void *args) {
       client->setCloseClientOnQueueFull(false);
     } else if (type == WS_EVT_DISCONNECT) {
       Serial.printf("Client %u disconnected\n", client->id());
-      weightWebsocketNotifyInterval = WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS;
-      b_websocketEventsEnabled = false;
-      t_lastWebsocketStatusUpdate = 0;
+      // Only reset shared session state when the LAST client leaves —
+      // otherwise one client disconnecting would wipe rate/events state
+      // for any other still-connected clients. server->count() at this
+      // point excludes the disconnecting client.
+      if (server->count() == 0) {
+        weightWebsocketNotifyInterval = WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS;
+        b_websocketEventsEnabled = false;
+        t_lastWebsocketStatusUpdate = 0;
+      }
     } else if (type == WS_EVT_ERROR) {
       Serial.printf("WebSocket error on client %u\n", client->id());
     } else if (type == WS_EVT_PONG) {
@@ -1987,7 +1993,9 @@ void loop() {
           }
         }
         if (b_wifiEnabled) {
-          websocket.cleanupClients(1);
+          // Cap concurrent WS clients at the library default
+          // (DEFAULT_MAX_WS_CLIENTS = 8 on ESP32, 4 on ESP8266).
+          websocket.cleanupClients();
           ElegantOTA.loop();
           static unsigned long lastUpdate = 0;
           unsigned long current = millis();
