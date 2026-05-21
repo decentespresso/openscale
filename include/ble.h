@@ -579,7 +579,7 @@ void buildHeartBeatPacket(byte data[7]) {
   data[3] = 0xFF;
   data[4] = 0xFF;
   data[5] = 0x00;
-  data[6] = 0x0A;  // Checksum (can also use calculateXOR)
+  data[6] = calculateXOR(data, 6);
 }
 
 // Send heartbeat via BLE
