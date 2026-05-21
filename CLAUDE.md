@@ -132,6 +132,17 @@ Functions and locals are camelCase. Some legacy snake_case remains; don't churn 
 | `pio device monitor` hangs in a non-PTY shell | Use the pyserial snippet in Quick reference. |
 | `pio` flash takes >60s instead of ~15s | Bad firmware is choking the bootloader handshake. Symptom of a serious bug on the device (WiFi coex, OLED stuck, etc.), not a hardware fault. |
 
+## Keeping this file fresh
+
+This document is meant to evolve with the codebase. During a session, if you (Claude or human) discover something that would have saved time to know at the start — a new footgun, a thread-safety constraint, a workflow that changed, a file layout shift — update this file as part of the same change, or open a small `docs: CLAUDE.md` follow-up PR if it isn't tied to a code change.
+
+- **Add** lessons earned through debugging, new conventions, recurring symptoms with non-obvious root causes, and cross-file dependencies that aren't visible in `#include` graphs.
+- **Don't add** per-feature implementation details (those belong next to the code), transient information, or anything a quick `grep` would surface.
+- **Prune** entries that no longer match the code — stale docs mislead worse than missing docs do. Refresh line refs when a file grows or shrinks past obvious anchors.
+- When in doubt: prefer fewer, sharper claims over more, vague ones.
+
+If you fix a bug whose symptom is documented in the "When something is broken" table, leave the entry in place — it's still the right "first place to look" for the next person.
+
 ## Don't
 
 - Don't call I²C / SPI / blocking IO from the AsyncTCP task.
