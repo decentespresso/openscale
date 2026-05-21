@@ -485,10 +485,21 @@ bool parseWebsocketRgb(String input, uint8_t &r, uint8_t &g, uint8_t &b) {
 
 // Queue a pending hardware action so the main loop performs it on its own
 // task. The WS event callback runs on the AsyncTCP task and must not touch
-// u8g2, stopWatch, or power-rail GPIOs directly.
+// u8g2 (I2C bus) or peripheral power-rail GPIOs directly. StopWatch and
+// plain bool/uint32 flag writes are safe to do inline in the callback.
 inline void wsQueuePending(uint32_t bits) {
   portENTER_CRITICAL(&wsPendingMux);
   wsPendingMask |= bits;
+  portEXIT_CRITICAL(&wsPendingMux);
+}
+
+// Atomically set `setBits` and clear `clearBits` in the pending mask. Used
+// for mutually-exclusive action pairs (DISPLAY_ON/OFF, SLEEP_ON/OFF, ...) so
+// that if a previous opposing action is still queued, it's superseded by
+// the new one rather than running both in source order.
+inline void wsReplacePending(uint32_t setBits, uint32_t clearBits) {
+  portENTER_CRITICAL(&wsPendingMux);
+  wsPendingMask = (wsPendingMask & ~clearBits) | setBits;
   portEXIT_CRITICAL(&wsPendingMux);
 }
 
@@ -499,10 +510,12 @@ void processWsPendingCmds() {
   portEXIT_CRITICAL(&wsPendingMux);
   if (mask == 0) return;
 
-  // Hardware ops only — touching u8g2 (I2C) or peripheral power rails from
-  // the AsyncTCP task can race the main loop. State flags (b_u8g2Sleep,
-  // b_softSleep, etc.) are already updated synchronously in the WS callback
-  // so status frames stay accurate.
+  // u8g2 (I2C) and peripheral power-rail writes happen here because they
+  // would race the main loop if called from the AsyncTCP task. State flags
+  // touched by the user-visible status (b_u8g2Sleep, b_softSleep, ...) are
+  // updated synchronously in the WS callback so the response is accurate;
+  // b_powerOff is set here so it sequences after the centralized shutdown
+  // chain in shut_down_now_nobeep().
   if (mask & WSP_DISPLAY_ON)  { u8g2.setPowerSave(0); }
   if (mask & WSP_DISPLAY_OFF) { u8g2.setPowerSave(1); }
   if (mask & WSP_LOWPWR_ON)   { u8g2.setContrast(0); }
@@ -571,7 +584,7 @@ void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
                  f_batteryVoltage,
                  websocketIsCharging() ? "true" : "false",
                  stopWatch.isRunning() ? "true" : "false",
-                 stopWatch.elapsed(),
+                 (unsigned long)stopWatch.elapsed(),
                  b_u8g2Sleep ? "false" : "true",
                  b_websocketLowPowerEnabled ? "true" : "false",
                  b_softSleep ? "true" : "false",
@@ -595,7 +608,7 @@ void sendWebsocketStatusAll(const char *status) {
                       f_batteryVoltage,
                       websocketIsCharging() ? "true" : "false",
                       stopWatch.isRunning() ? "true" : "false",
-                      stopWatch.elapsed(),
+                      (unsigned long)stopWatch.elapsed(),
                       b_u8g2Sleep ? "false" : "true",
                       b_websocketLowPowerEnabled ? "true" : "false",
                       b_softSleep ? "true" : "false",
@@ -738,14 +751,14 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
     if (action == "on") {
       Serial.println("Websocket LED/display on detected.");
       b_u8g2Sleep = false;
-      wsQueuePending(WSP_DISPLAY_ON);
+      wsReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
       sendWebsocketStatus(client, "ok");
       return true;
     }
     if (action == "off") {
       Serial.println("Websocket display off detected.");
       b_u8g2Sleep = true;
-      wsQueuePending(WSP_DISPLAY_OFF);
+      wsReplacePending(WSP_DISPLAY_OFF, WSP_DISPLAY_ON);
       sendWebsocketStatus(client, "ok");
       return true;
     }
@@ -757,14 +770,14 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
     if (action == "on") {
       Serial.println("Websocket low power mode on detected.");
       b_websocketLowPowerEnabled = true;
-      wsQueuePending(WSP_LOWPWR_ON);
+      wsReplacePending(WSP_LOWPWR_ON, WSP_LOWPWR_OFF);
       sendWebsocketStatus(client, "ok");
       return true;
     }
     if (action == "off") {
       Serial.println("Websocket low power mode off detected.");
       b_websocketLowPowerEnabled = false;
-      wsQueuePending(WSP_LOWPWR_OFF);
+      wsReplacePending(WSP_LOWPWR_OFF, WSP_LOWPWR_ON);
       sendWebsocketStatus(client, "ok");
       return true;
     }
@@ -778,7 +791,7 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
       // Set state flags synchronously so status reflects the requested mode.
       // u8g2 + GPIO power-rail writes are deferred to the main loop.
       b_softSleep = true;
-      wsQueuePending(WSP_SLEEP_ON);
+      wsReplacePending(WSP_SLEEP_ON, WSP_SLEEP_OFF);
       sendWebsocketStatus(client, "ok");
       return true;
     }
@@ -786,7 +799,7 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
       Serial.println("Websocket soft sleep off detected.");
       b_softSleep = false;
       b_u8g2Sleep = false;
-      wsQueuePending(WSP_SLEEP_OFF);
+      wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);
       sendWebsocketStatus(client, "ok");
       return true;
     }

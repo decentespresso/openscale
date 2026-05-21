@@ -63,11 +63,14 @@ rate 5k
 rate 10k
 ```
 
-or JSON:
+or JSON (any of these forms work):
 
 ```json
 { "command": "rate", "value": "10k" }
 { "rate": "10k" }
+{ "rate_hz": 10 }
+{ "hz": 10 }
+{ "interval_ms": 100 }
 ```
 
 The supported rates are 2 Hz, 5 Hz, and 10 Hz. The firmware sends back a

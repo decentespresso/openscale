@@ -17,14 +17,17 @@ const unsigned long WEBSOCKET_5HZ_NOTIFY_INTERVAL_MS = 200;
 const unsigned long WEBSOCKET_10HZ_NOTIFY_INTERVAL_MS = 100;
 const unsigned long WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS = WEBSOCKET_2HZ_NOTIFY_INTERVAL_MS;
 const unsigned long WEBSOCKET_STATUS_NOTIFY_INTERVAL_MS = 5000;
-unsigned long weightWebsocketNotifyInterval = WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS;
-bool b_websocketEventsEnabled = false;
-bool b_websocketLowPowerEnabled = false;
-bool b_websocketLedEnabled = false;
-uint8_t i_websocketLedR = 0;
-uint8_t i_websocketLedG = 0;
-uint8_t i_websocketLedB = 0;
-unsigned long t_lastWebsocketStatusUpdate = 0;
+// volatile: written from the AsyncTCP task (WS event callback) and read
+// from the main loop. Without volatile, the compiler may keep these cached
+// in a register across the loop's WS gate check on the other core.
+volatile unsigned long weightWebsocketNotifyInterval = WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS;
+volatile bool b_websocketEventsEnabled = false;
+volatile bool b_websocketLowPowerEnabled = false;
+volatile bool b_websocketLedEnabled = false;
+volatile uint8_t i_websocketLedR = 0;
+volatile uint8_t i_websocketLedG = 0;
+volatile uint8_t i_websocketLedB = 0;
+volatile unsigned long t_lastWebsocketStatusUpdate = 0;
 
 // Websocket pending-command mask. Set on the AsyncTCP task by the WS event
 // callback; drained on the main loop. Defers hardware-touching ops (u8g2,
@@ -65,7 +68,8 @@ bool b_debug = false;
 
 unsigned long t_batteryIcon = 0;
 bool b_showBatteryIcon = true;
-bool b_softSleep = false;
+// volatile: now also written from the AsyncTCP task (WS soft-sleep command).
+volatile bool b_softSleep = false;
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 bool b_gyroEnabled = true;
 #endif
@@ -91,7 +95,8 @@ bool b_chargingOLED = true;
 bool b_heartBeatIcon = false; //debug ble heart icon
 unsigned long t_shutdownFailBle = 0;  //for popping up shut down fail due to ble is connected.
 bool b_shutdownFailBle = false;
-bool b_u8g2Sleep = true;
+// volatile: now also written from the AsyncTCP task (WS display/sleep commands).
+volatile bool b_u8g2Sleep = true;
 unsigned long t_bootTare = 0;
 bool b_bootTare = false;
 int i_bootTareDelay = 1000;
@@ -106,7 +111,9 @@ bool b_tareByBle = false;
 portMUX_TYPE remoteTareMux = portMUX_INITIALIZER_UNLOCKED;
 unsigned long t_tareStatus = 0;  //tare done time stamp
 unsigned long t_power_off;       //关机倒计时
-bool b_powerOff = false;
+// volatile: set in processWsPendingCmds (main loop) and read in loop's top
+// guard; main loop also writes it from other paths. Keep volatile defensively.
+volatile bool b_powerOff = false;
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 unsigned long t_power_off_gyro = 0;  //侧放关机倒计时
 #endif
