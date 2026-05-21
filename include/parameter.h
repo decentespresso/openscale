@@ -25,6 +25,20 @@ uint8_t i_websocketLedR = 0;
 uint8_t i_websocketLedG = 0;
 uint8_t i_websocketLedB = 0;
 unsigned long t_lastWebsocketStatusUpdate = 0;
+
+// Websocket pending-command mask. Set on the AsyncTCP task by the WS event
+// callback; drained on the main loop. Defers hardware-touching ops (u8g2,
+// stopWatch, power-rail GPIOs) so they never race the main loop.
+const uint32_t WSP_DISPLAY_ON  = 1u << 0;
+const uint32_t WSP_DISPLAY_OFF = 1u << 1;
+const uint32_t WSP_LOWPWR_ON   = 1u << 2;
+const uint32_t WSP_LOWPWR_OFF  = 1u << 3;
+const uint32_t WSP_SLEEP_ON    = 1u << 4;
+const uint32_t WSP_SLEEP_OFF   = 1u << 5;
+const uint32_t WSP_POWER_OFF   = 1u << 6;
+portMUX_TYPE wsPendingMux = portMUX_INITIALIZER_UNLOCKED;
+volatile uint32_t wsPendingMask = 0;
+
 int i_onWrite_counter = 0;
 unsigned long t_heartBeat = 0;
 unsigned long t_firstConnect = 0;

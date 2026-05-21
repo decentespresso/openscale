@@ -51,6 +51,10 @@ void connectToWifi() {
 
   WiFi.begin(params.getSSID(), params.getPass());
   WiFi.setTxPower(WIFI_POWER_18_5dBm);
+  // Leaving WiFi modem-sleep at the Arduino default (WIFI_PS_MIN_MODEM):
+  // forcing setSleep(false) caused severe packet loss and HTTP stalls when
+  // BLE was active, because BT/WiFi share one 2.4GHz radio and the coex
+  // layer needs WiFi's sleep windows for BT slots.
   int wifiCounter = 0;
   while (WiFi.status() != WL_CONNECTED) {
     if (WiFi.status() == WL_CONNECT_FAILED) {

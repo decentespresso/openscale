@@ -14,49 +14,53 @@ static AsyncWebServer server(80);
 static AsyncWebSocket websocket("/snapshot");
 
 void startWebServer() {
-  server.begin();
-  Serial.println("HTTP server started");
-  AsyncCallbackJsonWebHandler *wifiHandler = new AsyncCallbackJsonWebHandler(
-      "/setup/wifi", [](AsyncWebServerRequest *request, JsonVariant &json) {
-        JsonObject jsonObj = json.as<JsonObject>();
-        if (jsonObj.isNull()) {
-          request->send(400);
-          return;
-        }
-        if (jsonObj["ssid"] == NULL) {
-          request->send(400);
-          return;
-        }
-        String ssid = jsonObj["ssid"];
-        String pass = jsonObj["pass"];
+  // Handlers must be registered before server.begin(), and only once across
+  // stop/start cycles — server.end() doesn't clear the handler list.
+  static bool handlersRegistered = false;
+  if (!handlersRegistered) {
+    AsyncCallbackJsonWebHandler *wifiHandler = new AsyncCallbackJsonWebHandler(
+        "/setup/wifi", [](AsyncWebServerRequest *request, JsonVariant &json) {
+          JsonObject jsonObj = json.as<JsonObject>();
+          if (jsonObj.isNull()) {
+            request->send(400);
+            return;
+          }
+          if (jsonObj["ssid"] == NULL) {
+            request->send(400);
+            return;
+          }
+          String ssid = jsonObj["ssid"];
+          String pass = jsonObj["pass"];
 
-        saveCredentials(ssid, pass);
-        Serial.println("new ssid saved");
-        request->send(200);
-        esp_restart();
-      });
-  server.addHandler(wifiHandler);
+          saveCredentials(ssid, pass);
+          Serial.println("new ssid saved");
+          request->send(200);
+          esp_restart();
+        });
+    server.addHandler(wifiHandler);
 
-  server.addHandler(&websocket).addMiddleware([](AsyncWebServerRequest *request, ArMiddlewareNext next) {
-    // ws.count() is the current count of WS clients: this one is trying to upgrade its HTTP connection
-    if (websocket.count() > 0) {
-      // if we have 1 clients or more, prevent the next one to connect
-      request->send(503, "text/plain", "Server is busy");
+    server.addHandler(&websocket).addMiddleware([](AsyncWebServerRequest *request, ArMiddlewareNext next) {
+      // ws.count() is the current count of WS clients: this one is trying to upgrade its HTTP connection
+      if (websocket.count() > 0) {
+        // if we have 1 clients or more, prevent the next one to connect
+        request->send(503, "text/plain", "Server is busy");
+      } else {
+        // process next middleware and at the end the handler
+        next();
+      }
+    });
+
+    if (!LittleFS.begin()) {
+      Serial.println("LittleFS mount failed");
     } else {
-      // process next middleware and at the end the handler
-      next();
+      server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
+      Serial.println("Serving web-apps");
     }
-  });
-  server.addHandler(&websocket);
-
-  if (!LittleFS.begin()) {
-    Serial.println("SPIFFS failed");
-    return;
+    handlersRegistered = true;
   }
 
-  server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
-
-  Serial.println("Serving web-apps");
+  server.begin();
+  Serial.println("HTTP server started");
 }
 
 void stopWebServer() {
