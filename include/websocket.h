@@ -201,25 +201,37 @@ void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
                  weightWebsocketNotifyInterval);
 }
 
+// Broadcast via printfAll(): it holds the library's client-list mutex and
+// queues to each client independently. We deliberately do NOT gate on
+// availableForWriteAll() (it returns the minimum across clients, coupling every
+// client to the slowest), and we deliberately do NOT hand-iterate getClients()
+// (that accessor doesn't take the mutex, so iterating on the loop task would
+// race client disconnects on the AsyncTCP task). With
+// setCloseClientOnQueueFull(false), a backed-up client drops its own frame
+// without blocking the others.
 void sendWebsocketStatusAll(const char *status) {
   if (!b_wifiEnabled || !b_websocketEventsEnabled || websocket.count() == 0) return;
-  // Per-client send: availableForWriteAll() returns the minimum across clients,
-  // so gating on it would couple every client to the slowest one. Skip only the
-  // clients that can't currently accept a frame.
-  for (auto &c : websocket.getClients()) {
-    if (c.status() == WS_CONNECTED && c.canSend()) {
-      sendWebsocketStatus(&c, status);
-    }
-  }
+  websocket.printfAll("{\"type\":\"status\",\"status\":\"%s\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu}",
+                      status,
+                      FIRMWARE_VER,
+                      f_displayedValue,
+                      millis(),
+                      websocketBatteryPercent(),
+                      f_batteryVoltage,
+                      websocketIsCharging() ? "true" : "false",
+                      stopWatch.isRunning() ? "true" : "false",
+                      (unsigned long)stopWatch.elapsed(),
+                      b_u8g2Sleep ? "false" : "true",
+                      b_websocketLowPowerEnabled ? "true" : "false",
+                      b_softSleep ? "true" : "false",
+                      b_websocketEventsEnabled ? "true" : "false",
+                      websocketRateForInterval(weightWebsocketNotifyInterval),
+                      weightWebsocketNotifyInterval);
 }
 
 void sendWebsocketWeightAll(float grams, unsigned long ms) {
   if (!b_wifiEnabled || websocket.count() == 0) return;
-  for (auto &c : websocket.getClients()) {
-    if (c.status() == WS_CONNECTED && c.canSend()) {
-      c.printf("{\"grams\":%.2f,\"ms\":%lu}", grams, ms);
-    }
-  }
+  websocket.printfAll("{\"grams\":%.2f,\"ms\":%lu}", grams, ms);
 }
 
 void sendWebsocketError(AsyncWebSocketClient *client, const char *code, const char *message) {
