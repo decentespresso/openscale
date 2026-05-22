@@ -1,6 +1,7 @@
 
 #include "NetworkEvents.h"
 #include "WiFiType.h"
+#include "config.h"  // FIRMWARE_VER for the DNS-SD TXT record
 #include "esp32-hal.h"
 #include <Arduino.h>
 #include <ESPmDNS.h>
@@ -101,6 +102,21 @@ void setupWifi() {
 
   if (!MDNS.begin("hds")) {
     Serial.println("could not set up MDNS responder");
+  } else {
+    // Advertise a DNS-SD service so apps can discover the scale reliably.
+    // Android's NsdManager (and Bonjour/Avahi) browse for service types;
+    // a bare hds.local A record alone isn't discoverable on Android.
+    // Friendly instance name so a discovery UI shows "Half Decent Scale"
+    // rather than the bare "hds" hostname.
+    MDNS.setInstanceName("Half Decent Scale");
+    MDNS.addService("decentscale", "tcp", 80);
+    // FIRMWARE_VER is a (char*) cast; make it const to match the other
+    // const-char* args and avoid an addServiceTxt overload ambiguity.
+    MDNS.addServiceTxt("decentscale", "tcp", "fw", (const char *)FIRMWARE_VER);
+    MDNS.addServiceTxt("decentscale", "tcp", "model", "hds");
+    MDNS.addServiceTxt("decentscale", "tcp", "proto", "ws");
+    MDNS.addServiceTxt("decentscale", "tcp", "path", "/snapshot");
+    Serial.println("DNS-SD: advertised _decentscale._tcp on port 80");
   }
 }
 
