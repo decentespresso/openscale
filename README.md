@@ -60,7 +60,9 @@ response frames always include `type`.
 > be woken over the network). Only expose HDS on a trusted LAN.
 
 Multiple clients may connect at once (e.g. the on-device web UI and a separate
-app); each negotiates its own stream rate and is served independently.
+app). They share a single negotiated stream rate (the most recent `rate` command
+applies to all clients); each client is served independently, so a backed-up
+client drops its own frames without stalling the others.
 
 By default, WiFi clients receive weight snapshots at 2 Hz. A connected client
 can negotiate one of the supported WiFi stream rates by sending one of these
