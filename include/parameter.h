@@ -23,10 +23,6 @@ const unsigned long WEBSOCKET_STATUS_NOTIFY_INTERVAL_MS = 5000;
 volatile unsigned long weightWebsocketNotifyInterval = WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS;
 volatile bool b_websocketEventsEnabled = false;
 volatile bool b_websocketLowPowerEnabled = false;
-volatile bool b_websocketLedEnabled = false;
-volatile uint8_t i_websocketLedR = 0;
-volatile uint8_t i_websocketLedG = 0;
-volatile uint8_t i_websocketLedB = 0;
 volatile unsigned long t_lastWebsocketStatusUpdate = 0;
 
 // Websocket pending-command mask. Set on the AsyncTCP task by the WS event
@@ -39,6 +35,9 @@ const uint32_t WSP_LOWPWR_OFF  = 1u << 3;
 const uint32_t WSP_SLEEP_ON    = 1u << 4;
 const uint32_t WSP_SLEEP_OFF   = 1u << 5;
 const uint32_t WSP_POWER_OFF   = 1u << 6;
+const uint32_t WSP_TIMER_START = 1u << 7;
+const uint32_t WSP_TIMER_STOP  = 1u << 8;
+const uint32_t WSP_TIMER_ZERO  = 1u << 9;
 portMUX_TYPE wsPendingMux = portMUX_INITIALIZER_UNLOCKED;
 volatile uint32_t wsPendingMask = 0;
 
