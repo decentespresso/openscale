@@ -224,6 +224,11 @@ Power and display command semantics:
 - `power off`: full scale power-off. The WebSocket link will drop and cannot
   wake the scale.
 
+A scriptable regression test for this protocol lives in
+[`tools/ws_feature_test.py`](tools/ws_feature_test.py): with WiFi enabled on the
+scale, `pip install websocket-client` then `python3 tools/ws_feature_test.py`
+(it auto-discovers `hds.local`, or pass an IP).
+
 
 # How to upload Web apps?
 
