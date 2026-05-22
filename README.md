@@ -53,6 +53,15 @@ For backwards compatibility, snapshot frames do not include a `type` field.
 Clients should treat the absence of `type` as a weight snapshot. Event and
 response frames always include `type`.
 
+> **Security / trust model:** the WebSocket endpoint is unauthenticated, just
+> like the BLE interface. Any host that can reach the scale on the network can
+> read weight and send control commands, including destructive ones such as
+> `power off`, `soft_sleep on`, and `display off` (a remote `power off` cannot
+> be woken over the network). Only expose HDS on a trusted LAN.
+
+Multiple clients may connect at once (e.g. the on-device web UI and a separate
+app); each negotiates its own stream rate and is served independently.
+
 By default, WiFi clients receive weight snapshots at 2 Hz. A connected client
 can negotiate one of the supported WiFi stream rates by sending one of these
 WebSocket messages:
@@ -75,8 +84,9 @@ or JSON (any of these forms work):
 
 The supported rates are 2 Hz, 5 Hz, and 10 Hz. The firmware sends back a
 `type: "rate"` acknowledgement with the active interval and rate. The firmware
-does not automatically downgrade a requested rate on weak WiFi; if the socket is
-not writable for a tick, that frame is skipped rather than queued.
+does not automatically downgrade a requested rate on weak WiFi; if a client's
+socket is not writable for a tick, that frame is skipped for that client rather
+than queued.
 
 WiFi snapshots are intentionally kept small, especially at 10 Hz:
 
@@ -103,8 +113,6 @@ timer stop
 timer reset
 display on
 display off
-led 255 128 0
-led off
 low_power on
 low_power off
 soft_sleep on
@@ -123,7 +131,6 @@ The same commands can be sent as JSON:
 ```json
 { "command": "tare" }
 { "command": "timer", "action": "start" }
-{ "command": "led", "r": 255, "g": 128, "b": 0 }
 ```
 
 Status frame shape:
@@ -146,13 +153,7 @@ Status frame shape:
   "soft_sleep": false,
   "events_enabled": true,
   "rate_hz": 10,
-  "interval_ms": 100,
-  "led": {
-    "enabled": true,
-    "r": 255,
-    "g": 128,
-    "b": 0
-  }
+  "interval_ms": 100
 }
 ```
 
@@ -198,8 +199,6 @@ Power and display command semantics:
 
 - `display on` / `display off`: OLED power save on/off. The scale and WiFi stay
   awake.
-- `led <r> <g> <b>`: sets rich LED RGB state with each channel clamped to
-  `0..255`. `led off` is equivalent to `led 0 0 0`.
 - `low_power on` / `low_power off`: sets OLED contrast to minimum/maximum. It
   does not disable the WiFi modem or drop the WebSocket link.
 - `soft_sleep on`: turns off the OLED and sensor power rails and pauses normal
