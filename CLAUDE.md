@@ -26,9 +26,11 @@ while True:
 "
 ```
 
-The scale advertises mDNS `hds.local`. On macOS use `curl -4` or `--resolve` — plain `curl http://hds.local/` blocks for ~5s on the AAAA lookup before falling back to A.
+The scale advertises mDNS `hds.local` plus a DNS-SD service `_decentscale._tcp` (TXT `path=/snapshot proto=ws model=hds fw=…`) for app discovery. On macOS use `curl -4` or `--resolve` — plain `curl http://hds.local/` blocks for ~5s on the AAAA lookup before falling back to A.
 
 If no WiFi credentials are stored, the device falls back to AP mode: SSID `DecentScale` / password `12345678` / IP `192.168.1.1`. Browse there and POST credentials to `/setup/wifi` (the on-device UI provides a form).
+
+WebSocket protocol regression check (WiFi enabled on the scale): `python3 tools/ws_feature_test.py` (needs `pip install websocket-client`; exits non-zero on failure).
 
 ## Code layout
 
@@ -36,14 +38,15 @@ This codebase is unusual: **most logic lives in `include/*.h` as full implementa
 
 | Location | Contents | Key line refs |
 | --- | --- | --- |
-| `src/hds.ino` | `setup()`, `loop()`, button callbacks, WS event handler, helpers — ~2400 lines | `setup()` ~992, `loop()` ~1862, WS handlers ~670–930 |
+| `src/hds.ino` | `setup()`, `loop()`, button callbacks, scale/UI helpers — ~1880 lines | `setup()` ~395, `loop()` ~1265 |
 | `src/wifi_setup.cpp` | STA/AP bring-up; credentials in NVS preferences | `connectToWifi`, `setupAP` |
 | `src/ADS1232_ADC.cpp` | Load-cell driver | |
 | `include/config.h` | **Per-board hardware config.** Selects `BUZZER`, `ACC_MPU6050` / `ACC_BMA400`, `ESPNOW`, `FIRMWARE_VER`, etc. Active board is chosen by `#if defined(BOARD_X)` branches. | |
 | `include/parameter.h` | All global state declarations — every `b_*`, `i_*`, `t_*`, `f_*` global lives here | |
 | `include/declare.h` | Object instances (`u8g2`, `stopWatch`, `scale`, `mpu`, …) | |
 | `include/ble.h` | BLE GATT server + decentespresso wire-protocol parser | |
-| `include/webserver.h` | AsyncWebServer + `/snapshot` WebSocket setup | |
+| `include/webserver.h` | `AsyncWebServer` + the `websocket` object; `startWebServer`/`stopWebServer` (handler registration + init ordering) | |
+| `include/websocket.h` | **`/snapshot` WebSocket protocol** — control + event + status/error frames, command dispatch, the `wsPendingMask` deferral machinery, per-client broadcast, `setupWebsocketEvents()`. Extracted from `hds.ino` in #54 | `processWsPendingCmds` ~120 |
 | `include/usbcomm.h` | USB binary protocol (decentespresso-compatible) | |
 | `include/power.h` | Battery monitoring, `shut_down_*`, `esp32_sleep()` — **centralized teardown chain** | `esp32_sleep()` ~166 |
 | `include/finger_detection.h` | Touch-button press classifier | |
@@ -58,11 +61,11 @@ ESP32-S3 has two cores. The Arduino sketch runs on the main loop task. **`websoc
 | --- | --- | --- |
 | `u8g2.*` | **No** — I²C bus, races OLED draws issued from the main-loop task (`loop()`, button callbacks, menu/display helpers) | Defer via `wsQueuePending` |
 | `digitalWrite(PWR_CTRL, …)`, `digitalWrite(ACC_PWR_CTRL, …)` | **No** — power-gating must be sequenced with the `u8g2` ops in the SLEEP_ON / SLEEP_OFF paths | Defer |
-| `stopWatch.*` | Yes — its state is an enum + a few `uint32_t` fields; each individual write is atomic on ESP32, so `.start()` / `.stop()` / `.reset()` from the AsyncTCP task can't tear a reader on the loop task | |
+| `stopWatch.*` | **No** — multi-field (running flag + start ts + accumulator) and also mutated from `loop()`, BLE and USB; a status-frame read can tear a write across tasks | Defer via `wsReplacePending(WSP_TIMER_*)`; `loop()` applies start/stop/zero in `processWsPendingCmds` |
 | Single `bool` / aligned `uint32_t` flags shared with `loop()` | Yes — **but mark them `volatile`** | See `include/parameter.h` |
 | `Serial.print*`, `websocket.printfAll`, `client->printf` | Yes — library serializes internally | |
 
-The deferral pattern (`src/hds.ino`):
+The deferral pattern (`include/websocket.h`, drained from `loop()` in `src/hds.ino`):
 
 ```c
 // AsyncTCP task (WS event callback):
@@ -74,7 +77,7 @@ wsReplacePending(WSP_DISPLAY_OFF, WSP_DISPLAY_ON);   // queue hw op, supersede o
 processWsPendingCmds();
 ```
 
-Use `wsQueuePending(bits)` to queue a single action; use `wsReplacePending(set, clear)` for mutually-exclusive pairs (display, low_power, sleep) so a stale opposing bit doesn't survive into the drain. Without this, a fast `off; on` burst can leave the hardware in the opposite state of what `b_u8g2Sleep` reports.
+Use `wsQueuePending(bits)` to queue a single action; use `wsReplacePending(set, clear)` for mutually-exclusive pairs (display, low_power, sleep, timer) so a stale opposing bit doesn't survive into the drain. Without this, a fast `off; on` burst can leave the hardware in the opposite state of what `b_u8g2Sleep` reports.
 
 New cross-task globals belong in `include/parameter.h` with `volatile`.
 
@@ -90,7 +93,8 @@ WiFi and BLE share the same 2.4 GHz radio. The Arduino-ESP32 default is `WIFI_PS
 - `server.end()` does **not** clear the handler list — guard repeat-init with `static bool handlersRegistered` (see `include/webserver.h`).
 - Don't `addHandler(&websocket)` twice. The library silently keeps both.
 - `LittleFS.begin()` is idempotent.
-- WebSocket has a single-client cap enforced by a 503-returning middleware. The second client gets `Server is busy`.
+- Multiple concurrent WS clients are supported (on-device web UI + a separate app). `cleanupClients()` caps at `DEFAULT_MAX_WS_CLIENTS` (8 on ESP32); shared session state (rate, events) resets only when the last client disconnects (`server->count() == 0`).
+- Broadcast with `websocket.printfAll(...)`, not a hand-rolled `getClients()` loop: `getClients()` doesn't take the library's client-list mutex, so iterating it on the loop task races a client disconnect on the AsyncTCP task (use-after-free). `printfAll` holds the lock and sends to each client.
 
 WS frame parsing: only act on complete unfragmented text frames:
 
