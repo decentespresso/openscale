@@ -135,6 +135,19 @@ The same commands can be sent as JSON:
 { "command": "timer", "action": "start" }
 ```
 
+An unrecognized or malformed command (bad JSON, or an unknown verb) returns an
+`error` frame rather than silence, so a client can distinguish a rejected
+command from a frame that never arrived:
+
+```json
+{
+  "type": "error",
+  "code": "unknown_command",
+  "message": "unrecognized or malformed command",
+  "ms": 12345
+}
+```
+
 Status frame shape:
 
 ```json

@@ -561,7 +561,14 @@ void setupWebsocketEvents() {
         String msg((const char *)data, len);
         Serial.print("Websocket recv: ");
         Serial.println(msg);
-        handleWebsocketRateCommand(client, msg);
+        // Unrecognized or malformed commands get an explicit error frame
+        // rather than silence, so a client can tell "rejected" from "frame
+        // never arrived". (The legacy bare `tare` string is handled above and
+        // stays intentionally silent.)
+        if (!handleWebsocketRateCommand(client, msg)) {
+          sendWebsocketError(client, "unknown_command",
+                             "unrecognized or malformed command");
+        }
       }
     }
   });
