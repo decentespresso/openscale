@@ -1285,11 +1285,15 @@ void loop() {
   else
     b_heartBeatIcon = false;
 #endif
-  if (deviceConnected) {
+  // Keep the scale awake while it's in active use over BLE *or* WiFi. A
+  // connected WS client streaming weight resets the auto-off timer just like a
+  // BLE central does -- otherwise a WiFi-only client on battery loses the scale
+  // to the 15-min auto-off mid-stream (WiFi activity didn't reset t_power_off).
+  if (deviceConnected || (b_wifiEnabled && websocket.count() > 0)) {
     power_off(-1);  //reset power off timer
   } else {
     //if (!b_tempDisablePowerOff)
-    power_off(15);  //power off after 15 minutes
+    power_off(15);  //power off after 15 minutes of no BLE/WiFi use
   }
   //serialCommand();
   if (Serial.available()) {
