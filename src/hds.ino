@@ -1378,38 +1378,57 @@ void loop() {
         //showing charging animation when powered off
         //charging();
       } else {
-        if (!b_adc_recovery_active) {
-          sendUsbTextWeight();
-          if (b_ble_enabled)
-            sendBleWeight();
-          if (b_usbweight_enabled)
-            sendUsbWeight();
+        // WiFi housekeeping (not weight-rate-gated): reconnect supervisor, WS
+        // client cleanup, OTA -- run every loop pass when WiFi is on.
+        if (b_wifiEnabled) {
+          wifiSupervise();
+          websocket.cleanupClients();  // cap at DEFAULT_MAX_WS_CLIENTS (8 on ESP32)
+          ElegantOTA.loop();
         }
+
+        // Unified weight-output tick: ONE 100 ms grid timer drives every active
+        // interface, each at its own rate (sends every NotifyInterval/base
+        // ticks) -- USB-text 1 Hz, USB-binary/BLE/WS at their NotifyInterval, and
+        // BLE honors the per-client 2k/5k/10k setting. Replaces four independent
+        // timers that each re-implemented this cadence (a recurring drift-bug
+        // source) and cuts per-loop CPU. Grid-advance keeps a true average rate;
+        // resync (don't burst) after a long stall. Skipped during ADC recovery.
+        if (!b_adc_recovery_active) {
+          static unsigned long t_weightTick = 0;
+          static unsigned long weightTickCount = 0;
+          unsigned long nowMs = millis();
+          if (nowMs - t_weightTick >= WEIGHT_BASE_INTERVAL_MS) {
+            t_weightTick += WEIGHT_BASE_INTERVAL_MS;
+            if (nowMs - t_weightTick >= WEIGHT_BASE_INTERVAL_MS) t_weightTick = nowMs;
+            weightTickCount++;
+            if (weightTickCount % max(1UL, weightTextNotifyInterval / WEIGHT_BASE_INTERVAL_MS) == 0)
+              sendUsbTextWeight();
+            if (b_ble_enabled &&
+                weightTickCount % max(1UL, weightBleNotifyInterval / WEIGHT_BASE_INTERVAL_MS) == 0)
+              sendBleWeight();
+            if (b_usbweight_enabled &&
+                weightTickCount % max(1UL, weightUsbNotifyInterval / WEIGHT_BASE_INTERVAL_MS) == 0)
+              sendUsbWeight();
+            if (b_wifiEnabled &&
+                weightTickCount % max(1UL, weightWebsocketNotifyInterval / WEIGHT_BASE_INTERVAL_MS) == 0)
+              sendWebsocketWeightAll(f_displayedValue, nowMs);
+          }
+        }
+
+        // Periodic WS status frame (5 s) -- not a weight frame, keeps its own gate.
+        if (b_wifiEnabled && b_websocketEventsEnabled &&
+            millis() - t_lastWebsocketStatusUpdate >= WEBSOCKET_STATUS_NOTIFY_INTERVAL_MS) {
+          sendWebsocketStatusAll("periodic");
+          t_lastWebsocketStatusUpdate = millis();
+        }
+
+        // ADS debug BLE stream -- separate debug channel, keeps its own gate.
         if (b_ble_enabled && deviceConnected && bleDebugMode != DEBUG_OFF) {
           // SINGLE fires once; CONTINUOUS rate-limited to ~10 Hz
           if (bleDebugMode == DEBUG_SINGLE ||
               millis() - t_lastBleDebugNotify >= BLE_DEBUG_MIN_INTERVAL) {
             t_lastBleDebugNotify = millis();
             sendAdsDebugInfoBLE();
-          }
-        }
-        if (b_wifiEnabled) {
-          // Cap concurrent WS clients at the library default
-          // (DEFAULT_MAX_WS_CLIENTS = 8 on ESP32, 4 on ESP8266).
-          websocket.cleanupClients();
-          ElegantOTA.loop();
-          static unsigned long lastUpdate = 0;
-          unsigned long current = millis();
-          if (current - lastUpdate >= weightWebsocketNotifyInterval) {
-            if (!b_adc_recovery_active) {
-              sendWebsocketWeightAll(f_displayedValue, current);
-            }
-            lastUpdate = current;
-          }
-          if (b_websocketEventsEnabled &&
-              current - t_lastWebsocketStatusUpdate >= WEBSOCKET_STATUS_NOTIFY_INTERVAL_MS) {
-            sendWebsocketStatusAll("periodic");
-            t_lastWebsocketStatusUpdate = current;
           }
         }
         if (b_bootTare) {
