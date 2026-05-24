@@ -14,8 +14,9 @@ bool b_wifiEnabled = false;
 // (re)advertises mDNS, keeping all mDNS work off the WiFi-event task.
 static volatile bool g_mdnsAdvertisePending = false;
 // BLE link state (defined in declare.h). Used by the heap watchdog to avoid
-// rebooting mid-shot while a BLE client is connected.
-extern bool deviceConnected;
+// rebooting mid-shot while a BLE client is connected. volatile: written from
+// the BLE task, read here on the main loop.
+extern volatile bool deviceConnected;
 
 const char *wifiPrefsKey = "wifi";
 const char *wifiSSIDKey = "ssid";
@@ -189,11 +190,15 @@ void wifiSupervise() {
   static unsigned long lastAttempt = 0;
   static unsigned long backoffMs = 0;
   static unsigned long lowHeapSince = 0;
+  static unsigned long lastDeferLog = 0;
   unsigned long now = millis();
   bool up = WiFi.status() == WL_CONNECTED;
 
   // (Re)advertise mDNS here -- on the main loop -- when the GOT_IP event asked
   // for it, instead of doing MDNS.end()/begin() from the WiFi-event task.
+  // Clear the flag BEFORE the work: if a later GOT_IP fires while setupMdns() is
+  // running, it re-sets the flag and we re-advertise on the next pass (so a
+  // reconnect during the rebuild is never lost).
   if (g_mdnsAdvertisePending) {
     g_mdnsAdvertisePending = false;
     MDNS.end();
@@ -210,18 +215,27 @@ void wifiSupervise() {
   uint32_t freeHeap = ESP.getFreeHeap();
   const uint32_t HEAP_CRITICAL = 15000;
   const unsigned long HEAP_CRITICAL_WINDOW = 2000;
+  // Upper bound on how long we'll defer the reboot for a connected BLE client.
+  // A normal shot is well under this, so we never reboot mid-shot, but a stack
+  // that stays wedged this long still self-heals even if BLE never disconnects.
+  const unsigned long HEAP_CRITICAL_BLE_DEFER_MAX = 60000;
   if (freeHeap < HEAP_CRITICAL) {
     if (lowHeapSince == 0) {
       lowHeapSince = now;
       Serial.printf("[heap] CRITICAL low free=%lu minfree=%lu @%lu\n",
                     (unsigned long)freeHeap, (unsigned long)ESP.getMinFreeHeap(), now);
     } else if (now - lowHeapSince >= HEAP_CRITICAL_WINDOW) {
-      // Never reboot mid-shot: a WiFi-side OOM must not kill a live BLE session
-      // (heap exhaustion needs WiFi/HTTP churn, not BLE). Keep the timer armed
-      // so we self-heal the moment BLE disconnects.
-      if (deviceConnected) {
-        Serial.printf("[heap] critical for %lums (free=%lu) but BLE connected -> defer reboot\n",
-                      now - lowHeapSince, (unsigned long)freeHeap);
+      // Prefer not to reboot mid-shot: a WiFi-side OOM shouldn't kill a live BLE
+      // session (heap exhaustion needs WiFi/HTTP churn, not BLE). While a BLE
+      // client is connected, defer -- but only up to HEAP_CRITICAL_BLE_DEFER_MAX,
+      // so a genuinely wedged stack still self-heals. Keep the timer armed so the
+      // reboot also fires immediately once BLE disconnects.
+      if (deviceConnected && now - lowHeapSince < HEAP_CRITICAL_BLE_DEFER_MAX) {
+        if (now - lastDeferLog >= 5000) {  // rate-limit: the main loop has no sleep
+          lastDeferLog = now;
+          Serial.printf("[heap] critical for %lums (free=%lu) but BLE connected -> defer reboot\n",
+                        now - lowHeapSince, (unsigned long)freeHeap);
+        }
       } else {
         Serial.printf("[heap] critical for %lums (free=%lu) -> esp_restart()\n",
                       now - lowHeapSince, (unsigned long)freeHeap);

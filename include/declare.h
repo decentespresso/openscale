@@ -24,7 +24,7 @@ BLEService *pService = NULL;
 BLEAdvertising *pAdvertising = NULL;
 BLECharacteristic *pReadCharacteristic = NULL;
 BLECharacteristic *pWriteCharacteristic = NULL;
-bool deviceConnected = false;
+volatile bool deviceConnected = false;  // written from the BLE task, read on the main loop (heap watchdog)
 
 // The model byte is always 03 for Decent scales
 const byte modelByte = 0x03;
