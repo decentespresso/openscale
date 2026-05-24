@@ -5,6 +5,17 @@ PASS/FAIL by checking the server's response frame and the resulting device state
 low-power/events at the end and never sends `power off`.
 
 Usage: python3 tools/ws_command_test.py [host]   (default hds.local)
+
+Robustness notes (the scale streams weight at up to 10 Hz, so command responses
+interleave with weight frames and can lag):
+  * drain() clears any queued frames before each command, so a lagged response
+    from the *previous* command isn't mis-attributed to the next one.
+  * send_capture() waits for a frame of the expected `type` and returns the LAST
+    such frame in the window -- a stray lagged frame is superseded by the real
+    response (which is sent most recently).
+  * events on/off are verified from the command's OWN status response, never via
+    a separate status fetch (fetching status by re-sending `events on` would
+    itself flip events_enabled back to true).
 """
 import json, sys, time, websocket
 
@@ -20,42 +31,48 @@ def connect():
 def is_weight(d):
     return isinstance(d, dict) and "grams" in d and "type" not in d
 
-def send_capture(ws, msg, window=1.0):
-    """Send msg; return (response_dict_or_None, raw_frames) collected over window.
-    response = first non-weight frame (status/rate/error)."""
+def drain(ws, secs=0.15):
+    """Consume already-queued frames so a lagged prior response doesn't pollute
+    the next command's capture."""
+    old = ws.gettimeout()
+    ws.settimeout(0.05)
+    end = time.time() + secs
+    try:
+        while time.time() < end:
+            try:
+                ws.recv()
+            except Exception:
+                pass
+    finally:
+        ws.settimeout(old)
+
+def send_capture(ws, msg, expect=None, window=1.5):
+    """Send msg; return the LAST non-weight frame matching `expect` (a tuple of
+    type strings, or None for any) within the window, else None."""
+    drain(ws)
     ws.send(msg)
     end = time.time() + window
-    resp = None
-    raws = []
+    last = None
     while time.time() < end:
         try:
             m = ws.recv()
         except Exception:
             continue
-        raws.append(m)
         try:
             d = json.loads(m)
         except Exception:
             continue
-        if not is_weight(d) and resp is None:
-            resp = d
-    return resp, raws
+        if is_weight(d):
+            continue
+        if expect is None or d.get("type") in expect:
+            last = d
+    return last
 
 def get_status(ws):
-    """Fetch a fresh full status frame (events-on is idempotent and returns one)."""
-    resp, _ = send_capture(ws, '{"command":"events","action":"on"}', 1.2)
-    if resp and resp.get("type") == "status":
-        return resp
-    # fall back: wait for a periodic status
-    end = time.time() + 6
-    while time.time() < end:
-        try:
-            d = json.loads(ws.recv())
-            if d.get("type") == "status":
-                return d
-        except Exception:
-            pass
-    return {}
+    """Fetch a fresh full status frame. NOTE: this re-enables events as a side
+    effect, so it must NOT be used to verify the events on/off commands."""
+    st = send_capture(ws, '{"command":"events","action":"on"}', expect=("status",))
+    return st or {}
 
 def latest_grams(ws, secs=1.5):
     end = time.time() + secs
@@ -77,7 +94,7 @@ def main():
     ws = connect()
     print(f"connected {URL}\n")
 
-    # ---- RATE ----
+    # ---- RATE ---- (response type "rate")
     print("RATE")
     for label, msg, want_hz in [
         ("bare rate 2k", "rate 2k", 2),
@@ -90,95 +107,95 @@ def main():
         ('json {"interval_ms":200}', '{"interval_ms":200}', 5),
         ("bare interval 100", "interval 100", 10),
     ]:
-        resp, _ = send_capture(ws, msg)
-        hz = (resp or {}).get("hz") or (resp or {}).get("rate_hz")
+        resp = send_capture(ws, msg, expect=("rate",))
+        hz = (resp or {}).get("hz")
         record(label, resp is not None and hz == want_hz, f"resp={resp}")
-    resp, _ = send_capture(ws, "get_rate")
+    resp = send_capture(ws, "get_rate", expect=("rate",))
     record("bare get_rate", bool(resp) and resp.get("type") == "rate", f"resp={resp}")
-    send_capture(ws, "rate 10k")  # leave at 10Hz
+    send_capture(ws, "rate 10k", expect=("rate",))  # leave at 10Hz
 
-    # ---- EVENTS ----
+    # ---- EVENTS ---- (verify from the command's OWN status response)
     print("EVENTS")
-    resp, _ = send_capture(ws, "events off")
-    st = get_status(ws)
-    record("bare events off", st.get("events_enabled") is False, f"events_enabled={st.get('events_enabled')}")
-    resp, _ = send_capture(ws, "events on")
-    record("bare events on", bool(resp), f"resp_type={(resp or {}).get('type')}")
-    resp, _ = send_capture(ws, '{"command":"events","action":"on"}')
+    resp = send_capture(ws, "events off", expect=("status",))
+    record("bare events off", resp is not None and resp.get("events_enabled") is False,
+           f"events_enabled={(resp or {}).get('events_enabled')}")
+    resp = send_capture(ws, "events on", expect=("status",))
+    record("bare events on", resp is not None and resp.get("events_enabled") is True,
+           f"events_enabled={(resp or {}).get('events_enabled')}")
+    resp = send_capture(ws, '{"command":"events","action":"on"}', expect=("status",))
     record('json command events on', bool(resp) and resp.get("status") == "ok",
            f"resp_status={(resp or {}).get('status')}")
-    resp, _ = send_capture(ws, '{"events":"on"}')
-    record('json {"events":"on"} shorthand', bool(resp) and resp.get("type") != "error",
-           f"resp={resp}")
+    resp = send_capture(ws, '{"events":"on"}', expect=("status", "error"))
+    record('json {"events":"on"} shorthand',
+           bool(resp) and resp.get("type") == "status" and resp.get("events_enabled") is True,
+           f"resp_type={(resp or {}).get('type')} events_enabled={(resp or {}).get('events_enabled')}")
 
-    # ---- TARE ----
+    # ---- TARE ---- (weight must move toward ~0; send raw so we don't drain the baseline)
     print("TARE")
-    before = latest_grams(ws, 1.0)
-    send_capture(ws, '{"command":"tare"}', 0.5)
-    time.sleep(0.7)
-    after = latest_grams(ws, 1.5)
-    tared = (before is not None and after is not None and abs(after) < max(1.0, abs(before) * 0.3))
-    record('json command tare (weight -> ~0)', tared, f"grams {before} -> {after}")
-    before = latest_grams(ws, 1.0)
-    send_capture(ws, "tare", 0.5)
-    time.sleep(0.7)
-    after = latest_grams(ws, 1.5)
-    tared2 = (before is not None and after is not None and abs(after) < max(1.0, abs(before) * 0.3))
-    record('bare tare (weight -> ~0)', tared2, f"grams {before} -> {after}")
+    def tare_test(label, cmd):
+        before = latest_grams(ws, 1.2)
+        ws.send(cmd)
+        time.sleep(1.3)
+        after = latest_grams(ws, 1.5)
+        ok = (before is not None and after is not None
+              and abs(after) < max(1.0, abs(before) * 0.3))
+        record(label, ok, f"grams {before} -> {after}")
+    tare_test('json command tare (weight -> ~0)', '{"command":"tare"}')
+    tare_test('bare tare (weight -> ~0)', 'tare')
 
-    # ---- TIMER ----
+    # ---- TIMER ---- (deferred to main loop, so verify via a delayed status read)
     print("TIMER")
-    send_capture(ws, '{"command":"timer","action":"start"}', 0.5); time.sleep(0.6)
+    send_capture(ws, '{"command":"timer","action":"start"}', expect=("status",)); time.sleep(0.6)
     st = get_status(ws)
     record("timer start", st.get("timer_running") is True, f"timer_running={st.get('timer_running')}")
     time.sleep(0.8)
     st2 = get_status(ws)
     record("timer counts up", (st2.get("timer_seconds") or 0) >= (st.get("timer_seconds") or 0),
            f"seconds {st.get('timer_seconds')} -> {st2.get('timer_seconds')}")
-    send_capture(ws, '{"command":"timer","action":"stop"}', 0.5); time.sleep(0.5)
+    send_capture(ws, '{"command":"timer","action":"stop"}', expect=("status",)); time.sleep(0.5)
     st = get_status(ws)
     record("timer stop", st.get("timer_running") is False, f"timer_running={st.get('timer_running')}")
-    send_capture(ws, '{"command":"timer","action":"zero"}', 0.5); time.sleep(0.5)
+    send_capture(ws, '{"command":"timer","action":"zero"}', expect=("status",)); time.sleep(0.5)
     st = get_status(ws)
     record("timer zero", (st.get("timer_seconds") or 0) == 0, f"timer_seconds={st.get('timer_seconds')}")
 
     # ---- DISPLAY ----
     print("DISPLAY")
-    send_capture(ws, '{"command":"display","action":"off"}', 0.5); time.sleep(0.4)
+    send_capture(ws, '{"command":"display","action":"off"}', expect=("status",)); time.sleep(0.4)
     st = get_status(ws)
     record("display off", st.get("display_on") is False, f"display_on={st.get('display_on')}")
-    send_capture(ws, '{"command":"display","action":"on"}', 0.5); time.sleep(0.4)
+    send_capture(ws, '{"command":"display","action":"on"}', expect=("status",)); time.sleep(0.4)
     st = get_status(ws)
     record("display on", st.get("display_on") is True, f"display_on={st.get('display_on')}")
 
     # ---- LOW POWER ----
     print("LOW_POWER")
-    send_capture(ws, '{"command":"low_power","action":"on"}', 0.5); time.sleep(0.4)
+    send_capture(ws, '{"command":"low_power","action":"on"}', expect=("status",)); time.sleep(0.4)
     st = get_status(ws)
     record("low_power on", st.get("low_power") is True, f"low_power={st.get('low_power')}")
-    send_capture(ws, '{"command":"low_power","action":"off"}', 0.5); time.sleep(0.4)
+    send_capture(ws, '{"command":"low_power","action":"off"}', expect=("status",)); time.sleep(0.4)
     st = get_status(ws)
     record("low_power off", st.get("low_power") is False, f"low_power={st.get('low_power')}")
 
     # ---- SOFT SLEEP ----
     print("SLEEP")
-    send_capture(ws, '{"command":"sleep","action":"on"}', 0.5); time.sleep(0.4)
+    send_capture(ws, '{"command":"sleep","action":"on"}', expect=("status",)); time.sleep(0.4)
     st = get_status(ws)
     record("sleep on", st.get("soft_sleep") is True, f"soft_sleep={st.get('soft_sleep')}")
-    send_capture(ws, '{"command":"sleep","action":"wake"}', 0.5); time.sleep(0.4)
+    send_capture(ws, '{"command":"sleep","action":"wake"}', expect=("status",)); time.sleep(0.4)
     st = get_status(ws)
     record("sleep wake", st.get("soft_sleep") is False, f"soft_sleep={st.get('soft_sleep')}")
 
     # ---- BOGUS (should error) ----
     print("ERROR HANDLING")
-    resp, _ = send_capture(ws, '{"command":"zzz"}')
+    resp = send_capture(ws, '{"command":"zzz"}', expect=("error", "status"))
     record("bogus command -> error", bool(resp) and resp.get("type") == "error", f"resp={resp}")
 
     # restore safe state
-    send_capture(ws, '{"command":"display","action":"on"}', 0.3)
-    send_capture(ws, '{"command":"low_power","action":"off"}', 0.3)
-    send_capture(ws, '{"command":"sleep","action":"wake"}', 0.3)
-    send_capture(ws, "rate 10k", 0.3)
+    send_capture(ws, '{"command":"display","action":"on"}', expect=("status",))
+    send_capture(ws, '{"command":"low_power","action":"off"}', expect=("status",))
+    send_capture(ws, '{"command":"sleep","action":"wake"}', expect=("status",))
+    send_capture(ws, "rate 10k", expect=("rate",))
     ws.close()
 
     npass = sum(1 for _, ok, _ in results if ok)
