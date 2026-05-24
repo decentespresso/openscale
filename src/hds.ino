@@ -1392,8 +1392,11 @@ void loop() {
         // fixed at 100 ms / 10 Hz. Replaces three independent timers that each
         // re-implemented this cadence (a recurring drift-bug source; the USB
         // binary send was previously ungated) and cuts per-loop CPU.
-        // Grid-advance keeps a true average rate;
-        // resync (don't burst) after a long stall. Skipped during ADC recovery.
+        // Cadence: advance the grid by exactly one base interval each tick
+        // (t_weightTick += BASE) to hold a true long-run average rate; but if
+        // the loop stalled and we're now more than one interval behind, snap
+        // t_weightTick to now so we fire once instead of bursting to catch up.
+        // Skipped during ADC recovery.
         if (!b_adc_recovery_active) {
           static unsigned long t_weightTick = 0;
           static unsigned long weightTickCount = 0;

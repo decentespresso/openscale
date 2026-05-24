@@ -68,8 +68,9 @@ void startWebServer() {
     }
 
     // HTTP admission control, two layers, both shedding with 503 (clients
-    // retry). The WS /snapshot path is always exempt -- a WS upgrade is cheap
-    // and we never block or drop the live data stream.
+    // retry). Any request to the /snapshot data endpoint is exempt -- matched
+    // by URL, not just the WS upgrade -- so we never block or drop the live
+    // data stream.
     //
     //  1. Memory pressure: serving a static file costs ~25 KB transient heap;
     //     under churn/web-UI bursts those stack and can OOM, wedging the whole
@@ -81,7 +82,9 @@ void startWebServer() {
     //     0 Hz). A token bucket (HTTP_STREAMING_BURST deep, refilling one per
     //     HTTP_MIN_INTERVAL_WHILE_STREAMING_MS) lets a normal page load burst
     //     through, then throttles sustained floods so the broadcast keeps radio
-    //     priority. Time-based (no in-flight counter that could leak).
+    //     priority. Time-based (no in-flight counter that could leak). The
+    //     bucket is clamped at HTTP_STREAMING_BURST, so accumulated idle time
+    //     never pre-fills it beyond the burst depth.
     server.addMiddleware([](AsyncWebServerRequest *request, ArMiddlewareNext next) {
       if (request->url() == "/snapshot") {
         next();

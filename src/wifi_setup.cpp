@@ -100,16 +100,20 @@ void stopWifi() { WiFi.disconnect(true); }
 // ---------------------------------------------------------------------------
 static volatile uint32_t g_wifiDisconnects = 0;
 static volatile uint32_t g_wifiReconnects = 0;
-// Set once the boot-time bring-up (connectToWifi, which runs in the _wifi_init
-// task) has finished. wifiSupervise() runs in the main loop concurrently, so it
-// must NOT force reconnects while the initial association is still in progress
-// or the two race each other into a WL_STOPPED state.
+// Set once the boot-time bring-up has finished. That bring-up is setupWifi()
+// (which calls connectToWifi()), run from the _wifi_init FreeRTOS task.
+// wifiSupervise() runs in the main loop concurrently, so it must NOT force
+// reconnects while the initial association is still in progress, or the two
+// race each other into a WL_STOPPED state.
 static volatile bool g_wifiInitDone = false;
 
-void setupMdns() {
+// Advertise hds.local + the _decentscale._tcp DNS-SD service. Returns true if
+// the responder came up; callers may log/branch on failure (MDNS.begin can
+// transiently fail under heap pressure at reconnect time).
+bool setupMdns() {
   if (!MDNS.begin("hds")) {
     Serial.println("could not set up MDNS responder");
-    return;
+    return false;
   }
   // Friendly instance name + DNS-SD service so apps (incl. Android NsdManager)
   // can discover the scale; a bare hds.local A record isn't browsable there.
@@ -120,6 +124,7 @@ void setupMdns() {
   MDNS.addServiceTxt("decentscale", "tcp", "proto", "ws");
   MDNS.addServiceTxt("decentscale", "tcp", "path", "/snapshot");
   Serial.println("DNS-SD: advertised _decentscale._tcp on port 80");
+  return true;
 }
 
 void onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) {

@@ -551,10 +551,11 @@ void setupWebsocketEvents() {
     if (type == WS_EVT_CONNECT) {
       Serial.printf("Client %u connected\n", client->id());
       client->setCloseClientOnQueueFull(false);
-      // Ride out transient BT/WiFi coexistence stalls. AsyncTCP's default 5 s
-      // ACK timeout closes the socket (graceful FIN, no WS close frame) when a
-      // few seconds of sent data go unacked during a radio stall -- the cause of
-      // the ~1-2 min "clean disconnect" drops. Raising it lets the stream resume
+      // Ride out transient BT/WiFi coexistence stalls. AsyncTCP's default ACK
+      // timeout (CONFIG_ASYNC_TCP_MAX_ACK_TIME, 5000 ms in esp32async AsyncTCP
+      // ~3.x) closes the socket (graceful FIN, no WS close frame) when a few
+      // seconds of sent data go unacked during a radio stall -- the cause of the
+      // ~1-2 min "clean disconnect" drops. Raising it lets the stream resume
       // when the radio frees up instead of dropping. A genuinely dead client is
       // still reaped, just later.
       client->client()->setAckTimeout(30000);
