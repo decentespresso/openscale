@@ -5,11 +5,7 @@
 //ble
 bool b_ble_enabled = false;
 bool b_usbweight_enabled = false;
-unsigned long lastBleWeightNotifyTime = 0;  // Stores the last time the weight notification was sent
-unsigned long lastUsbWeightNotifyTime = 0;  // Stores the last time the weight notification was sent
-
-unsigned long lastWeightTextNotifyTime = 0;   // Stores the last time the weight notification was sent
-unsigned long weightBleNotifyInterval = 100;  // BLE notify interval (ms); per-client (2k/5k/10k => 500/200/100)
+unsigned long weightBleNotifyInterval = 100;  // BLE notify interval (ms). Fixed at 100ms (10Hz); not runtime-configurable over BLE.
 unsigned long weightUsbNotifyInterval = 100;  // USB binary notify interval (ms)
 unsigned long weightTextNotifyInterval = 1000;  // USB text/debug line interval (ms)
 // Base period of the unified weight-output tick. One grid timer drives every

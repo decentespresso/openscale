@@ -582,7 +582,7 @@ void sendUsbWeight() {
 // main loop; this just emits one line when called.
 void sendUsbTextWeight() {
   Serial.print(millis());
-  Serial.print(" Weight: ");  // 7 bytes of data
+  Serial.print(" Weight: ");
   Serial.println(f_displayedValue);
 }
 

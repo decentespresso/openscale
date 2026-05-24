@@ -630,8 +630,8 @@ void buildWeightPacket(byte data[7]) {
 }
 
 // Rate-gating is handled centrally by the unified weight-output tick in the
-// main loop (which honors weightBleNotifyInterval, i.e. the per-client 2k/5k/10k
-// rate). This just emits one notification when called; the active-state check
+// main loop (which honors weightBleNotifyInterval, fixed at 100 ms / 10 Hz for
+// BLE). This just emits one notification when called; the active-state check
 // stays so we never touch the characteristic without a live connection.
 void sendBleWeight() {
   if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
