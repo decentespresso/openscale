@@ -12,7 +12,9 @@ void saveCredentials(String ssid, String pass); // ssid, pass
 // when WiFi is enabled. Recovers from a silent STA disconnect (which the old
 // connect-once-at-boot path never did) and prints heap/RSSI/disconnect counts.
 // Side effect: contains a heap watchdog that calls esp_restart() if free heap
-// stays critically low (<15 KB) for >2 s while no BLE client is connected.
+// stays critically low (<15 KB) for >2 s. While a BLE client is connected the
+// reboot is deferred (up to HEAP_CRITICAL_BLE_DEFER_MAX, 60 s) so a live shot
+// isn't interrupted, then fires regardless once that window passes.
 void wifiSupervise();
 
 extern bool b_wifiEnabled;

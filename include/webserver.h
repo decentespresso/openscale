@@ -55,7 +55,13 @@ void startWebServer() {
     server.addHandler(&websocket);
 
     if (!LittleFS.begin()) {
-      Serial.println("LittleFS mount failed");
+      Serial.println("LittleFS mount failed -- web UI unavailable");
+      // Without serveStatic, requests fall through to a bare 404. Serve an
+      // explanatory 503 instead so the failure is diagnosable, not confusing.
+      server.onNotFound([](AsyncWebServerRequest *request) {
+        request->send(503, "text/plain",
+                      "filesystem mount failed; device needs reflashing");
+      });
     } else {
       server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
       Serial.println("Serving web-apps");

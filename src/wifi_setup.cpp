@@ -304,12 +304,22 @@ void WiFiParams::saveCredentials(String ssid, String pass) {
 
   this->ssid = ssid;
   this->pass = pass;
-  preferences.putString("ssid", ssid.c_str());
-  preferences.putString("pass", pass.c_str());
+  // putString returns bytes written (0 = failure). The web handler reboots
+  // right after this, so a silent NVS failure would strand the scale retrying
+  // stale/empty credentials -- log it loudly.
+  size_t wroteSsid = preferences.putString("ssid", ssid.c_str());
+  size_t wrotePass = preferences.putString("pass", pass.c_str());
+  if (wroteSsid == 0 || wrotePass == 0) {
+    Serial.printf("[prefs] NVS write FAILED (ssid=%u pass=%u) -- credentials may not persist\n",
+                  (unsigned)wroteSsid, (unsigned)wrotePass);
+  }
 }
 
 void WiFiParams::init() {
-  preferences.begin(wifiPrefsKey);
+  if (!preferences.begin(wifiPrefsKey)) {
+    Serial.println("[prefs] could not open NVS namespace 'wifi' -- no stored credentials");
+    return;
+  }
   if (!hasCredentials()) {
     this->ssid = preferences.getString(wifiSSIDKey, "");
     this->pass = preferences.getString(wifiPassKey, "");

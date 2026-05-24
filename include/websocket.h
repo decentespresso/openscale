@@ -499,6 +499,20 @@ bool handleWebsocketRateCommand(AsyncWebSocketClient *client, String msg) {
     return setWebsocketRateFromInterval(client, doc["interval_ms"].as<unsigned long>());
   }
 
+  // Shorthand control commands: {"events":"on"}, {"display":"off"},
+  // {"tare":true}, etc. -- a control key at top level whose value is the action.
+  // (Mirrors the {"rate":"10k"} shorthand above.)
+  static const char *kControlKeys[] = {
+      "events", "tare", "timer", "display", "low_power", "sleep", "soft_sleep", "power"};
+  for (const char *key : kControlKeys) {
+    if (doc[key].is<const char *>()) {
+      return handleWebsocketControlCommand(client, key, doc[key].as<String>());
+    }
+    if (doc[key].is<bool>() && doc[key].as<bool>()) {  // e.g. {"tare":true}
+      return handleWebsocketControlCommand(client, key, "");
+    }
+  }
+
   if (doc["command"].is<const char *>()) {
     String command = doc["command"].as<String>();
     command.trim();
@@ -556,7 +570,11 @@ void setupWebsocketEvents() {
         t_lastWebsocketStatusUpdate = 0;
       }
     } else if (type == WS_EVT_ERROR) {
-      Serial.printf("WebSocket error on client %u\n", client->id());
+      // arg = reason code (uint16_t*), data/len = human-readable reason. Log
+      // both so a protocol error is distinguishable from a network tear.
+      Serial.printf("WebSocket error on client %u: code=%u reason=%.*s\n",
+                    client->id(), arg ? *((uint16_t *)arg) : 0,
+                    (int)len, (len && data) ? (const char *)data : "");
     } else if (type == WS_EVT_PONG) {
       Serial.printf("Pong received from client %u\n", client->id());
     }
