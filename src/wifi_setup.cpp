@@ -10,11 +10,12 @@
 #include <WiFi.h>
 
 bool b_wifiEnabled = false;
-// True once we've chosen STA mode (have credentials). Gates the supervisor's
-// recovery so it forces STA reconnects even from WL_STOPPED -- where
-// WiFi.getMode() no longer reports STA and a getMode()-based check would skip
-// recovery, leaving WiFi dead forever (observed after a deauth storm).
-static volatile bool g_staIntended = false;
+// Set by the GOT_IP WiFi event; the main loop (wifiSupervise) consumes it and
+// (re)advertises mDNS, keeping all mDNS work off the WiFi-event task.
+static volatile bool g_mdnsAdvertisePending = false;
+// BLE link state (defined in declare.h). Used by the heap watchdog to avoid
+// rebooting mid-shot while a BLE client is connected.
+extern bool deviceConnected;
 
 const char *wifiPrefsKey = "wifi";
 const char *wifiSSIDKey = "ssid";
@@ -38,7 +39,6 @@ public:
 WiFiParams params;
 
 void setupAP() {
-  g_staIntended = false;  // AP fallback: don't let the supervisor force STA reconnects
   WiFi.mode(WIFI_AP);
   delay(100);
   WiFi.softAP("DecentScale", "12345678");
@@ -55,7 +55,6 @@ void setupAP() {
 }
 
 void connectToWifi() {
-  g_staIntended = true;
   WiFi.mode(WIFI_STA);
 
   WiFi.begin(params.getSSID(), params.getPass());
@@ -67,24 +66,27 @@ void connectToWifi() {
     wifiCounter++;
     delay(1000);
     Serial.println(".");
-    // Toggle, to emulate blinking?
-    b_wifiEnabled = !b_wifiEnabled;
     if (wifiCounter > 15) {
       // Configured scale: do NOT fall back to AP. The old code called
       // setupAP()+WiFi.disconnect(true) here, which dropped the STA into
-      // WL_STOPPED and (via setupAP clearing g_staIntended) disabled recovery,
-      // leaving WiFi dead until reboot. Instead leave STA mode and let
-      // wifiSupervise() keep (re)connecting in the background.
+      // WL_STOPPED and disabled recovery, leaving WiFi dead until reboot.
+      // Instead leave STA mode and let wifiSupervise() keep (re)connecting in
+      // the background.
       Serial.println("WiFi not up yet; continuing to retry in background");
       break;
     }
   }
-  Serial.println("");
-  Serial.println("Connected to ");
-  Serial.println(WiFi.SSID().c_str());
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP().toString().c_str());
+  // b_wifiEnabled means "WiFi subsystem active" (already true from _wifi_init),
+  // NOT "connected" -- the live link state is WiFi.status() and the supervisor
+  // owns reconnects. Only log success when actually connected (the background-
+  // retry path breaks out while still disconnected).
   b_wifiEnabled = true;
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("Connected to ");
+    Serial.println(WiFi.SSID().c_str());
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP().toString().c_str());
+  }
 }
 
 void stopWifi() { WiFi.disconnect(true); }
@@ -130,9 +132,11 @@ void onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) {
       Serial.printf("[wifi] GOT_IP %s heap=%lu\n",
                     WiFi.localIP().toString().c_str(),
                     (unsigned long)ESP.getFreeHeap());
-      // Re-advertise mDNS after a (re)connect so hds.local keeps resolving.
-      MDNS.end();
-      setupMdns();
+      // Defer the mDNS (re)advertise to the main loop (wifiSupervise). Running
+      // MDNS.end()/begin() from this WiFi-event-task context races the main
+      // loop's mDNS/web-server use; the flag keeps all mDNS work on one thread
+      // and avoids double-registering the service on boot.
+      g_mdnsAdvertisePending = true;
       break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
       g_wifiDisconnects++;
@@ -166,14 +170,14 @@ void setupWifi() {
   if (params.hasCredentials()) {
     Serial.printf("trying to connect to wifi: %s\n", params.getSSID());
     connectToWifi();
+    // STA advertises mDNS via the GOT_IP path (deferred to wifiSupervise), so
+    // don't also register it here -- that would double-register the service.
   } else {
     Serial.println("no wifi data found, setting up AP");
     setupAP();
+    // AP mode emits no GOT_IP event, so advertise mDNS directly.
+    setupMdns();
   }
-
-  // STA mode also advertises mDNS from the GOT_IP handler; calling it here as
-  // well covers AP fallback and is harmless to repeat.
-  setupMdns();
 
   // Bring-up complete: from here the loop's supervisor may manage reconnects.
   g_wifiInitDone = true;
@@ -187,6 +191,14 @@ void wifiSupervise() {
   static unsigned long lowHeapSince = 0;
   unsigned long now = millis();
   bool up = WiFi.status() == WL_CONNECTED;
+
+  // (Re)advertise mDNS here -- on the main loop -- when the GOT_IP event asked
+  // for it, instead of doing MDNS.end()/begin() from the WiFi-event task.
+  if (g_mdnsAdvertisePending) {
+    g_mdnsAdvertisePending = false;
+    MDNS.end();
+    setupMdns();
+  }
 
   // Heap watchdog. Connection churn can drain the heap to near-zero; in that
   // OOM window the lwIP/IP stack wedges permanently (no ICMP/TCP/mDNS) while
@@ -204,12 +216,24 @@ void wifiSupervise() {
       Serial.printf("[heap] CRITICAL low free=%lu minfree=%lu @%lu\n",
                     (unsigned long)freeHeap, (unsigned long)ESP.getMinFreeHeap(), now);
     } else if (now - lowHeapSince >= HEAP_CRITICAL_WINDOW) {
-      Serial.printf("[heap] critical for %lums (free=%lu) -> esp_restart()\n",
-                    now - lowHeapSince, (unsigned long)freeHeap);
-      Serial.flush();
-      esp_restart();
+      // Never reboot mid-shot: a WiFi-side OOM must not kill a live BLE session
+      // (heap exhaustion needs WiFi/HTTP churn, not BLE). Keep the timer armed
+      // so we self-heal the moment BLE disconnects.
+      if (deviceConnected) {
+        Serial.printf("[heap] critical for %lums (free=%lu) but BLE connected -> defer reboot\n",
+                      now - lowHeapSince, (unsigned long)freeHeap);
+      } else {
+        Serial.printf("[heap] critical for %lums (free=%lu) -> esp_restart()\n",
+                      now - lowHeapSince, (unsigned long)freeHeap);
+        Serial.flush();
+        esp_restart();
+      }
     }
-  } else if (freeHeap > HEAP_CRITICAL + 5000) {  // hysteresis so it doesn't flap
+  } else {
+    // Recovered to a healthy heap: clear the timer so any later dip needs a
+    // fresh sustained window. (The old +5000 hysteresis left a 15-20 KB dead
+    // band where a stale start time could trigger an instant reboot on the
+    // next brief dip.)
     lowHeapSince = 0;
   }
 
