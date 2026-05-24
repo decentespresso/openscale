@@ -508,8 +508,11 @@ bool handleWebsocketRateCommand(AsyncWebSocketClient *client, String msg) {
     if (doc[key].is<const char *>()) {
       return handleWebsocketControlCommand(client, key, doc[key].as<String>());
     }
-    if (doc[key].is<bool>() && doc[key].as<bool>()) {  // e.g. {"tare":true}
-      return handleWebsocketControlCommand(client, key, "");
+    // Bool form: {"display":true/false} -> "on"/"off" (and {"tare":true} fires
+    // tare, which ignores the action). Exclude "power": a bool must not be able
+    // to trigger power-off -- that requires the explicit {"power":"off"} form.
+    if (doc[key].is<bool>() && strcmp(key, "power") != 0) {
+      return handleWebsocketControlCommand(client, key, doc[key].as<bool>() ? "on" : "off");
     }
   }
 

@@ -252,8 +252,10 @@ void wifiSupervise() {
     // Recovered to a healthy heap: clear the timer so any later dip needs a
     // fresh sustained window. (The old +5000 hysteresis left a 15-20 KB dead
     // band where a stale start time could trigger an instant reboot on the
-    // next brief dip.)
+    // next brief dip.) Also reset the defer-log rate-limit so a later episode's
+    // first "defer reboot" line isn't suppressed by a stale timestamp.
     lowHeapSince = 0;
+    lastDeferLog = 0;
   }
 
   if (now - lastLog >= 5000) {
