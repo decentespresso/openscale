@@ -1388,10 +1388,11 @@ void loop() {
 
         // Unified weight-output tick: ONE 100 ms grid timer drives every active
         // interface, each at its own rate (sends every NotifyInterval/base
-        // ticks) -- USB-text 1 Hz, USB-binary/BLE/WS at their NotifyInterval, and
-        // BLE honors the per-client 2k/5k/10k setting. Replaces four independent
-        // timers that each re-implemented this cadence (a recurring drift-bug
-        // source) and cuts per-loop CPU. Grid-advance keeps a true average rate;
+        // ticks) -- USB-text 1 Hz, USB-binary/WS at their NotifyInterval, BLE
+        // fixed at 100 ms / 10 Hz. Replaces three independent timers that each
+        // re-implemented this cadence (a recurring drift-bug source; the USB
+        // binary send was previously ungated) and cuts per-loop CPU.
+        // Grid-advance keeps a true average rate;
         // resync (don't burst) after a long stall. Skipped during ADC recovery.
         if (!b_adc_recovery_active) {
           static unsigned long t_weightTick = 0;
@@ -1782,9 +1783,14 @@ void drawBattery() {
 
   // TODO: move to separate func?
   if (b_wifiEnabled) {
-    u8g2.setFont(u8g2_font_open_iconic_www_1x_t);
-    int glyph = WiFi.getMode() == WIFI_STA ? 0x004F : 0x0051;
-    u8g2.drawGlyph(10, 64, glyph);
+    // Steady once associated (or in AP mode); blink at ~1 Hz while STA is still
+    // connecting so the user sees activity without overloading b_wifiEnabled.
+    bool connecting = WiFi.getMode() == WIFI_STA && WiFi.status() != WL_CONNECTED;
+    if (!connecting || (millis() / 500) % 2) {
+      u8g2.setFont(u8g2_font_open_iconic_www_1x_t);
+      int glyph = WiFi.getMode() == WIFI_STA ? 0x004F : 0x0051;
+      u8g2.drawGlyph(10, 64, glyph);
+    }
   }
 }
 
