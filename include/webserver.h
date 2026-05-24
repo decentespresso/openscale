@@ -13,10 +13,15 @@
 static AsyncWebServer server(80);
 static AsyncWebSocket websocket("/snapshot");
 
-// While a WS weight stream is active, HTTP file serves are rate-limited to one
-// per this interval so file-serving TX can't saturate the radio and starve the
-// 10 Hz broadcast. ~5 serves/s still loads the web UI promptly.
+// While a WS weight stream is active, HTTP file serves are token-bucket
+// rate-limited: sustained traffic refills at one serve per this interval so it
+// can't saturate the radio and starve the 10 Hz broadcast.
 static const unsigned long HTTP_MIN_INTERVAL_WHILE_STREAMING_MS = 200;
+// Bucket depth. A single web-app page load pulls HTML + CSS + a JS module graph
+// (~10-12 requests in a burst); the bucket lets that through at once, then
+// throttles to the refill rate above. Browsers don't retry 503 on sub-resources,
+// so a too-tight limit would leave the on-device apps rendering broken.
+static const int HTTP_STREAMING_BURST = 12;
 
 void startWebServer() {
   // Handlers must be registered before server.begin(), and only once across
@@ -67,9 +72,10 @@ void startWebServer() {
     //  2. Stream priority: while a WS weight stream is active, file-serving TX
     //     can saturate the (shared, coexisting) radio and starve the 10 Hz
     //     broadcast (measured: a flood of concurrent serves drove a client to
-    //     0 Hz). Rate-limit HTTP serves to one per HTTP_MIN_INTERVAL_MS so the
-    //     broadcast keeps radio priority. Time-based (no in-flight counter that
-    //     could leak and wedge HTTP forever).
+    //     0 Hz). A token bucket (HTTP_STREAMING_BURST deep, refilling one per
+    //     HTTP_MIN_INTERVAL_WHILE_STREAMING_MS) lets a normal page load burst
+    //     through, then throttles sustained floods so the broadcast keeps radio
+    //     priority. Time-based (no in-flight counter that could leak).
     server.addMiddleware([](AsyncWebServerRequest *request, ArMiddlewareNext next) {
       if (request->url() == "/snapshot") {
         next();
@@ -80,13 +86,20 @@ void startWebServer() {
         return;
       }
       if (websocket.count() > 0) {
-        static unsigned long lastServe = 0;
+        static int tokens = HTTP_STREAMING_BURST;
+        static unsigned long lastRefill = 0;
         unsigned long now = millis();
-        if (now - lastServe < HTTP_MIN_INTERVAL_WHILE_STREAMING_MS) {
+        unsigned long refill = (now - lastRefill) / HTTP_MIN_INTERVAL_WHILE_STREAMING_MS;
+        if (refill > 0) {
+          long t = tokens + (long)refill;
+          tokens = t > HTTP_STREAMING_BURST ? HTTP_STREAMING_BURST : (int)t;
+          lastRefill = now;
+        }
+        if (tokens <= 0) {
           request->send(503, "text/plain", "prioritizing data stream, retry");
           return;
         }
-        lastServe = now;
+        tokens--;
       }
       next();
     });
