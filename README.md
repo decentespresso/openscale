@@ -24,12 +24,15 @@ After this, one can simply use `$pio run -t upload` and platformio will build an
 
 ## Wifi mode
 
-Decent Scale now uses WiFi for additional features, not just OTA update.   
+Decent Scale uses WiFi for web apps, WebSocket data streaming, and OTA updates.
 
 To enable WiFi mode, go to HDS setup menu and find "Wifi settings" entry. From there you can enable/disable WiFi as well as see current WiFi details. If you toggle WiFi on/off, a restart of the scale is required for the new settings to take effect.
-Initially HDS will open its own WiFi, called "Decent Scale", protected with a password '12345678'. Once connected to this WiFi, you can navigate with your browser to [hds.local](http://hds.local) or [192.168.1.1](http://192.168.1.1) to change the Wifi settings, in case you want HDS to connect to your home WiFi. 
-Again, make sure to restart the scale for the settings to take effect.
-If you store WiFi settings incorrectly, or you take your HDS out of signal range, HDS will return back to its own Wifi (Decent Scale) - so you can change the settings again if needed.
+
+**First-time setup:** if no WiFi credentials are stored, the scale opens its own access point — SSID `Decent Scale`, password `12345678`, IP `192.168.1.1`. Connect to it and navigate to [hds.local](http://hds.local) to enter your home WiFi credentials. The scale will restart and connect to your network.
+
+**Reconnect:** once configured, the scale stays in STA mode and reconnects automatically after signal loss with exponential backoff (5 s → 10 → 20 → 40 → 60 s cap). It no longer falls back to the AP — a configured scale keeps retrying your home network.
+
+**Discovery:** the scale advertises itself via mDNS (`hds.local`) and DNS-SD (`_decentscale._tcp`) so apps can discover it on the LAN without knowing the IP.
 
 ## Web apps
 The same web apps that could be used with Half Decent Scale from [the web](https://decentespresso.com/docs/introducing_half_decent_scale_web_apps) have now been rewritten to run directly from the Half Decent Scale.
@@ -128,12 +131,23 @@ info
 The legacy text `tare` command is intentionally silent for backwards
 compatibility. JSON `{ "command": "tare" }` returns a `type: "status"` ack.
 
-The same commands can be sent as JSON:
+The same commands can be sent as JSON (full form):
 
 ```json
 { "command": "tare" }
 { "command": "timer", "action": "start" }
 ```
+
+**JSON shorthand** — control keys at the top level are also accepted:
+
+```json
+{ "events": "on" }
+{ "display": "off" }
+{ "tare": true }
+{ "timer": "start" }
+```
+
+Bool values map to on/off (`{"display":false}` → off). The `power` key is excluded from the bool form — power-off requires the explicit `{"command":"power","action":"off"}` or text `power off`.
 
 An unrecognized or malformed command (bad JSON, or an unknown verb) returns an
 `error` frame rather than silence, so a client can distinguish a rejected
