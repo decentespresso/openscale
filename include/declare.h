@@ -24,7 +24,10 @@ BLEService *pService = NULL;
 BLEAdvertising *pAdvertising = NULL;
 BLECharacteristic *pReadCharacteristic = NULL;
 BLECharacteristic *pWriteCharacteristic = NULL;
-bool deviceConnected = false;
+// volatile: written from the BLE (NimBLE) task in onConnect/onDisconnect; read
+// on the main loop (power-off keepalive in loop(), heap-watchdog gate in
+// wifiSupervise()). volatile prevents the readers caching a stale value.
+volatile bool deviceConnected = false;
 
 // The model byte is always 03 for Decent scales
 const byte modelByte = 0x03;

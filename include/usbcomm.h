@@ -578,15 +578,12 @@ void sendUsbWeight() {
   Serial.write(data, 7);
 }
 
+// Rate-gating is handled centrally by the unified weight-output tick in the
+// main loop; this just emits one line when called.
 void sendUsbTextWeight() {
-  unsigned long currentMillis = millis();
-  if (currentMillis - lastWeightTextNotifyTime >= weightTextNotifyInterval) {
-    // Save the last time you sent the weight notification
-    lastWeightTextNotifyTime = currentMillis;
-    Serial.print(lastWeightTextNotifyTime);
-    Serial.print(" Weight: ");  // 7 bytes of data
-    Serial.println(f_displayedValue);
-  }
+  Serial.print(millis());
+  Serial.print(" Weight: ");
+  Serial.println(f_displayedValue);
 }
 
 void sendUsbButton(int buttonNumber, int buttonShortPress) {

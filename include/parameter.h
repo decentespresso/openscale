@@ -5,13 +5,13 @@
 //ble
 bool b_ble_enabled = false;
 bool b_usbweight_enabled = false;
-unsigned long lastBleWeightNotifyTime = 0;  // Stores the last time the weight notification was sent
-unsigned long lastUsbWeightNotifyTime = 0;  // Stores the last time the weight notification was sent
-
-unsigned long lastWeightTextNotifyTime = 0;   // Stores the last time the weight notification was sent
-unsigned long weightBleNotifyInterval = 100;  // Interval at which to send weight notifications (milliseconds)
-unsigned long weightUsbNotifyInterval = 100;  // Interval at which to send weight notifications (milliseconds)
-unsigned long weightTextNotifyInterval = 1000;
+unsigned long weightBleNotifyInterval = 100;  // BLE notify interval (ms). Fixed at 100ms (10Hz); not runtime-configurable over BLE.
+unsigned long weightUsbNotifyInterval = 100;  // USB binary notify interval (ms)
+unsigned long weightTextNotifyInterval = 1000;  // USB text/debug line interval (ms)
+// Base period of the unified weight-output tick. One grid timer drives every
+// interface; each sends every (its NotifyInterval / base) ticks. All the
+// per-interface intervals above (and the WS ones below) are multiples of this.
+const unsigned long WEIGHT_BASE_INTERVAL_MS = 100;
 const unsigned long WEBSOCKET_2HZ_NOTIFY_INTERVAL_MS = 500;
 const unsigned long WEBSOCKET_5HZ_NOTIFY_INTERVAL_MS = 200;
 const unsigned long WEBSOCKET_10HZ_NOTIFY_INTERVAL_MS = 100;

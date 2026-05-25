@@ -499,6 +499,23 @@ bool handleWebsocketRateCommand(AsyncWebSocketClient *client, String msg) {
     return setWebsocketRateFromInterval(client, doc["interval_ms"].as<unsigned long>());
   }
 
+  // Shorthand control commands: {"events":"on"}, {"display":"off"},
+  // {"tare":true}, etc. -- a control key at top level whose value is the action.
+  // (Mirrors the {"rate":"10k"} shorthand above.)
+  static const char *kControlKeys[] = {
+      "events", "tare", "timer", "display", "low_power", "sleep", "soft_sleep", "power"};
+  for (const char *key : kControlKeys) {
+    if (doc[key].is<const char *>()) {
+      return handleWebsocketControlCommand(client, key, doc[key].as<String>());
+    }
+    // Bool form: {"display":true/false} -> "on"/"off" (and {"tare":true} fires
+    // tare, which ignores the action). Exclude "power": a bool must not be able
+    // to trigger power-off -- that requires the explicit {"power":"off"} form.
+    if (doc[key].is<bool>() && strcmp(key, "power") != 0) {
+      return handleWebsocketControlCommand(client, key, doc[key].as<bool>() ? "on" : "off");
+    }
+  }
+
   if (doc["command"].is<const char *>()) {
     String command = doc["command"].as<String>();
     command.trim();
@@ -537,6 +554,14 @@ void setupWebsocketEvents() {
     if (type == WS_EVT_CONNECT) {
       Serial.printf("Client %u connected\n", client->id());
       client->setCloseClientOnQueueFull(false);
+      // Ride out transient BT/WiFi coexistence stalls. AsyncTCP's default ACK
+      // timeout (CONFIG_ASYNC_TCP_MAX_ACK_TIME, 5000 ms in esp32async AsyncTCP
+      // ~3.x) closes the socket (graceful FIN, no WS close frame) when a few
+      // seconds of sent data go unacked during a radio stall -- the cause of the
+      // ~1-2 min "clean disconnect" drops. Raising it lets the stream resume
+      // when the radio frees up instead of dropping. A genuinely dead client is
+      // still reaped, just later.
+      client->client()->setAckTimeout(30000);
     } else if (type == WS_EVT_DISCONNECT) {
       Serial.printf("Client %u disconnected\n", client->id());
       // Only reset shared session state when the LAST client leaves —
@@ -549,7 +574,11 @@ void setupWebsocketEvents() {
         t_lastWebsocketStatusUpdate = 0;
       }
     } else if (type == WS_EVT_ERROR) {
-      Serial.printf("WebSocket error on client %u\n", client->id());
+      // arg = reason code (uint16_t*), data/len = human-readable reason. Log
+      // both so a protocol error is distinguishable from a network tear.
+      Serial.printf("WebSocket error on client %u: code=%u reason=%.*s\n",
+                    client->id(), arg ? *((uint16_t *)arg) : 0,
+                    (int)len, (len && data) ? (const char *)data : "");
     } else if (type == WS_EVT_PONG) {
       Serial.printf("Pong received from client %u\n", client->id());
     }
