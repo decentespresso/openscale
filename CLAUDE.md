@@ -95,6 +95,7 @@ WiFi and BLE share the same 2.4 GHz radio. The Arduino-ESP32 default is `WIFI_PS
 - `LittleFS.begin()` is idempotent.
 - Multiple concurrent WS clients are supported (on-device web UI + a separate app). `cleanupClients()` caps at `DEFAULT_MAX_WS_CLIENTS` (8 on ESP32); shared session state (rate, events) resets only when the last client disconnects (`server->count() == 0`).
 - Broadcast with `websocket.printfAll(...)`, not a hand-rolled `getClients()` loop: `getClients()` doesn't take the library's client-list mutex, so iterating it on the loop task races a client disconnect on the AsyncTCP task (use-after-free). `printfAll` holds the lock and sends to each client.
+- **`printfAll` allocates per client and throws `std::bad_alloc` when the heap is exhausted** — and Arduino-ESP32 builds `-fno-exceptions`, so the throw goes straight to `std::terminate()`→`abort()`→reboot. Connection churn (many/half-open WS clients lingering under the 30 s ack timeout) can collapse the heap, so every broadcast-to-all helper (`sendWebsocketWeightAll`, `sendWebsocketStatusAll`, button/power-off) is gated by `wsBroadcastHeapOk()` (`WS_BROADCAST_HEAP_FLOOR`, ~25 KB, above the 15 KB heap watchdog): when heap is below the floor the frame is **skipped**, not allocated. Per-client queues are capped via `-D WS_MAX_QUEUED_MESSAGES=8` (lib default 32) so a backed-up client can't hoard heap. Don't add a new `printfAll` broadcast without the `wsBroadcastHeapOk()` guard.
 
 WS frame parsing: only act on complete unfragmented text frames:
 
@@ -135,6 +136,7 @@ Functions and locals are camelCase. Some legacy snake_case remains; don't churn 
 | Boot logs show `LittleFS mount failed` | Run `pio run -t uploadfs` to write the filesystem image — firmware-only flashes don't touch it. |
 | `pio device monitor` hangs in a non-PTY shell | Use the pyserial snippet in Quick reference. |
 | `pio` flash takes >60s instead of ~15s | Bad firmware is choking the bootloader handshake. Symptom of a serious bug on the device (WiFi coex, OLED stuck, etc.), not a hardware fault. |
+| `reset_reason=panic` / `abort()` + reboot under sustained multi-client WiFi load | Heap-exhaustion OOM in a WS broadcast: `printfAll` → `operator new` throws `bad_alloc`. Broadcasts are heap-gated (`wsBroadcastHeapOk`); look for `[ws] low heap … skip broadcast` on serial and a falling `[health] heap=`. Driven by WS connection churn (half-open clients lingering on the 30 s ack timeout). Not thermal. |
 
 ## Keeping this file fresh
 
