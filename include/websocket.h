@@ -156,8 +156,37 @@ void processWsPendingCmds() {
   }
 }
 
+// --- Heap-floor gate for periodic WS broadcasts ------------------------------
+// printfAll() allocates an AsyncWebSocketMessage (a heap buffer) for EVERY
+// connected client. Under WebSocket connection churn the heap can collapse, and
+// that allocation then throws std::bad_alloc -> std::terminate() -> abort()
+// (Arduino-ESP32 builds with -fno-exceptions, so the throw can't be caught) ->
+// reboot. That OOM-reboot is the "weight stops being collected under sustained
+// multi-client load" failure. Skipping a frame is invisible (the next weight
+// frame is <=500 ms away, status <=5 s); crashing is not. The floor sits above
+// the 15 KB heap watchdog (wifi_setup.cpp) so broadcasts back off well before a
+// reboot is even considered. Every broadcast helper below runs on the main loop,
+// so the skip counter needs no synchronization.
+static const uint32_t WS_BROADCAST_HEAP_FLOOR = 25000;
+static uint32_t g_wsBroadcastHeapSkips = 0;
+static inline bool wsBroadcastHeapOk() {
+  if (ESP.getFreeHeap() >= WS_BROADCAST_HEAP_FLOOR) return true;
+  g_wsBroadcastHeapSkips++;
+  static unsigned long lastLog = 0;
+  unsigned long now = millis();
+  if (now - lastLog >= 2000) {  // rate-limit: broadcasts can be 10 Hz
+    lastLog = now;
+    Serial.printf("[ws] low heap %lu < %lu -> skip broadcast (total skips=%lu)\n",
+                  (unsigned long)ESP.getFreeHeap(),
+                  (unsigned long)WS_BROADCAST_HEAP_FLOOR,
+                  (unsigned long)g_wsBroadcastHeapSkips);
+  }
+  return false;
+}
+
 void sendWebsocketButton(int buttonNumber, int buttonShortPress) {
   if (!b_wifiEnabled || !b_websocketEventsEnabled || websocket.count() == 0) return;
+  if (!wsBroadcastHeapOk()) return;
   websocket.printfAll("{\"type\":\"button\",\"button\":\"%s\",\"button_number\":%d,\"press\":\"%s\",\"press_code\":%d,\"ms\":%lu}",
                       websocketButtonName(buttonNumber),
                       buttonNumber,
@@ -168,6 +197,7 @@ void sendWebsocketButton(int buttonNumber, int buttonShortPress) {
 
 void sendWebsocketPowerOff(int i_reason) {
   if (!b_wifiEnabled || !b_websocketEventsEnabled || websocket.count() == 0) return;
+  if (!wsBroadcastHeapOk()) return;
   websocket.printfAll("{\"type\":\"power\",\"event\":\"power_off\",\"reason\":\"%s\",\"reason_code\":%d,\"ms\":%lu}",
                       websocketPowerOffReason(i_reason),
                       i_reason,
@@ -211,6 +241,7 @@ void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
 // without blocking the others.
 void sendWebsocketStatusAll(const char *status) {
   if (!b_wifiEnabled || !b_websocketEventsEnabled || websocket.count() == 0) return;
+  if (!wsBroadcastHeapOk()) return;
   websocket.printfAll("{\"type\":\"status\",\"status\":\"%s\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu}",
                       status,
                       FIRMWARE_VER,
@@ -231,6 +262,7 @@ void sendWebsocketStatusAll(const char *status) {
 
 void sendWebsocketWeightAll(float grams, unsigned long ms) {
   if (!b_wifiEnabled || websocket.count() == 0) return;
+  if (!wsBroadcastHeapOk()) return;
   websocket.printfAll("{\"grams\":%.2f,\"ms\":%lu}", grams, ms);
 }
 
