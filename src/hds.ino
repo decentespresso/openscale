@@ -32,26 +32,15 @@ void adsDebugCallback(const ADS1232DebugInfo& info) {
     Serial.print("Raw Value: "); Serial.print(info.rawValue);
     Serial.print(" | Smoothed: "); Serial.println(info.smoothedValue);
     Serial.print("Tare Offset: "); Serial.println(info.tareOffset);
-    Serial.print("Conv Time: "); Serial.print(info.conversionTime, 3);
+    Serial.print("Conv Time: "); Serial.print(info.conversionTimeMs, 3);
     Serial.print("ms | SPS: "); Serial.println(info.sps, 2);
     Serial.print("Samples: "); Serial.print(info.samplesInUse);
+    Serial.print(" | Valid: "); Serial.print(info.validSamples);
     Serial.print(" | Read Index: "); Serial.println(info.readIndex);
-    
-    // Data statistics - useful for detecting noise/instability
-    Serial.print("Dataset - Min: "); Serial.print(info.dataMin);
-    Serial.print(" | Max: "); Serial.print(info.dataMax);
-    Serial.print(" | Avg: "); Serial.println(info.dataAvg);
-    Serial.print("Std Dev: "); Serial.print(info.dataStdDev, 2);
-    Serial.println(" (lower = more stable)");
     
     // Error flags
     Serial.print("Flags - OutOfRange: "); Serial.print(info.dataOutOfRange);
-    Serial.print(" | SignalTimeout: "); Serial.print(info.signalTimeout);
-    Serial.print(" | Tare: "); Serial.print(info.tareInProgress);
-    if (info.tareInProgress) {
-      Serial.print(" ("); Serial.print(info.tareTimes); Serial.print("/"); Serial.print(DATA_SET); Serial.print(")");
-    }
-    Serial.println();
+    Serial.print(" | SignalTimeout: "); Serial.println(info.signalTimeout);
     Serial.println("==========================");
     
     lastDebugPrint = now;

@@ -8,6 +8,11 @@
 // #define CUUID_DECENTSCALE_WRITEBACK "83CDC3D4-3BA2-13FC-CC5E-106C351A9352"
 #define SUUID_DECENTSCALE "fff0"
 
+// ADS1232_ADC — replaces compile-time ADS1232_ADC_CONFIG.h.
+// DATA_SET used by calibration menu (include/menu.h). Matches old default
+// (SAMPLES=4 + IGN_HIGH=0 + IGN_LOW=0).
+#define DATA_SET 4
+
 //#define ESPNOW
 
 // #define SW_SPI //HW_I2C  HW_SPI  SW_I2C  SW_SPI   //oled linkage

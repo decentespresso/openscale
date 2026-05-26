@@ -527,9 +527,8 @@ public:
         Serial.print(" | Smooth: "); Serial.print(info.smoothedValue);
         Serial.print(" | Tare: "); Serial.println(info.tareOffset);
         Serial.print("SPS: "); Serial.print(info.sps, 2);
-        Serial.print(" | StdDev: "); Serial.println(info.dataStdDev, 2);
-        Serial.print("Range: "); Serial.print(info.dataMin);
-        Serial.print(" to "); Serial.println(info.dataMax);
+        Serial.print(" | ConvTime: "); Serial.print(info.conversionTimeMs, 3);
+        Serial.print("ms | Valid: "); Serial.println(info.validSamples);
         Serial.println("==============================");
       }
     }
@@ -610,12 +609,9 @@ void sendUsbLedResponse() {
 // [20-21] = sps (2 bytes, float * 100)
 // [22]    = readIndex (1 byte)
 // [23]    = samplesInUse (1 byte)
-// [24-27] = dataMin (4 bytes, signed long)
-// [28-31] = dataMax (4 bytes, signed long)
-// [32-35] = dataAvg (4 bytes, signed long)
-// [36-37] = dataStdDev (2 bytes, float * 10)
-// [38]    = flags (bits: 0=dataOutOfRange, 1=signalTimeout, 2=tareInProgress)
-// [39]    = tareTimes (1 byte)
+// [24-37] = reserved (14 bytes, zero-filled — stats not precomputed in new lib)
+// [38]    = flags (bits: 0=dataOutOfRange, 1=signalTimeout, bit2 always 0)
+// [39]    = reserved (1 byte, always 0 — tare is instant)
 // [40]    = checksum (XOR of bytes 0-39)
 void buildAdsDebugPacket(byte data[41]) {
   ADS1232DebugInfo info = scale.getDebugInfo();
@@ -648,7 +644,7 @@ void buildAdsDebugPacket(byte data[41]) {
   data[17] = info.tareOffset & 0xFF;
   
   // Conversion time (2 bytes, float * 100 for 0.01ms precision)
-  uint16_t convTime = (uint16_t)(info.conversionTime * 100);
+  uint16_t convTime = (uint16_t)(info.conversionTimeMs * 100);
   data[18] = (convTime >> 8) & 0xFF;
   data[19] = convTime & 0xFF;
   
@@ -663,36 +659,16 @@ void buildAdsDebugPacket(byte data[41]) {
   // Samples in use (1 byte)
   data[23] = info.samplesInUse & 0xFF;
   
-  // Data min (4 bytes, signed)
-  data[24] = (info.dataMin >> 24) & 0xFF;
-  data[25] = (info.dataMin >> 16) & 0xFF;
-  data[26] = (info.dataMin >> 8) & 0xFF;
-  data[27] = info.dataMin & 0xFF;
+  // Data min / max / avg / stdDev (fill with zeros — stats not precomputed)
+  memset(&data[24], 0, 14);
   
-  // Data max (4 bytes, signed)
-  data[28] = (info.dataMax >> 24) & 0xFF;
-  data[29] = (info.dataMax >> 16) & 0xFF;
-  data[30] = (info.dataMax >> 8) & 0xFF;
-  data[31] = info.dataMax & 0xFF;
-  
-  // Data avg (4 bytes, signed)
-  data[32] = (info.dataAvg >> 24) & 0xFF;
-  data[33] = (info.dataAvg >> 16) & 0xFF;
-  data[34] = (info.dataAvg >> 8) & 0xFF;
-  data[35] = info.dataAvg & 0xFF;
-  
-  // StdDev (2 bytes, float * 10 for 0.1 precision)
-  uint16_t stdDev = (uint16_t)(info.dataStdDev * 10);
-  data[36] = (stdDev >> 8) & 0xFF;
-  data[37] = stdDev & 0xFF;
-  
-  // Flags (1 byte: bit 0=dataOutOfRange, bit 1=signalTimeout, bit 2=tareInProgress)
+  // Flags (1 byte: bit 0=dataOutOfRange, bit 1=signalTimeout)
+  // bit 2 (tareInProgress) always 0 — tare is instant
   data[38] = (info.dataOutOfRange ? 0x01 : 0x00) |
-             (info.signalTimeout ? 0x02 : 0x00) |
-             (info.tareInProgress ? 0x04 : 0x00);
+             (info.signalTimeout ? 0x02 : 0x00);
   
-  // Tare times (1 byte)
-  data[39] = info.tareTimes & 0xFF;
+  // Tare times (1 byte) — always 0
+  data[39] = 0;
   
   // Checksum (XOR of all previous bytes)
   byte checksum = 0;
