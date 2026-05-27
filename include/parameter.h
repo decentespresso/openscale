@@ -23,6 +23,17 @@ volatile unsigned long weightWebsocketNotifyInterval = WEBSOCKET_DEFAULT_NOTIFY_
 volatile bool b_websocketEventsEnabled = false;
 volatile bool b_websocketLowPowerEnabled = false;
 
+// Snapshot of the stopWatch state, refreshed once per main-loop iteration. The
+// WS status frame is built on the AsyncTCP task (response to {"command":"status"}
+// from handleWebsocketControlCommand); stopWatch is a multi-field object (running
+// flag + start ts + accumulator) also mutated from BLE/USB and the main loop, so
+// reading it directly off the AsyncTCP task can tear (CLAUDE.md threading model
+// "stopWatch.* -- No -- multi-field..."). sendWebsocketStatus reads these single
+// aligned volatiles instead. g_timerElapsed carries stopWatch.elapsed() in its
+// configured resolution (SECONDS) -- the WS "timer_seconds" field.
+volatile bool g_timerRunning = false;
+volatile unsigned long g_timerElapsed = 0;
+
 // Websocket pending-command mask. Set on the AsyncTCP task by the WS event
 // callback; drained on the main loop. Defers hardware-touching ops (u8g2,
 // stopWatch, power-rail GPIOs) so they never race the main loop.
