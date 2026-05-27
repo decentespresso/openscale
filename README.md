@@ -126,6 +126,10 @@ power off
 status
 battery
 info
+debug
+diag           (alias for debug)
+session_info
+session        (alias for session_info)
 ```
 
 The legacy text `tare` command is intentionally silent for backwards
@@ -228,9 +232,13 @@ to get the full diagnostic set per-client. Reply:
 }
 ```
 
-**Event broadcasts** — emitted when something diagnostic-relevant changes.
-Subscribers keep their own snapshot from `session_info` + the on-request
-debug reply and apply these deltas. Non-subscribers ignore the unknown type.
+**Event broadcasts** (require `events on`) — emitted when something
+diagnostic-relevant changes. Like `button` and `power` event frames, these are
+gated on the same per-session `events` flag; a client that hasn't sent
+`events on` will not receive them (but can still poll `{"command":"debug"}`
+for a snapshot at any time). Subscribers keep their own snapshot from
+`session_info` + the on-request debug reply and apply these deltas.
+Non-subscribers ignore the unknown type.
 
 ```json
 {"type":"debug","event":"stall_start","stall_count":1,
