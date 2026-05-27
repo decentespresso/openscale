@@ -158,6 +158,10 @@ This document is meant to evolve with the codebase. During a session, if you (Cl
 
 If you fix a bug whose symptom is documented in the "When something is broken" table, leave the entry in place — it's still the right "first place to look" for the next person.
 
+## Fixing bugs you find along the way
+
+Pre-existing bugs get fixed too — "it was already there" is not a reason to defer. When you turn up a bug while working on something else (a review flags it, you read past it, a test surfaces it), fix it as part of the same change; a pre-existing bug is no less bad than a newly introduced one, and the person touching the code is the right person to fix it. The only exception is when the fix is genuinely a large, independent effort — then call it out explicitly and agree on a separate change, rather than silently leaving it in place.
+
 ## Don't
 
 - Don't call I²C / SPI / blocking IO from the AsyncTCP task.

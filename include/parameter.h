@@ -193,8 +193,45 @@ static const unsigned long ZERO_DISPLAY_MISMATCH_TIMEOUT = 1500;
 static const float ZERO_DISPLAY_MISMATCH_THRESHOLD = 0.5;
 static const uint8_t ADC_ERROR_RECOVERY_COUNT = 2;
 static bool b_adc_recovery_active = false;
-static uint8_t i_adc_recovery_count = 0;
+// volatile: written on the main loop -- incremented on each ADC power-cycle
+// recovery, reset to 0 by resetAdcRecoveryState() -- and read in the WS status
+// frame (which can be built on the AsyncTCP task). uint32_t (not uint8_t) so a
+// *perpetual* recovery loop -- the one failure mode the stall watchdog is blind
+// to -- keeps counting truthfully over a long soak instead of saturating at 255.
+static volatile uint32_t i_adc_recovery_count = 0;
 //bool b_tempDisablePowerOff = true;
+
+// Instrumentation for diagnosing the "weight stops being collected" failure
+// under sustained load (suspected thermal). These are all written on the main
+// loop and read by the WS status frame, which is built BOTH on the main loop
+// (periodic) AND on the AsyncTCP task (command responses) -- so the read crosses
+// a task boundary. volatile prevents the AsyncTCP reader caching a stale value
+// (single aligned scalars => the load/store is atomic on Xtensa, no mutex
+// needed). b_weightStalled is set by the pureScale() stall watchdog when the ADC
+// raw value is frozen/railed.
+volatile bool b_weightStalled = false;
+// volatile for the same cross-task reason; written once at boot in setup().
+volatile const char *g_resetReason = "unknown";
+// Peak/last-event stats since boot (no NVS; reset on reboot, which g_resetReason
+// then explains). g_socTempMaxC = highest SoC die temp seen. The *_stall_*
+// fields capture the most recent stall so the failure is visible after the fact
+// -- consumers must treat last_stall_temp_c as valid only when g_lastStallMs != 0
+// (0.0 otherwise means "no stall yet", not a real 0 C reading).
+volatile float g_socTempC = 0.0f;          // latest SoC temperature (C)
+volatile float g_socTempMaxC = -100.0f;    // peak SoC temperature since boot (C); -100 = no valid sample yet
+volatile uint32_t g_stallCount = 0;        // number of weight-stall events since boot
+volatile unsigned long g_lastStallMs = 0;  // millis() of the last stall onset (0 = none)
+volatile float g_lastStallTempC = 0.0f;    // SoC temp when the last stall began (valid only if g_lastStallMs != 0)
+
+// Snapshot of the stopWatch state, refreshed once per main-loop iteration. The
+// WS status frame is built BOTH on the main loop AND on the AsyncTCP task
+// (command responses); stopWatch is a multi-field object (running flag + start
+// ts + accumulator) also mutated from BLE/USB, so reading it directly off the
+// AsyncTCP task can tear (CLAUDE.md). The status frame reads these single
+// aligned volatiles instead. g_timerElapsed carries stopWatch.elapsed() in its
+// configured resolution (SECONDS) -- it is the WS "timer_seconds" field.
+volatile bool g_timerRunning = false;
+volatile unsigned long g_timerElapsed = 0;
 
 bool b_negativeWeight = false;
 

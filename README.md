@@ -186,6 +186,81 @@ Status frame shape:
 }
 ```
 
+### `session_info` frame (per-connect, server → client)
+
+Sent once to each client immediately after WebSocket handshake. Carries the
+fields that don't change for the life of the connection, so the hot status
+broadcast doesn't have to ship them on every tick.
+
+```json
+{
+  "type": "session_info",
+  "protocol_version": 1,
+  "firmware_version": "FW: 3.0.9",
+  "reset_reason": "poweron",
+  "ms": 12345
+}
+```
+
+### `debug` frames (diagnostic telemetry, opt-in)
+
+Diagnostic telemetry — SoC die temperature, weight-stall watchdog state, ADC
+power-cycle recovery count — is delivered out-of-band from the hot status
+broadcast so apps that don't care about it (the on-device UI, the
+decentespresso app, third-party scale apps) aren't paying ~21% extra bytes per
+status tick.
+
+**On-request snapshot** — send `{"command":"debug"}` (also accepted: `diag`)
+to get the full diagnostic set per-client. Reply:
+
+```json
+{
+  "type": "debug",
+  "status": "ok",
+  "soc_temp_c": 33.3,
+  "soc_temp_max_c": 41.2,
+  "weight_stalled": false,
+  "stall_count": 0,
+  "last_stall_ms": 0,
+  "last_stall_temp_c": 0.0,
+  "adc_recovery_count": 0,
+  "ms": 12345
+}
+```
+
+**Event broadcasts** — emitted when something diagnostic-relevant changes.
+Subscribers keep their own snapshot from `session_info` + the on-request
+debug reply and apply these deltas. Non-subscribers ignore the unknown type.
+
+```json
+{"type":"debug","event":"stall_start","stall_count":1,
+ "last_stall_ms":12345,"last_stall_temp_c":42.1,"ms":12350}
+
+{"type":"debug","event":"stall_end","ms":17890}
+
+{"type":"debug","event":"adc_recovery","adc_recovery_count":3,"ms":34567}
+
+{"type":"debug","event":"temp_peak","soc_temp_max_c":41.5,"ms":56789}
+```
+
+Field meanings:
+
+- `soc_temp_c` / `soc_temp_max_c` — current and peak ESP32-S3 die temperature
+  (°C) since boot. `soc_temp_max_c` is `-100` until the first valid sample.
+- `weight_stalled` — `true` while the load-cell raw value has been frozen/railed
+  for >8 s (readings have stopped), cleared when they resume.
+- `stall_count` — number of stall events since boot; `last_stall_ms` is the
+  `millis()` of the most recent stall onset (`0` = none yet) and
+  `last_stall_temp_c` is the die temp at that moment (valid only when
+  `last_stall_ms != 0`).
+- `adc_recovery_count` — number of ADC power-cycle recoveries since boot. A
+  climbing value is the signal for a perpetual-recovery loop (the case
+  `weight_stalled` is blind to).
+- `reset_reason` (in `session_info`) — why the SoC last reset (`poweron`,
+  `panic`, `brownout`, `task_wdt`, …), so a reboot mid-soak is explained.
+
+These reset on reboot (not persisted to NVS).
+
 For backwards compatibility, WiFi only sends weight snapshots by default. A
 client must send `events on` before periodic status, local scale button presses,
 or power-off notifications are emitted. The event stream resets to off when the

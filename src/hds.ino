@@ -19,13 +19,19 @@
 #include "finger_detection.h"
 //#include "wificomm.h"
 
-// ADS1232 Debug Callback - called every time a new conversion is ready
+// ADS1232 Debug Callback — registered with scale.setDebugCallback() but only
+// fires when scale.setDebugEnabled(true) is set (dormant by default; enabled
+// during soak tests). Throttled to 1 Hz to keep serial bandwidth bounded.
+//
+// Field set is the intersection of what the current ADS1232 library exposes
+// (rawValue, smoothedValue, tareOffset, timestamp, conversionTimeMs, sps,
+// samplesInUse, readIndex, dataOutOfRange, signalTimeout). Older fields
+// (dataMin/Max/Avg/StdDev, tareInProgress/tareTimes) are no longer in the
+// library's ADS1232DebugInfo and have been dropped here to stay portable.
 void adsDebugCallback(const ADS1232DebugInfo& info) {
-  // This will be called frequently, so you may want to throttle output
   static unsigned long lastDebugPrint = 0;
   unsigned long now = millis();
-  
-  // Print debug info every 1000ms (adjust as needed)
+
   if (now - lastDebugPrint >= 1000) {
     Serial.println("=== ADS1232 Debug Info ===");
     Serial.print("Timestamp: "); Serial.println(info.timestamp);
@@ -35,14 +41,11 @@ void adsDebugCallback(const ADS1232DebugInfo& info) {
     Serial.print("Conv Time: "); Serial.print(info.conversionTimeMs, 3);
     Serial.print("ms | SPS: "); Serial.println(info.sps, 2);
     Serial.print("Samples: "); Serial.print(info.samplesInUse);
-    Serial.print(" | Valid: "); Serial.print(info.validSamples);
     Serial.print(" | Read Index: "); Serial.println(info.readIndex);
-    
-    // Error flags
     Serial.print("Flags - OutOfRange: "); Serial.print(info.dataOutOfRange);
     Serial.print(" | SignalTimeout: "); Serial.println(info.signalTimeout);
     Serial.println("==========================");
-    
+
     lastDebugPrint = now;
   }
 }
@@ -381,10 +384,39 @@ void wifi_init() {
 
 MyUsbCallbacks usbCallbacks;
 
+// Map esp_reset_reason() to a short string for boot logging + WS telemetry, so a
+// spontaneous reset (brownout / panic / watchdog) is attributable instead of
+// looking like a clean power-on.
+const char *resetReasonStr(esp_reset_reason_t r) {
+  switch (r) {
+    case ESP_RST_POWERON:   return "poweron";
+    case ESP_RST_EXT:       return "ext";
+    case ESP_RST_SW:        return "sw";
+    case ESP_RST_PANIC:     return "panic";
+    case ESP_RST_INT_WDT:   return "int_wdt";
+    case ESP_RST_TASK_WDT:  return "task_wdt";
+    case ESP_RST_WDT:       return "wdt";
+    case ESP_RST_DEEPSLEEP: return "deepsleep";
+    case ESP_RST_BROWNOUT:  return "brownout";
+    case ESP_RST_SDIO:      return "sdio";
+    default: {
+      // Don't collapse unmapped IDF reset codes (e.g. CPU_LOCKUP, USB, JTAG on
+      // newer IDF) to a bare "unknown" -- keep the numeric code so a new/rare
+      // reason is still attributable. Written once at boot, so a static buffer
+      // is safe.
+      static char buf[16];
+      snprintf(buf, sizeof(buf), "unknown_%d", (int)r);
+      return buf;
+    }
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   while (!Serial)  // Wait for the Serial port to initialize (typically used in Arduino to ensure the Serial monitor is ready)
     ;
+  g_resetReason = resetReasonStr(esp_reset_reason());
+  Serial.printf("[boot] reset_reason=%s\n", (const char *)g_resetReason);
   if (!EEPROM.begin(512)) {
     Serial.println("EEPROM init failed!");
     while (1) {
@@ -921,6 +953,58 @@ void pureScale() {
     t_lastScaleData = millis();
   }
 
+  // Stall watchdog: a live load cell's raw 24-bit value dithers on every
+  // conversion (the ADS1232/HX711 runs ~10 samples/s at the configured rate). If
+  // the raw value is byte-identical for >8 s it's frozen or railed (a rail to 0
+  // freezes rawValue at the last good value via the driver's data>0 guard, so it
+  // still reads as "unchanged") -- the "weight stops being collected" failure
+  // (suspected thermal/analog) that an in-firmware ADC power-cycle can't fix.
+  // Surface it (flag + one-shot log) instead of silently streaming a stuck value.
+  // Skipped while a deliberate ADC power-cycle recovery is in progress (raw is
+  // frozen by definition then); the window is re-seeded on the first 250 ms poll
+  // after recovery clears (via the t_rawChange==0 sentinel). Blind spot: a
+  // *perpetual* recovery loop (recovery every ~5 s) keeps re-seeding so this flag
+  // may never trip -- the climbing adc_recovery_count in the status frame is the
+  // signal for that case. Checked every 250 ms (not every loop): the ADC only
+  // produces ~10 samples/s, so polling faster just burns CPU/heat.
+  {
+    static long lastRaw = 0x7FFFFFFFL;
+    static unsigned long t_rawChange = 0;   // 0 = (re)seed window on next sample
+    static unsigned long t_stallCheck = 0;
+    if (b_adc_recovery_active) {
+      // Deliberate ADC power-cycle in progress: raw is frozen by design, not by
+      // the failure we detect. Re-seed the window so we don't false-trip when
+      // streaming resumes.
+      t_rawChange = 0;
+    } else if (millis() - t_stallCheck >= 250) {
+      unsigned long nowMs = millis();
+      if (nowMs == 0) nowMs = 1;  // 0 is the reseed sentinel for t_rawChange; never store it as a real timestamp (boot/rollover)
+      t_stallCheck = nowMs;
+      long raw = scale.getDebugInfo().rawValue;
+      if (t_rawChange == 0) {
+        lastRaw = raw;
+        t_rawChange = nowMs;
+      } else if (raw != lastRaw) {
+        lastRaw = raw;
+        t_rawChange = nowMs;
+        if (b_weightStalled) {
+          b_weightStalled = false;
+          Serial.println("[adc] weight readings resumed");
+          sendWebsocketDebugStall(false);
+        }
+      } else if (!b_weightStalled && nowMs - t_rawChange > 8000) {
+        b_weightStalled = true;
+        g_stallCount++;
+        g_lastStallMs = nowMs;
+        g_lastStallTempC = g_socTempC;
+        Serial.printf("[adc] WEIGHT STALLED #%lu: raw frozen at %ld for >8s soc=%.1fC heap=%lu\n",
+                      (unsigned long)g_stallCount, raw, g_lastStallTempC,
+                      (unsigned long)ESP.getFreeHeap());
+        sendWebsocketDebugStall(true);
+      }
+    }
+  }
+
   if (scale.update()) {
     b_newDataReady = true;
     t_lastScaleData = millis();
@@ -930,9 +1014,8 @@ void pureScale() {
              millis() - t_lastScaleRecovery > 5000) {
     Serial.println("Scale ADC timeout. Power cycling ADC.");
     b_adc_recovery_active = true;
-    if (i_adc_recovery_count < 255) {
-      i_adc_recovery_count++;
-    }
+    i_adc_recovery_count++;  // uint32_t: counts truthfully, won't wrap in any realistic runtime
+    sendWebsocketDebugAdcRecovery();
     scale.powerDown();
     delay(5);
     scale.powerUp();
@@ -1257,9 +1340,57 @@ void loop() {
   // here on the loop task rather than racing peripheral drivers.
   processWsPendingCmds();
 
+  // Snapshot the multi-field stopWatch into aligned volatiles on the loop task so
+  // the WS status frame (built on the AsyncTCP task for command responses) never
+  // reads stopWatch cross-task. Done after the drain above so a just-applied
+  // timer start/stop/zero is reflected. elapsed() is in the configured
+  // resolution (SECONDS).
+  g_timerRunning = stopWatch.isRunning();
+  g_timerElapsed = (unsigned long)stopWatch.elapsed();
+
   if (b_powerOff){
     shut_down_now_nobeep();
     return;
+  }
+
+  // SoC-temperature sampler + peak tracking (diagnosing the suspected thermal
+  // stall). Runs every 2 s regardless of WiFi state or power-supply mode
+  // (USB/battery); prints a summary every 10 s so a serial capture during a
+  // stress run shows the temp trend, and feeds g_socTempC/Max into the WS
+  // status frame.
+  {
+    static unsigned long t_tempSample = 0, t_tempLog = 0;
+    unsigned long nowMs = millis();
+    if (nowMs - t_tempSample >= 2000) {
+      t_tempSample = nowMs;
+      float t = temperatureRead();
+      // temperatureRead() returns NaN if the SoC sensor is unavailable. Reject
+      // any non-finite value (NaN or +/-inf): NaN serializes as invalid JSON and
+      // a non-finite compare would freeze the peak. Keep the last valid value and
+      // log once so the failure is visible rather than silent.
+      if (isfinite(t)) {
+        g_socTempC = t;
+        if (t > g_socTempMaxC) {
+          g_socTempMaxC = t;
+          // Broadcast on every new high. The temp sampler is already throttled
+          // to one read per 2 s; new highs only occur during the warm-up curve
+          // (a handful of events early in a session, then near-zero).
+          sendWebsocketDebugTempPeak(g_socTempMaxC);
+        }
+      } else {
+        static bool tempFailLogged = false;
+        if (!tempFailLogged) {
+          tempFailLogged = true;
+          Serial.println("[temp] temperatureRead() returned NaN -- SoC sensor unavailable");
+        }
+      }
+      if (nowMs - t_tempLog >= 10000) {
+        t_tempLog = nowMs;
+        Serial.printf("[temp] soc=%.1fC max=%.1fC stalls=%lu last_stall=%lums stall_temp=%.1fC heap=%lu\n",
+                      g_socTempC, g_socTempMaxC, (unsigned long)g_stallCount,
+                      g_lastStallMs, g_lastStallTempC, (unsigned long)ESP.getFreeHeap());
+      }
+    }
   }
 
   if (bleState == CONNECTED && b_requireHeartBeat && millis() - t_firstConnect > HEARTBEAT_TIMEOUT) {

@@ -221,8 +221,8 @@ void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
                  websocketBatteryPercent(),
                  f_batteryVoltage,
                  websocketIsCharging() ? "true" : "false",
-                 stopWatch.isRunning() ? "true" : "false",
-                 (unsigned long)stopWatch.elapsed(),
+                 g_timerRunning ? "true" : "false",
+                 g_timerElapsed,
                  b_u8g2Sleep ? "false" : "true",
                  b_websocketLowPowerEnabled ? "true" : "false",
                  b_softSleep ? "true" : "false",
@@ -250,8 +250,8 @@ void sendWebsocketStatusAll(const char *status) {
                       websocketBatteryPercent(),
                       f_batteryVoltage,
                       websocketIsCharging() ? "true" : "false",
-                      stopWatch.isRunning() ? "true" : "false",
-                      (unsigned long)stopWatch.elapsed(),
+                      g_timerRunning ? "true" : "false",
+                      g_timerElapsed,
                       b_u8g2Sleep ? "false" : "true",
                       b_websocketLowPowerEnabled ? "true" : "false",
                       b_softSleep ? "true" : "false",
@@ -264,6 +264,85 @@ void sendWebsocketWeightAll(float grams, unsigned long ms) {
   if (!b_wifiEnabled || websocket.count() == 0) return;
   if (!wsBroadcastHeapOk()) return;
   websocket.printfAll("{\"grams\":%.2f,\"ms\":%lu}", grams, ms);
+}
+
+// --- Telemetry delivery ------------------------------------------------------
+//
+// Telemetry (SoC temp, weight-stall watchdog, ADC recovery count, reset reason)
+// is delivered out-of-band from the hot status frame so that apps which don't
+// care about it -- the on-device UI, the decentespresso app, third-party scale
+// apps -- aren't paying ~21% extra bytes on every status broadcast. The split:
+//
+//   session_info  one-shot, sent to each client on WS_EVT_CONNECT. Carries the
+//                 fields that don't change for the life of the connection
+//                 (protocol_version, firmware_version, reset_reason).
+//
+//   debug events  broadcast on the *change* that matters: stall_start /
+//                 stall_end, adc_recovery (count incremented), temp_peak (new
+//                 max). Subscribers see the event the moment it happens; non-
+//                 subscribers ignore the unknown type. No periodic broadcast.
+//
+//   debug reply   on-request snapshot. A client sends {"command":"debug"} and
+//                 the server replies with the full diagnostic set (current
+//                 SoC temp, max temp, stall state/count/last, recovery count).
+//                 Per-client, not a broadcast -- no heap cost for other clients.
+//
+// All event broadcasts use the same wsBroadcastHeapOk() gate as the other
+// printfAll helpers above. Per-client sends (session_info, debug reply) don't
+// need the gate since they're one allocation, not one-per-client.
+void sendWebsocketSessionInfo(AsyncWebSocketClient *client) {
+  client->printf("{\"type\":\"session_info\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"reset_reason\":\"%s\",\"ms\":%lu}",
+                 FIRMWARE_VER,
+                 (const char *)g_resetReason,
+                 millis());
+}
+
+void sendWebsocketDebug(AsyncWebSocketClient *client, const char *status) {
+  client->printf("{\"type\":\"debug\",\"status\":\"%s\",\"soc_temp_c\":%.1f,\"soc_temp_max_c\":%.1f,\"weight_stalled\":%s,\"stall_count\":%lu,\"last_stall_ms\":%lu,\"last_stall_temp_c\":%.1f,\"adc_recovery_count\":%lu,\"ms\":%lu}",
+                 status,
+                 g_socTempC,
+                 g_socTempMaxC,
+                 b_weightStalled ? "true" : "false",
+                 (unsigned long)g_stallCount,
+                 g_lastStallMs,
+                 g_lastStallTempC,
+                 (unsigned long)i_adc_recovery_count,
+                 millis());
+}
+
+// Event broadcasts. Only fields relevant to the event are included -- subscribers
+// keep their own running snapshot from session_info + the on-request debug reply,
+// and update it from these deltas. Keeps each event small (~80-140 B).
+void sendWebsocketDebugStall(bool started) {
+  if (!b_wifiEnabled || websocket.count() == 0) return;
+  if (!wsBroadcastHeapOk()) return;
+  if (started) {
+    websocket.printfAll("{\"type\":\"debug\",\"event\":\"stall_start\",\"stall_count\":%lu,\"last_stall_ms\":%lu,\"last_stall_temp_c\":%.1f,\"ms\":%lu}",
+                        (unsigned long)g_stallCount,
+                        g_lastStallMs,
+                        g_lastStallTempC,
+                        millis());
+  } else {
+    websocket.printfAll("{\"type\":\"debug\",\"event\":\"stall_end\",\"ms\":%lu}", millis());
+  }
+}
+
+void sendWebsocketDebugAdcRecovery() {
+  if (!b_wifiEnabled || websocket.count() == 0) return;
+  if (!wsBroadcastHeapOk()) return;
+  websocket.printfAll("{\"type\":\"debug\",\"event\":\"adc_recovery\",\"adc_recovery_count\":%lu,\"ms\":%lu}",
+                      (unsigned long)i_adc_recovery_count,
+                      millis());
+}
+
+// temp_peak is broadcast when g_socTempMaxC ticks up. Rate-limited at the call
+// site (main loop) -- not here -- since the temp sampler already throttles.
+void sendWebsocketDebugTempPeak(float maxC) {
+  if (!b_wifiEnabled || websocket.count() == 0) return;
+  if (!wsBroadcastHeapOk()) return;
+  websocket.printfAll("{\"type\":\"debug\",\"event\":\"temp_peak\",\"soc_temp_max_c\":%.1f,\"ms\":%lu}",
+                      maxC,
+                      millis());
 }
 
 void sendWebsocketError(AsyncWebSocketClient *client, const char *code, const char *message) {
@@ -325,6 +404,11 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
 
   if (command == "status" || command == "battery" || command == "info") {
     sendWebsocketStatus(client, "ok");
+    return true;
+  }
+
+  if (command == "debug" || command == "diag") {
+    sendWebsocketDebug(client, "ok");
     return true;
   }
 
@@ -594,6 +678,10 @@ void setupWebsocketEvents() {
       // when the radio frees up instead of dropping. A genuinely dead client is
       // still reaped, just later.
       client->client()->setAckTimeout(30000);
+      // Send the session-immutable fields (protocol version, firmware version,
+      // reset reason) once on connect, so clients don't have to ask -- and so
+      // the hot status broadcast doesn't carry them on every tick.
+      sendWebsocketSessionInfo(client);
     } else if (type == WS_EVT_DISCONNECT) {
       Serial.printf("Client %u disconnected\n", client->id());
       // Only reset shared session state when the LAST client leaves —
