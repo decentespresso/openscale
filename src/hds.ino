@@ -1414,13 +1414,6 @@ void loop() {
           }
         }
 
-        // Periodic WS status frame (5 s) -- not a weight frame, keeps its own gate.
-        if (b_wifiEnabled && b_websocketEventsEnabled &&
-            millis() - t_lastWebsocketStatusUpdate >= WEBSOCKET_STATUS_NOTIFY_INTERVAL_MS) {
-          sendWebsocketStatusAll("periodic");
-          t_lastWebsocketStatusUpdate = millis();
-        }
-
         // ADS debug BLE stream -- separate debug channel, keeps its own gate.
         if (b_ble_enabled && deviceConnected && bleDebugMode != DEBUG_OFF) {
           // SINGLE fires once; CONTINUOUS rate-limited to ~10 Hz

@@ -247,27 +247,11 @@ void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
 // race client disconnects on the AsyncTCP task). With
 // setCloseClientOnQueueFull(false), a backed-up client drops its own frame
 // without blocking the others.
-void sendWebsocketStatusAll(const char *status) {
-  if (!b_wifiEnabled || !b_websocketEventsEnabled || websocket.count() == 0) return;
-  if (!wsBroadcastHeapOk()) return;
-  websocket.printfAll("{\"type\":\"status\",\"status\":\"%s\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu}",
-                      status,
-                      FIRMWARE_VER,
-                      f_displayedValue,
-                      millis(),
-                      websocketBatteryPercent(),
-                      f_batteryVoltage,
-                      websocketIsCharging() ? "true" : "false",
-                      stopWatch.isRunning() ? "true" : "false",
-                      (unsigned long)stopWatch.elapsed(),
-                      b_u8g2Sleep ? "false" : "true",
-                      b_websocketLowPowerEnabled ? "true" : "false",
-                      b_softSleep ? "true" : "false",
-                      b_websocketEventsEnabled ? "true" : "false",
-                      websocketRateForInterval(weightWebsocketNotifyInterval),
-                      weightWebsocketNotifyInterval);
-}
-
+//
+// Note: status is no longer broadcast periodically -- clients send
+// {"command":"status"} on demand, matching the BT pattern (BT has no periodic
+// state push either; clients request battery via 0x22 etc.). The lone periodic
+// WS push is sendWebsocketWeightAll below.
 void sendWebsocketWeightAll(float grams, unsigned long ms) {
   if (!b_wifiEnabled || websocket.count() == 0) return;
   if (!wsBroadcastHeapOk()) return;
@@ -339,7 +323,6 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
   if (command == "events") {
     if (action == "on" || action == "enable" || action == "enabled") {
       b_websocketEventsEnabled = true;
-      t_lastWebsocketStatusUpdate = millis();
       sendWebsocketStatus(client, "ok");
       return true;
     }
@@ -611,7 +594,6 @@ void setupWebsocketEvents() {
       if (server->count() == 0) {
         weightWebsocketNotifyInterval = WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS;
         b_websocketEventsEnabled = false;
-        t_lastWebsocketStatusUpdate = 0;
       }
     } else if (type == WS_EVT_ERROR) {
       // arg = reason code (uint16_t*), data/len = human-readable reason. Log

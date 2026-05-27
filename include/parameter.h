@@ -16,14 +16,12 @@ const unsigned long WEBSOCKET_2HZ_NOTIFY_INTERVAL_MS = 500;
 const unsigned long WEBSOCKET_5HZ_NOTIFY_INTERVAL_MS = 200;
 const unsigned long WEBSOCKET_10HZ_NOTIFY_INTERVAL_MS = 100;
 const unsigned long WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS = WEBSOCKET_2HZ_NOTIFY_INTERVAL_MS;
-const unsigned long WEBSOCKET_STATUS_NOTIFY_INTERVAL_MS = 5000;
 // volatile: written from the AsyncTCP task (WS event callback) and read
 // from the main loop. Without volatile, the compiler may keep these cached
 // in a register across the loop's WS gate check on the other core.
 volatile unsigned long weightWebsocketNotifyInterval = WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS;
 volatile bool b_websocketEventsEnabled = false;
 volatile bool b_websocketLowPowerEnabled = false;
-volatile unsigned long t_lastWebsocketStatusUpdate = 0;
 
 // Websocket pending-command mask. Set on the AsyncTCP task by the WS event
 // callback; drained on the main loop. Defers hardware-touching ops (u8g2,
