@@ -2,10 +2,15 @@
 # 1-hour multi-protocol thermal/stall load test.
 #   - drives:   USB 10 Hz binary + WS 10 Hz stream + HTTP/WS churn + mDNS
 #   - NOT driven here: BT (the user's app drives it concurrently)
-#   - monitors: the WS status-frame telemetry (soc_temp_c/max, weight_stalled,
-#               stall_count, last_stall_temp_c, adc_recovery_count, reset_reason)
-#               every ~60 s, watching for the "weight stops being collected"
-#               failure and the temp at which it hits.
+#   - monitors: WS telemetry across three frame types (status / debug / session_info):
+#                 status (periodic, 5 s)      grams, charging, timer, display state
+#                 debug snapshot (on demand)  soc_temp_c/max, weight_stalled, stall_count,
+#                                             last_stall_*, adc_recovery_count
+#                 debug events                stall_start/stall_end/adc_recovery/temp_peak
+#                 session_info (on connect)   firmware_version, reset_reason
+#               Polls {"command":"debug"} every ~60 s to refresh the snapshot
+#               fields, watching for the "weight stops being collected" failure
+#               and the temp at which it hits.
 # Opening USB reboots the scale once (clean baseline); reconnect BT afterward.
 #
 # Usage: tools/thermal_load_test.sh [DURATION_S] [IP] [HOST]
@@ -56,43 +61,85 @@ import json,sys,time,websocket
 host=sys.argv[1]; dur=int(sys.argv[2]); end=time.time()+dur
 def connect():
     w=websocket.create_connection("ws://%s/snapshot"%host,timeout=8); w.settimeout(1.0)
-    try: w.send('{"command":"events","action":"on"}')
+    try:
+        # events on -> enables periodic status broadcasts AND the debug event
+        # broadcasts (stall_start/end, adc_recovery, temp_peak).
+        w.send('{"command":"events","action":"on"}')
+        # one-shot debug snapshot so we have soc_temp_c/peak/stall_count
+        # populated from the start instead of waiting for an event firing.
+        w.send('{"command":"debug"}')
     except Exception: pass
     return w
-def first_status(w, secs):
-    # wait up to `secs` (covers >=1 full 5s status interval) for a status frame
-    t=time.time()+secs
-    st=None
-    while time.time()<t:
-        try:
-            d=json.loads(w.recv())
-            if d.get("type")=="status": st=d
-        except Exception: pass
-    return st
-ws=connect()
+def merge(snap, msg):
+    """Merge any frame's fields into the running snapshot.
+    Returns ('status'|'debug:event'|'debug:snapshot'|'session_info'|None)."""
+    try: d=json.loads(msg)
+    except Exception: return None
+    t=d.get('type')
+    if t=='session_info':
+        if 'reset_reason' in d: snap['reset_reason']=d['reset_reason']
+        if 'firmware_version' in d: snap['firmware_version']=d['firmware_version']
+        return 'session_info'
+    if t=='debug':
+        # event broadcasts carry only the delta; snapshot reply carries the full set
+        for k in ('soc_temp_c','soc_temp_max_c','weight_stalled','stall_count',
+                  'last_stall_ms','last_stall_temp_c','adc_recovery_count'):
+            if k in d: snap[k]=d[k]
+        ev=d.get('event')
+        if ev=='stall_start': snap['weight_stalled']=True
+        elif ev=='stall_end': snap['weight_stalled']=False
+        return 'debug:'+ev if ev else 'debug:snapshot'
+    if t=='status':
+        for k in ('grams','charging','battery_percent','battery_voltage',
+                  'timer_running','timer_seconds','display_on','low_power',
+                  'soft_sleep','events_enabled','rate_hz','interval_ms'):
+            if k in d: snap[k]=d[k]
+        return 'status'
+    return None
+def drain(w, snap, secs):
+    """Read frames for up to `secs`, merging into snap. Returns True if a status
+    frame arrived (status is the 5 s periodic heartbeat -- its absence is the
+    visibility-lost signal this test is hunting for)."""
+    t_end=time.time()+secs; got_status=False
+    while time.time()<t_end:
+        try: kind=merge(snap, w.recv())
+        except websocket.WebSocketTimeoutException: continue
+        except Exception: break
+        if kind=='status': got_status=True
+    return got_status
+ws=connect(); snap={}
 peak=-999.0; total_stalls=0; reboots=0; max_recov=0
-prev_stalls=None; prev_max=None; last_reset="?"
+prev_stalls=None; prev_max=None; last_reset='?'
 no_status_streak=0; max_no_status_streak=0; total_no_status=0
 first=True
 while time.time()<end:
-    st = first_status(ws, 9 if first else 2.5); first=False
-    if st:
-        soc=st.get('soc_temp_c'); mx=st.get('soc_temp_max_c'); sc=st.get('stall_count',0) or 0
-        recov=st.get('adc_recovery_count',0) or 0; rr=st.get('reset_reason','?')
-        last_reset=rr; no_status_streak=0
+    # poll a fresh debug snapshot every iteration so soc_temp_c / peak / stall
+    # state stay current even when no event fires (event broadcasts are sparse
+    # by design -- stall_start/end and temp_peak only fire on changes).
+    try: ws.send('{"command":"debug"}')
+    except Exception: pass
+    got_status = drain(ws, snap, 9 if first else 2.5); first=False
+    if got_status:
+        no_status_streak=0
+        soc=snap.get('soc_temp_c'); mx=snap.get('soc_temp_max_c')
+        sc=snap.get('stall_count',0) or 0
+        recov=snap.get('adc_recovery_count',0) or 0
+        rr=snap.get('reset_reason','?'); last_reset=rr
         if isinstance(mx,(int,float)) and mx>peak: peak=mx
         if recov>max_recov: max_recov=recov
-        # reboot heuristic: since-boot counters or peak dropped vs last frame
+        # reboot heuristic: stall_count or peak dropped vs last poll. Both are
+        # main-loop counters that zero on reboot (g_stallCount=0 in
+        # parameter.h, g_socTempMaxC=-100 until first valid sample post-boot).
         if prev_stalls is not None and (sc<prev_stalls or (isinstance(mx,(int,float)) and isinstance(prev_max,(int,float)) and mx<prev_max-3)):
             reboots+=1
             print("[%s] *** REBOOT detected (counters reset; reset_reason=%s) ***"%(time.strftime('%H:%M:%S'),rr),flush=True)
         total_stalls=max(total_stalls, sc)
         prev_stalls=sc; prev_max=mx
-        flag=" *** STALL ***" if st.get('weight_stalled') else ""
+        flag=" *** STALL ***" if snap.get('weight_stalled') else ""
         print("[%s] soc=%5sC max=%5sC stalled=%-5s stalls=%s recov=%s last_stall_ms=%s stall_temp=%s reset=%s grams=%s chg=%s%s"%(
-            time.strftime('%H:%M:%S'), soc, mx, st.get('weight_stalled'), sc, recov,
-            st.get('last_stall_ms'), st.get('last_stall_temp_c'), rr, st.get('grams'),
-            st.get('charging'), flag), flush=True)
+            time.strftime('%H:%M:%S'), soc, mx, snap.get('weight_stalled'), sc, recov,
+            snap.get('last_stall_ms'), snap.get('last_stall_temp_c'), rr, snap.get('grams'),
+            snap.get('charging'), flag), flush=True)
     else:
         no_status_streak+=1; total_no_status+=1
         if no_status_streak>max_no_status_streak: max_no_status_streak=no_status_streak

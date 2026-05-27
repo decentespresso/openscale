@@ -253,9 +253,12 @@ Field meanings:
   `millis()` of the most recent stall onset (`0` = none yet) and
   `last_stall_temp_c` is the die temp at that moment (valid only when
   `last_stall_ms != 0`).
-- `adc_recovery_count` — number of ADC power-cycle recoveries since boot. A
-  climbing value is the signal for a perpetual-recovery loop (the case
-  `weight_stalled` is blind to).
+- `adc_recovery_count` — number of *consecutive* ADC power-cycle attempts in
+  the current failure episode. Resets to `0` on every successful read, so a
+  non-zero snapshot value means the ADC is actively in recovery right now (the
+  `adc_recovery` debug event fires each time it ticks up). For a lifetime
+  recovery count, sum the `adc_recovery` events your client has observed since
+  the last `session_info`.
 - `reset_reason` (in `session_info`) — why the SoC last reset (`poweron`,
   `panic`, `brownout`, `task_wdt`, …), so a reboot mid-soak is explained.
 

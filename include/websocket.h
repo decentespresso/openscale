@@ -316,8 +316,14 @@ void sendWebsocketDebug(AsyncWebSocketClient *client, const char *status) {
 // Event broadcasts. Only fields relevant to the event are included -- subscribers
 // keep their own running snapshot from session_info + the on-request debug reply,
 // and update it from these deltas. Keeps each event small (~80-140 B).
+//
+// Gated on b_websocketEventsEnabled to match the existing opt-in model
+// (sendWebsocketButton/PowerOff/StatusAll). A client must send
+// {"command":"events","action":"on"} before periodic debug events are pushed
+// -- the on-request {"command":"debug"} snapshot is always available
+// regardless of the events flag.
 void sendWebsocketDebugStall(bool started) {
-  if (!b_wifiEnabled || websocket.count() == 0) return;
+  if (!b_wifiEnabled || !b_websocketEventsEnabled || websocket.count() == 0) return;
   if (!wsBroadcastHeapOk()) return;
   if (started) {
     websocket.printfAll("{\"type\":\"debug\",\"event\":\"stall_start\",\"stall_count\":%lu,\"last_stall_ms\":%lu,\"last_stall_temp_c\":%.1f,\"ms\":%lu}",
@@ -331,7 +337,7 @@ void sendWebsocketDebugStall(bool started) {
 }
 
 void sendWebsocketDebugAdcRecovery() {
-  if (!b_wifiEnabled || websocket.count() == 0) return;
+  if (!b_wifiEnabled || !b_websocketEventsEnabled || websocket.count() == 0) return;
   if (!wsBroadcastHeapOk()) return;
   websocket.printfAll("{\"type\":\"debug\",\"event\":\"adc_recovery\",\"adc_recovery_count\":%lu,\"ms\":%lu}",
                       (unsigned long)i_adc_recovery_count,
@@ -341,7 +347,7 @@ void sendWebsocketDebugAdcRecovery() {
 // temp_peak is broadcast when g_socTempMaxC ticks up. Rate-limited at the call
 // site (main loop) -- not here -- since the temp sampler already throttles.
 void sendWebsocketDebugTempPeak(float maxC) {
-  if (!b_wifiEnabled || websocket.count() == 0) return;
+  if (!b_wifiEnabled || !b_websocketEventsEnabled || websocket.count() == 0) return;
   if (!wsBroadcastHeapOk()) return;
   websocket.printfAll("{\"type\":\"debug\",\"event\":\"temp_peak\",\"soc_temp_max_c\":%.1f,\"ms\":%lu}",
                       maxC,

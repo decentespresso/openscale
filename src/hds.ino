@@ -20,8 +20,9 @@
 //#include "wificomm.h"
 
 // ADS1232 Debug Callback — registered with scale.setDebugCallback() but only
-// fires when scale.setDebugEnabled(true) is set (dormant by default; enabled
-// during soak tests). Throttled to 1 Hz to keep serial bandwidth bounded.
+// fires when scale.setDebugEnabled(true) is set (dormant by default; toggled
+// via the USB binary protocol -- command 0x25 with subcode 0x00/0x01, see
+// include/usbcomm.h). Throttled to 1 Hz to keep serial bandwidth bounded.
 //
 // Field set is the intersection of what the current ADS1232 library exposes
 // (rawValue, smoothedValue, tareOffset, timestamp, conversionTimeMs, sps,

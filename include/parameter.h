@@ -193,11 +193,17 @@ static const unsigned long ZERO_DISPLAY_MISMATCH_TIMEOUT = 1500;
 static const float ZERO_DISPLAY_MISMATCH_THRESHOLD = 0.5;
 static const uint8_t ADC_ERROR_RECOVERY_COUNT = 2;
 static bool b_adc_recovery_active = false;
-// volatile: written on the main loop -- incremented on each ADC power-cycle
-// recovery, reset to 0 by resetAdcRecoveryState() -- and read in the WS status
-// frame (which can be built on the AsyncTCP task). uint32_t (not uint8_t) so a
-// *perpetual* recovery loop -- the one failure mode the stall watchdog is blind
-// to -- keeps counting truthfully over a long soak instead of saturating at 255.
+// Per-episode counter, NOT a lifetime total. Written on the main loop:
+// incremented on each ADC power-cycle attempt, reset to 0 by
+// resetAdcRecoveryState() -- which is called both at boot AND after every
+// successful scale.update() (hds.ino ~1011). So this value is the count of
+// *consecutive* failed recovery attempts in the current failure episode;
+// the moment a single read succeeds it returns to 0. Used as a threshold
+// to switch the OLED display from "ADC RECOVER" to "ADC ERROR" once
+// >= ADC_ERROR_RECOVERY_COUNT consecutive attempts have failed (hds.ino ~1830).
+// volatile because it's read in the WS debug frame on the AsyncTCP task;
+// uint32_t for cross-task aligned-load atomicity (uint8_t would also work
+// but the wider type keeps the pattern consistent with g_stallCount).
 static volatile uint32_t i_adc_recovery_count = 0;
 //bool b_tempDisablePowerOff = true;
 
