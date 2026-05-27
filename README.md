@@ -162,14 +162,12 @@ command from a frame that never arrived:
 }
 ```
 
-Status frame shape:
+Status frame shape (lean — only fields that change during a session):
 
 ```json
 {
   "type": "status",
   "status": "ok",
-  "protocol_version": 1,
-  "firmware_version": "FW: 3.0.9",
   "grams": 25.66,
   "ms": 12345,
   "battery_percent": 82,
@@ -189,8 +187,10 @@ Status frame shape:
 ### `session_info` frame (per-connect, server → client)
 
 Sent once to each client immediately after WebSocket handshake. Carries the
-fields that don't change for the life of the connection, so the hot status
-broadcast doesn't have to ship them on every tick.
+fields that don't change for the life of the connection (protocol version,
+firmware version, reset reason), so the hot status broadcast doesn't have to
+ship them on every tick. Clients can also re-request it explicitly by sending
+`{"command":"session_info"}` (alias: `session`).
 
 ```json
 {

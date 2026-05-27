@@ -213,9 +213,12 @@ void sendWebsocketRateInfo(AsyncWebSocketClient *client, const char *status) {
 }
 
 void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
-  client->printf("{\"type\":\"status\",\"status\":\"%s\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu}",
+  // protocol_version + firmware_version moved to session_info (sent once per
+  // client on connect); reset_reason + the diagnostic telemetry moved to debug.
+  // Keeping status lean: only fields whose value actually changes during a
+  // session belong here.
+  client->printf("{\"type\":\"status\",\"status\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu}",
                  status,
-                 FIRMWARE_VER,
                  f_displayedValue,
                  millis(),
                  websocketBatteryPercent(),
@@ -242,9 +245,9 @@ void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
 void sendWebsocketStatusAll(const char *status) {
   if (!b_wifiEnabled || !b_websocketEventsEnabled || websocket.count() == 0) return;
   if (!wsBroadcastHeapOk()) return;
-  websocket.printfAll("{\"type\":\"status\",\"status\":\"%s\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu}",
+  // See sendWebsocketStatus() above for the rationale on the lean shape.
+  websocket.printfAll("{\"type\":\"status\",\"status\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu}",
                       status,
-                      FIRMWARE_VER,
                       f_displayedValue,
                       millis(),
                       websocketBatteryPercent(),
@@ -409,6 +412,11 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
 
   if (command == "debug" || command == "diag") {
     sendWebsocketDebug(client, "ok");
+    return true;
+  }
+
+  if (command == "session_info" || command == "session") {
+    sendWebsocketSessionInfo(client);
     return true;
   }
 
