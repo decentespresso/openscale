@@ -40,7 +40,7 @@ This codebase is unusual: **most logic lives in `include/*.h` as full implementa
 | --- | --- | --- |
 | `src/hds.ino` | `setup()`, `loop()`, button callbacks, scale/UI helpers — ~1880 lines | `setup()` ~395, `loop()` ~1265 |
 | `src/wifi_setup.cpp` | STA/AP bring-up; credentials in NVS preferences | `connectToWifi`, `setupAP` |
-| `src/ADS1232_ADC.cpp` | Load-cell driver | |
+| (load-cell driver) | External lib `decentespresso/ADS1232_ADC` (pinned by sha in `platformio.ini`); the old vendored `src/ADS1232_ADC.cpp` + `include/ADS1232_ADC_CONFIG.h` were removed in #60. `DATA_SET` now lives in `include/config.h`. See "ADC library" footgun below. | |
 | `include/config.h` | **Per-board hardware config.** Selects `BUZZER`, `ACC_MPU6050` / `ACC_BMA400`, `ESPNOW`, `FIRMWARE_VER`, etc. Active board is chosen by `#if defined(BOARD_X)` branches. | |
 | `include/parameter.h` | All global state declarations — every `b_*`, `i_*`, `t_*`, `f_*` global lives here | |
 | `include/declare.h` | Object instances (`u8g2`, `stopWatch`, `scale`, `mpu`, …) | |
@@ -86,6 +86,15 @@ New cross-task globals belong in `include/parameter.h` with `volatile`.
 WiFi and BLE share the same 2.4 GHz radio. The Arduino-ESP32 default is `WIFI_PS_MIN_MODEM` (WiFi sleeps between DTIM beacons), and the BT coexistence layer needs those sleep windows for BLE slots.
 
 **Do not call `WiFi.setSleep(false)`.** Measured impact with BLE connected: ~8% packet loss, multi-second HTTP stalls, the AP retransmitting (`ping` shows `(DUP!)`). The Arduino default is correct.
+
+## ADC library (`decentespresso/ADS1232_ADC`) — polling mode only
+
+Since #60 the load-cell driver is the external `decentespresso/ADS1232_ADC` lib (pinned to a commit sha in `platformio.ini` — keep it pinned; the lib has no semver tags and an unpinned URL gives non-reproducible builds). Header is in the lib's `include/`, sources in `src/`.
+
+- **Stay in polling mode. Do not call `scale.beginTask()`.** The lib can run its bit-bang read on a background FreeRTOS task pinned to **core 1** (prio 2) — the same core as AsyncTCP (`CONFIG_ASYNC_TCP_RUNNING_CORE=1`). Starting it would contend with the WS task and starve `/snapshot`. We drive it synchronously instead: `scale.update()` from `loop()` (~`hds.ino` 935) and from the `menu.h` calibration loops. In polling mode the lib's task never spawns and `update()` does the read on the calling task.
+- **`setSamplesInUse()` clears the ring buffer and resets `validSamples=0`.** Right after a sensitivity change (`ble.h`, `usbcomm.h`, `menu.h`, and `setup()`'s `setSamplesInUse(1)`), `getData()` returns `0.0` until the window refills, then ramps up. The old vendored lib backfilled with the last smoothed value, so this transient blip-to-zero on live sensitivity switches is new. `start()` pre-fills via its settle loop, so boot-time tare is fine.
+- Tare averages whatever samples are currently in the buffer (often 1 in fast mode), not a fixed `DATA_SET` window — noisier zero than the old lib.
+- The USB debug packet (`buildAdsDebugPacket`) keeps its 41-byte framing + checksum, but bytes 24-39 (min/max/avg/stddev/tareTimes) are now zero-filled — the new lib doesn't precompute stats. Host tools plotting those see flatlines, not a framing break.
 
 ## ESPAsyncWebServer notes
 
