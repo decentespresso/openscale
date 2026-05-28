@@ -1381,6 +1381,13 @@ void loop() {
           ElegantOTA.loop();
         }
 
+        // Snapshot stopWatch state for cross-task-safe reads in
+        // sendWebsocketStatus. stopWatch is multi-field and mutated from BLE/USB
+        // and this loop; the WS status frame is built on the AsyncTCP task and
+        // can tear if it reads stopWatch directly (CLAUDE.md threading model).
+        g_timerRunning = stopWatch.isRunning();
+        g_timerElapsed = (unsigned long)stopWatch.elapsed();
+
         // Unified weight-output tick: ONE 100 ms grid timer drives every active
         // interface, each at its own rate (sends every NotifyInterval/base
         // ticks) -- USB-text 1 Hz, USB-binary/WS at their NotifyInterval, BLE
@@ -1412,13 +1419,6 @@ void loop() {
                 weightTickCount % max(1UL, weightWebsocketNotifyInterval / WEIGHT_BASE_INTERVAL_MS) == 0)
               sendWebsocketWeightAll(f_displayedValue, nowMs);
           }
-        }
-
-        // Periodic WS status frame (5 s) -- not a weight frame, keeps its own gate.
-        if (b_wifiEnabled && b_websocketEventsEnabled &&
-            millis() - t_lastWebsocketStatusUpdate >= WEBSOCKET_STATUS_NOTIFY_INTERVAL_MS) {
-          sendWebsocketStatusAll("periodic");
-          t_lastWebsocketStatusUpdate = millis();
         }
 
         // ADS debug BLE stream -- separate debug channel, keeps its own gate.

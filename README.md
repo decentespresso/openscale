@@ -103,9 +103,9 @@ WiFi snapshots are intentionally kept small, especially at 10 Hz:
 ```
 
 Battery, charging, timer, and power/display state are sent in typed `status`
-frames instead of every snapshot. `status`, `battery`, and `info` return a
-status frame immediately. After `events on`, the firmware also sends a periodic
-`type: "status"` frame every 5 seconds.
+frames on demand only. Send `status`, `battery`, or `info` to get one. The
+firmware does not push status periodically (mirrors the BT side, which has no
+periodic state push either — clients request battery via `0x22`, etc.).
 
 WiFi clients can send these text commands over the same WebSocket:
 
@@ -187,9 +187,9 @@ Status frame shape:
 ```
 
 For backwards compatibility, WiFi only sends weight snapshots by default. A
-client must send `events on` before periodic status, local scale button presses,
-or power-off notifications are emitted. The event stream resets to off when the
-WebSocket disconnects.
+client must send `events on` before local scale button presses or power-off
+notifications are emitted (status frames remain on-request regardless of the
+`events` flag). The event stream resets to off when the WebSocket disconnects.
 
 Button event fields:
 

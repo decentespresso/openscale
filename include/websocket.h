@@ -162,17 +162,18 @@ void processWsPendingCmds() {
 // that allocation then throws std::bad_alloc -> std::terminate() -> abort()
 // (Arduino-ESP32 builds with -fno-exceptions, so the throw can't be caught) ->
 // reboot. That OOM-reboot is the "weight stops being collected under sustained
-// multi-client load" failure. Skipping a frame is invisible (the next weight
-// frame is <=500 ms away, status <=5 s); crashing is not. The floor sits above
-// the 15 KB heap watchdog (wifi_setup.cpp) so broadcasts back off well before a
-// reboot is even considered. Every broadcast helper below runs on the main loop,
-// so the skip counter needs no synchronization.
+// multi-client load" failure. Skipping a weight frame is invisible (the next is
+// <=500 ms away); skipping a button or power-off broadcast is rarer but also
+// tolerable; crashing is not. The floor sits above the 15 KB heap watchdog
+// (wifi_setup.cpp) so broadcasts back off well before a reboot is even
+// considered. Every broadcast helper below runs on the main loop, so the skip
+// counter needs no synchronization.
 //
 // The floor is 32 KB (vs. the original 25 KB) to leave headroom for lwIP TX
 // buffers during the post-broadcast drain. Under 4-client load the 25 KB floor
-// let free heap dip to ~22 KB after a status burst, where lwIP silently failed
-// to allocate pbufs and WiFi packets dropped while the state machine still
-// reported CONNECTED (no disc/rec increments). Raising the floor by ~7 KB
+// let free heap dip to ~22 KB after a broadcast burst, where lwIP silently
+// failed to allocate pbufs and WiFi packets dropped while the state machine
+// still reported CONNECTED (no disc/rec increments). Raising the floor by ~7 KB
 // keeps the post-burst trough above the lwIP starvation knee. Measured: 2h+
 // soak at 4 clients, 0% ping loss, 0 reconnects, ~300 averted OOMs.
 static const uint32_t WS_BROADCAST_HEAP_FLOOR = 32000;
@@ -229,8 +230,8 @@ void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
                  websocketBatteryPercent(),
                  f_batteryVoltage,
                  websocketIsCharging() ? "true" : "false",
-                 stopWatch.isRunning() ? "true" : "false",
-                 (unsigned long)stopWatch.elapsed(),
+                 g_timerRunning ? "true" : "false",
+                 g_timerElapsed,
                  b_u8g2Sleep ? "false" : "true",
                  b_websocketLowPowerEnabled ? "true" : "false",
                  b_softSleep ? "true" : "false",
@@ -247,27 +248,6 @@ void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
 // race client disconnects on the AsyncTCP task). With
 // setCloseClientOnQueueFull(false), a backed-up client drops its own frame
 // without blocking the others.
-void sendWebsocketStatusAll(const char *status) {
-  if (!b_wifiEnabled || !b_websocketEventsEnabled || websocket.count() == 0) return;
-  if (!wsBroadcastHeapOk()) return;
-  websocket.printfAll("{\"type\":\"status\",\"status\":\"%s\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu}",
-                      status,
-                      FIRMWARE_VER,
-                      f_displayedValue,
-                      millis(),
-                      websocketBatteryPercent(),
-                      f_batteryVoltage,
-                      websocketIsCharging() ? "true" : "false",
-                      stopWatch.isRunning() ? "true" : "false",
-                      (unsigned long)stopWatch.elapsed(),
-                      b_u8g2Sleep ? "false" : "true",
-                      b_websocketLowPowerEnabled ? "true" : "false",
-                      b_softSleep ? "true" : "false",
-                      b_websocketEventsEnabled ? "true" : "false",
-                      websocketRateForInterval(weightWebsocketNotifyInterval),
-                      weightWebsocketNotifyInterval);
-}
-
 void sendWebsocketWeightAll(float grams, unsigned long ms) {
   if (!b_wifiEnabled || websocket.count() == 0) return;
   if (!wsBroadcastHeapOk()) return;
@@ -339,7 +319,6 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
   if (command == "events") {
     if (action == "on" || action == "enable" || action == "enabled") {
       b_websocketEventsEnabled = true;
-      t_lastWebsocketStatusUpdate = millis();
       sendWebsocketStatus(client, "ok");
       return true;
     }
@@ -611,7 +590,6 @@ void setupWebsocketEvents() {
       if (server->count() == 0) {
         weightWebsocketNotifyInterval = WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS;
         b_websocketEventsEnabled = false;
-        t_lastWebsocketStatusUpdate = 0;
       }
     } else if (type == WS_EVT_ERROR) {
       // arg = reason code (uint16_t*), data/len = human-readable reason. Log
