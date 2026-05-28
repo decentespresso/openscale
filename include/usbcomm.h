@@ -658,9 +658,14 @@ void buildAdsDebugPacket(byte data[41]) {
   
   // Samples in use (1 byte)
   data[23] = info.samplesInUse & 0xFF;
-  
-  // Data min / max / avg / stdDev (fill with zeros — stats not precomputed)
-  memset(&data[24], 0, 14);
+
+  // Reset reason (1 byte, raw esp_reset_reason() code captured at boot).
+  // Lets a spontaneous reboot mid-capture (brownout / panic / watchdog) be
+  // attributed instead of looking like a clean power-on. Reuses the head of
+  // the formerly stats-only window (24-37) freed up after the ADC library
+  // swap; bytes 25-37 stay zero-filled and are reserved for future use.
+  data[24] = g_resetReasonCode;
+  memset(&data[25], 0, 13);
   
   // Flags (1 byte: bit 0=dataOutOfRange, bit 1=signalTimeout)
   // bit 2 (tareInProgress) always 0 — tare is instant

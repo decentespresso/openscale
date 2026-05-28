@@ -381,10 +381,34 @@ void wifi_init() {
 
 MyUsbCallbacks usbCallbacks;
 
+// Map esp_reset_reason() to a short string for the boot log only. The raw
+// numeric code is what we ship in the ADS debug packet (byte 24); this is
+// purely for human-readable serial output.
+const char *resetReasonStr(esp_reset_reason_t r) {
+  switch (r) {
+    case ESP_RST_POWERON:   return "poweron";
+    case ESP_RST_EXT:       return "ext";
+    case ESP_RST_SW:        return "sw";
+    case ESP_RST_PANIC:     return "panic";
+    case ESP_RST_INT_WDT:   return "int_wdt";
+    case ESP_RST_TASK_WDT:  return "task_wdt";
+    case ESP_RST_WDT:       return "wdt";
+    case ESP_RST_DEEPSLEEP: return "deepsleep";
+    case ESP_RST_BROWNOUT:  return "brownout";
+    case ESP_RST_SDIO:      return "sdio";
+    default:                return "unknown";
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   while (!Serial)  // Wait for the Serial port to initialize (typically used in Arduino to ensure the Serial monitor is ready)
     ;
+  {
+    esp_reset_reason_t r = esp_reset_reason();
+    g_resetReasonCode = (uint8_t)r;
+    Serial.printf("[boot] reset_reason=%s (%u)\n", resetReasonStr(r), (unsigned)g_resetReasonCode);
+  }
   if (!EEPROM.begin(512)) {
     Serial.println("EEPROM init failed!");
     while (1) {
