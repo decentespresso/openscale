@@ -1371,7 +1371,13 @@ void loop() {
         // client cleanup, OTA -- run every loop pass when WiFi is on.
         if (b_wifiEnabled) {
           wifiSupervise();
-          websocket.cleanupClients();  // cap at DEFAULT_MAX_WS_CLIENTS (8 on ESP32)
+          // Cap at 4 (lib default 8). Under sustained multi-protocol load
+          // (4+ WS clients + BLE + USB), 8 concurrent clients pushed per-client
+          // queue + AsyncWebSocketMessage allocations past the heap budget and
+          // starved lwIP TX buffers (silent WiFi packet loss while
+          // wifi_status=CONNECTED). 4 fits comfortably; PRs (WS+REST) and the
+          // on-device UI together never exceed 3-4 real concurrent clients.
+          websocket.cleanupClients(4);
           ElegantOTA.loop();
         }
 
