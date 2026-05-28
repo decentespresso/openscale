@@ -203,6 +203,12 @@ static const float ZERO_DISPLAY_MISMATCH_THRESHOLD = 0.5;
 static const uint8_t ADC_ERROR_RECOVERY_COUNT = 2;
 static bool b_adc_recovery_active = false;
 static uint8_t i_adc_recovery_count = 0;
+
+// Raw esp_reset_reason() captured once at boot, surfaced in the ADS1232 debug
+// packet (byte 24) so a spontaneous reset (brownout / panic / watchdog) is
+// attributable from a serial or BLE capture instead of looking like a clean
+// power-on. The IDF enum fits a uint8_t in practice (values <= 18 today).
+static uint8_t g_resetReasonCode = 0;
 //bool b_tempDisablePowerOff = true;
 
 bool b_negativeWeight = false;
