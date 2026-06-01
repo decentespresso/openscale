@@ -394,7 +394,7 @@ void flipScreenOn() {
   actionMessage = "Flip On";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_screenFlipped, b_screenFlipped);
+  EEPROM.put(i_addr_screenFlipped, (bool)b_screenFlipped);
   EEPROM.commit();
   u8g2.setDisplayRotation(U8G2_R0);
   Serial.println("Screen flipped...On");
@@ -405,7 +405,7 @@ void flipScreenOff() {
   actionMessage = "Flip Off";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_screenFlipped, b_screenFlipped);
+  EEPROM.put(i_addr_screenFlipped, (bool)b_screenFlipped);
   EEPROM.commit();
   u8g2.setDisplayRotation(U8G2_R2);
   Serial.println("Screen flipped...Off");
@@ -416,7 +416,7 @@ void timeOnTopOn() {
   actionMessage = "Time On Top";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_timeOnTop, b_timeOnTop);
+  EEPROM.put(i_addr_timeOnTop, (bool)b_timeOnTop);
   EEPROM.commit();
   Serial.println("Time On Top");
 }
@@ -426,7 +426,7 @@ void timeOnTopOff() {
   actionMessage = "Weight On Top";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_timeOnTop, b_timeOnTop);
+  EEPROM.put(i_addr_timeOnTop, (bool)b_timeOnTop);
   EEPROM.commit();
   Serial.println("Weight On Top");
 }
@@ -476,7 +476,7 @@ void quickBootOn() {
   actionMessage = "Quick Boot On";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_quickBoot, b_quickBoot);
+  EEPROM.put(i_addr_quickBoot, (bool)b_quickBoot);
   EEPROM.commit();
   Serial.println("Quick boot on stored in EEPROM.");
 }
@@ -486,7 +486,7 @@ void quickBootOff() {
   actionMessage = "Quick Boot Off";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_quickBoot, b_quickBoot);
+  EEPROM.put(i_addr_quickBoot, (bool)b_quickBoot);
   EEPROM.commit();
   Serial.println("Quick boot off stored in EEPROM.");
 }

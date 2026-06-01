@@ -109,7 +109,12 @@ def main():
               "wifi_on_boot", "wifi_active", "wifi_connected", "wifi_mode",
               "wifi_credentials_saved", "ble_enabled", "ble_connected",
               "ble_buttons_enabled", "ble_heartbeat_required",
-              "auto_sleep_enabled", "auto_sleep_minutes")
+              "auto_sleep_enabled", "auto_sleep_minutes",
+              "quick_boot_enabled", "button_boot_delay_ms", "screen_flipped",
+              "time_on_top", "drift_compensation_max_grams",
+              "buzzer_enabled", "mode", "mode_name",
+              "pourover_target_grams", "espresso_target_grams",
+              "calibration_factor", "battery_calibration_factor")
     rec("status frame: all fields present, 'led' removed",
         all(k in st for k in fields) and "led" not in st,
         f"keys={sorted(st)}")

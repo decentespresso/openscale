@@ -58,8 +58,8 @@ unsigned long t_firstConnect = 0;
 // volatile: read by the AsyncTCP task in the WS status frame, written by the
 // main-loop menu/EEPROM restore paths.
 volatile bool b_requireHeartBeat = true;
-bool b_screenFlipped = false;
-bool b_timeOnTop = false;
+volatile bool b_screenFlipped = false;
+volatile bool b_timeOnTop = false;
 volatile bool b_btnFuncWhileConnected = false;
 
 //
@@ -170,7 +170,7 @@ bool b_ads1115InitFail = true;  //ads1115 not detected flag
 // volatile: surfaced from AsyncTCP status while menu/setup code updates them.
 volatile bool b_wifiOnBoot = false;
 volatile bool b_autoSleep = true;
-bool b_quickBoot = false;
+volatile bool b_quickBoot = false;
 unsigned int i_buttonBootDelay = 500;
 bool b_showChargingUI = false;
 
