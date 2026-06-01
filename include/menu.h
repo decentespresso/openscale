@@ -10,6 +10,7 @@ bool b_showAbout = false;
 bool b_showLogo = false;
 bool b_showNumber = false;
 bool b_showWifiData = false;
+bool b_showStatusData = false;
 String actionMessage = "Default";
 String actionMessage2 = "Default";
 unsigned long t_actionMessage = 0;
@@ -41,6 +42,7 @@ void heartbeatOff();
 void calibrate();
 void drawButton();
 void wifiUpdate();
+void showStatus();
 void showAbout();
 void showMenu();
 void showLogo();
@@ -73,6 +75,7 @@ Menu menuBuzzer = { "Buzzer", NULL, NULL, NULL };
 #endif
 Menu menuCalibration = { "Calibration", NULL, NULL, NULL };
 Menu menuWifi = { "WiFi Settings", NULL, NULL, NULL };
+Menu menuStatus = { "Status", showStatus, NULL, NULL };
 // Menu menuWiFiUpdate = {"WiFi Update", NULL, NULL, NULL};
 Menu menuAbout = { "About", showAbout, NULL, NULL };
 Menu menuLogo = { "Show Logo", showLogo, NULL, NULL };
@@ -180,7 +183,7 @@ Menu *mainMenu[] = {
 #ifdef BUZZER
   &menuBuzzer,
 #endif
-  &menuCalibration, &menuWifi,
+  &menuCalibration, &menuWifi, &menuStatus,
   // &menuWiFiUpdate,
   &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen, &menuTimeOnTop,
   &menuBtnFuncWhileConnected, &menuAutoSleep, &menuQuickBoot, &menuDriftComp,
@@ -259,6 +262,7 @@ void buzzerOff() {
 #endif
 
 void toggleWifiOn() {
+  b_wifiOnBoot = true;
   actionMessage = "WiFi Enabled";
   actionMessage2 = "Restart scale";
   t_actionMessage = millis();
@@ -269,7 +273,7 @@ void toggleWifiOn() {
 }
 
 void toggleWifiOff() {
-  bool wifiEnabled = false;
+  b_wifiOnBoot = false;
   actionMessage = "WiFi Disabled";
   actionMessage2 = "Restart scale";
   t_actionMessage = millis();
@@ -310,6 +314,53 @@ void showWifiStatus() {
   }
 }
 
+void showStatus() {
+  b_showStatusData = true;
+
+  const char *wifiRunState = "Idle";
+  if (b_wifiEnabled) {
+    if (WiFi.getMode() == WIFI_AP) {
+      wifiRunState = "AP";
+    } else if (WiFi.status() == WL_CONNECTED) {
+      wifiRunState = "Conn";
+    } else {
+      wifiRunState = "Wait";
+    }
+  }
+
+  char wifiLine[32];
+  char bleLine[24];
+  char heartbeatLine[24];
+  char sleepLine[24];
+  snprintf(wifiLine, sizeof(wifiLine), "WiFi:%s %s %s",
+           b_wifiOnBoot ? "On" : "Off",
+           wifiCredentialsSaved() ? "Saved" : "NoCred",
+           wifiRunState);
+  snprintf(bleLine, sizeof(bleLine), "BLE:%s Btn:%s",
+           b_ble_enabled ? "On" : "Off",
+           b_btnFuncWhileConnected ? "On" : "Off");
+  snprintf(heartbeatLine, sizeof(heartbeatLine), "Heartbeat:%s",
+           b_requireHeartBeat ? "On" : "Off");
+  snprintf(sleepLine, sizeof(sleepLine), "AutoSleep:%s 15m",
+           b_autoSleep ? "On" : "Off");
+
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_6x12_tr);
+    u8g2.drawStr(0, 10, "Status");
+    u8g2.drawStr(0, 22, wifiLine);
+    u8g2.drawStr(0, 34, bleLine);
+    u8g2.drawStr(0, 46, heartbeatLine);
+    u8g2.drawStr(0, 58, sleepLine);
+  } while (u8g2.nextPage());
+  delay(1000);
+  while (b_showStatusData) {
+    if (digitalRead(BUTTON_SQUARE) == LOW) {
+      b_showStatusData = false;
+    }
+  }
+}
+
 void resetWifi() {
   saveCredentials("", "");
   actionMessage = "WiFi Reset";
@@ -323,7 +374,7 @@ void heartbeatOn() {
   actionMessage = "Heartbeat On";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_requireHeartBeat, b_requireHeartBeat);
+  EEPROM.put(i_addr_requireHeartBeat, (bool)b_requireHeartBeat);
   EEPROM.commit();
   Serial.println("Heartbeat detection...On");
 }
@@ -333,7 +384,7 @@ void heartbeatOff() {
   actionMessage = "Heartbeat Off";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_requireHeartBeat, b_requireHeartBeat);
+  EEPROM.put(i_addr_requireHeartBeat, (bool)b_requireHeartBeat);
   EEPROM.commit();
   Serial.println("Heartbeat detection...Off");
 }
@@ -385,7 +436,7 @@ void btnFuncWhileConnectedOn() {
   actionMessage = "BLE Btns On";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_btnFuncWhileConnected, b_btnFuncWhileConnected);
+  EEPROM.put(i_addr_btnFuncWhileConnected, (bool)b_btnFuncWhileConnected);
   EEPROM.commit();
   Serial.println("BLE Btns On");
 }
@@ -395,7 +446,7 @@ void btnFuncWhileConnectedOff() {
   actionMessage = "BLE Btns Off";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_btnFuncWhileConnected, b_btnFuncWhileConnected);
+  EEPROM.put(i_addr_btnFuncWhileConnected, (bool)b_btnFuncWhileConnected);
   EEPROM.commit();
   Serial.println("BLE Btns Off");
 }
@@ -405,7 +456,7 @@ void autoSleepOn() {
   actionMessage = "Autosleep On";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_autoSleep, b_autoSleep);
+  EEPROM.put(i_addr_autoSleep, (bool)b_autoSleep);
   EEPROM.commit();
   Serial.println("Autosleep on stored in EEPROM.");
 }
@@ -415,7 +466,7 @@ void autoSleepOff() {
   actionMessage = "Autosleep Off";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_autoSleep, b_autoSleep);
+  EEPROM.put(i_addr_autoSleep, (bool)b_autoSleep);
   EEPROM.commit();
   Serial.println("Autosleep off stored in EEPROM.");
 }

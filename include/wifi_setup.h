@@ -7,6 +7,7 @@
 void setupWifi();
 void stopWifi();
 void saveCredentials(String ssid, String pass); // ssid, pass
+bool wifiCredentialsSaved();
 
 // Periodic health log + STA reconnect supervisor; call once per main-loop pass
 // when WiFi is enabled. Recovers from a silent STA disconnect (which the old
@@ -17,7 +18,7 @@ void saveCredentials(String ssid, String pass); // ssid, pass
 // isn't interrupted, then fires regardless once that window passes.
 void wifiSupervise();
 
-extern bool b_wifiEnabled;
+extern volatile bool b_wifiEnabled;
 
 extern const char *wifiPrefsKey;
 extern const char *wifiSSIDKey;
