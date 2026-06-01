@@ -105,7 +105,11 @@ def main():
     ws.send("status")
     st = recv_until(ws, is_type("status")) or {}
     fields = ("battery_percent", "timer_running", "timer_seconds", "display_on",
-              "low_power", "soft_sleep", "events_enabled", "rate_hz", "interval_ms")
+              "low_power", "soft_sleep", "events_enabled", "rate_hz", "interval_ms",
+              "wifi_on_boot", "wifi_active", "wifi_connected", "wifi_mode",
+              "wifi_credentials_saved", "ble_enabled", "ble_connected",
+              "ble_buttons_enabled", "ble_heartbeat_required",
+              "auto_sleep_enabled", "auto_sleep_minutes")
     rec("status frame: all fields present, 'led' removed",
         all(k in st for k in fields) and "led" not in st,
         f"keys={sorted(st)}")

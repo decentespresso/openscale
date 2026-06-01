@@ -6,9 +6,12 @@
   <title>Available Apps</title>
   <style>
     body {
-      font-family: sans-serif;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       padding: 2rem;
       background: #f9f9f9;
+      color: #222;
+      max-width: 760px;
+      margin: 0 auto;
     }
     h1 {
       color: #333;
@@ -56,6 +59,13 @@
       color: green;
     }
 
+    .panel-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+      align-items: start;
+    }
+
     /* Weight display */
     .weight-display {
       margin-top: 2rem;
@@ -64,9 +74,9 @@
       border: 1px solid #ddd;
       border-radius: 0.5rem;
       box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-      max-width: 300px;
+      max-width: none;
     }
-    #weight-display h2 {
+    .weight-display h2 {
       margin: 0 0 0.5rem 0;
       color: #333;
     }
@@ -88,6 +98,34 @@
     #tare-button:hover {
       background: #0056b3;
     }
+    .connection-state {
+      margin: 0.25rem 0 0.75rem;
+      color: #555;
+      font-size: 0.95rem;
+    }
+    .settings-list {
+      display: grid;
+      gap: 0.65rem;
+    }
+    .settings-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 0.55rem;
+    }
+    .settings-row:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+    .settings-row span {
+      color: #555;
+    }
+    .settings-row strong {
+      color: #222;
+      font-weight: 650;
+      text-align: right;
+    }
   </style>
 </head>
 <body>
@@ -108,11 +146,36 @@
       <li><a target="_blank" rel="noopener noreferrer" href="https://decentespresso.com/docs/programmers_guide_to_the_half_decent_scale">Documentation</a></li>
     </ul>
 
-  <!-- Weight Display and Tare Button -->
-  <div class="weight-display">
-    <h2>Weight</h2>
-    <div id="weight-value">-- g</div>
-    <button id="tare-button">Tare</button>
+  <div class="panel-grid">
+    <!-- Weight Display and Tare Button -->
+    <div class="weight-display">
+      <h2>Weight</h2>
+      <div id="weight-value">-- g</div>
+      <button id="tare-button">Tare</button>
+    </div>
+
+    <div class="weight-display">
+      <h2>Current Settings</h2>
+      <p id="connection-status" class="connection-state">Connecting</p>
+      <div class="settings-list">
+        <div class="settings-row">
+          <span>WiFi</span>
+          <strong id="setting-wifi">--</strong>
+        </div>
+        <div class="settings-row">
+          <span>BLE Buttons</span>
+          <strong id="setting-ble-buttons">--</strong>
+        </div>
+        <div class="settings-row">
+          <span>BLE Heartbeat</span>
+          <strong id="setting-ble-heartbeat">--</strong>
+        </div>
+        <div class="settings-row">
+          <span>Auto Sleep</span>
+          <strong id="setting-auto-sleep">--</strong>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- WiFi Setup Popup -->
@@ -162,13 +225,65 @@
     const ws = new WebSocket(`ws://${window.location.host}/snapshot`);
     const weightValue = document.getElementById('weight-value');
     const tareButton = document.getElementById('tare-button');
+    const connectionStatus = document.getElementById('connection-status');
+    const settingWifi = document.getElementById('setting-wifi');
+    const settingBleButtons = document.getElementById('setting-ble-buttons');
+    const settingBleHeartbeat = document.getElementById('setting-ble-heartbeat');
+    const settingAutoSleep = document.getElementById('setting-auto-sleep');
+
+    function sendStatusRequest() {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send('status');
+      }
+    }
+
+    function formatEnabled(value) {
+      return value ? 'enabled' : 'disabled';
+    }
+
+    function renderStatus(status) {
+      const wifiParts = [formatEnabled(status.wifi_on_boot)];
+      wifiParts.push(status.wifi_credentials_saved ? 'SSID saved' : 'no SSID saved');
+      if (status.wifi_active) {
+        if (status.wifi_mode === 'ap') {
+          wifiParts.push('AP mode');
+        } else if (status.wifi_connected) {
+          wifiParts.push('connected');
+        } else {
+          wifiParts.push('connecting');
+        }
+      }
+
+      settingWifi.textContent = wifiParts.join(', ');
+      settingBleButtons.textContent = status.ble_buttons_enabled ? 'active' : 'inactive';
+      settingBleHeartbeat.textContent = formatEnabled(status.ble_heartbeat_required);
+      settingAutoSleep.textContent = status.auto_sleep_enabled
+        ? `enabled (${status.auto_sleep_minutes || 15} min)`
+        : 'disabled';
+    }
+
+    ws.addEventListener('open', () => {
+      connectionStatus.textContent = 'Connected';
+      connectionStatus.style.color = '#207044';
+      sendStatusRequest();
+    });
 
     ws.addEventListener('message', (event) => {
-      const json = JSON.parse(event.data)
+      let json;
+      try {
+        json = JSON.parse(event.data);
+      } catch (err) {
+        return;
+      }
       if (json.grams != undefined) {
         weightValue.textContent = `${json.grams} g`;
       }
+      if (json.type === 'status') {
+        renderStatus(json);
+      }
     });
+
+    setInterval(sendStatusRequest, 5000);
 
     tareButton.addEventListener('click', () => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -181,11 +296,15 @@
     ws.addEventListener('error', () => {
       weightValue.textContent = 'Connection error';
       weightValue.style.color = 'red';
+      connectionStatus.textContent = 'Connection error';
+      connectionStatus.style.color = 'red';
     });
 
     ws.addEventListener('close', () => {
       weightValue.textContent = 'Disconnected';
       weightValue.style.color = 'gray';
+      connectionStatus.textContent = 'Disconnected';
+      connectionStatus.style.color = 'gray';
     });
 
     document.getElementById('reset-wifi-button').addEventListener('click', async function (e) {

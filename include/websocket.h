@@ -221,8 +221,22 @@ void sendWebsocketRateInfo(AsyncWebSocketClient *client, const char *status) {
                  hz);
 }
 
+const char *websocketWifiModeName() {
+  wifi_mode_t mode = WiFi.getMode();
+  if (mode == WIFI_STA) {
+    return "sta";
+  }
+  if (mode == WIFI_AP) {
+    return "ap";
+  }
+  if (mode == WIFI_AP_STA) {
+    return "sta_ap";
+  }
+  return "off";
+}
+
 void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
-  client->printf("{\"type\":\"status\",\"status\":\"%s\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu}",
+  client->printf("{\"type\":\"status\",\"status\":\"%s\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu,\"wifi_on_boot\":%s,\"wifi_active\":%s,\"wifi_connected\":%s,\"wifi_mode\":\"%s\",\"wifi_credentials_saved\":%s,\"ble_enabled\":%s,\"ble_connected\":%s,\"ble_buttons_enabled\":%s,\"ble_heartbeat_required\":%s,\"auto_sleep_enabled\":%s,\"auto_sleep_minutes\":15}",
                  status,
                  FIRMWARE_VER,
                  f_displayedValue,
@@ -237,7 +251,17 @@ void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
                  b_softSleep ? "true" : "false",
                  b_websocketEventsEnabled ? "true" : "false",
                  websocketRateForInterval(weightWebsocketNotifyInterval),
-                 weightWebsocketNotifyInterval);
+                 weightWebsocketNotifyInterval,
+                 b_wifiOnBoot ? "true" : "false",
+                 b_wifiEnabled ? "true" : "false",
+                 WiFi.status() == WL_CONNECTED ? "true" : "false",
+                 websocketWifiModeName(),
+                 wifiCredentialsSaved() ? "true" : "false",
+                 b_ble_enabled ? "true" : "false",
+                 deviceConnected ? "true" : "false",
+                 b_btnFuncWhileConnected ? "true" : "false",
+                 b_requireHeartBeat ? "true" : "false",
+                 b_autoSleep ? "true" : "false");
 }
 
 // Broadcast via printfAll(): it holds the library's client-list mutex and

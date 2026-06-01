@@ -3,7 +3,9 @@
 //declaration
 
 //ble
-bool b_ble_enabled = false;
+// volatile: read by the AsyncTCP task in the WS status frame, written by the
+// main loop during boot/charging-mode transitions.
+volatile bool b_ble_enabled = false;
 bool b_usbweight_enabled = false;
 unsigned long weightBleNotifyInterval = 100;  // BLE notify interval (ms). Fixed at 100ms (10Hz); not runtime-configurable over BLE.
 unsigned long weightUsbNotifyInterval = 100;  // USB binary notify interval (ms)
@@ -53,10 +55,12 @@ volatile uint32_t wsPendingMask = 0;
 int i_onWrite_counter = 0;
 unsigned long t_heartBeat = 0;
 unsigned long t_firstConnect = 0;
-bool b_requireHeartBeat = true;
+// volatile: read by the AsyncTCP task in the WS status frame, written by the
+// main-loop menu/EEPROM restore paths.
+volatile bool b_requireHeartBeat = true;
 bool b_screenFlipped = false;
 bool b_timeOnTop = false;
-bool b_btnFuncWhileConnected = false;
+volatile bool b_btnFuncWhileConnected = false;
 
 //
 int windowLength = 5;  // default window length
@@ -163,8 +167,9 @@ int i_icon = 0;  //充电指示电量数字0-6
 int i_setContainerWeight = 0;
 float f_filtered_temperature = 0;
 bool b_ads1115InitFail = true;  //ads1115 not detected flag
-bool b_wifiOnBoot = false;
-bool b_autoSleep = true;
+// volatile: surfaced from AsyncTCP status while menu/setup code updates them.
+volatile bool b_wifiOnBoot = false;
+volatile bool b_autoSleep = true;
 bool b_quickBoot = false;
 unsigned int i_buttonBootDelay = 500;
 bool b_showChargingUI = false;

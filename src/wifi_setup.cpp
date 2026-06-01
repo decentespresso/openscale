@@ -9,7 +9,7 @@
 #include <Preferences.h>
 #include <WiFi.h>
 
-bool b_wifiEnabled = false;
+volatile bool b_wifiEnabled = false;
 // Set by the GOT_IP WiFi event; the main loop (wifiSupervise) consumes it and
 // (re)advertises mDNS, keeping all mDNS work off the WiFi-event task.
 static volatile bool g_mdnsAdvertisePending = false;
@@ -27,6 +27,7 @@ private:
   String ssid = "";
   String pass = "";
   Preferences preferences;
+  bool initialized = false;
 
 public:
   String getSSID() { return ssid; }
@@ -301,11 +302,24 @@ void saveCredentials(String ssid, String pass) {
   params.saveCredentials(ssid, pass);
 }
 
+bool wifiCredentialsSaved() {
+  params.init();
+  return params.hasCredentials();
+}
+
 // ----------------------------------------------------
 // ------------------ WiFiParams ----------------------
 // ----------------------------------------------------
 
 void WiFiParams::saveCredentials(String ssid, String pass) {
+  if (!initialized) {
+    init();
+  }
+  if (!initialized) {
+    Serial.println("[prefs] could not save credentials -- NVS namespace unavailable");
+    return;
+  }
+
   if (this->ssid == ssid && this->pass == pass)
     return;
 
@@ -323,10 +337,14 @@ void WiFiParams::saveCredentials(String ssid, String pass) {
 }
 
 void WiFiParams::init() {
+  if (initialized) {
+    return;
+  }
   if (!preferences.begin(wifiPrefsKey)) {
     Serial.println("[prefs] could not open NVS namespace 'wifi' -- no stored credentials");
     return;
   }
+  initialized = true;
   if (!hasCredentials()) {
     this->ssid = preferences.getString(wifiSSIDKey, "");
     this->pass = preferences.getString(wifiPassKey, "");
@@ -336,5 +354,10 @@ void WiFiParams::init() {
 void WiFiParams::reset() {
   ssid = "";
   pass = "";
-  preferences.clear();
+  if (!initialized) {
+    init();
+  }
+  if (initialized) {
+    preferences.clear();
+  }
 }
