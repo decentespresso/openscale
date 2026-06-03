@@ -235,12 +235,8 @@ const char *websocketWifiModeName() {
   return "off";
 }
 
-const char *websocketScaleModeName() {
-  return b_mode == 1 ? "espresso" : "pourover";
-}
-
 void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
-  client->printf("{\"type\":\"status\",\"status\":\"%s\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu,\"wifi_on_boot\":%s,\"wifi_active\":%s,\"wifi_connected\":%s,\"wifi_mode\":\"%s\",\"wifi_credentials_saved\":%s,\"ble_enabled\":%s,\"ble_connected\":%s,\"ble_buttons_enabled\":%s,\"ble_heartbeat_required\":%s,\"auto_sleep_enabled\":%s,\"auto_sleep_minutes\":15,\"quick_boot_enabled\":%s,\"button_boot_delay_ms\":%u,\"screen_flipped\":%s,\"time_on_top\":%s,\"drift_compensation_max_grams\":%.3f,\"buzzer_enabled\":%s,\"mode\":%d,\"mode_name\":\"%s\",\"pourover_target_grams\":%.2f,\"espresso_target_grams\":%.2f,\"calibration_factor\":%.3f,\"battery_calibration_factor\":%.3f}",
+  client->printf("{\"type\":\"status\",\"status\":\"%s\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu,\"wifi_on_boot\":%s,\"wifi_active\":%s,\"wifi_connected\":%s,\"wifi_mode\":\"%s\",\"wifi_credentials_saved\":%s,\"ble_enabled\":%s,\"ble_connected\":%s,\"ble_buttons_enabled\":%s,\"ble_heartbeat_required\":%s,\"auto_sleep_enabled\":%s,\"auto_sleep_minutes\":15,\"quick_boot_enabled\":%s,\"time_on_top\":%s,\"drift_compensation_max_grams\":%.3f}",
                  status,
                  FIRMWARE_VER,
                  f_displayedValue,
@@ -267,17 +263,8 @@ void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
                  b_requireHeartBeat ? "true" : "false",
                  b_autoSleep ? "true" : "false",
                  b_quickBoot ? "true" : "false",
-                 i_buttonBootDelay,
-                 b_screenFlipped ? "true" : "false",
                  b_timeOnTop ? "true" : "false",
-                 f_maxDriftCompensation,
-                 b_beep ? "true" : "false",
-                 b_mode,
-                 websocketScaleModeName(),
-                 INPUTCOFFEEPOUROVER,
-                 INPUTCOFFEEESPRESSO,
-                 f_calibration_value,
-                 f_batteryCalibrationFactor);
+                 f_maxDriftCompensation);
 }
 
 // Broadcast via printfAll(): it holds the library's client-list mutex and

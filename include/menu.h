@@ -329,20 +329,23 @@ void showStatus() {
   }
 
   char wifiLine[32];
-  char bleLine[24];
-  char heartbeatLine[24];
-  char sleepLine[24];
+  char bleLine[32];
+  char sleepLine[32];
+  char driftLine[32];
   snprintf(wifiLine, sizeof(wifiLine), "WiFi:%s %s %s",
            b_wifiOnBoot ? "On" : "Off",
            wifiCredentialsSaved() ? "Saved" : "NoCred",
            wifiRunState);
-  snprintf(bleLine, sizeof(bleLine), "BLE:%s Btn:%s",
+  snprintf(bleLine, sizeof(bleLine), "BLE:%s Btn:%s HB:%s",
            b_ble_enabled ? "On" : "Off",
-           b_btnFuncWhileConnected ? "On" : "Off");
-  snprintf(heartbeatLine, sizeof(heartbeatLine), "Heartbeat:%s",
+           b_btnFuncWhileConnected ? "On" : "Off",
            b_requireHeartBeat ? "On" : "Off");
-  snprintf(sleepLine, sizeof(sleepLine), "AutoSleep:%s 15m",
-           b_autoSleep ? "On" : "Off");
+  snprintf(sleepLine, sizeof(sleepLine), "Sleep:%s Quick:%s",
+           b_autoSleep ? "On" : "Off",
+           b_quickBoot ? "On" : "Off");
+  snprintf(driftLine, sizeof(driftLine), "T:%s Drift:%.3fg",
+           b_timeOnTop ? "Top" : "Bot",
+           f_maxDriftCompensation);
 
   u8g2.firstPage();
   do {
@@ -350,8 +353,8 @@ void showStatus() {
     u8g2.drawStr(0, 10, "Status");
     u8g2.drawStr(0, 22, wifiLine);
     u8g2.drawStr(0, 34, bleLine);
-    u8g2.drawStr(0, 46, heartbeatLine);
-    u8g2.drawStr(0, 58, sleepLine);
+    u8g2.drawStr(0, 46, sleepLine);
+    u8g2.drawStr(0, 58, driftLine);
   } while (u8g2.nextPage());
   delay(1000);
   while (b_showStatusData) {

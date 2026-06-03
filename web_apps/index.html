@@ -3,33 +3,149 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Available Apps</title>
+  <title>Half Decent Scale</title>
   <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f5f6;
+      --surface: #fff;
+      --surface-hover: #f7f8f9;
+      --ink: #1f2328;
+      --ink-soft: #3f4650;
+      --muted: #5f6875;
+      --border: #d8dde3;
+      --border-soft: #e8ebef;
+      --accent: #0b7180;
+      --accent-strong: #075f6c;
+      --success: #118544;
+      --danger: #b42318;
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
     body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      padding: 2rem;
-      background: #f9f9f9;
-      color: #222;
-      max-width: 760px;
       margin: 0 auto;
+      width: min(100%, 1080px);
+      padding: 24px 14px 28px;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: inherit;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
     }
+
     h1 {
-      color: #333;
+      margin: 0 0 18px;
+      color: var(--ink);
+      font-size: 25px;
+      line-height: 1.16;
+      letter-spacing: 0;
     }
+
+    h2 {
+      margin: 24px 0 10px;
+      color: var(--ink);
+      font-size: 18px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
     ul {
       list-style: none;
       padding-left: 0;
+      margin: 0;
     }
+
     li {
-      margin: 0.5rem 0;
+      margin: 0;
     }
+
     a {
-      text-decoration: none;
-      color: #007bff;
-      font-size: 1.2rem;
+      color: var(--accent-strong);
+      font-size: 1rem;
+      font-weight: 650;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
     }
+
     a:hover {
-      text-decoration: underline;
+      color: #064f5a;
+    }
+
+    a:focus-visible,
+    button:focus-visible,
+    input:focus-visible {
+      outline: 3px solid rgba(11, 113, 128, .32);
+      outline-offset: 2px;
+    }
+
+    .app-header {
+      display: grid;
+      gap: 4px;
+      margin-bottom: 24px;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.4;
+    }
+
+    .section {
+      margin-top: 32px;
+    }
+
+    .section h2 {
+      margin-top: 0;
+    }
+
+    .app-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      grid-auto-rows: 72px;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+
+    .app-list a {
+      display: flex;
+      align-items: center;
+      height: 100%;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      background: var(--surface);
+      color: var(--ink);
+      line-height: 1.2;
+      text-decoration: none;
+      transition: background-color .16s ease, border-color .16s ease;
+    }
+
+    .app-list a:hover {
+      border-color: #c3cbd4;
+      background: var(--surface-hover);
+    }
+
+    .docs-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      border-top: 1px solid var(--border-soft);
+      padding-top: 14px;
+      margin-bottom: 24px;
+    }
+
+    .docs-list a {
+      font-size: 14px;
     }
 
     /* WiFi popup styling */
@@ -45,106 +161,223 @@
     /*   box-shadow: 0 -2px 10px rgba(0,0,0,0.1); */
     /* } */
     #wifi-popup input {
-      padding: 0.4rem;
+      width: 100%;
+      height: 44px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 11px;
+      background: var(--surface);
+      color: var(--ink);
       font-size: 1rem;
     }
-    #wifi-popup button {
-      padding: 0.5rem 1rem;
-      margin-top: 0.5rem;
+
+    #wifi-popup input::placeholder {
+      color: var(--muted);
+    }
+
+    #wifi-popup input:focus {
+      border-color: var(--accent);
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(11, 113, 128, .08);
+    }
+
+    #wifi-popup button,
+    #tare-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 44px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 9px 14px;
+      background: var(--surface);
+      color: var(--ink);
       font-size: 1rem;
+      font-weight: 650;
       cursor: pointer;
+      transition: background-color .16s ease, border-color .16s ease, transform .12s ease;
     }
+
+    #wifi-popup button:hover,
+    #tare-button:hover {
+      border-color: #c3cbd4;
+      background: var(--surface-hover);
+    }
+
+    #wifi-popup button:active,
+    #tare-button:active {
+      transform: translateY(1px);
+    }
+
     #wifi-status {
-      margin-top: 0.5rem;
-      color: green;
+      min-height: 20px;
+      margin-top: 0.75rem;
+      color: var(--success);
+      font-size: 14px;
+      line-height: 1.4;
     }
 
     .panel-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 1rem;
-      align-items: start;
+      grid-template-columns: minmax(0, 1.15fr) minmax(280px, .85fr);
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .panel-grid .weight-display {
+      margin-top: 0;
     }
 
     /* Weight display */
     .weight-display {
-      margin-top: 2rem;
-      padding: 1rem;
-      background: #fff;
-      border: 1px solid #ddd;
-      border-radius: 0.5rem;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      margin-top: 24px;
+      padding: 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: none;
       max-width: none;
     }
+
     .weight-display h2 {
-      margin: 0 0 0.5rem 0;
-      color: #333;
+      margin: 0 0 10px;
+      color: var(--ink);
     }
+
     #weight-value {
-      font-size: 2rem;
-      font-weight: bold;
-      color: #007bff;
+      min-height: 76px;
+      display: grid;
+      align-content: center;
+      color: var(--accent-strong);
+      font-size: 64px;
+      font-weight: 750;
+      line-height: .98;
+      letter-spacing: 0;
+      overflow-wrap: anywhere;
     }
+
     #tare-button {
-      margin-top: 1rem;
-      padding: 0.5rem 1rem;
-      font-size: 1rem;
-      background: #007bff;
-      color: white;
-      border: none;
-      border-radius: 0.25rem;
-      cursor: pointer;
+      min-width: 128px;
+      margin-top: 16px;
+      border-color: var(--accent-strong);
+      background: var(--accent-strong);
+      color: #fff;
     }
+
     #tare-button:hover {
-      background: #0056b3;
+      border-color: #064f5a;
+      background: #064f5a;
     }
+
     .connection-state {
       margin: 0.25rem 0 0.75rem;
-      color: #555;
+      color: var(--muted);
       font-size: 0.95rem;
     }
+
     .settings-list {
       display: grid;
-      gap: 0.65rem;
+      gap: 0;
+      border-top: 1px solid var(--border-soft);
     }
+
     .settings-row {
-      display: flex;
-      justify-content: space-between;
-      gap: 1rem;
-      border-bottom: 1px solid #eee;
-      padding-bottom: 0.55rem;
+      display: grid;
+      grid-template-columns: minmax(96px, .62fr) minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      border-bottom: 1px solid var(--border-soft);
+      padding: 11px 0;
     }
+
     .settings-row:last-child {
       border-bottom: 0;
-      padding-bottom: 0;
     }
+
     .settings-row span {
-      color: #555;
+      color: var(--muted);
+      font-size: 14px;
     }
+
     .settings-row strong {
-      color: #222;
+      color: var(--ink);
+      font-size: 14px;
       font-weight: 650;
+      line-height: 1.35;
       text-align: right;
+      overflow-wrap: anywhere;
+    }
+
+    #wifi-form {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) 128px;
+      gap: 12px;
+      align-items: center;
+      max-width: 680px;
+    }
+
+    #reset-wifi-button {
+      margin-top: 12px;
+      min-width: 220px;
+      color: var(--ink-soft);
+    }
+
+    @media (max-width: 820px) {
+      .panel-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .weight-display {
+        padding: 16px;
+      }
+
+      #weight-value {
+        font-size: 54px;
+      }
+    }
+
+    @media (max-width: 520px) {
+      body {
+        padding-left: 12px;
+        padding-right: 12px;
+      }
+
+      .app-list {
+        grid-template-columns: 1fr;
+        grid-auto-rows: 64px;
+      }
+
+      #wifi-form {
+        grid-template-columns: 1fr;
+        max-width: none;
+      }
+
+      #wifi-popup input,
+      #wifi-popup button,
+      #tare-button {
+        width: 100%;
+      }
+
+      #weight-value {
+        font-size: 44px;
+      }
+
+      .settings-row {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+
+      .settings-row strong {
+        text-align: left;
+      }
     }
   </style>
 </head>
 <body>
-  <h1>Available Apps</h1>
-  <ul>
-    <li><a href="Quality_Control_Assistant/quality_control.html">Quality Control Assistant</a></li>
-    <li><a href="Weigh_Save/weigh_save.html">Weigh Save</a></li>
-    <li><a href="dosing_assistant/dosing_assistant.html">Dosing assistant</a></li>
-    <li><a href="https://decentespresso.com/support/scale/js/cocktail_maker/index.adp">Make cocktails with your HDS</a></li>
-    <li><a href="update">Update firmware</a></li>
-  </ul>
-
-  <h2>Other useful links</h2>
-    <ul>
-      <li><a target="_blank" rel="noopener noreferrer" href="https://decentespresso.com/docs/firmware_for_half_decent_scale">Firmware versions</a></li>
-      <li><a target="_blank" rel="noopener noreferrer" href="https://decentespresso.com/docs/how_to_use_usbc_to_upgrade_your_hds_firmware_v300_and_above">Upgrading with USB-C</a></li>
-      <li><a target="_blank" rel="noopener noreferrer" href="https://decentespresso.com/docs/how_to_use_wifi_to_upgrade_your_hds_firmware_v300_and_above">Upgrading via Wi-Fi</a></li>
-      <li><a target="_blank" rel="noopener noreferrer" href="https://decentespresso.com/docs/programmers_guide_to_the_half_decent_scale">Documentation</a></li>
-    </ul>
+  <header class="app-header">
+    <h1>OpenScale</h1>
+    <p class="subtitle">Half Decent Scale control surface</p>
+  </header>
 
   <div class="panel-grid">
     <!-- Weight Display and Tare Button -->
@@ -174,9 +407,31 @@
           <span>Auto Sleep</span>
           <strong id="setting-auto-sleep">--</strong>
         </div>
+        <div class="settings-row">
+          <span>Quick Boot</span>
+          <strong id="setting-quick-boot">--</strong>
+        </div>
+        <div class="settings-row">
+          <span>Timer Position</span>
+          <strong id="setting-time-position">--</strong>
+        </div>
+        <div class="settings-row">
+          <span>Drift Comp</span>
+          <strong id="setting-drift-comp">--</strong>
+        </div>
       </div>
     </div>
   </div>
+
+  <section class="section" aria-labelledby="apps-title">
+    <h2 id="apps-title">Available Apps</h2>
+    <ul class="app-list">
+      <li><a href="Quality_Control_Assistant/quality_control.html">Quality Control Assistant</a></li>
+      <li><a href="Weigh_Save/weigh_save.html">Weigh Save</a></li>
+      <li><a href="dosing_assistant/dosing_assistant.html">Dosing assistant</a></li>
+      <li><a href="update">Update firmware</a></li>
+    </ul>
+  </section>
 
   <!-- WiFi Setup Popup -->
   <div id="wifi-popup" class="weight-display">
@@ -189,6 +444,17 @@
           <button id="reset-wifi-button">Reset WiFi settings</button>
     <p id="wifi-status"></p>
   </div>
+
+  <section class="section" aria-labelledby="links-title">
+    <h2 id="links-title">Other useful links</h2>
+    <ul class="docs-list">
+      <li><a target="_blank" rel="noopener noreferrer" href="https://decentespresso.com/docs/firmware_for_half_decent_scale">Firmware versions</a></li>
+      <li><a target="_blank" rel="noopener noreferrer" href="https://decentespresso.com/docs/how_to_use_usbc_to_upgrade_your_hds_firmware_v300_and_above">Upgrading with USB-C</a></li>
+      <li><a target="_blank" rel="noopener noreferrer" href="https://decentespresso.com/docs/how_to_use_wifi_to_upgrade_your_hds_firmware_v300_and_above">Upgrading via Wi-Fi</a></li>
+      <li><a target="_blank" rel="noopener noreferrer" href="https://decentespresso.com/docs/programmers_guide_to_the_half_decent_scale">Documentation</a></li>
+      <li><a target="_blank" rel="noopener noreferrer" href="https://decentespresso.com/support/scale/js/cocktail_maker/index.adp">Cocktail recipes</a></li>
+    </ul>
+  </section>
 
   <script>
     // WiFi form submission
@@ -230,6 +496,9 @@
     const settingBleButtons = document.getElementById('setting-ble-buttons');
     const settingBleHeartbeat = document.getElementById('setting-ble-heartbeat');
     const settingAutoSleep = document.getElementById('setting-auto-sleep');
+    const settingQuickBoot = document.getElementById('setting-quick-boot');
+    const settingTimePosition = document.getElementById('setting-time-position');
+    const settingDriftComp = document.getElementById('setting-drift-comp');
 
     function sendStatusRequest() {
       if (ws.readyState === WebSocket.OPEN) {
@@ -239,6 +508,14 @@
 
     function formatEnabled(value) {
       return value ? 'enabled' : 'disabled';
+    }
+
+    function formatDriftComp(value) {
+      const grams = Number(value);
+      if (!Number.isFinite(grams) || grams <= 0) {
+        return 'off';
+      }
+      return `${grams.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')} g`;
     }
 
     function renderStatus(status) {
@@ -260,6 +537,9 @@
       settingAutoSleep.textContent = status.auto_sleep_enabled
         ? `enabled (${status.auto_sleep_minutes || 15} min)`
         : 'disabled';
+      settingQuickBoot.textContent = formatEnabled(status.quick_boot_enabled);
+      settingTimePosition.textContent = status.time_on_top ? 'timer above weight' : 'weight above timer';
+      settingDriftComp.textContent = formatDriftComp(status.drift_compensation_max_grams);
     }
 
     ws.addEventListener('open', () => {
