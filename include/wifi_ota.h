@@ -30,6 +30,56 @@ const char *password = "12345678";
 unsigned long ota_progress_millis = 0;
 unsigned long t_otaEnd = 0;
 
+uint8_t calculateOtaPercent(size_t current, size_t final) {
+  if (final == 0) {
+    return 0;
+  }
+  if (current >= final) {
+    return 100;
+  }
+  size_t rawPercent = (current * 100U) / final;
+  return rawPercent > 100 ? 100 : (uint8_t)rawPercent;
+}
+
+void queueOtaDisplay(uint8_t state, uint8_t percent = 0) {
+  portENTER_CRITICAL(&otaDisplayMux);
+  otaDisplayState = state;
+  otaDisplayPercent = percent;
+  portEXIT_CRITICAL(&otaDisplayMux);
+}
+
+void processOtaDisplayUpdate() {
+  portENTER_CRITICAL(&otaDisplayMux);
+  uint8_t state = otaDisplayState;
+  uint8_t percent = otaDisplayPercent;
+  otaDisplayState = OTA_DISPLAY_NONE;
+  portEXIT_CRITICAL(&otaDisplayMux);
+
+  if (state == OTA_DISPLAY_NONE) {
+    return;
+  }
+
+  char buffer[50];
+  if (state == OTA_DISPLAY_PROGRESS) {
+    snprintf(buffer, sizeof(buffer), "Uploading: %u%%", percent);
+  } else if (state == OTA_DISPLAY_SUCCESS) {
+    snprintf(buffer, sizeof(buffer), "OTA update finished");
+  } else {
+    snprintf(buffer, sizeof(buffer), "OTA update failed");
+    b_ota = false;
+  }
+
+  u8g2.firstPage();
+  u8g2.setFont(FONT_S);
+  if (b_screenFlipped)
+    u8g2.setDisplayRotation(U8G2_R0);
+  else
+    u8g2.setDisplayRotation(U8G2_R2);
+  do {
+    u8g2.drawUTF8(AC((char *)trim(buffer)), AM(), (char *)trim(buffer));
+  } while (u8g2.nextPage());
+}
+
 void onOTAStart() {
   // Log when OTA has started
   Serial.println("OTA update started!");
@@ -42,19 +92,9 @@ void onOTAProgress(size_t current, size_t final) {
     ota_progress_millis = millis();
     Serial.printf("OTA Progress Current: %u bytes, Final: %u bytes\n", current,
                   final);
-    Serial.printf("Progress: %u%%\n", (current * 100) / final);
-    char buffer[50];
-    snprintf(buffer, sizeof(buffer), "Uploading: %u%%",
-             (current * 100) / final);
-    u8g2.firstPage();
-    u8g2.setFont(FONT_S);
-    if (b_screenFlipped)
-      u8g2.setDisplayRotation(U8G2_R0);
-    else
-      u8g2.setDisplayRotation(U8G2_R2);
-    do {
-      u8g2.drawUTF8(AC((char *)trim(buffer)), AM(), (char *)trim(buffer));
-    } while (u8g2.nextPage());
+    uint8_t percent = calculateOtaPercent(current, final);
+    Serial.printf("Progress: %u%%\n", percent);
+    queueOtaDisplay(OTA_DISPLAY_PROGRESS, percent);
   }
 }
 
@@ -63,42 +103,26 @@ void onOTAEnd(bool success) {
   t_otaEnd = millis();
   if (success) {
     Serial.println("OTA update finished successfully!");
-    u8g2.setFont(FONT_S);
-    if (b_screenFlipped)
-      u8g2.setDisplayRotation(U8G2_R0);
-    else
-      u8g2.setDisplayRotation(U8G2_R2);
-    while (millis() - t_otaEnd < 1000) {
-      u8g2.firstPage();
-      do {
-        u8g2.drawUTF8(AC((char *)"OTA update finished"), AM(),
-                      (char *)"OTA update finished");
-      } while (u8g2.nextPage());
-    }
+    queueOtaDisplay(OTA_DISPLAY_SUCCESS);
   } else {
     Serial.println("There was an error during OTA update!");
-    u8g2.setFont(FONT_S);
-    if (b_screenFlipped)
-      u8g2.setDisplayRotation(U8G2_R0);
-    else
-      u8g2.setDisplayRotation(U8G2_R2);
-    while (millis() - t_otaEnd < 1000) {
-      u8g2.firstPage();
-      do {
-        u8g2.drawUTF8(AC((char *)"OTA update failed"), AM(),
-                      (char *)"OTA update failed");
-      } while (u8g2.nextPage());
-    }
+    queueOtaDisplay(OTA_DISPLAY_FAILURE);
   }
 }
 
 void wifiOta() {
+  static bool otaRegistered = false;
+  if (otaRegistered) {
+    return;
+  }
+
   ElegantOTA.begin(&server); // Start ElegantOTA
   // ElegantOTA callbacks
   ElegantOTA.setAutoReboot(true);
   ElegantOTA.onStart(onOTAStart);
   ElegantOTA.onProgress(onOTAProgress);
   ElegantOTA.onEnd(onOTAEnd);
+  otaRegistered = true;
 }
 #endif // WIFI_OTA_H
 #endif

@@ -832,7 +832,7 @@ void calibration(int input) {
 #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
         EEPROM.commit();
 #endif
-        dtostrf(f_calibration_value, 10, 2, c_calval);
+        formatFloatSafe(c_calval, sizeof(c_calval), f_calibration_value, 2);
         Serial.print(F("New calibration value c: "));
         Serial.println(trim(c_calval));
 
@@ -1020,7 +1020,7 @@ void calibration(int input) {
 #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
         EEPROM.commit();
 #endif
-        dtostrf(f_calibration_value, 10, 2, c_calval);
+        formatFloatSafe(c_calval, sizeof(c_calval), f_calibration_value, 2);
         Serial.print(F("New calibration value c: "));
         Serial.println(trim(c_calval));
 
@@ -1120,9 +1120,9 @@ void showLogo() {
         "-0";  // to save the - sign if the input is between -1 to 0
       char decimalStr[10] = "0";
       if (number >= 0 || number <= -1) {
-        dtostrf(i_weightInt, 7, 0, integerStr);  // Integer part, no decimal
+        snprintf(integerStr, sizeof(integerStr), "%d", i_weightInt);
       }
-      dtostrf(i_weightFirstDecimal, 7, 0, decimalStr);
+      snprintf(decimalStr, sizeof(decimalStr), "%d", i_weightFirstDecimal);
       u8g2.setFont(FONT_GRAM);
       int gramWidth = u8g2.getUTF8Width("g");  // Width of the "g" character
       u8g2.setFont(FONT_WEIGHT);

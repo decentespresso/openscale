@@ -542,8 +542,7 @@ void setup() {
   u8g2.setFont(FONT_M);
   power_off(15);
 #ifdef WELCOME
-  EEPROM.get(i_addr_welcome, str_welcome);
-  str_welcome.trim();
+  loadWelcomeFromEEPROM();
 #endif
   b_screenFlipped = readBoolEEPROMWithValidation(i_addr_screenFlipped, false);
   if (b_screenFlipped)
@@ -965,7 +964,7 @@ void pureScale() {
     resetStableOutput();
     f_driftCompensation = 0.0;
     f_displayedValue = 0.0;
-    dtostrf(f_displayedValue, 7, i_decimal_precision, c_weight);
+    formatFloatSafe(c_weight, sizeof(c_weight), f_displayedValue, i_decimal_precision);
     t_lastScaleRecovery = millis();
     t_lastScaleData = millis();
   }
@@ -1052,7 +1051,7 @@ void pureScale() {
     }
     
     // Display and debugging
-    dtostrf(f_displayedValue, 7, i_decimal_precision, c_weight);
+    formatFloatSafe(c_weight, sizeof(c_weight), f_displayedValue, i_decimal_precision);
     if (b_weight_in_serial == true) {
       unsigned long current_time = millis();
       if (current_time - t_last_status_display >= STATUS_DISPLAY_INTERVAL) {
@@ -1315,7 +1314,7 @@ void loop() {
     while (Serial.available() && len < sizeof(data)) {
       data[len++] = Serial.read();
     }
-    usbCallbacks.onWrite(data, len);  // 调用 onWrite 函数处理串口数据
+    usbCallbacks.onStream(data, len);  // Process serial byte stream
   }
 
   buttonCircle.check();
@@ -1383,6 +1382,7 @@ void loop() {
     } else {
       if (b_ota) {
         ElegantOTA.loop();
+        processOtaDisplayUpdate();
         return;
       }
       if (b_calibration == true) {
@@ -1403,6 +1403,7 @@ void loop() {
           // on-device UI together never exceed 3-4 real concurrent clients.
           websocket.cleanupClients(4);
           ElegantOTA.loop();
+          processOtaDisplayUpdate();
         }
 
         // Snapshot stopWatch state for cross-task-safe reads in
@@ -1488,7 +1489,7 @@ void loop() {
 
 
 void chargingOLED(int perc, float voltage) {
-  if (millis() > t_oled_refresh + 1000) {
+  if (millis() - t_oled_refresh >= 1000) {
     // Refresh the OLED at the specified interval
     t_oled_refresh = millis();
     u8g2.firstPage();
@@ -1496,7 +1497,7 @@ void chargingOLED(int perc, float voltage) {
       u8g2.drawXBM(121, 51, 7, 12, image_battery_charging);  // charging icon
     } while (u8g2.nextPage());
   }
-  // if (millis() > t_oled_refresh + 1000) {
+  // if (millis() - t_oled_refresh >= 1000) {
   //   // Refresh the OLED at the specified interval
   //   t_oled_refresh = millis();
   //   u8g2.firstPage();
@@ -1555,7 +1556,7 @@ void chargingOLED(int perc, float voltage) {
 
 
 void updateOled() {
-  if (millis() > t_oled_refresh + i_oled_print_interval) {
+  if (millis() - t_oled_refresh >= i_oled_print_interval) {
     //达到设定的oled刷新频率后进行刷新
     t_oled_refresh = millis();
 
@@ -1673,9 +1674,9 @@ void drawWeight(float input) {
     char integerStr[10] = "-0";  // to save the - sign if the input is between -1 to 0
     char decimalStr[10] = "0";
     if (input >= 0 || input <= -1) {
-      dtostrf(i_weightInt, 7, 0, integerStr);  // Integer part, no decimal
+      snprintf(integerStr, sizeof(integerStr), "%d", i_weightInt);
     }
-    dtostrf(i_weightFirstDecimal, 7, 0, decimalStr);
+    snprintf(decimalStr, sizeof(decimalStr), "%d", i_weightFirstDecimal);
 
     u8g2.setFont(FONT_TIMER);
     int y_timer = u8g2.getMaxCharHeight();

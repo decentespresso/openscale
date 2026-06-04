@@ -28,12 +28,14 @@ private:
   String pass = "";
   Preferences preferences;
   bool initialized = false;
+  bool writeCredentialsToNvs(const String &ssid, const String &pass);
 
 public:
   String getSSID() { return ssid; }
   String getPass() { return pass; }
   bool hasCredentials() { return ssid != ""; };
   void saveCredentials(String ssid, String pass);
+  void saveCredentialsForRestart(String ssid, String pass);
   void init();
   void reset();
 };
@@ -302,6 +304,10 @@ void saveCredentials(String ssid, String pass) {
   params.saveCredentials(ssid, pass);
 }
 
+void saveCredentialsForRestart(String ssid, String pass) {
+  params.saveCredentialsForRestart(ssid, pass);
+}
+
 bool wifiCredentialsSaved() {
   params.init();
   return params.hasCredentials();
@@ -325,6 +331,25 @@ void WiFiParams::saveCredentials(String ssid, String pass) {
 
   this->ssid = ssid;
   this->pass = pass;
+  writeCredentialsToNvs(ssid, pass);
+}
+
+void WiFiParams::saveCredentialsForRestart(String ssid, String pass) {
+  if (!initialized) {
+    init();
+  }
+  if (!initialized) {
+    Serial.println("[prefs] could not save credentials -- NVS namespace unavailable");
+    return;
+  }
+
+  // /setup/wifi reboots shortly after responding. Do not publish these strings
+  // to the running WiFi supervisor, or AP mode can be torn down before the
+  // response finishes and String reads/writes can race across tasks.
+  writeCredentialsToNvs(ssid, pass);
+}
+
+bool WiFiParams::writeCredentialsToNvs(const String &ssid, const String &pass) {
   // putString returns bytes written (0 = failure). The web handler reboots
   // right after this, so a silent NVS failure would strand the scale retrying
   // stale/empty credentials -- log it loudly.
@@ -334,6 +359,7 @@ void WiFiParams::saveCredentials(String ssid, String pass) {
     Serial.printf("[prefs] NVS write FAILED (ssid=%u pass=%u) -- credentials may not persist\n",
                   (unsigned)wroteSsid, (unsigned)wrotePass);
   }
+  return wroteSsid != 0 && wrotePass != 0;
 }
 
 void WiFiParams::init() {

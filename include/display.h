@@ -1,6 +1,7 @@
 #ifndef DISPLAY_H
 #define DISPLAY_H
 #include "config.h"
+#include <stdio.h>
 #include <U8g2lib.h>
 #ifdef U8X8_HAVE_HW_SPI
 #include <SPI.h>
@@ -94,6 +95,18 @@ char* sec2sec(unsigned long n);
 char* ltrim(char* s);
 char* rtrim(char* s);
 char* trim(char* s);
+
+static inline void formatFloatSafe(char* buffer, size_t len, float value, int precision) {
+  if (buffer == nullptr || len == 0) {
+    return;
+  }
+  if (precision < 0) {
+    precision = 0;
+  } else if (precision > 6) {
+    precision = 6;
+  }
+  snprintf(buffer, len, "%.*f", precision, value);
+}
 
 
 void refreshOLED(char* input) {
@@ -219,15 +232,22 @@ char* sec2sec(unsigned long n) {
 
 //自定义trim消除空格
 char* ltrim(char* s) {
-  while (isspace(*s)) s++;
+  if (s == nullptr) {
+    return s;
+  }
+  while (isspace((unsigned char)*s)) s++;
   return s;
 }
 
 char* rtrim(char* s) {
-  char* back = s + strlen(s);
-  while (isspace(*--back))
-    ;
-  *(back + 1) = '\0';
+  if (s == nullptr) {
+    return s;
+  }
+  char* end = s + strlen(s);
+  while (end > s && isspace((unsigned char)*(end - 1))) {
+    end--;
+  }
+  *end = '\0';
   return s;
 }
 

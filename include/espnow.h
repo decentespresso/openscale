@@ -6,7 +6,7 @@
 
 
 void updateEspnow() {
-  if (millis() > t_esp_now_refresh + i_esp_now_interval) {
+  if (millis() - t_esp_now_refresh >= i_esp_now_interval) {
     t_esp_now_refresh = millis();
     // Send data to all devices in promiscuous mode
     coffeeData.b_mode = b_mode;
@@ -113,11 +113,14 @@ void receiveCallback(const uint8_t *macAddr, const uint8_t *data, int dataLen)
 {
   // Only allow a maximum of 250 characters in the message + a null terminating byte
   char buffer[ESP_NOW_MAX_DATA_LEN + 1];
-  int msgLen = min(ESP_NOW_MAX_DATA_LEN, dataLen);
-  strncpy(buffer, (const char *)data, msgLen);
+  size_t copyLen = 0;
+  if (data != nullptr && dataLen > 0) {
+    copyLen = min((size_t)dataLen, sizeof(buffer) - 1);
+    memcpy(buffer, data, copyLen);
+  }
 
   // Make sure we are null terminated
-  buffer[msgLen] = 0;
+  buffer[copyLen] = 0;
 
   // Format the MAC address
   char macStr[18];

@@ -1,14 +1,16 @@
 #ifndef PARAMETER_H
 #define PARAMETER_H
 //declaration
+#include <Arduino.h>
+#include <EEPROM.h>
 
 //ble
 // volatile: read by the AsyncTCP task in the WS status frame, written by the
 // main loop during boot/charging-mode transitions.
 volatile bool b_ble_enabled = false;
-bool b_usbweight_enabled = false;
+volatile bool b_usbweight_enabled = false;
 unsigned long weightBleNotifyInterval = 100;  // BLE notify interval (ms). Fixed at 100ms (10Hz); not runtime-configurable over BLE.
-unsigned long weightUsbNotifyInterval = 100;  // USB binary notify interval (ms)
+volatile unsigned long weightUsbNotifyInterval = 100;  // USB binary notify interval (ms)
 unsigned long weightTextNotifyInterval = 1000;  // USB text/debug line interval (ms)
 // Base period of the unified weight-output tick. One grid timer drives every
 // interface; each sends every (its NotifyInterval / base) ticks. All the
@@ -49,12 +51,33 @@ const uint32_t WSP_POWER_OFF   = 1u << 6;
 const uint32_t WSP_TIMER_START = 1u << 7;
 const uint32_t WSP_TIMER_STOP  = 1u << 8;
 const uint32_t WSP_TIMER_ZERO  = 1u << 9;
+const uint32_t WSP_SET_SAMPLES = 1u << 10;
+const uint32_t WSP_WIFI_UPDATE = 1u << 11;
+const uint32_t WSP_RESET       = 1u << 12;
+const uint32_t WSP_BLE_GYRO    = 1u << 13;
 portMUX_TYPE wsPendingMux = portMUX_INITIALIZER_UNLOCKED;
 volatile uint32_t wsPendingMask = 0;
+volatile uint8_t pendingSamplesInUse = 0;
+volatile unsigned long pendingResetAt = 0;
+
+const uint8_t OTA_DISPLAY_NONE = 0;
+const uint8_t OTA_DISPLAY_PROGRESS = 1;
+const uint8_t OTA_DISPLAY_SUCCESS = 2;
+const uint8_t OTA_DISPLAY_FAILURE = 3;
+portMUX_TYPE otaDisplayMux = portMUX_INITIALIZER_UNLOCKED;
+volatile uint8_t otaDisplayState = OTA_DISPLAY_NONE;
+volatile uint8_t otaDisplayPercent = 0;
+
+inline void remoteQueueResetAt(unsigned long resetAt) {
+  portENTER_CRITICAL(&wsPendingMux);
+  pendingResetAt = resetAt;
+  wsPendingMask |= WSP_RESET;
+  portEXIT_CRITICAL(&wsPendingMux);
+}
 
 int i_onWrite_counter = 0;
-unsigned long t_heartBeat = 0;
-unsigned long t_firstConnect = 0;
+volatile unsigned long t_heartBeat = 0;
+volatile unsigned long t_firstConnect = 0;
 // volatile: read by the AsyncTCP task in the WS status frame, written by the
 // main-loop menu/EEPROM restore paths.
 volatile bool b_requireHeartBeat = true;
@@ -99,6 +122,10 @@ float INPUTCOFFEEPOUROVER = 20.0;
 float INPUTCOFFEEESPRESSO = 20.0;
 float f_batteryCalibrationFactor = 0.66;
 String str_welcome = "welcome";
+const size_t WELCOME_EEPROM_BYTES = 128;
+const size_t WELCOME_EEPROM_MAGIC_BYTES = 4;
+const size_t WELCOME_EEPROM_TEXT_BYTES = WELCOME_EEPROM_BYTES - WELCOME_EEPROM_MAGIC_BYTES;
+const char WELCOME_EEPROM_MAGIC[WELCOME_EEPROM_MAGIC_BYTES] = {'H', 'D', 'S', 'W'};
 float f_calibration_value;   //称重单元校准值
 float f_up_battery;          //开机时电池电压
 unsigned long t_up_battery;  //开机到现在时间
@@ -289,7 +316,7 @@ unsigned long t_menuExitTime = 0;
 // Used to implement a protection period preventing unintended operations
 
 bool b_calibration = false;  //Calibration flag
-bool b_ota = false;          //wifi ota flag
+volatile bool b_ota = false; //wifi ota flag
 int i_calibration = 0;       //0 for manual cal, 1 for smart cal
 //bool b_set_sample = false;              //开机菜单 设置采样数
 bool b_show_info = false;               //开机菜单 显示信息
@@ -344,8 +371,8 @@ int i_addr_mode = i_addr_container + sizeof(f_weight_container);                
 int INPUTCOFFEEPOUROVER_ADDRESS = i_addr_mode + sizeof(b_mode);
 int INPUTCOFFEEESPRESSO_ADDRESS = INPUTCOFFEEPOUROVER_ADDRESS + sizeof(INPUTCOFFEEPOUROVER);
 int i_addr_beep = INPUTCOFFEEESPRESSO_ADDRESS + sizeof(INPUTCOFFEEESPRESSO);
-int i_addr_welcome = i_addr_beep + sizeof(b_beep);                                                   //str_welcome
-int i_addr_batteryCalibrationFactor = i_addr_welcome + sizeof(str_welcome);                          //f_batteryCalibrationFactor
+int i_addr_welcome = i_addr_beep + sizeof(b_beep);                                                   //str_welcome text slot
+int i_addr_batteryCalibrationFactor = i_addr_welcome + WELCOME_EEPROM_BYTES;                         //f_batteryCalibrationFactor
 int i_addr_requireHeartBeat = i_addr_batteryCalibrationFactor + sizeof(f_batteryCalibrationFactor);  //b_requireHeartBeat
 int i_addr_screenFlipped = i_addr_requireHeartBeat + sizeof(b_requireHeartBeat);                     //b_screenFlipped
 int i_addr_timeOnTop = i_addr_screenFlipped + sizeof(b_screenFlipped);                               //b_timeOnTop
@@ -359,5 +386,72 @@ int i_addr_driftCompensation = i_addr_quickBoot + sizeof(b_quickBoot);//f_maxDri
 
 
 //int i_addr_debug = i_addr_batteryCalibrationFactor + sizeof(f_batteryCalibrationFactor);  //str_welcome
+
+static inline const char *defaultWelcomeText() {
+#ifdef WELCOME1
+  return WELCOME1;
+#else
+  return "welcome";
+#endif
+}
+
+static inline bool isWelcomeTextByte(uint8_t value) {
+  return value >= 0x20 && value <= 0x7e;
+}
+
+static inline bool welcomeMagicMatches() {
+  for (size_t i = 0; i < WELCOME_EEPROM_MAGIC_BYTES; ++i) {
+    if (EEPROM.read(i_addr_welcome + i) != (uint8_t)WELCOME_EEPROM_MAGIC[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+static inline void loadWelcomeFromEEPROM() {
+  char welcomeBuffer[WELCOME_EEPROM_TEXT_BYTES];
+  size_t textLen = 0;
+  bool valid = welcomeMagicMatches();
+
+  if (valid) {
+    for (size_t i = 0; i < WELCOME_EEPROM_TEXT_BYTES - 1; ++i) {
+      uint8_t value = EEPROM.read(i_addr_welcome + WELCOME_EEPROM_MAGIC_BYTES + i);
+      if (value == '\0') {
+        break;
+      }
+      if (!isWelcomeTextByte(value)) {
+        valid = false;
+        break;
+      }
+      welcomeBuffer[textLen++] = (char)value;
+    }
+  }
+
+  welcomeBuffer[textLen] = '\0';
+  if (valid && textLen > 0) {
+    str_welcome = String(welcomeBuffer);
+  } else {
+    str_welcome = defaultWelcomeText();
+  }
+  str_welcome.trim();
+}
+
+static inline void saveWelcomeToEEPROM(const String &welcome) {
+  String normalized = welcome;
+  normalized.trim();
+  const char *text = normalized.c_str();
+  size_t textLen = normalized.length();
+  if (textLen >= WELCOME_EEPROM_TEXT_BYTES) {
+    textLen = WELCOME_EEPROM_TEXT_BYTES - 1;
+  }
+
+  for (size_t i = 0; i < WELCOME_EEPROM_MAGIC_BYTES; ++i) {
+    EEPROM.write(i_addr_welcome + i, WELCOME_EEPROM_MAGIC[i]);
+  }
+  for (size_t i = 0; i < WELCOME_EEPROM_TEXT_BYTES; ++i) {
+    EEPROM.write(i_addr_welcome + WELCOME_EEPROM_MAGIC_BYTES + i, i < textLen ? text[i] : 0);
+  }
+  EEPROM.commit();
+}
 
 #endif

@@ -2,6 +2,7 @@
 #define USBCOMM_H
 
 #include "ADS1232_ADC.h"
+#include <math.h>
 
 // Forward declaration of scale object (defined in declare.h)
 extern ADS1232_ADC scale;
@@ -15,6 +16,17 @@ void handleAdsReset(uint8_t mode);
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendUsbGyro();
 #endif
+
+static inline uint16_t encodeScaledUInt16(float value, float scale) {
+  float scaled = value * scale;
+  if (!isfinite(scaled) || scaled <= 0.0f) {
+    return 0;
+  }
+  if (scaled > 65535.0f) {
+    return 65535;
+  }
+  return (uint16_t)scaled;
+}
 
 class MyUsbCallbacks {
 public:
@@ -55,6 +67,124 @@ public:
     Serial.print("/");
     Serial.println(required);
     return false;
+  }
+
+  uint8_t calculatePayloadChecksum(uint8_t *data, size_t len) {
+    uint8_t xorSum = 0;
+    for (size_t i = 0; i < len; i++) {
+      xorSum ^= data[i];
+    }
+    return xorSum;
+  }
+
+  bool hasChecksummedFrame(uint8_t *data, size_t len, size_t frameLen) {
+    if (len < frameLen || frameLen < 2) {
+      return false;
+    }
+    return data[frameLen - 1] == calculatePayloadChecksum(data, frameLen - 1);
+  }
+
+  size_t boundedFrameLength(size_t len, size_t frameLen) {
+    return len < frameLen ? len : frameLen;
+  }
+
+  size_t usbCommandFrameLength(uint8_t *data, size_t len) {
+    if (data == nullptr || len == 0) {
+      return 0;
+    }
+    if (data[0] != 0x03) {
+      return 1;
+    }
+    if (len < 2) {
+      return len;
+    }
+
+    switch (data[1]) {
+      case 0x0F:
+        return boundedFrameLength(len, 7);
+      case 0x0A:
+        if (hasChecksummedFrame(data, len, 7)) {
+          return 7;
+        }
+        if (len < 3) {
+          return len;
+        }
+        if (data[2] == 0x01) {
+          return boundedFrameLength(len, 6);
+        }
+        if (data[2] == 0x03 || data[2] == 0x04) {
+          return boundedFrameLength(len, 4);
+        }
+        return boundedFrameLength(len, 3);
+      case 0x0B:
+        if (hasChecksummedFrame(data, len, 7)) {
+          return 7;
+        }
+        return boundedFrameLength(len, 3);
+      case 0x1A:
+        return boundedFrameLength(len, 3);
+      case 0x1B:
+        return boundedFrameLength(len, 2);
+#ifdef BUZZER
+      case 0x1C:
+        return boundedFrameLength(len, 3);
+#endif
+      case 0x1D:
+        return boundedFrameLength(len, 3);
+      case 0x1E:
+        return boundedFrameLength(len, 4);
+      case 0x1F:
+        return boundedFrameLength(len, 2);
+      case 0x20:
+        if (len < 3) {
+          return len;
+        }
+        return boundedFrameLength(len, data[2] == 0x01 ? 4 : 3);
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
+      case 0x21:
+        return boundedFrameLength(len, 2);
+#endif
+      case 0x22:
+        return boundedFrameLength(len, 2);
+      case 0x25:
+        if (hasChecksummedFrame(data, len, 4)) {
+          return 4;
+        }
+        return boundedFrameLength(len, 3);
+      case 0x26:
+        if (hasChecksummedFrame(data, len, 4)) {
+          return 4;
+        }
+        return boundedFrameLength(len, 3);
+      default:
+        return len;
+    }
+  }
+
+  void onStream(uint8_t *data, size_t len) {
+    if (data == nullptr || len == 0) {
+      return;
+    }
+
+    size_t offset = 0;
+    while (offset < len) {
+      if (data[offset] == 0x03) {
+        size_t frameLen = usbCommandFrameLength(data + offset, len - offset);
+        if (frameLen == 0) {
+          return;
+        }
+        onWrite(data + offset, frameLen);
+        offset += frameLen;
+        continue;
+      }
+
+      size_t textLen = 1;
+      while (offset + textLen < len && data[offset + textLen] != 0x03) {
+        textLen++;
+      }
+      onWrite(data + offset, textLen);
+      offset += textLen;
+    }
   }
 
   void onWrite(uint8_t *data, size_t len) {
@@ -377,9 +507,7 @@ public:
     inputString.trim(); // Remove leading/trailing whitespace
     Serial.printf("handling %s\n", inputString.c_str());
     if (inputString.startsWith("welcome ")) {
-      //strcpy(str_welcome, inputString.substring(8).c_str());
-      EEPROM.put(i_addr_welcome, inputString.substring(8));
-      EEPROM.commit();
+      saveWelcomeToEEPROM(inputString.substring(8));
     }
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
     if (inputString.startsWith("gyro")) {
@@ -644,12 +772,12 @@ void buildAdsDebugPacket(byte data[41]) {
   data[17] = info.tareOffset & 0xFF;
   
   // Conversion time (2 bytes, float * 100 for 0.01ms precision)
-  uint16_t convTime = (uint16_t)(info.conversionTimeMs * 100);
+  uint16_t convTime = encodeScaledUInt16(info.conversionTimeMs, 100.0f);
   data[18] = (convTime >> 8) & 0xFF;
   data[19] = convTime & 0xFF;
   
   // SPS (2 bytes, float * 100)
-  uint16_t sps = (uint16_t)(info.sps * 100);
+  uint16_t sps = encodeScaledUInt16(info.sps, 100.0f);
   data[20] = (sps >> 8) & 0xFF;
   data[21] = sps & 0xFF;
   
@@ -764,4 +892,3 @@ void sendUsbAdsDebug() {
 }
 
 #endif
-

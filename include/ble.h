@@ -1,6 +1,7 @@
 #ifndef BLE_H
 #define BLE_H
 #include "declare.h"
+#include <math.h>
 
 
 // #include <BluetoothSerial.h>
@@ -9,7 +10,7 @@ enum BleState {
   DISCONNECTED,
   CONNECTED
 };
-BleState bleState = DISCONNECTED;
+volatile BleState bleState = DISCONNECTED;
 const unsigned long HEARTBEAT_TIMEOUT = 5000;  // 5 seconds
 unsigned long t_lastDisconnectAttempt = 0;
 unsigned long t_lastDisconnectAttemptNotice = 0;
@@ -20,7 +21,7 @@ enum DebugMode {
   DEBUG_SINGLE = 1,
   DEBUG_CONTINUOUS = 2
 };
-DebugMode bleDebugMode = DEBUG_OFF;
+volatile DebugMode bleDebugMode = DEBUG_OFF;
 unsigned long t_lastBleDebugNotify = 0;
 const unsigned long BLE_DEBUG_MIN_INTERVAL = 100;  // ~10 Hz cap for continuous mode
 
@@ -33,7 +34,7 @@ void buildAdsDebugPacket(byte data[41]);
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendBleGyro();
 #endif
-uint16_t connId = 0xFFFF; // not set to 0 because 0 could be a valid client id.
+volatile uint16_t connId = 0xFFFF; // not set to 0 because 0 could be a valid client id.
 
 
 //ble
@@ -48,9 +49,18 @@ uint8_t calculateXOR(uint8_t *data, size_t len) {
 
 // Encode weight into two bytes, big endian
 void encodeWeight(float weight, byte &byte1, byte &byte2) {
-  int weightInt = (int)(weight * 10);  // Convert to grams * 10
-  byte1 = (byte)((weightInt >> 8) & 0xFF);
-  byte2 = (byte)(weightInt & 0xFF);
+  float scaled = weight * 10.0f;  // Convert to grams * 10
+  if (!isfinite(scaled)) {
+    scaled = 0.0f;
+  } else if (scaled > 32767.0f) {
+    scaled = 32767.0f;
+  } else if (scaled < -32768.0f) {
+    scaled = -32768.0f;
+  }
+  int16_t weightInt = (int16_t)scaled;
+  uint16_t encoded = (uint16_t)weightInt;
+  byte1 = (byte)((encoded >> 8) & 0xFF);
+  byte2 = (byte)(encoded & 0xFF);
 }
 
 // This callback will be invoked when a device connects or disconnects.
@@ -88,7 +98,8 @@ class MyServerCallbacks : public BLEServerCallbacks {
 #ifdef BUZZER
     EEPROM.get(i_addr_beep, b_beep);  //read buzzer state after disconnect
 #endif
-    u8g2.setPowerSave(0);
+    b_u8g2Sleep = false;
+    remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
     Serial.print("Device disconnected (connId: ");
     Serial.print(desc->conn_handle);
     Serial.println("), restarting advertising...");
@@ -118,7 +129,8 @@ class MyServerCallbacks : public BLEServerCallbacks {
 #ifdef BUZZER
     EEPROM.get(i_addr_beep, b_beep);
 #endif
-    u8g2.setPowerSave(0);
+    b_u8g2Sleep = false;
+    remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
     Serial.println("Device disconnected, restarting advertising...");
     delay(100);
     pAdvertising->start();
@@ -275,16 +287,22 @@ class MyCallbacks : public BLECharacteristicCallbacks {
             Serial.println(" ***");
           }
         } else if (data[1] == 0x0A) {
+          if (!requireLength(len, 3, "LED/power")) {
+            return;
+          }
           if (data[2] == 0x00) {
             Serial.println("LED off detected. Turn off OLED.");
-            u8g2.setPowerSave(1);
             b_u8g2Sleep = true;
+            remoteReplacePending(WSP_DISPLAY_OFF, WSP_DISPLAY_ON);
             sendBleLedResponse();//include weight voltage version
           } else if (data[2] == 0x01) {
             Serial.println("LED on detected. Turn on OLED.");
-            u8g2.setPowerSave(0);
             b_u8g2Sleep = false;
+            remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
             sendBleLedResponse();//including weight voltage version
+            if (!requireLength(len, 6, "LED on")) {
+              return;
+            }
             if (data[5] == 0x00) {
               b_requireHeartBeat = false;
               Serial.println("*** Heartbeat detection Off ***");
@@ -299,15 +317,23 @@ class MyCallbacks : public BLECharacteristicCallbacks {
             }
           } else if (data[2] == 0x02) {
             Serial.println("Power off detected.");
-            b_powerOff = true;  //teardown happens in esp32_sleep()
+            remoteQueuePending(WSP_POWER_OFF);
           } else if (data[2] == 0x03) {
+            if (!requireLength(len, 4, "low power")) {
+              return;
+            }
             if (data[3] == 0x01) {
               Serial.println("Start Low Power Mode.");
-              u8g2.setContrast(0);
+              b_websocketLowPowerEnabled = true;
+              remoteReplacePending(WSP_LOWPWR_ON, WSP_LOWPWR_OFF);
             } else if (data[3] == 0x00) {
               Serial.println("Exit low power mode.");
-              u8g2.setContrast(255);
+              b_websocketLowPowerEnabled = false;
+              remoteReplacePending(WSP_LOWPWR_OFF, WSP_LOWPWR_ON);
             } else if (data[3] == 0xFF) {
+              if (!requireLength(len, 7, "heartbeat")) {
+                return;
+              }
               if (data[4] == 0xFF) {
                 if (data[5] == 0x00) {
                   if (data[6] == 0x0A) {
@@ -320,37 +346,39 @@ class MyCallbacks : public BLECharacteristicCallbacks {
               }
             }
           } else if (data[2] == 0x04) {
+            if (!requireLength(len, 4, "soft sleep")) {
+              return;
+            }
             if (data[3] == 0x01) {
               Serial.println("Start Soft Sleep.");
-              u8g2.setPowerSave(1);
               b_softSleep = true;
-              digitalWrite(PWR_CTRL, LOW);
-              //#if defined(ACC_MPU6050) || defined(ACC_BMA400)
-              digitalWrite(ACC_PWR_CTRL, LOW);
-              //#endif
+              b_u8g2Sleep = true;
+              remoteReplacePending(WSP_SLEEP_ON, WSP_SLEEP_OFF);
             } else if (data[3] == 0x00) {
               Serial.println("Exit Soft Sleep.");
-              digitalWrite(PWR_CTRL, HIGH);
-              //#if defined(ACC_MPU6050) || defined(ACC_BMA400)
-              digitalWrite(ACC_PWR_CTRL, HIGH);
-              //#endif
-              u8g2.setPowerSave(0);
               b_softSleep = false;
+              b_u8g2Sleep = false;
+              remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);
             }
           }
         } else if (data[1] == 0x0B) {
+          if (!requireLength(len, 3, "timer")) {
+            return;
+          }
           if (data[2] == 0x03) {
             Serial.println("Timer start detected.");
-            stopWatch.reset();
-            stopWatch.start();
+            remoteReplacePending(WSP_TIMER_START, WSP_TIMER_STOP | WSP_TIMER_ZERO);
           } else if (data[2] == 0x00) {
             Serial.println("Timer stop detected.");
-            stopWatch.stop();
+            remoteReplacePending(WSP_TIMER_STOP, WSP_TIMER_START | WSP_TIMER_ZERO);
           } else if (data[2] == 0x02) {
             Serial.println("Timer zero detected.");
-            stopWatch.reset();
+            remoteReplacePending(WSP_TIMER_ZERO, WSP_TIMER_START | WSP_TIMER_STOP);
           }
         } else if (data[1] == 0x1A) {
+          if (!requireLength(len, 3, "calibration")) {
+            return;
+          }
           if (data[2] == 0x00) {
             Serial.println("Manual Calibration via BLE");
             i_button_cal_status = 1;
@@ -363,11 +391,14 @@ class MyCallbacks : public BLECharacteristicCallbacks {
             b_calibration = true;
           }
         } else if (data[1] == 0x1B) {
-          Serial.println("Start WiFi OTA");
-          wifiUpdate();
+          Serial.println("Start WiFi OTA queued.");
+          remoteQueuePending(WSP_WIFI_UPDATE);
         }
 #ifdef BUZZER
         else if (data[1] == 0x1C) {  //buzzer settings
+          if (!requireLength(len, 3, "buzzer")) {
+            return;
+          }
           if (data[2] == 0x00) {
             Serial.println("Buzzer Off");
             b_beep = false;  // won't store into eeprom
@@ -381,20 +412,23 @@ class MyCallbacks : public BLECharacteristicCallbacks {
         }
 #endif
         else if (data[1] == 0x1D) {  //Sample settings
+          if (!requireLength(len, 3, "sample settings")) {
+            return;
+          }
           if (data[2] == 0x00) {
-            scale.setSamplesInUse(1);
-            Serial.print("Samples in use set to: ");
-            Serial.println(scale.getSamplesInUse());
+            remoteQueueSamplesInUse(1);
+            Serial.println("Samples in use queued: 1");
           } else if (data[2] == 0x01) {
-            scale.setSamplesInUse(2);
-            Serial.print("Samples in use set to: ");
-            Serial.println(scale.getSamplesInUse());
+            remoteQueueSamplesInUse(2);
+            Serial.println("Samples in use queued: 2");
           } else if (data[2] == 0x03) {
-            scale.setSamplesInUse(4);
-            Serial.print("Samples in use set to: ");
-            Serial.println(scale.getSamplesInUse());
+            remoteQueueSamplesInUse(4);
+            Serial.println("Samples in use queued: 4");
           }
         } else if (data[1] == 0x1E) {
+          if (!requireLength(len, 4, "menu/about/debug")) {
+            return;
+          }
           if (data[2] == 0x00) {
             //menu control
             if (data[3] == 0x00) {
@@ -437,8 +471,12 @@ class MyCallbacks : public BLECharacteristicCallbacks {
             }
           }
         } else if (data[1] == 0x1F) {
-          reset();
+          Serial.println("Reset queued.");
+          remoteQueuePending(WSP_RESET);
         } else if (data[1] == 0x20) {
+          if (!requireLength(len, 3, "USB weight")) {
+            return;
+          }
           if (data[2] == 0x00) {
             Serial.println("Weight by USB disabled");
             b_usbweight_enabled = false;
@@ -462,7 +500,8 @@ class MyCallbacks : public BLECharacteristicCallbacks {
         }
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
         else if (data[1] == 0x21) {
-          sendBleGyro();
+          Serial.println("BLE gyro response queued.");
+          remoteQueuePending(WSP_BLE_GYRO);
         }
 #endif
         else if (data[1] == 0x22) {
