@@ -13,6 +13,7 @@ class DecentScale {
         this.writeCharacteristic = null;
         this.timeout = 20;
         this.fixDroppedCommand = true;
+        this.notificationHandler = (event) => this.notification_handler(event);
         this.CHAR_READ = '0000fff0-0000-1000-8000-00805f9b34fb';
         this.CHAR_WRITE = '000036f5-0000-1000-8000-00805f9b34fb';
         this.ledOn = false;
@@ -47,18 +48,22 @@ class DecentScale {
         this.currentQCState = this.QC_STATES.WAITING_FOR_NEXT;
         this.removalTimeout = null;
         this.removalTimeoutDuration = 5000; // 5 seconds
-        this.exportCSVButton = null;
-        this.exportJSONButton = null;
         //websocket 
         this.ws = new ReconnectingWebSocket(`ws://${window.location.host}/snapshot`);
         this.ws.debug =true;
     this.ws.addEventListener('message', (event) => {
-        const jsondata = JSON.parse(event.data);
-        if (jsondata.grams !== undefined){
-        const parsedWeight = jsondata.grams;
-        const weight = isNaN(parsedWeight) ? 0 : parsedWeight;
-        this.handleWebSocketWeight(weight);
-        const currentTimestamp = jsondata.ms;
+        let jsondata;
+        try {
+            jsondata = JSON.parse(event.data);
+        } catch (error) {
+            console.error('Failed to parse WebSocket message as JSON:', event.data, error);
+            return;
+        }
+
+        if (jsondata.grams !== undefined) {
+            const parsedWeight = Number(jsondata.grams);
+            const weight = isNaN(parsedWeight) ? 0 : parsedWeight;
+            this.handleWebSocketWeight(weight);
         }
     });
 
@@ -590,7 +595,7 @@ class DecentScale {
         try {
             await this.readCharacteristic.startNotifications();
             this.readCharacteristic.addEventListener('characteristicvaluechanged',
-                (event) => this.notification_handler(event));
+                this.notificationHandler);
         } catch (error) {
             console.error('Enable notification error:', error);
             throw error;
@@ -600,7 +605,7 @@ class DecentScale {
         try {
             await this.readCharacteristic.stopNotifications();
             this.readCharacteristic.removeEventListener('characteristicvaluechanged',
-                (event) => this.notification_handler(event));
+                this.notificationHandler);
         } catch (error) {
             console.error('Disable notification error:', error);
             throw error;
@@ -778,7 +783,14 @@ class DecentScale {
 
     getPresets() {
         const presetsJson = localStorage.getItem('decentScalePresets');
-        return presetsJson ? JSON.parse(presetsJson) : {};
+        if (!presetsJson) return {};
+        try {
+            const presets = JSON.parse(presetsJson);
+            return presets && typeof presets === 'object' && !Array.isArray(presets) ? presets : {};
+        } catch (error) {
+            console.error('Invalid stored presets; ignoring saved preset data.', error);
+            return {};
+        }
     }
 
     getPreset(name) {

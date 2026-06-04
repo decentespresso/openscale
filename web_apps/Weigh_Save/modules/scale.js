@@ -24,6 +24,7 @@ export class DecentScale {
         this.weightReadings = [];
         this.weightData = [];
         this.commandQueue = Promise.resolve();
+        this.notificationHandler = this.notification_handler.bind(this);
         
         // Container and dosing properties
         this.containerWeight = 0;
@@ -60,8 +61,8 @@ export class DecentScale {
         this.usbConnection = new USBConnection(uiController);
         this.activeConnection = null;
                 // Set notification handler
-        this.btConnection.setNotificationHandler(this.notification_handler.bind(this));
-        this.usbConnection.setNotificationHandler(this.notification_handler.bind(this));
+        this.btConnection.setNotificationHandler(this.notificationHandler);
+        this.usbConnection.setNotificationHandler(this.notificationHandler);
     }
 //BLE OR USB connect method 
 async connect(type) {
@@ -161,13 +162,13 @@ async connect(type) {
 
     async _enableNotification() {
         await this.readCharacteristic.startNotifications();
-        this.readCharacteristic.addEventListener('characteristicvaluechanged', this.notification_handler.bind(this));
+        this.readCharacteristic.addEventListener('characteristicvaluechanged', this.notificationHandler);
     }
 
     async _disable_notification() {
         if (this.readCharacteristic) {
             await this.readCharacteristic.stopNotifications();
-            this.readCharacteristic.removeEventListener('characteristicvaluechanged', this.notification_handler.bind(this));
+            this.readCharacteristic.removeEventListener('characteristicvaluechanged', this.notificationHandler);
         }
     }
 

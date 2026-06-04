@@ -1,7 +1,6 @@
 import { DecentScale } from './modules/scale.js';
 import { UIController } from './modules/ui-controller.js';
 import { TimerManager } from './modules/timer.js';
-import { Led } from './modules/led.js';
 
 document.addEventListener('DOMContentLoaded', () => {
     const timerManager = new TimerManager();
@@ -21,7 +20,11 @@ document.addEventListener('DOMContentLoaded', () => {
   try {
     const jsondata = JSON.parse(event.data);
     if (jsondata.grams !== undefined) {
-      currentWeight = jsondata.grams;
+      const weight = Number(jsondata.grams);
+      if (!Number.isFinite(weight)) {
+        return;
+      }
+      currentWeight = weight;
       ui.updateWeightDisplay(currentWeight);
             scale.processWeight(currentWeight);
     }
@@ -64,13 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
    
 
-    // Remove BLE/USB/DecentScale/LED logic
-
-
     // Other controls
-    document.getElementById('tareButton')?.addEventListener('click', () => scale.tare());
-    document.getElementById('toggleLed')?.addEventListener('click', () => led.toggleLed());
     document.getElementById('exportCSV')?.addEventListener('click', () => scale.exportToCSV());
     document.getElementById('exportJSON')?.addEventListener('click', () => scale.exportToJSON());
 });
-

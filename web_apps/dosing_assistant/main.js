@@ -44,16 +44,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     ws.addEventListener('message', (event) => {
-        const jsondata = JSON.parse(event.data);
-        if (jsondata.grams !== undefined) {
-        const weight = jsondata.grams;
-        const currentTimestamp = jsondata.ms;
-
-        if (!isNaN(weight)) {
-            // Pass weight to scale logic
-            scale.handleWebSocketWeight(weight);
+        let jsondata;
+        try {
+            jsondata = JSON.parse(event.data);
+        } catch (error) {
+            console.error('Failed to parse WebSocket message as JSON:', event.data, error);
+            return;
         }
-    }
+
+        if (jsondata.grams !== undefined) {
+            const weight = Number(jsondata.grams);
+            if (!isNaN(weight)) {
+                // Pass weight to scale logic
+                scale.handleWebSocketWeight(weight);
+            }
+        }
     });
     // Other button listeners - using correct IDs
     document.getElementById('tareButton')?.addEventListener('click', () => 

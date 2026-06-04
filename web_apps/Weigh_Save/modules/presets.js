@@ -72,7 +72,14 @@ export class PresetManager {
     
     getPresets() {
         const presetsJson = localStorage.getItem('decentScalePresets');
-        return presetsJson ? JSON.parse(presetsJson) : {};
+        if (!presetsJson) return {};
+        try {
+            const presets = JSON.parse(presetsJson);
+            return presets && typeof presets === 'object' && !Array.isArray(presets) ? presets : {};
+        } catch (error) {
+            console.error('Invalid stored presets; ignoring saved preset data.', error);
+            return {};
+        }
     }
     
     loadPreset(name) {
