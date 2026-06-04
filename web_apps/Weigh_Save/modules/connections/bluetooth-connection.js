@@ -9,6 +9,13 @@ export class BluetoothConnection extends BaseConnection {
         this.server = null;
         this.readCharacteristic = null;
         this.writeCharacteristic = null;
+        this.boundNotificationHandler = (event) => {
+            if (typeof this.notificationHandler === 'function') {
+                this.notificationHandler(event);
+            } else {
+                Debug.log('BLE_ERROR', 'Notification handler not set or invalid');
+            }
+        };
     }
 
     async connect() {
@@ -73,22 +80,15 @@ export class BluetoothConnection extends BaseConnection {
 
     async _enableNotification() {
         await this.readCharacteristic.startNotifications();
-        // Use arrow function to preserve 'this' context and handle events properly
         this.readCharacteristic.addEventListener('characteristicvaluechanged', 
-            (event) => {
-                if (typeof this.notificationHandler === 'function') {
-                    this.notificationHandler(event);
-                } else {
-                    Debug.log('BLE_ERROR', 'Notification handler not set or invalid');
-                }
-            }
+            this.boundNotificationHandler
         );
         Debug.log('BLE', 'Notifications enabled');
     }
     async _disable_notification() {
         if (this.readCharacteristic) {
             await this.readCharacteristic.stopNotifications();
-            // this.readCharacteristic.removeEventListener('characteristicvaluechanged', this.notification_handler.bind(this));
+            this.readCharacteristic.removeEventListener('characteristicvaluechanged', this.boundNotificationHandler);
         }
     }
     async disconnect() {

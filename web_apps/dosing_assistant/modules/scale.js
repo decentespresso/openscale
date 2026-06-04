@@ -17,6 +17,7 @@ export class DecentScale {
         this.weightReadings = [];
         this.weightData = [];
         this.commandQueue = Promise.resolve();
+        this.notificationHandler = this.notification_handler.bind(this);
         
         // Container and dosing properties
         this.containerWeight = 0;
@@ -146,13 +147,13 @@ export class DecentScale {
 
     async _enableNotification() {
         await this.readCharacteristic.startNotifications();
-        this.readCharacteristic.addEventListener('characteristicvaluechanged', this.notification_handler.bind(this));
+        this.readCharacteristic.addEventListener('characteristicvaluechanged', this.notificationHandler);
     }
 
     async _disable_notification() {
         if (this.readCharacteristic) {
             await this.readCharacteristic.stopNotifications();
-            this.readCharacteristic.removeEventListener('characteristicvaluechanged', this.notification_handler.bind(this));
+            this.readCharacteristic.removeEventListener('characteristicvaluechanged', this.notificationHandler);
         }
     }
 
