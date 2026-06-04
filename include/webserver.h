@@ -2,6 +2,7 @@
 #define SCALE_WEBSERVER_H
 
 #include "esp_system.h"
+#include "parameter.h"
 #include "wifi_setup.h"
 #include <ArduinoJson.h>
 #include <AsyncJson.h>
@@ -18,10 +19,22 @@ static AsyncWebSocket websocket("/snapshot");
 // can't saturate the radio and starve the 10 Hz broadcast.
 static const unsigned long HTTP_MIN_INTERVAL_WHILE_STREAMING_MS = 200;
 // Bucket depth. A single web-app page load pulls HTML + CSS + a JS module graph
-// (~10-12 requests in a burst); the bucket lets that through at once, then
-// throttles to the refill rate above. Browsers don't retry 503 on sub-resources,
-// so a too-tight limit would leave the on-device apps rendering broken.
-static const int HTTP_STREAMING_BURST = 12;
+// (up to ~15 requests in a burst today); the bucket lets that through at once,
+// then throttles to the refill rate above. Browsers don't retry 503 on
+// sub-resources, so a too-tight limit leaves the on-device apps broken.
+static const int HTTP_STREAMING_BURST = 24;
+// Refill the burst once per page navigation. This prevents a normal app load
+// from inheriting an empty bucket left by an existing stream, while still
+// throttling sustained floods after the page-load burst.
+static const unsigned long HTTP_PAGELOAD_BURST_RESET_MS = 1500;
+static const size_t WIFI_SETUP_MAX_JSON_BYTES = 256;
+static const size_t WIFI_SETUP_MAX_SSID_BYTES = 32;
+static const size_t WIFI_SETUP_MAX_PASS_BYTES = 64;
+static const unsigned long WIFI_SETUP_RESTART_DELAY_MS = 500;
+
+static bool httpIsPageLoadRequest(const String &url) {
+  return url == "/" || url.endsWith(".html");
+}
 
 void startWebServer() {
   // Handlers must be registered before server.begin(), and only once across
@@ -35,18 +48,28 @@ void startWebServer() {
             request->send(400);
             return;
           }
-          if (jsonObj["ssid"] == NULL) {
+          if (!jsonObj["ssid"].is<const char *>()) {
             request->send(400);
             return;
           }
-          String ssid = jsonObj["ssid"];
-          String pass = jsonObj["pass"];
+          if (jsonObj["pass"] != NULL && !jsonObj["pass"].is<const char *>()) {
+            request->send(400);
+            return;
+          }
+          String ssid = jsonObj["ssid"].as<String>();
+          String pass = jsonObj["pass"].is<const char *>() ? jsonObj["pass"].as<String>() : "";
+          if (ssid.length() > WIFI_SETUP_MAX_SSID_BYTES ||
+              pass.length() > WIFI_SETUP_MAX_PASS_BYTES) {
+            request->send(400);
+            return;
+          }
 
-          saveCredentials(ssid, pass);
+          saveCredentialsForRestart(ssid, pass);
           Serial.println("new ssid saved");
           request->send(200);
-          esp_restart();
+          remoteQueueResetAt(millis() + WIFI_SETUP_RESTART_DELAY_MS);
         });
+    wifiHandler->setMaxContentLength(WIFI_SETUP_MAX_JSON_BYTES);
     server.addHandler(wifiHandler);
 
     // Allow multiple concurrent WebSocket clients (e.g. the on-device web UI
@@ -86,7 +109,8 @@ void startWebServer() {
     //     bucket is clamped at HTTP_STREAMING_BURST, so accumulated idle time
     //     never pre-fills it beyond the burst depth.
     server.addMiddleware([](AsyncWebServerRequest *request, ArMiddlewareNext next) {
-      if (request->url() == "/snapshot") {
+      String url = request->url();
+      if (url == "/snapshot") {
         next();
         return;
       }
@@ -97,7 +121,15 @@ void startWebServer() {
       if (websocket.count() > 0) {
         static int tokens = HTTP_STREAMING_BURST;
         static unsigned long lastRefill = 0;
+        static unsigned long lastPageLoadBoost = 0;
         unsigned long now = millis();
+        if (httpIsPageLoadRequest(url) &&
+            (lastPageLoadBoost == 0 ||
+             now - lastPageLoadBoost >= HTTP_PAGELOAD_BURST_RESET_MS)) {
+          tokens = HTTP_STREAMING_BURST;
+          lastPageLoadBoost = now;
+          lastRefill = now;
+        }
         unsigned long refill = (now - lastRefill) / HTTP_MIN_INTERVAL_WHILE_STREAMING_MS;
         if (refill > 0) {
           long t = tokens + (long)refill;

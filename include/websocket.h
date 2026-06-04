@@ -7,6 +7,11 @@
 #include "wifi_setup.h"
 #include "webserver.h"
 
+void wifiUpdate();
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
+void sendBleGyro();
+#endif
+
 unsigned long websocketIntervalForRate(float hz) {
   if (fabs(hz - 2.0) < 0.01) {
     return WEBSOCKET_2HZ_NOTIFY_INTERVAL_MS;
@@ -98,11 +103,14 @@ int websocketBatteryPercent() {
 }
 
 // Queue a pending hardware action so the main loop performs it on its own
-// task. The WS event callback runs on the AsyncTCP task and must not touch
-// u8g2 (I2C bus) or peripheral power-rail GPIOs directly. StopWatch and
-// plain bool/uint32 flag writes are safe to do inline in the callback.
-inline void wsQueuePending(uint32_t bits) {
+// task. Remote callbacks (WebSocket on AsyncTCP, BLE stack callbacks) must not
+// touch u8g2 (I2C/SPI bus), peripheral power-rail GPIOs, StopWatch, or scale
+// mutable state directly.
+inline void remoteQueuePending(uint32_t bits) {
   portENTER_CRITICAL(&wsPendingMux);
+  if (bits & WSP_RESET) {
+    pendingResetAt = 0;
+  }
   wsPendingMask |= bits;
   portEXIT_CRITICAL(&wsPendingMux);
 }
@@ -111,26 +119,58 @@ inline void wsQueuePending(uint32_t bits) {
 // for mutually-exclusive action pairs (DISPLAY_ON/OFF, SLEEP_ON/OFF, ...) so
 // that if a previous opposing action is still queued, it's superseded by
 // the new one rather than running both in source order.
-inline void wsReplacePending(uint32_t setBits, uint32_t clearBits) {
+inline void remoteReplacePending(uint32_t setBits, uint32_t clearBits) {
   portENTER_CRITICAL(&wsPendingMux);
   wsPendingMask = (wsPendingMask & ~clearBits) | setBits;
   portEXIT_CRITICAL(&wsPendingMux);
 }
 
+inline void remoteQueueSamplesInUse(uint8_t samplesInUse) {
+  portENTER_CRITICAL(&wsPendingMux);
+  pendingSamplesInUse = samplesInUse;
+  wsPendingMask |= WSP_SET_SAMPLES;
+  portEXIT_CRITICAL(&wsPendingMux);
+}
+
+// Backwards-compatible names for the WebSocket command handler.
+inline void wsQueuePending(uint32_t bits) {
+  remoteQueuePending(bits);
+}
+
+inline void wsReplacePending(uint32_t setBits, uint32_t clearBits) {
+  remoteReplacePending(setBits, clearBits);
+}
+
 void processWsPendingCmds() {
   portENTER_CRITICAL(&wsPendingMux);
   uint32_t mask = wsPendingMask;
+  uint8_t samplesInUse = pendingSamplesInUse;
+  unsigned long resetAt = pendingResetAt;
   wsPendingMask = 0;
+  if (mask & WSP_RESET) {
+    pendingResetAt = 0;
+  }
   portEXIT_CRITICAL(&wsPendingMux);
   if (mask == 0) return;
 
-  // u8g2 (I2C), peripheral power-rail GPIOs, and the StopWatch timer are
-  // touched here on the main loop task. Doing them from the AsyncTCP task
-  // would race the main loop (I2C/GPIO) or tear a concurrent StopWatch read in
-  // the status frame. State flags touched by the user-visible status
-  // (b_u8g2Sleep, b_softSleep, ...) are updated synchronously in the WS
-  // callback so the response is accurate; b_powerOff is set here so it
-  // sequences after the centralized shutdown chain in shut_down_now_nobeep().
+  // Hardware and multi-field state mutations are touched here on the main loop
+  // task. Doing them from remote callbacks would race display/power drivers or
+  // tear concurrent StopWatch/scale state. State flags used by status frames
+  // (b_u8g2Sleep, b_softSleep, ...) are updated synchronously by the producer
+  // so responses reflect the requested state immediately.
+  if (mask & WSP_RESET) {
+    if (resetAt != 0 && (long)(millis() - resetAt) < 0) {
+      portENTER_CRITICAL(&wsPendingMux);
+      wsPendingMask |= WSP_RESET;
+      pendingResetAt = resetAt;
+      portEXIT_CRITICAL(&wsPendingMux);
+      mask &= ~WSP_RESET;
+      if (mask == 0) return;
+    } else {
+      reset();
+      return;
+    }
+  }
   if (mask & WSP_DISPLAY_ON)  { u8g2.setPowerSave(0); }
   if (mask & WSP_DISPLAY_OFF) { u8g2.setPowerSave(1); }
   if (mask & WSP_LOWPWR_ON)   { u8g2.setContrast(0); }
@@ -140,6 +180,11 @@ void processWsPendingCmds() {
     digitalWrite(ACC_PWR_CTRL, HIGH);
     u8g2.setPowerSave(0);
   }
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
+  if ((mask & WSP_BLE_GYRO) && !(mask & WSP_SLEEP_ON) && !b_softSleep) {
+    sendBleGyro();
+  }
+#endif
   if (mask & WSP_SLEEP_ON) {
     u8g2.setPowerSave(1);
     digitalWrite(PWR_CTRL, LOW);
@@ -151,6 +196,14 @@ void processWsPendingCmds() {
   }
   if (mask & WSP_TIMER_STOP)  { stopWatch.stop(); }
   if (mask & WSP_TIMER_ZERO)  { stopWatch.reset(); }
+  if (mask & WSP_SET_SAMPLES) {
+    scale.setSamplesInUse(samplesInUse);
+    Serial.print("Samples in use set to: ");
+    Serial.println(scale.getSamplesInUse());
+  }
+  if (mask & WSP_WIFI_UPDATE) {
+    wifiUpdate();
+  }
   if (mask & WSP_POWER_OFF) {
     b_powerOff = true;
   }
@@ -177,6 +230,7 @@ void processWsPendingCmds() {
 // keeps the post-burst trough above the lwIP starvation knee. Measured: 2h+
 // soak at 4 clients, 0% ping loss, 0 reconnects, ~300 averted OOMs.
 static const uint32_t WS_BROADCAST_HEAP_FLOOR = 32000;
+static const size_t WS_CONTROL_MAX_FRAME_BYTES = 512;
 static uint32_t g_wsBroadcastHeapSkips = 0;
 static inline bool wsBroadcastHeapOk() {
   if (ESP.getFreeHeap() >= WS_BROADCAST_HEAP_FLOOR) return true;
@@ -189,6 +243,22 @@ static inline bool wsBroadcastHeapOk() {
                   (unsigned long)ESP.getFreeHeap(),
                   (unsigned long)WS_BROADCAST_HEAP_FLOOR,
                   (unsigned long)g_wsBroadcastHeapSkips);
+  }
+  return false;
+}
+
+static uint32_t g_wsClientHeapSkips = 0;
+static inline bool wsClientHeapOk() {
+  if (ESP.getFreeHeap() >= WS_BROADCAST_HEAP_FLOOR) return true;
+  g_wsClientHeapSkips++;
+  static unsigned long lastLog = 0;
+  unsigned long now = millis();
+  if (now - lastLog >= 2000) {
+    lastLog = now;
+    Serial.printf("[ws] low heap %lu < %lu -> skip client reply (total skips=%lu)\n",
+                  (unsigned long)ESP.getFreeHeap(),
+                  (unsigned long)WS_BROADCAST_HEAP_FLOOR,
+                  (unsigned long)g_wsClientHeapSkips);
   }
   return false;
 }
@@ -214,6 +284,7 @@ void sendWebsocketPowerOff(int i_reason) {
 }
 
 void sendWebsocketRateInfo(AsyncWebSocketClient *client, const char *status) {
+  if (!wsClientHeapOk()) return;
   unsigned long hz = websocketRateForInterval(weightWebsocketNotifyInterval);
   client->printf("{\"type\":\"rate\",\"status\":\"%s\",\"interval_ms\":%lu,\"hz\":%lu,\"supported_hz\":[2,5,10]}",
                  status,
@@ -236,6 +307,7 @@ const char *websocketWifiModeName() {
 }
 
 void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
+  if (!wsClientHeapOk()) return;
   client->printf("{\"type\":\"status\",\"status\":\"%s\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu,\"wifi_on_boot\":%s,\"wifi_active\":%s,\"wifi_connected\":%s,\"wifi_mode\":\"%s\",\"wifi_credentials_saved\":%s,\"ble_enabled\":%s,\"ble_connected\":%s,\"ble_buttons_enabled\":%s,\"ble_heartbeat_required\":%s,\"auto_sleep_enabled\":%s,\"auto_sleep_minutes\":15,\"quick_boot_enabled\":%s,\"time_on_top\":%s,\"drift_compensation_max_grams\":%.3f}",
                  status,
                  FIRMWARE_VER,
@@ -282,6 +354,7 @@ void sendWebsocketWeightAll(float grams, unsigned long ms) {
 }
 
 void sendWebsocketError(AsyncWebSocketClient *client, const char *code, const char *message) {
+  if (!wsClientHeapOk()) return;
   client->printf("{\"type\":\"error\",\"code\":\"%s\",\"message\":\"%s\",\"ms\":%lu}",
                  code,
                  message,
@@ -632,6 +705,10 @@ void setupWebsocketEvents() {
       // Only handle complete, unfragmented text frames. Fragmented or binary
       // frames would corrupt the parsers below.
       if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+        if (info->len > WS_CONTROL_MAX_FRAME_BYTES) {
+          sendWebsocketError(client, "frame_too_large", "control frame too large");
+          return;
+        }
         String msg((const char *)data, len);
         Serial.print("Websocket recv: ");
         Serial.println(msg);
