@@ -3,6 +3,7 @@
 
 #include "ADS1232_ADC.h"
 #include <math.h>
+#include <string.h>
 
 // Forward declaration of scale object (defined in declare.h)
 extern ADS1232_ADC scale;
@@ -36,6 +37,13 @@ public:
   void (*setTrackingUpdateInterval)(float);
   void (*buttonSquare_Pressed)();
   void (*buttonCircle_Pressed)();
+
+  static const size_t USB_RX_BUFFER_SIZE = 160;
+  static const unsigned long USB_RX_FRAME_TIMEOUT_MS = 30;
+
+  uint8_t usbRxBuffer[USB_RX_BUFFER_SIZE];
+  size_t usbRxLen = 0;
+  unsigned long usbLastByteAt = 0;
 
   uint8_t calculateChecksum(uint8_t *data, size_t len) {
     uint8_t xorSum = 0;
@@ -84,11 +92,24 @@ public:
     return data[frameLen - 1] == calculatePayloadChecksum(data, frameLen - 1);
   }
 
-  size_t boundedFrameLength(size_t len, size_t frameLen) {
-    return len < frameLen ? len : frameLen;
+  size_t fixedFrameLength(size_t len, size_t frameLen) {
+    return len >= frameLen ? frameLen : 0;
   }
 
-  size_t usbCommandFrameLength(uint8_t *data, size_t len) {
+  size_t checksummedOrShortFrameLength(uint8_t *data, size_t len, size_t shortLen, size_t frameLen, bool allowShort) {
+    if (hasChecksummedFrame(data, len, frameLen)) {
+      return frameLen;
+    }
+    if (len < shortLen) {
+      return 0;
+    }
+    if (allowShort || len >= frameLen) {
+      return shortLen;
+    }
+    return 0;
+  }
+
+  size_t usbCommandFrameLength(uint8_t *data, size_t len, bool allowShort) {
     if (data == nullptr || len == 0) {
       return 0;
     }
@@ -96,68 +117,134 @@ public:
       return 1;
     }
     if (len < 2) {
-      return len;
+      return 0;
     }
 
     switch (data[1]) {
       case 0x0F:
-        return boundedFrameLength(len, 7);
+        return fixedFrameLength(len, 7);
       case 0x0A:
         if (hasChecksummedFrame(data, len, 7)) {
           return 7;
         }
         if (len < 3) {
-          return len;
+          return 0;
         }
         if (data[2] == 0x01) {
-          return boundedFrameLength(len, 6);
+          return checksummedOrShortFrameLength(data, len, 6, 7, allowShort);
         }
         if (data[2] == 0x03 || data[2] == 0x04) {
-          return boundedFrameLength(len, 4);
+          return checksummedOrShortFrameLength(data, len, 4, 7, allowShort);
         }
-        return boundedFrameLength(len, 3);
+        return checksummedOrShortFrameLength(data, len, 3, 7, allowShort);
       case 0x0B:
-        if (hasChecksummedFrame(data, len, 7)) {
-          return 7;
-        }
-        return boundedFrameLength(len, 3);
+        return checksummedOrShortFrameLength(data, len, 3, 7, allowShort);
       case 0x1A:
-        return boundedFrameLength(len, 3);
+        return fixedFrameLength(len, 3);
       case 0x1B:
-        return boundedFrameLength(len, 2);
+        return fixedFrameLength(len, 2);
 #ifdef BUZZER
       case 0x1C:
-        return boundedFrameLength(len, 3);
+        return fixedFrameLength(len, 3);
 #endif
       case 0x1D:
-        return boundedFrameLength(len, 3);
+        return fixedFrameLength(len, 3);
       case 0x1E:
-        return boundedFrameLength(len, 4);
+        return fixedFrameLength(len, 4);
       case 0x1F:
-        return boundedFrameLength(len, 2);
+        return fixedFrameLength(len, 2);
       case 0x20:
         if (len < 3) {
-          return len;
+          return 0;
         }
-        return boundedFrameLength(len, data[2] == 0x01 ? 4 : 3);
+        return fixedFrameLength(len, data[2] == 0x01 ? 4 : 3);
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
       case 0x21:
-        return boundedFrameLength(len, 2);
+        return fixedFrameLength(len, 2);
 #endif
       case 0x22:
-        return boundedFrameLength(len, 2);
+        return fixedFrameLength(len, 2);
       case 0x25:
-        if (hasChecksummedFrame(data, len, 4)) {
-          return 4;
-        }
-        return boundedFrameLength(len, 3);
+        return checksummedOrShortFrameLength(data, len, 3, 4, allowShort);
       case 0x26:
-        if (hasChecksummedFrame(data, len, 4)) {
-          return 4;
-        }
-        return boundedFrameLength(len, 3);
+        return checksummedOrShortFrameLength(data, len, 3, 4, allowShort);
       default:
-        return len;
+        return fixedFrameLength(len, 2);
+    }
+  }
+
+  void consumeUsbRxBytes(size_t count) {
+    if (count >= usbRxLen) {
+      usbRxLen = 0;
+      return;
+    }
+    memmove(usbRxBuffer, usbRxBuffer + count, usbRxLen - count);
+    usbRxLen -= count;
+  }
+
+  void appendToUsbRxBuffer(uint8_t *data, size_t len) {
+    if (data == nullptr || len == 0) {
+      return;
+    }
+
+    usbLastByteAt = millis();
+    if (len > USB_RX_BUFFER_SIZE) {
+      data += len - USB_RX_BUFFER_SIZE;
+      len = USB_RX_BUFFER_SIZE;
+      usbRxLen = 0;
+      Serial.println("USB RX buffer overflow; keeping newest bytes");
+    } else if (usbRxLen + len > USB_RX_BUFFER_SIZE) {
+      usbRxLen = 0;
+      Serial.println("USB RX buffer overflow; dropping buffered bytes");
+    }
+
+    memcpy(usbRxBuffer + usbRxLen, data, len);
+    usbRxLen += len;
+  }
+
+  bool usbRxTimedOut() {
+    return usbRxLen > 0 && millis() - usbLastByteAt >= USB_RX_FRAME_TIMEOUT_MS;
+  }
+
+  size_t bufferedTextLength(bool allowTimeout) {
+    for (size_t i = 0; i < usbRxLen; i++) {
+      if (usbRxBuffer[i] == 0x03) {
+        return i;
+      }
+      if (usbRxBuffer[i] == '\n' || usbRxBuffer[i] == '\r') {
+        return i + 1;
+      }
+    }
+    return allowTimeout ? usbRxLen : 0;
+  }
+
+  void processUsbRxBuffer(bool allowTimeout) {
+    while (usbRxLen > 0) {
+      bool timedOut = allowTimeout && usbRxTimedOut();
+
+      if (usbRxBuffer[0] == 0x03) {
+        size_t frameLen = usbCommandFrameLength(usbRxBuffer, usbRxLen, timedOut);
+        if (frameLen == 0) {
+          if (timedOut) {
+            Serial.println("Dropping incomplete USB binary frame");
+            consumeUsbRxBytes(1);
+            continue;
+          }
+          return;
+        }
+
+        onWrite(usbRxBuffer, frameLen);
+        consumeUsbRxBytes(frameLen);
+        continue;
+      }
+
+      size_t textLen = bufferedTextLength(timedOut);
+      if (textLen == 0) {
+        return;
+      }
+
+      onWrite(usbRxBuffer, textLen);
+      consumeUsbRxBytes(textLen);
     }
   }
 
@@ -166,25 +253,12 @@ public:
       return;
     }
 
-    size_t offset = 0;
-    while (offset < len) {
-      if (data[offset] == 0x03) {
-        size_t frameLen = usbCommandFrameLength(data + offset, len - offset);
-        if (frameLen == 0) {
-          return;
-        }
-        onWrite(data + offset, frameLen);
-        offset += frameLen;
-        continue;
-      }
+    appendToUsbRxBuffer(data, len);
+    processUsbRxBuffer(false);
+  }
 
-      size_t textLen = 1;
-      while (offset + textLen < len && data[offset + textLen] != 0x03) {
-        textLen++;
-      }
-      onWrite(data + offset, textLen);
-      offset += textLen;
-    }
+  void poll() {
+    processUsbRxBuffer(true);
   }
 
   void onWrite(uint8_t *data, size_t len) {
