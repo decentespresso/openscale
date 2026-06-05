@@ -7,7 +7,7 @@
 void setupWifi();
 void stopWifi();
 void saveCredentials(String ssid, String pass); // ssid, pass
-void saveCredentialsForRestart(String ssid, String pass);
+bool saveCredentialsForRestart(String ssid, String pass);
 bool wifiCredentialsSaved();
 
 // Periodic health log + STA reconnect supervisor; call once per main-loop pass
