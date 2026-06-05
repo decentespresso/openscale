@@ -651,8 +651,8 @@ void setup() {
 
   //loadcell calibration value check
   EEPROM.get(i_addr_calibration_value, f_calibration_value);
-  if (isnan(f_calibration_value)) {
-    f_calibration_value = 1000.0;
+  if (!isValidCalibrationValue(f_calibration_value)) {
+    f_calibration_value = CALIBRATION_VALUE_DEFAULT;
     EEPROM.put(i_addr_calibration_value, f_calibration_value);  //set to default value
     EEPROM.commit();
   }

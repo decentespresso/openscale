@@ -556,9 +556,16 @@ public:
     }
 
     if (inputString.startsWith("cv ")) {  //校准值
-      f_calibration_value = inputString.substring(3).toFloat();
-      EEPROM.put(i_addr_calibration_value, f_calibration_value);
-      EEPROM.commit();
+      float newCalibrationValue = inputString.substring(3).toFloat();
+      if (isValidCalibrationValue(newCalibrationValue)) {
+        f_calibration_value = newCalibrationValue;
+        scale.setCalFactor(f_calibration_value);
+        EEPROM.put(i_addr_calibration_value, f_calibration_value);
+        EEPROM.commit();
+      } else {
+        Serial.print("Ignoring invalid calibration value: ");
+        Serial.println(inputString.substring(3));
+      }
     }
 
     if (inputString.startsWith("sot ")) {
