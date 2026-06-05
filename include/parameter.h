@@ -3,6 +3,7 @@
 //declaration
 #include <Arduino.h>
 #include <EEPROM.h>
+#include <math.h>
 
 //ble
 // volatile: read by the AsyncTCP task in the WS status frame, written by the
@@ -126,7 +127,18 @@ const size_t WELCOME_EEPROM_BYTES = 128;
 const size_t WELCOME_EEPROM_MAGIC_BYTES = 4;
 const size_t WELCOME_EEPROM_TEXT_BYTES = WELCOME_EEPROM_BYTES - WELCOME_EEPROM_MAGIC_BYTES;
 const char WELCOME_EEPROM_MAGIC[WELCOME_EEPROM_MAGIC_BYTES] = {'H', 'D', 'S', 'W'};
-float f_calibration_value;   //称重单元校准值
+const float CALIBRATION_VALUE_DEFAULT = 1000.0f;
+const float CALIBRATION_VALUE_MIN_ABS = 1.0f;
+const float CALIBRATION_VALUE_MAX_ABS = 1000000.0f;
+
+inline bool isValidCalibrationValue(float value) {
+  float magnitude = fabsf(value);
+  return isfinite(value) &&
+         magnitude >= CALIBRATION_VALUE_MIN_ABS &&
+         magnitude <= CALIBRATION_VALUE_MAX_ABS;
+}
+
+float f_calibration_value = CALIBRATION_VALUE_DEFAULT;   //称重单元校准值
 float f_up_battery;          //开机时电池电压
 unsigned long t_up_battery;  //开机到现在时间
 

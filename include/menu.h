@@ -820,8 +820,16 @@ void calibration(int input) {
           return;
         }
 
+        float previousCalibrationValue = f_calibration_value;
         f_calibration_value = scale.getNewCalibration(
           known_mass);  // get the new calibration value
+        if (!isValidCalibrationValue(f_calibration_value)) {
+          Serial.println("Calibration failed: invalid calibration value");
+          f_calibration_value = previousCalibrationValue;
+          scale.setCalFactor(f_calibration_value);
+          calibrationRefreshFailed();
+          return;
+        }
         Serial.print(F("New calibration value f: "));
         Serial.println(f_calibration_value);
         // #if defined(ESP8266) || defined(ESP32) ||
@@ -1012,8 +1020,16 @@ void calibration(int input) {
           calibrationRefreshFailed();   // mass is measured correct
           return;
         }
+        float previousCalibrationValue = f_calibration_value;
         f_calibration_value = scale.getNewCalibration(
           known_mass);  // get the new calibration value
+        if (!isValidCalibrationValue(f_calibration_value)) {
+          Serial.println("Calibration failed: invalid calibration value");
+          f_calibration_value = previousCalibrationValue;
+          scale.setCalFactor(f_calibration_value);
+          calibrationRefreshFailed();
+          return;
+        }
         Serial.print(F("New calibration value f: "));
         Serial.println(f_calibration_value);
         EEPROM.put(i_addr_calibration_value, f_calibration_value);
