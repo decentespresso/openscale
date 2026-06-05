@@ -1316,6 +1316,7 @@ void loop() {
     }
     usbCallbacks.onStream(data, len);  // Process serial byte stream
   }
+  usbCallbacks.poll();
 
   buttonCircle.check();
   buttonSquare.check();
