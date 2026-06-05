@@ -35,7 +35,7 @@ public:
   String getPass() { return pass; }
   bool hasCredentials() { return ssid != ""; };
   void saveCredentials(String ssid, String pass);
-  void saveCredentialsForRestart(String ssid, String pass);
+  bool saveCredentialsForRestart(String ssid, String pass);
   void init();
   void reset();
 };
@@ -304,8 +304,8 @@ void saveCredentials(String ssid, String pass) {
   params.saveCredentials(ssid, pass);
 }
 
-void saveCredentialsForRestart(String ssid, String pass) {
-  params.saveCredentialsForRestart(ssid, pass);
+bool saveCredentialsForRestart(String ssid, String pass) {
+  return params.saveCredentialsForRestart(ssid, pass);
 }
 
 bool wifiCredentialsSaved() {
@@ -334,32 +334,35 @@ void WiFiParams::saveCredentials(String ssid, String pass) {
   writeCredentialsToNvs(ssid, pass);
 }
 
-void WiFiParams::saveCredentialsForRestart(String ssid, String pass) {
+bool WiFiParams::saveCredentialsForRestart(String ssid, String pass) {
   if (!initialized) {
     init();
   }
   if (!initialized) {
     Serial.println("[prefs] could not save credentials -- NVS namespace unavailable");
-    return;
+    return false;
   }
 
   // /setup/wifi reboots shortly after responding. Do not publish these strings
   // to the running WiFi supervisor, or AP mode can be torn down before the
   // response finishes and String reads/writes can race across tasks.
-  writeCredentialsToNvs(ssid, pass);
+  return writeCredentialsToNvs(ssid, pass);
 }
 
 bool WiFiParams::writeCredentialsToNvs(const String &ssid, const String &pass) {
-  // putString returns bytes written (0 = failure). The web handler reboots
-  // right after this, so a silent NVS failure would strand the scale retrying
-  // stale/empty credentials -- log it loudly.
-  size_t wroteSsid = preferences.putString("ssid", ssid.c_str());
-  size_t wrotePass = preferences.putString("pass", pass.c_str());
-  if (wroteSsid == 0 || wrotePass == 0) {
-    Serial.printf("[prefs] NVS write FAILED (ssid=%u pass=%u) -- credentials may not persist\n",
+  // putString returns strlen(value), so an empty WiFi password returns 0 even
+  // when NVS saved it correctly. Verify the stored values instead of treating
+  // a zero byte count as failure.
+  size_t wroteSsid = preferences.putString(wifiSSIDKey, ssid.c_str());
+  size_t wrotePass = preferences.putString(wifiPassKey, pass.c_str());
+  String storedSsid = preferences.getString(wifiSSIDKey, "\x01");
+  String storedPass = preferences.getString(wifiPassKey, "\x01");
+  bool saved = storedSsid == ssid && storedPass == pass;
+  if (!saved) {
+    Serial.printf("[prefs] NVS write FAILED (ssid=%u pass=%u) -- credentials did not persist\n",
                   (unsigned)wroteSsid, (unsigned)wrotePass);
   }
-  return wroteSsid != 0 && wrotePass != 0;
+  return saved;
 }
 
 void WiFiParams::init() {

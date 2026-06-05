@@ -64,7 +64,11 @@ void startWebServer() {
             return;
           }
 
-          saveCredentialsForRestart(ssid, pass);
+          if (!saveCredentialsForRestart(ssid, pass)) {
+            request->send(500, "application/json",
+                          "{\"error\":\"wifi_credentials_save_failed\"}");
+            return;
+          }
           Serial.println("new ssid saved");
           request->send(200);
           remoteQueueResetAt(millis() + WIFI_SETUP_RESTART_DELAY_MS);
