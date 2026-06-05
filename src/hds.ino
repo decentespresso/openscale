@@ -416,8 +416,8 @@ void setup() {
     }
   }
 
-  if (readBoolEEPROMWithValidation(i_addr_quickBoot, false))
-        i_buttonBootDelay = 0;
+  b_quickBoot = readBoolEEPROMWithValidation(i_addr_quickBoot, false);
+  i_buttonBootDelay = b_quickBoot ? 0 : 500;
 
   Serial.println("EEPROM init success");
   
