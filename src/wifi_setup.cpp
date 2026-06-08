@@ -176,6 +176,24 @@ void setupWifi() {
   WiFi.onEvent(onWifiEvent);
   WiFi.setAutoReconnect(false);
 
+  // Multi-AP-aware connect policy. arduino-esp32's defaults are FAST_SCAN +
+  // persistent(true), which stop the scan at the first BSSID seen for the
+  // configured SSID and cache that BSSID in NVS. In a multi-AP setup (e.g.
+  // UniFi with the same SSID broadcast from several APs on different channels)
+  // that frequently associates to the wrong BSSID -- the one whose channel is
+  // scanned first, or the one cached from a previous association where the
+  // scale was somewhere else in the building. This makes every WiFi.begin()
+  // (initial connect + every supervisor reconnect) do a full scan of all
+  // channels and associate to the strongest matching BSSID right now, so the
+  // scale follows itself to whichever AP is currently closest and recovers
+  // from one AP going down without needing a reboot. Trade-off: ~1-2 extra
+  // seconds per begin() for the full-channel scan; well worth it. persistent
+  // off because we already own credential storage via the Preferences-backed
+  // WiFiParams, so the WiFi driver's NVS cache only hurts (stale BSSID hint).
+  WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+  WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
+  WiFi.persistent(false);
+
   if (params.hasCredentials()) {
     Serial.printf("trying to connect to wifi: %s\n", params.getSSID());
     connectToWifi();
