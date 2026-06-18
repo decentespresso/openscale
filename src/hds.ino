@@ -1612,18 +1612,10 @@ void drawShutdownFail() {
 int i_weightInt;
 int i_weightFirstDecimal;
 void separateFloat(float number) {
-  // Extract the integer part
-  i_weightInt = (int)number;
-  if (number >= 0) {
-    b_negativeWeight = false;
-  } else {
-    b_negativeWeight = true;
-  }
-
-  // Calculate the decimal part by subtracting the integer part from the number
-  // and then multiplying by 10 to shift the first decimal digit into the integer place
-  float decimalPart = number - (float)(i_weightInt);
-  i_weightFirstDecimal = abs((int)(decimalPart * 10));
+  int roundedTenths = (int)roundf(number * 10.0f);
+  b_negativeWeight = roundedTenths < 0;
+  i_weightInt = roundedTenths / 10;
+  i_weightFirstDecimal = abs(roundedTenths % 10);
 }
 
 void drawWeight(float input) {
@@ -1674,7 +1666,7 @@ void drawWeight(float input) {
     separateFloat(input);
     char integerStr[10] = "-0";  // to save the - sign if the input is between -1 to 0
     char decimalStr[10] = "0";
-    if (input >= 0 || input <= -1) {
+    if (!b_negativeWeight || i_weightInt <= -1) {
       snprintf(integerStr, sizeof(integerStr), "%d", i_weightInt);
     }
     snprintf(decimalStr, sizeof(decimalStr), "%d", i_weightFirstDecimal);
