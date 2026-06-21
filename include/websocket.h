@@ -308,7 +308,7 @@ const char *websocketWifiModeName() {
 
 void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
   if (!wsClientHeapOk()) return;
-  client->printf("{\"type\":\"status\",\"status\":\"%s\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu,\"wifi_on_boot\":%s,\"wifi_active\":%s,\"wifi_connected\":%s,\"wifi_mode\":\"%s\",\"wifi_credentials_saved\":%s,\"ble_enabled\":%s,\"ble_connected\":%s,\"ble_buttons_enabled\":%s,\"ble_heartbeat_required\":%s,\"auto_sleep_enabled\":%s,\"auto_sleep_minutes\":15,\"quick_boot_enabled\":%s,\"time_on_top\":%s,\"drift_compensation_max_grams\":%.3f,\"calibration_factor\":%.2f,\"calibration_invalid\":%s,\"calibration_status\":\"%s\",\"calibration_last_candidate\":%.2f,\"calibration_last_verified_grams\":%.2f,\"calibration_last_raw_delta\":%ld}",
+  client->printf("{\"type\":\"status\",\"status\":\"%s\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu,\"wifi_on_boot\":%s,\"wifi_active\":%s,\"wifi_connected\":%s,\"wifi_mode\":\"%s\",\"wifi_credentials_saved\":%s,\"ble_enabled\":%s,\"ble_connected\":%s,\"ble_buttons_enabled\":%s,\"ble_heartbeat_required\":%s,\"auto_sleep_enabled\":%s,\"auto_sleep_minutes\":15,\"quick_boot_enabled\":%s,\"time_on_top\":%s,\"drift_compensation_max_grams\":%.3f}",
                  status,
                  FIRMWARE_VER,
                  f_displayedValue,
@@ -336,13 +336,7 @@ void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
                  b_autoSleep ? "true" : "false",
                  b_quickBoot ? "true" : "false",
                  b_timeOnTop ? "true" : "false",
-                 f_maxDriftCompensation,
-                 f_calibration_value,
-                 b_calibrationInvalid ? "true" : "false",
-                 c_calibrationStatus,
-                 f_lastCalibrationCandidate,
-                 f_lastCalibrationVerifiedWeight,
-                 i_lastCalibrationRawDelta);
+                 f_maxDriftCompensation);
 }
 
 // Broadcast via printfAll(): it holds the library's client-list mutex and
