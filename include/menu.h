@@ -553,29 +553,247 @@ void calibrate() {
   // calibration
 }
 
-void calibrationRefreshFailed() {
-  Serial.println("Calibration failed: ADC dataset refresh timeout");
+struct CalibrationRawCapture {
+  long raw = 0;
+  long firstRaw = 0;
+  long secondRaw = 0;
+  long spread = 0;
+  uint8_t validSamples = 0;
+  bool signalTimeout = false;
+  bool dataOutOfRange = false;
+};
+
+static bool b_calibrationSampleWindowActive = false;
+static bool b_calibrationZeroCaptured = false;
+static CalibrationRawCapture calibrationZeroCapture;
+
+void calibrationSetStatus(CalibrationRejectReason reason) {
+  snprintf(c_calibrationStatus, sizeof(c_calibrationStatus), "%s",
+           calibrationRejectReasonText(reason));
+  b_calibrationInvalid = reason != CAL_REJECT_NONE;
+}
+
+void calibrationResetLastDiagnostics() {
+  f_lastCalibrationCandidate = 0.0f;
+  f_lastCalibrationVerifiedWeight = 0.0f;
+  i_lastCalibrationZeroRaw = 0;
+  i_lastCalibrationLoadRaw = 0;
+  i_lastCalibrationRawDelta = 0;
+  i_lastCalibrationSpread = 0;
+}
+
+void calibrationEnsureSampleWindow() {
+  if (!b_calibrationSampleWindowActive) {
+    scale.setSamplesInUse(16);
+    b_calibrationSampleWindowActive = true;
+  }
+}
+
+void calibrationRestoreSampleWindow() {
+  if (b_calibrationSampleWindowActive) {
+    scale.setSamplesInUse(1);
+    b_calibrationSampleWindowActive = false;
+  }
+}
+
+void calibrationFinish(bool returnToMenu) {
+  i_button_cal_status = 0;
+  b_calibration = false;
+  b_calibrationZeroCaptured = false;
+  calibrationRestoreSampleWindow();
+  if (returnToMenu) {
+    b_menu = true;
+  }
+}
+
+void calibrationPrintDiagnostics(CalibrationRejectReason reason,
+                                 float previousFactor,
+                                 float candidateFactor,
+                                 const CalibrationRawCapture *zeroCapture,
+                                 const CalibrationRawCapture *loadCapture,
+                                 float verifiedWeight) {
+  long zeroRaw = zeroCapture != nullptr ? zeroCapture->raw : 0;
+  long loadRaw = loadCapture != nullptr ? loadCapture->raw : 0;
+  long rawDelta = loadRaw - zeroRaw;
+  Serial.print(F("Calibration "));
+  Serial.print(reason == CAL_REJECT_NONE ? F("accepted") : F("failed"));
+  Serial.print(F(": reason="));
+  Serial.print(calibrationRejectReasonText(reason));
+  Serial.print(F(" prev="));
+  Serial.print(previousFactor, 6);
+  Serial.print(F(" candidate="));
+  Serial.print(candidateFactor, 6);
+  Serial.print(F(" verified_g="));
+  Serial.print(verifiedWeight, 4);
+  Serial.print(F(" zero_raw="));
+  Serial.print(zeroRaw);
+  Serial.print(F(" load_raw="));
+  Serial.print(loadRaw);
+  Serial.print(F(" delta="));
+  Serial.print(rawDelta);
+  Serial.print(F(" zero_spread="));
+  Serial.print(zeroCapture != nullptr ? zeroCapture->spread : 0);
+  Serial.print(F(" load_spread="));
+  Serial.println(loadCapture != nullptr ? loadCapture->spread : 0);
+}
+
+void calibrationRecordDiagnostics(CalibrationRejectReason reason,
+                                  float candidateFactor,
+                                  const CalibrationRawCapture *zeroCapture,
+                                  const CalibrationRawCapture *loadCapture,
+                                  float verifiedWeight) {
+  calibrationSetStatus(reason);
+  f_lastCalibrationCandidate = candidateFactor;
+  f_lastCalibrationVerifiedWeight = verifiedWeight;
+  i_lastCalibrationZeroRaw = zeroCapture != nullptr ? zeroCapture->raw : 0;
+  i_lastCalibrationLoadRaw = loadCapture != nullptr ? loadCapture->raw : 0;
+  i_lastCalibrationRawDelta = i_lastCalibrationLoadRaw - i_lastCalibrationZeroRaw;
+  long zeroSpread = zeroCapture != nullptr ? zeroCapture->spread : 0;
+  long loadSpread = loadCapture != nullptr ? loadCapture->spread : 0;
+  i_lastCalibrationSpread = zeroSpread > loadSpread ? zeroSpread : loadSpread;
+}
+
+void calibrationShowFailure(CalibrationRejectReason reason) {
+  const char *reasonText = calibrationRejectReasonText(reason);
+  const char *displayText = calibrationRejectReasonDisplayText(reason);
+  Serial.print(F("Calibration failed: "));
+  Serial.println(reasonText);
   u8g2.firstPage();
   u8g2.setFont(FONT_S);
   do {
-    u8g2.drawUTF8(AC((char *)"Calibration failed"), AM(), (char *)"Calibration failed");
+    u8g2.drawUTF8(AC((char *)"Calibration failed"),
+                  u8g2.getMaxCharHeight() + i_margin_top,
+                  (char *)"Calibration failed");
+    u8g2.drawUTF8(AC((char *)displayText), LCDHeight - i_margin_bottom,
+                  (char *)displayText);
   } while (u8g2.nextPage());
 #ifdef BUZZER
   buzzer.off();
 #endif
   delay(1000);
-  i_button_cal_status = 0;
-  b_calibration = false;
-  scale.setSamplesInUse(1);
+}
+
+bool calibrationWaitForSample(ADS1232DebugInfo &info,
+                              int previousReadIndex,
+                              CalibrationRejectReason &failureReason) {
+  unsigned long start = millis();
+  unsigned long lastUpdate = start;
+  while (millis() - start < 4000) {
+    if (scale.update()) {
+      lastUpdate = millis();
+      info = scale.getDebugInfo();
+      if (info.signalTimeout) {
+        failureReason = CAL_REJECT_ADC_TIMEOUT;
+        return false;
+      }
+      if (info.dataOutOfRange) {
+        failureReason = CAL_REJECT_ADC_RANGE;
+        return false;
+      }
+      if (info.validSamples >= CALIBRATION_MIN_VALID_SAMPLES &&
+          (previousReadIndex < 0 || info.readIndex != previousReadIndex)) {
+        failureReason = CAL_REJECT_NONE;
+        return true;
+      }
+    } else if (millis() - lastUpdate > 1500 || scale.getSignalTimeoutFlag()) {
+      failureReason = CAL_REJECT_ADC_TIMEOUT;
+      return false;
+    }
+    delay(2);
+    yield();
+  }
+  info = scale.getDebugInfo();
+  failureReason = info.validSamples < CALIBRATION_MIN_VALID_SAMPLES
+                    ? CAL_REJECT_INSUFFICIENT_SAMPLES
+                    : CAL_REJECT_ADC_TIMEOUT;
+  return false;
+}
+
+bool calibrationCaptureRaw(CalibrationRawCapture &capture,
+                           CalibrationRejectReason unstableReason,
+                           CalibrationRejectReason &failureReason) {
+  calibrationEnsureSampleWindow();
+  ADS1232DebugInfo firstInfo;
+  ADS1232DebugInfo secondInfo;
+  if (!calibrationWaitForSample(firstInfo, -1, failureReason)) {
+    return false;
+  }
+  if (!calibrationWaitForSample(secondInfo, firstInfo.readIndex, failureReason)) {
+    return false;
+  }
+
+  capture.firstRaw = firstInfo.smoothedValue;
+  capture.secondRaw = secondInfo.smoothedValue;
+  long spread = capture.secondRaw - capture.firstRaw;
+  if (spread < 0) {
+    spread = -spread;
+  }
+  capture.spread = spread;
+  capture.raw = (capture.firstRaw + capture.secondRaw) / 2;
+  capture.validSamples = firstInfo.validSamples < secondInfo.validSamples
+                           ? firstInfo.validSamples
+                           : secondInfo.validSamples;
+  capture.signalTimeout = firstInfo.signalTimeout || secondInfo.signalTimeout;
+  capture.dataOutOfRange = firstInfo.dataOutOfRange || secondInfo.dataOutOfRange;
+
+  if ((float)capture.spread > calibrationStabilityRawLimit(f_calibration_value)) {
+    failureReason = unstableReason;
+    return false;
+  }
+
+  failureReason = CAL_REJECT_NONE;
+  return true;
+}
+
+void calibrationFail(CalibrationRejectReason reason,
+                     float previousFactor,
+                     float candidateFactor,
+                     const CalibrationRawCapture *zeroCapture,
+                     const CalibrationRawCapture *loadCapture,
+                     float verifiedWeight) {
+  f_calibration_value = previousFactor;
+  scale.setCalFactor(f_calibration_value);
+  calibrationRecordDiagnostics(reason, candidateFactor, zeroCapture, loadCapture,
+                               verifiedWeight);
+  calibrationPrintDiagnostics(reason, previousFactor, candidateFactor,
+                              zeroCapture, loadCapture, verifiedWeight);
+  calibrationShowFailure(reason);
+  calibrationFinish(false);
+}
+
+void calibrationSave(float previousCalibrationValue,
+                     float newCalibrationValue,
+                     const CalibrationRawCapture &zeroCapture,
+                     const CalibrationRawCapture &loadCapture,
+                     float verifiedWeight) {
+  f_calibration_value = newCalibrationValue;
+  scale.setCalFactor(f_calibration_value);
+  EEPROM.put(i_addr_calibration_value, f_calibration_value);
+#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
+  EEPROM.commit();
+#endif
+  calibrationRecordDiagnostics(CAL_REJECT_NONE, f_calibration_value,
+                               &zeroCapture, &loadCapture, verifiedWeight);
+  calibrationPrintDiagnostics(CAL_REJECT_NONE, previousCalibrationValue,
+                              f_calibration_value, &zeroCapture, &loadCapture,
+                              verifiedWeight);
 }
 
 void calibration(int input) {
   if (b_calibration == true) {
-    bool newDataReady = false;
     char c_calval[25];
+    if (input == 1) {
+      calibrationFail(CAL_REJECT_SMART_CAL_DISABLED, f_calibration_value, 0.0f,
+                      nullptr, nullptr, 0.0f);
+      return;
+    }
     if (i_button_cal_status == 1) {
       if (input == 0) {
-        scale.setSamplesInUse(16);
+        if (!b_calibrationSampleWindowActive) {
+          calibrationResetLastDiagnostics();
+          b_calibrationZeroCaptured = false;
+        }
+        calibrationEnsureSampleWindow();
         u8g2.firstPage();
         do {
           if (b_screenFlipped)
@@ -636,7 +854,7 @@ void calibration(int input) {
         } while (u8g2.nextPage());
       }
       if (input == 1) {
-        scale.setSamplesInUse(16);
+        calibrationEnsureSampleWindow();
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
@@ -654,11 +872,14 @@ void calibration(int input) {
     if (i_button_cal_status == 2) {
       Serial.println("Before if check, i_cal_weight = " + String(i_cal_weight));
 
-      if (i_cal_weight == 0 || b_is_charging) {
+      if (i_cal_weight == 0) {
         // exit was selected, exit the calibration.
-        i_button_cal_status = 0;
-        b_calibration = false;
-        b_menu = true;
+        calibrationFinish(true);
+        return;
+      }
+      if (b_is_charging) {
+        calibrationFail(CAL_REJECT_UNPLUG_USB, f_calibration_value, 0.0f,
+                        nullptr, nullptr, 0.0f);
         return;
       }
       // scale.update();
@@ -725,7 +946,27 @@ void calibration(int input) {
                       (char *)"Calibrating 0g");
       } while (u8g2.nextPage());
 
+      float previousCalibrationValue = f_calibration_value;
+      CalibrationRejectReason zeroFailureReason = CAL_REJECT_NONE;
+      if (!calibrationCaptureRaw(calibrationZeroCapture,
+                                 CAL_REJECT_UNSTABLE_ZERO,
+                                 zeroFailureReason)) {
+        calibrationFail(zeroFailureReason, previousCalibrationValue, 0.0f,
+                        &calibrationZeroCapture, nullptr, 0.0f);
+        return;
+      }
       scale.tare();
+      b_calibrationZeroCaptured = true;
+      i_lastCalibrationZeroRaw = calibrationZeroCapture.raw;
+      i_lastCalibrationLoadRaw = 0;
+      i_lastCalibrationRawDelta = 0;
+      i_lastCalibrationSpread = calibrationZeroCapture.spread;
+      Serial.print(F("0g raw captured: "));
+      Serial.print(calibrationZeroCapture.raw);
+      Serial.print(F(" spread="));
+      Serial.print(calibrationZeroCapture.spread);
+      Serial.print(F(" valid="));
+      Serial.println(calibrationZeroCapture.validSamples);
       Serial.println(F("0g calibration done"));
       u8g2.firstPage();
       u8g2.setFont(FONT_S);
@@ -802,44 +1043,49 @@ void calibration(int input) {
         buzzer.off();
 #endif
         delay(1000);
-        double d_weight;
-        for (int i = 0; i < DATA_SET; i++) {
-          if (scale.update())
-            newDataReady = true;
-          if (newDataReady) {
-            d_weight = scale.getData();
-            Serial.println(d_weight);
-            newDataReady = false;
-            delay(100);
-          }
-        }
-        Serial.print("weight is ");
-        Serial.println(d_weight);
-        if (!scale.refreshDataSet()) {  // refresh the dataset to be sure that the known
-          calibrationRefreshFailed();   // mass is measured correct
+        float previousCalibrationValue = f_calibration_value;
+        if (!b_calibrationZeroCaptured) {
+          calibrationFail(CAL_REJECT_UNSTABLE_ZERO, previousCalibrationValue,
+                          0.0f, nullptr, nullptr, 0.0f);
           return;
         }
 
-        float previousCalibrationValue = f_calibration_value;
-        f_calibration_value = scale.getNewCalibration(
-          known_mass);  // get the new calibration value
-        if (!isValidCalibrationValue(f_calibration_value)) {
-          Serial.println("Calibration failed: invalid calibration value");
-          f_calibration_value = previousCalibrationValue;
-          scale.setCalFactor(f_calibration_value);
-          calibrationRefreshFailed();
+        CalibrationRawCapture loadCapture;
+        CalibrationRejectReason loadFailureReason = CAL_REJECT_NONE;
+        if (!calibrationCaptureRaw(loadCapture, CAL_REJECT_UNSTABLE_LOAD,
+                                   loadFailureReason)) {
+          calibrationFail(loadFailureReason, previousCalibrationValue, 0.0f,
+                          &calibrationZeroCapture, &loadCapture, 0.0f);
           return;
         }
+
+        long rawDelta = loadCapture.raw - calibrationZeroCapture.raw;
+        float candidateCalibrationValue = (float)rawDelta / known_mass;
+        CalibrationRejectReason validationReason =
+          validateCalibrationCandidateBasics(known_mass, rawDelta,
+                                             candidateCalibrationValue);
+        if (validationReason != CAL_REJECT_NONE) {
+          calibrationFail(validationReason, previousCalibrationValue,
+                          candidateCalibrationValue, &calibrationZeroCapture,
+                          &loadCapture, 0.0f);
+          return;
+        }
+
+        scale.setCalFactor(candidateCalibrationValue);
+        float verifiedWeight = scale.getData();
+        validationReason = validateCalibrationVerification(known_mass,
+                                                           verifiedWeight);
+        if (validationReason != CAL_REJECT_NONE) {
+          calibrationFail(validationReason, previousCalibrationValue,
+                          candidateCalibrationValue, &calibrationZeroCapture,
+                          &loadCapture, verifiedWeight);
+          return;
+        }
+
+        calibrationSave(previousCalibrationValue, candidateCalibrationValue,
+                        calibrationZeroCapture, loadCapture, verifiedWeight);
         Serial.print(F("New calibration value f: "));
         Serial.println(f_calibration_value);
-        // #if defined(ESP8266) || defined(ESP32) ||
-        // defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
-        //     EEPROM.begin(512);
-        // #endif
-        EEPROM.put(i_addr_calibration_value, f_calibration_value);
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
-        EEPROM.commit();
-#endif
         formatFloatSafe(c_calval, sizeof(c_calval), f_calibration_value, 2);
         Serial.print(F("New calibration value c: "));
         Serial.println(trim(c_calval));
@@ -861,206 +1107,10 @@ void calibration(int input) {
         buzzer.off();
 #endif
         delay(1000);
-        b_calibration = false;
-      }
-      if (input == 1) {
-        scale.update();
-        u8g2.firstPage();
-        u8g2.setFont(FONT_S);
-        do {
-          u8g2.drawUTF8(AC((char *)"Place any weight"),
-                        u8g2.getMaxCharHeight() + i_margin_top,
-                        (char *)"Place any weight");
-          u8g2.drawUTF8(AC((char *)"Wait: 3s"), LCDHeight - i_margin_bottom,
-                        (char *)"Wait: 3s");
-        } while (u8g2.nextPage());
-#ifdef BUZZER
-        buzzer.off();
-#endif
-        delay(1000);
-
-        u8g2.firstPage();
-        u8g2.setFont(FONT_S);
-        do {
-          u8g2.drawUTF8(AC((char *)"Place any weight"),
-                        u8g2.getMaxCharHeight() + i_margin_top,
-                        (char *)"Place any weight");
-          u8g2.drawUTF8(AC((char *)"Wait: 2s"), LCDHeight - i_margin_bottom,
-                        (char *)"Wait: 2s");
-        } while (u8g2.nextPage());
-#ifdef BUZZER
-        buzzer.off();
-#endif
-        delay(1000);
-
-        u8g2.firstPage();
-        u8g2.setFont(FONT_S);
-        do {
-          u8g2.drawUTF8(AC((char *)"Place any weight"),
-                        u8g2.getMaxCharHeight() + i_margin_top,
-                        (char *)"Place any weight");
-          u8g2.drawUTF8(AC((char *)"Wait: 1s"), LCDHeight - i_margin_bottom,
-                        (char *)"Wait: 1s");
-        } while (u8g2.nextPage());
-#ifdef BUZZER
-        buzzer.off();
-#endif
-        delay(1000);
-        scale.update();
-        u8g2.firstPage();
-        u8g2.setFont(FONT_S);
-        do {
-          u8g2.drawUTF8(AC((char *)"Reading weight"), AM(),
-                        (char *)"Reading weight");
-        } while (u8g2.nextPage());
-#ifdef BUZZER
-        buzzer.off();
-#endif
-        delay(1000);
-        i_button_cal_status++;
+        calibrationFinish(false);
+        return;
       }
     }
-    if (i_button_cal_status == 4) {
-      float known_mass = 0;
-      if (scale.update())
-        newDataReady = true;
-      if (newDataReady) {
-        float current_weight = scale.getData();
-        Serial.println(current_weight);
-//         bool valid_mass = false;
-//         for (int i = 1; i <= 40; i++) {
-//           // check from 50g to 2kg
-//           if (current_weight > i * 50 - 2 && current_weight < i * 50 + 2) {
-//             // check if the weight is within 2g
-//             known_mass = i * 50;
-//             valid_mass = true;
-//             break;
-//           }
-//         }
-
-//         if (!valid_mass) {
-//           char buffer[50];
-//           snprintf(buffer, sizeof(buffer), "%f.0g weight detected",
-//                    current_weight);
-//           Serial.println(F("Error: Invalid weight detected"));
-//           u8g2.firstPage();
-//           u8g2.setFont(FONT_S);
-//           do {
-//             u8g2.drawUTF8(AC((char *)"Error: Invalid"),
-//                           u8g2.getMaxCharHeight() + i_margin_top,
-//                           (char *)"Error: Invalid");
-//             u8g2.drawUTF8(AC((char *)trim(buffer)), LCDHeight - i_margin_bottom,
-//                           (char *)trim(buffer));
-//           } while (u8g2.nextPage());
-// #ifdef BUZZER
-//           buzzer.off();
-// #endif
-//           delay(1000);
-//           b_calibration = false;
-//           return;  // exit calibration
-//         }
-
-        char buffer[50];
-        snprintf(buffer, sizeof(buffer), "Place %.0fg weight", known_mass);
-
-        u8g2.firstPage();
-        u8g2.setFont(FONT_S);
-        do {
-          u8g2.drawUTF8(AC((char *)trim(buffer)),
-                        u8g2.getMaxCharHeight() + i_margin_top,
-                        (char *)trim(buffer));
-          u8g2.drawUTF8(AC((char *)"Wait: 3s"), LCDHeight - i_margin_bottom,
-                        (char *)"Wait: 3s");
-        } while (u8g2.nextPage());
-#ifdef BUZZER
-        buzzer.off();
-#endif
-        delay(1000);
-
-        u8g2.firstPage();
-        u8g2.setFont(FONT_S);
-        do {
-          u8g2.drawUTF8(AC((char *)trim(buffer)),
-                        u8g2.getMaxCharHeight() + i_margin_top,
-                        (char *)trim(buffer));
-          u8g2.drawUTF8(AC((char *)"Wait: 2s"), LCDHeight - i_margin_bottom,
-                        (char *)"Wait: 2s");
-        } while (u8g2.nextPage());
-#ifdef BUZZER
-        buzzer.off();
-#endif
-        delay(1000);
-
-        u8g2.firstPage();
-        u8g2.setFont(FONT_S);
-        do {
-          u8g2.drawUTF8(AC((char *)trim(buffer)),
-                        u8g2.getMaxCharHeight() + i_margin_top,
-                        (char *)trim(buffer));
-          u8g2.drawUTF8(AC((char *)"Wait: 1s"), LCDHeight - i_margin_bottom,
-                        (char *)"Wait: 1s");
-        } while (u8g2.nextPage());
-#ifdef BUZZER
-        buzzer.off();
-#endif
-        delay(1000);
-
-        u8g2.firstPage();
-        u8g2.setFont(FONT_S);
-        do {
-          u8g2.drawUTF8(AC((char *)"Calibrating"), AM(), (char *)"Calibrating");
-        } while (u8g2.nextPage());
-#ifdef BUZZER
-        buzzer.off();
-#endif
-        delay(1000);
-
-        scale.setSamplesInUse(16);
-        if (!scale.refreshDataSet()) {  // refresh the dataset to be sure that the known
-          calibrationRefreshFailed();   // mass is measured correct
-          return;
-        }
-        float previousCalibrationValue = f_calibration_value;
-        f_calibration_value = scale.getNewCalibration(
-          known_mass);  // get the new calibration value
-        if (!isValidCalibrationValue(f_calibration_value)) {
-          Serial.println("Calibration failed: invalid calibration value");
-          f_calibration_value = previousCalibrationValue;
-          scale.setCalFactor(f_calibration_value);
-          calibrationRefreshFailed();
-          return;
-        }
-        Serial.print(F("New calibration value f: "));
-        Serial.println(f_calibration_value);
-        EEPROM.put(i_addr_calibration_value, f_calibration_value);
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
-        EEPROM.commit();
-#endif
-        formatFloatSafe(c_calval, sizeof(c_calval), f_calibration_value, 2);
-        Serial.print(F("New calibration value c: "));
-        Serial.println(trim(c_calval));
-
-        u8g2.firstPage();
-        u8g2.setFont(FONT_S);
-        do {
-          u8g2.drawUTF8(AC((char *)"Recalibration done"), AM(),
-                        (char *)"Recalibration done");
-          // u8g2.drawUTF8(AC((char *)trim(c_calval)), LCDHeight -
-          // i_margin_bottom, (char *)trim(c_calval));
-        } while (u8g2.nextPage());
-#ifdef BUZZER
-        buzzer.off();
-#endif
-        delay(1000);
-#ifdef BUZZER
-        buzzer.beep(1, BUZZER_DURATION);
-        buzzer.off();
-#endif
-        delay(1000);
-        b_calibration = false;
-      }
-    }
-    scale.setSamplesInUse(1);
   }
 }
 

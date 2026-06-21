@@ -416,11 +416,15 @@ public:
       }
       if (data[2] == 0x00) {
         Serial.println("Manual Calibration via BLE");
+        b_menu = false;
+        i_cal_weight = 0;
         i_button_cal_status = 1;
         i_calibration = 0;
         b_calibration = true;
       } else if (data[2] == 0x01) {
         Serial.println("Smart Calibration via BLE");
+        b_menu = false;
+        i_cal_weight = 0;
         i_button_cal_status = 1;
         i_calibration = 1;
         b_calibration = true;
@@ -636,9 +640,18 @@ public:
         scale.setCalFactor(f_calibration_value);
         EEPROM.put(i_addr_calibration_value, f_calibration_value);
         EEPROM.commit();
+        b_calibrationInvalid = false;
+        snprintf(c_calibrationStatus, sizeof(c_calibrationStatus), "%s",
+                 calibrationRejectReasonText(CAL_REJECT_NONE));
       } else {
         Serial.print("Ignoring invalid calibration value: ");
         Serial.println(inputString.substring(3));
+        b_calibrationInvalid = true;
+        snprintf(c_calibrationStatus, sizeof(c_calibrationStatus), "%s",
+                 calibrationRejectReasonText(
+                   fabsf(newCalibrationValue) > CALIBRATION_VALUE_MAX_ABS
+                     ? CAL_REJECT_FACTOR_TOO_LARGE
+                     : CAL_REJECT_FACTOR_SIGN));
       }
     }
 
@@ -687,11 +700,17 @@ public:
     }
 
     if (inputString.startsWith("cal0")) {  //calibrate load cell 0
+      b_menu = false;
+      i_cal_weight = 0;
+      i_button_cal_status = 1;
       b_calibration = true;
       i_calibration = 0;
     }
 
     if (inputString.startsWith("cal1")) {  ////calibrate load cell 1
+      b_menu = false;
+      i_cal_weight = 0;
+      i_button_cal_status = 1;
       b_calibration = true;
       i_calibration = 1;
     }
@@ -738,6 +757,21 @@ public:
         Serial.print("SPS: "); Serial.print(info.sps, 2);
         Serial.print(" | ConvTime: "); Serial.print(info.conversionTimeMs, 3);
         Serial.print("ms | Valid: "); Serial.println(info.validSamples);
+        Serial.print("CalFactor: "); Serial.print(f_calibration_value, 2);
+        Serial.print(" | CalStatus: "); Serial.print(c_calibrationStatus);
+        Serial.print(" | CalInvalid: "); Serial.println(b_calibrationInvalid ? "true" : "false");
+        Serial.print("LastCal zero/load/delta: ");
+        Serial.print(i_lastCalibrationZeroRaw);
+        Serial.print(" / ");
+        Serial.print(i_lastCalibrationLoadRaw);
+        Serial.print(" / ");
+        Serial.println(i_lastCalibrationRawDelta);
+        Serial.print("LastCal candidate/verified/spread: ");
+        Serial.print(f_lastCalibrationCandidate, 2);
+        Serial.print(" / ");
+        Serial.print(f_lastCalibrationVerifiedWeight, 2);
+        Serial.print(" / ");
+        Serial.println(i_lastCalibrationSpread);
         Serial.println("==============================");
       }
     }
