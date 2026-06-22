@@ -31,6 +31,8 @@ static const size_t WIFI_SETUP_MAX_JSON_BYTES = 256;
 static const size_t WIFI_SETUP_MAX_SSID_BYTES = 32;
 static const size_t WIFI_SETUP_MAX_PASS_BYTES = 64;
 static const unsigned long WIFI_SETUP_RESTART_DELAY_MS = 500;
+static const char *LITTLEFS_CACHE_CONTROL =
+    "no-store, no-cache, must-revalidate, max-age=0";
 
 static bool httpIsPageLoadRequest(const String &url) {
   return url == "/" || url.endsWith(".html");
@@ -90,7 +92,11 @@ void startWebServer() {
                       "filesystem mount failed; device needs reflashing");
       });
     } else {
-      server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
+      // LittleFS apps are updated in-place; avoid stale inline JS/CSS and modules
+      // after a firmware/filesystem update.
+      server.serveStatic("/", LittleFS, "/")
+          .setDefaultFile("index.html")
+          .setCacheControl(LITTLEFS_CACHE_CONTROL);
       Serial.println("Serving web-apps");
     }
 
