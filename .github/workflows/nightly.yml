@@ -22,7 +22,10 @@ jobs:
           path: |
             ~/.cache/pip
             ~/.platformio/.cache
-          key: ${{ runner.os }}-pio
+          # Key on platformio.ini so a platform/lib pin change busts the cache.
+          # A static key froze CI on a stale cached `stable` platform zip (3.3.8)
+          # even after the pin should have resolved a newer framework.
+          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini') }}
       - uses: actions/setup-node@v4.1.0
 
       - uses: actions/setup-python@v4
