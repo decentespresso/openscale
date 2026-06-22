@@ -44,7 +44,7 @@ def send_reset_command(ser, mode):
     
     Args:
         ser: Serial port object
-        mode: 0=soft reset, 1=reset+refresh, 2=reset+refresh+tare
+        mode: 0=reset+refresh, 1=reset+refresh, 2=reset+refresh+tare complete
     """
     cmd = bytes([0x03, 0x26, mode])
     checksum = calculate_checksum(cmd)
@@ -52,7 +52,7 @@ def send_reset_command(ser, mode):
     
     ser.write(cmd)
     
-    mode_names = {0: "SOFT RESET", 1: "RESET + REFRESH", 2: "RESET + REFRESH + TARE"}
+    mode_names = {0: "RESET + REFRESH", 1: "RESET + REFRESH", 2: "RESET + REFRESH + TARE COMPLETE"}
     print(f"Sent: {mode_names.get(mode, 'UNKNOWN')} ({' '.join(f'{b:02X}' for b in cmd)})")
 
 def send_samples_command(ser, sample_count):
@@ -278,9 +278,9 @@ def interactive_mode(ser):
     print("  off      - Disable debug mode")
     print("  info     - Get debug info")
     print("  monitor  - Start continuous monitoring")
-    print("  reset 0    - ADS soft reset (power cycle only)")
+    print("  reset 0    - ADS reset + refresh dataset")
     print("  reset 1    - ADS reset + refresh dataset")
-    print("  reset 2    - ADS reset + refresh + tare")
+    print("  reset 2    - ADS reset + refresh + completed tare")
     print("  samples N  - Set samples in use (1, 2, or 4)")
     print("  quit       - Exit")
     print()
@@ -326,9 +326,9 @@ def interactive_mode(ser):
                         print("No response received\n")
                 else:
                     print("Usage: reset <0|1|2>")
-                    print("  0 = Soft reset (power cycle only)")
+                    print("  0 = Reset + refresh dataset")
                     print("  1 = Reset + refresh dataset")
-                    print("  2 = Reset + refresh + tare\n")
+                    print("  2 = Reset + refresh + completed tare\n")
             elif cmd.startswith("samples"):
                 parts = cmd.split()
                 if len(parts) == 2 and parts[1] in ("1", "2", "4"):
@@ -369,10 +369,10 @@ Examples:
   # Enable debug mode and exit
   python ads_debug_monitor.py /dev/cu.wchusbserial10 --debug-on
   
-  # ADS reset (soft)
+  # ADS reset + refresh dataset
   python ads_debug_monitor.py /dev/cu.wchusbserial10 --reset 0
   
-  # ADS reset + refresh + tare
+  # ADS reset + refresh + completed tare
   python ads_debug_monitor.py /dev/cu.wchusbserial10 --reset 2
   
   # Set samples in use to 1
@@ -388,7 +388,7 @@ Examples:
     parser.add_argument('--debug-on', action='store_true', help='Enable debug mode and exit')
     parser.add_argument('--debug-off', action='store_true', help='Disable debug mode and exit')
     parser.add_argument('--reset', type=int, choices=[0, 1, 2], metavar='MODE',
-                        help='ADS reset: 0=soft, 1=refresh, 2=refresh+tare')
+                        help='ADS reset: 0=refresh, 1=refresh, 2=refresh+tare complete')
     parser.add_argument('--samples', type=int, choices=[1, 2, 4], metavar='N',
                         help='Set samples in use (1, 2, or 4)')
     
