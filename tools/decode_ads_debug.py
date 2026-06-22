@@ -134,7 +134,7 @@ def decode_ads_reset_response(data):
     Packet format (5 bytes):
     [0] = 0x03 (model byte)
     [1] = 0x26 (reset response type)
-    [2] = mode (0x00=soft, 0x01=refresh, 0x02=refresh+tare)
+    [2] = mode (0x00=refresh, 0x01=refresh, 0x02=refresh+tare complete)
     [3] = status (0x00=success, 0x01=fail)
     [4] = checksum (XOR of bytes 0-3)
     """
@@ -153,7 +153,7 @@ def decode_ads_reset_response(data):
         print(f"Error: Checksum mismatch! Calculated: 0x{checksum:02X}, Got: 0x{data[4]:02X}")
         return None
     
-    mode_names = {0x00: "Soft reset", 0x01: "Reset + refresh", 0x02: "Reset + refresh + tare"}
+    mode_names = {0x00: "Reset + refresh", 0x01: "Reset + refresh", 0x02: "Reset + refresh + tare complete"}
     
     return {
         'mode': data[2],
@@ -195,5 +195,4 @@ if __name__ == "__main__":
         print("\nOr import this module in another script:")
         print("  from decode_ads_debug import decode_ads_debug_packet, print_debug_info")
         sys.exit(1)
-
 
