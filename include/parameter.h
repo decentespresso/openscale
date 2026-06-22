@@ -263,6 +263,12 @@ static inline void resetAdcRecoveryState() {
   b_adc_recovery_active = false;
   i_adc_recovery_count = 0;
 }
+bool refreshScaleDatasetAfterDiscontinuity(const char *context);
+void resetScaleOutputAfterAdcDiscontinuity();
+bool tareScaleWhenAdcReady(const char *context);
+bool setScaleSamplesInUseWhenReady(uint8_t samplesInUse, const char *context);
+void consumeScaleTareStatus();
+void clearPendingAutomaticTareState();
 unsigned long t_extraction_begin = 0;       //开始萃取打点
 unsigned long t_extraction_first_drop = 0;  //下液第一滴打点
 unsigned long t_extraction_last_drop = 0;   //下液结束打点

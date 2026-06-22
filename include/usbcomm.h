@@ -454,18 +454,21 @@ public:
       if (!requireLength(len, 3, "sample settings")) {
         return;
       }
+      uint8_t samplesInUse = 0;
       if (data[2] == 0x00) {
-        scale.setSamplesInUse(1);
-        Serial.print("Samples in use set to: ");
-        Serial.println(scale.getSamplesInUse());
+        samplesInUse = 1;
       } else if (data[2] == 0x01) {
-        scale.setSamplesInUse(2);
-        Serial.print("Samples in use set to: ");
-        Serial.println(scale.getSamplesInUse());
+        samplesInUse = 2;
       } else if (data[2] == 0x03) {
-        scale.setSamplesInUse(4);
-        Serial.print("Samples in use set to: ");
-        Serial.println(scale.getSamplesInUse());
+        samplesInUse = 4;
+      }
+      if (samplesInUse > 0) {
+        if (setScaleSamplesInUseWhenReady(samplesInUse, "USB samples")) {
+          Serial.print("Samples in use set to: ");
+          Serial.println(scale.getSamplesInUse());
+        } else {
+          Serial.println("Samples in use refresh failed");
+        }
       }
     } else if (data[1] == 0x1E) {
       if (!requireLength(len, 4, "menu/about/debug")) {
@@ -943,21 +946,14 @@ void sendUsbAdsResetResponse(uint8_t mode, uint8_t status) {
   Serial.write(data, 5);
 }
 
-// Handle ADS1232 reset command (0x26)
-// mode 0x00: soft reset (powerDown/powerUp only)
-// mode 0x01: reset + blocking refreshDataSet()
-// mode 0x02: reset + refreshDataSet() + tare
 void handleAdsReset(uint8_t mode) {
   Serial.print("ADS reset mode 0x0");
   Serial.println(mode);
 
-  // Step 1: Power cycle the ADS1232
   scale.powerDown();
   delay(500);
   scale.powerUp();
-  resetAdcRecoveryState();
 
-  // Step 2: Check if ADS came back (DOUT should go low when conversion ready)
   unsigned long startTime = millis();
   bool adsAlive = false;
   while (millis() - startTime < 500) {
@@ -976,21 +972,21 @@ void handleAdsReset(uint8_t mode) {
 
   Serial.println("ADS reset: DOUT went low, ADC alive");
 
-  // Step 3: Refresh dataset if mode >= 0x01
-  if (mode >= 0x01) {
-    if (!scale.refreshDataSet()) {
-      Serial.println("ADS reset FAILED: dataset refresh timeout");
+  if (!refreshScaleDatasetAfterDiscontinuity("ADS reset")) {
+    Serial.println("ADS reset FAILED: dataset refresh timeout");
+    sendUsbAdsResetResponse(mode, 0x02);
+    return;
+  }
+
+  if (mode == 0x02) {
+    if (!tareScaleWhenAdcReady("ADS reset tare")) {
+      Serial.println("ADS reset FAILED: tare refresh timeout");
       sendUsbAdsResetResponse(mode, 0x02);
       return;
     }
-    Serial.println("ADS reset: dataset refreshed");
+    Serial.println("ADS reset: tare complete");
   }
-
-  // Step 4: Tare + reset compensations if mode == 0x02
-  if (mode == 0x02) {
-    requestRemoteTare();
-    Serial.println("ADS reset: tare requested");
-  }
+  resetScaleOutputAfterAdcDiscontinuity();
 
   sendUsbAdsResetResponse(mode, 0x00);
   Serial.println("ADS reset complete");

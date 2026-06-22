@@ -977,12 +977,10 @@ void pureScale() {
     scale.powerDown();
     delay(5);
     scale.powerUp();
-    scale.tareNoDelay();
-    resetTracking();
-    resetStableOutput();
-    f_driftCompensation = 0.0;
-    f_displayedValue = 0.0;
-    formatFloatSafe(c_weight, sizeof(c_weight), f_displayedValue, i_decimal_precision);
+    if (refreshScaleDatasetAfterDiscontinuity("ADC recovery") &&
+        tareScaleWhenAdcReady("ADC recovery tare")) {
+      resetScaleOutputAfterAdcDiscontinuity();
+    }
     t_lastScaleRecovery = millis();
     t_lastScaleData = millis();
   }
@@ -1165,6 +1163,65 @@ void resetStableOutput() {
   if (b_weight_in_serial) {
     Serial.println("Stable output reset");
   }
+}
+
+bool refreshScaleDatasetAfterDiscontinuity(const char *context) {
+  if (scale.refreshDataSet()) {
+    resetAdcRecoveryState();
+    Serial.print(context);
+    Serial.println(" dataset refreshed");
+    return true;
+  }
+
+  b_adc_recovery_active = true;
+  if (i_adc_recovery_count < 255) {
+    i_adc_recovery_count++;
+  }
+  Serial.print(context);
+  Serial.println(" dataset refresh failed");
+  return false;
+}
+
+void resetScaleOutputAfterAdcDiscontinuity() {
+  resetTracking();
+  resetStableOutput();
+  f_driftCompensation = 0.0;
+  f_displayedValue = 0.0;
+  formatFloatSafe(c_weight, sizeof(c_weight), f_displayedValue,
+                  i_decimal_precision);
+}
+
+bool tareScaleWhenAdcReady(const char *context) {
+  ADS1232DebugInfo info = scale.getDebugInfo();
+  if (info.samplesInUse > 0 && info.validSamples < info.samplesInUse) {
+    if (!refreshScaleDatasetAfterDiscontinuity(context)) {
+      return false;
+    }
+  }
+  scale.tareNoDelay();
+  return true;
+}
+
+void consumeScaleTareStatus() {
+  scale.getTareStatus();
+}
+
+void clearPendingAutomaticTareState() {
+  b_bootTare = false;
+  b_weight_quick_zero = false;
+  b_tareByButton = false;
+  b_tareByBle = false;
+  t_quickZeroStart = 0;
+  consumeRemoteTareRequests();
+}
+
+bool setScaleSamplesInUseWhenReady(uint8_t samplesInUse, const char *context) {
+  scale.setSamplesInUse(samplesInUse);
+  if (!refreshScaleDatasetAfterDiscontinuity(context)) {
+    return false;
+  }
+  resetScaleOutputAfterAdcDiscontinuity();
+  return true;
 }
 
 /**
@@ -1383,8 +1440,10 @@ void loop() {
             GPIO_power_on_with = BUTTON_SQUARE;
             b_is_charging = false;
             scale.powerUp();
-            resetAdcRecoveryState();
-            scale.tareNoDelay();
+            if (refreshScaleDatasetAfterDiscontinuity("charging wake") &&
+                tareScaleWhenAdcReady("charging wake tare")) {
+              resetScaleOutputAfterAdcDiscontinuity();
+            }
           } else {
             if (f_batteryVoltage > 4.1) {
               //charging complete
@@ -1477,27 +1536,31 @@ void loop() {
         if (b_bootTare) {
           //tare after boot
           if (millis() - t_bootTare > i_bootTareDelay) {
-            scale.tareNoDelay();
+            tareScaleWhenAdcReady("boot tare");
             b_bootTare = false;
           }
         } else if (b_tareByButton) {
           // Tare by button, ensure 500ms delay to avoid touch interference
           if (millis() - t_tareByButton > i_tareDelay) {
-            scale.tareNoDelay();
+            bool tareDone = tareScaleWhenAdcReady("button tare");
             b_tareByButton = false;  // reset status
-            Serial.println("Tare by button");
+            Serial.println(tareDone ? "Tare by button" : "Tare by button failed");
           }
         } else if (hasRemoteTareRequest()) {
           // Tare by BLE, performed instantly without delay
           uint8_t remoteTareRequests = consumeRemoteTareRequests();
-          scale.tareNoDelay();
-          Serial.print("Tare by remote command");
-          if (remoteTareRequests > 1) {
-            Serial.print(" (");
-            Serial.print(remoteTareRequests);
-            Serial.print(" requests)");
+          bool tareDone = tareScaleWhenAdcReady("remote tare");
+          if (tareDone) {
+            Serial.print("Tare by remote command");
+            if (remoteTareRequests > 1) {
+              Serial.print(" (");
+              Serial.print(remoteTareRequests);
+              Serial.print(" requests)");
+            }
+            Serial.println();
+          } else {
+            Serial.println("Tare by remote command failed");
           }
-          Serial.println();
         }
         pureScale();
         updateOled();

@@ -591,7 +591,7 @@ void calibrationEnsureSampleWindow() {
 
 void calibrationRestoreSampleWindow() {
   if (b_calibrationSampleWindowActive) {
-    scale.setSamplesInUse(1);
+    setScaleSamplesInUseWhenReady(1, "calibration restore");
     b_calibrationSampleWindowActive = false;
   }
 }
@@ -600,6 +600,8 @@ void calibrationFinish(bool returnToMenu) {
   i_button_cal_status = 0;
   b_calibration = false;
   b_calibrationZeroCaptured = false;
+  clearPendingAutomaticTareState();
+  consumeScaleTareStatus();
   calibrationRestoreSampleWindow();
   if (returnToMenu) {
     b_menu = true;
@@ -673,104 +675,17 @@ void calibrationShowFailure(CalibrationRejectReason reason) {
   delay(1000);
 }
 
-bool calibrationWaitForSample(ADS1232DebugInfo &info,
-                              int previousReadIndex,
-                              CalibrationRejectReason &failureReason) {
-  unsigned long start = millis();
-  unsigned long lastUpdate = start;
-  while (millis() - start < 4000) {
-    if (scale.update()) {
-      lastUpdate = millis();
-      info = scale.getDebugInfo();
-      if (info.signalTimeout) {
-        failureReason = CAL_REJECT_ADC_TIMEOUT;
-        return false;
-      }
-      if (info.dataOutOfRange) {
-        failureReason = CAL_REJECT_ADC_RANGE;
-        return false;
-      }
-      if (info.validSamples >= CALIBRATION_MIN_VALID_SAMPLES &&
-          (previousReadIndex < 0 || info.readIndex != previousReadIndex)) {
-        failureReason = CAL_REJECT_NONE;
-        return true;
-      }
-    } else if (millis() - lastUpdate > 1500 || scale.getSignalTimeoutFlag()) {
-      failureReason = CAL_REJECT_ADC_TIMEOUT;
-      return false;
-    }
-    delay(2);
-    yield();
-  }
-  info = scale.getDebugInfo();
-  failureReason = info.validSamples < CALIBRATION_MIN_VALID_SAMPLES
-                    ? CAL_REJECT_INSUFFICIENT_SAMPLES
-                    : CAL_REJECT_ADC_TIMEOUT;
-  return false;
+long calibrationRawSpread(long firstRaw, long secondRaw) {
+  long spread = secondRaw - firstRaw;
+  return spread < 0 ? -spread : spread;
 }
 
-bool calibrationCaptureRaw(CalibrationRawCapture &capture,
-                           CalibrationRejectReason unstableReason,
-                           CalibrationRejectReason &failureReason) {
-  calibrationEnsureSampleWindow();
-
-  // Wait for the smoothed value to plateau before measuring. The ADS1232 lib
-  // ramps its moving average up after setSamplesInUse() clears the window and
-  // after a load step, so the first reads with validSamples>=16 are still
-  // climbing -- capturing then gives a too-small delta and a large read-to-read
-  // spread that trips the stability gate even though the load cell is fine.
-  // Poll fresh samples until the read-to-read change stays under the stability
-  // limit for several reads in a row; only then is the reading actually settled.
-  const int requiredStableReads = 3;
-  const float stabilityLimit = calibrationStabilityRawLimit(f_calibration_value);
-  unsigned long settleStart = millis();
-  ADS1232DebugInfo firstInfo;
-  ADS1232DebugInfo secondInfo;
-  long prevRaw = 0;
-  bool havePrev = false;
-  int stableCount = 0;
-  int lastReadIndex = -1;
-  bool settled = false;
-  while (millis() - settleStart < 8000) {
-    if (!calibrationWaitForSample(firstInfo, lastReadIndex, failureReason)) {
-      return false;  // ADC timeout / out-of-range / insufficient samples
-    }
-    lastReadIndex = firstInfo.readIndex;
-    long raw = firstInfo.smoothedValue;
-    if (havePrev) {
-      long step = raw - prevRaw;
-      if (step < 0) {
-        step = -step;
-      }
-      if ((float)step <= stabilityLimit) {
-        if (++stableCount >= requiredStableReads) {
-          settled = true;
-          break;
-        }
-      } else {
-        stableCount = 0;
-      }
-    }
-    prevRaw = raw;
-    havePrev = true;
-  }
-  if (!settled) {
-    // Never plateaued within the budget -- genuinely unstable (or USB noise).
-    failureReason = unstableReason;
-    return false;
-  }
-
-  // One more settled read to record the residual read-to-read spread.
-  if (!calibrationWaitForSample(secondInfo, firstInfo.readIndex, failureReason)) {
-    return false;
-  }
-
+void calibrationStoreRawCapture(CalibrationRawCapture &capture,
+                                const ADS1232DebugInfo &firstInfo,
+                                const ADS1232DebugInfo &secondInfo,
+                                long spread) {
   capture.firstRaw = firstInfo.smoothedValue;
   capture.secondRaw = secondInfo.smoothedValue;
-  long spread = capture.secondRaw - capture.firstRaw;
-  if (spread < 0) {
-    spread = -spread;
-  }
   capture.spread = spread;
   capture.raw = (capture.firstRaw + capture.secondRaw) / 2;
   capture.validSamples = firstInfo.validSamples < secondInfo.validSamples
@@ -778,14 +693,91 @@ bool calibrationCaptureRaw(CalibrationRawCapture &capture,
                            : secondInfo.validSamples;
   capture.signalTimeout = firstInfo.signalTimeout || secondInfo.signalTimeout;
   capture.dataOutOfRange = firstInfo.dataOutOfRange || secondInfo.dataOutOfRange;
+}
 
-  if ((float)capture.spread > calibrationStabilityRawLimit(f_calibration_value)) {
-    failureReason = unstableReason;
-    return false;
+bool calibrationCaptureRaw(CalibrationRawCapture &capture,
+                           CalibrationRejectReason unstableReason,
+                           CalibrationRejectReason &failureReason) {
+  calibrationEnsureSampleWindow();
+  capture = CalibrationRawCapture();
+  unsigned long start = millis();
+  unsigned long lastUpdate = start;
+  float stabilityLimit = calibrationStabilityRawLimit(f_calibration_value);
+  int previousReadIndex = -1;
+  bool hasPrevious = false;
+  uint8_t stableReads = 0;
+  unsigned long stableStartedAt = 0;
+  long stableMin = 0;
+  long stableMax = 0;
+  ADS1232DebugInfo previousInfo;
+
+  while (millis() - start < CALIBRATION_CAPTURE_TIMEOUT_MS) {
+    if (scale.update()) {
+      lastUpdate = millis();
+      ADS1232DebugInfo currentInfo = scale.getDebugInfo();
+      if (currentInfo.signalTimeout) {
+        capture.signalTimeout = true;
+        failureReason = CAL_REJECT_ADC_TIMEOUT;
+        return false;
+      }
+      if (currentInfo.dataOutOfRange) {
+        capture.dataOutOfRange = true;
+        failureReason = CAL_REJECT_ADC_RANGE;
+        return false;
+      }
+      if (currentInfo.validSamples >= CALIBRATION_MIN_VALID_SAMPLES &&
+          currentInfo.readIndex != previousReadIndex) {
+        previousReadIndex = currentInfo.readIndex;
+        if (hasPrevious) {
+          long spread = calibrationRawSpread(previousInfo.smoothedValue,
+                                             currentInfo.smoothedValue);
+          calibrationStoreRawCapture(capture, previousInfo, currentInfo, spread);
+          if ((float)spread <= stabilityLimit) {
+            if (stableReads == 0) {
+              stableStartedAt = millis();
+              stableMin = previousInfo.smoothedValue;
+              stableMax = previousInfo.smoothedValue;
+            }
+            if (currentInfo.smoothedValue < stableMin) {
+              stableMin = currentInfo.smoothedValue;
+            }
+            if (currentInfo.smoothedValue > stableMax) {
+              stableMax = currentInfo.smoothedValue;
+            }
+            stableReads++;
+          } else {
+            stableReads = 0;
+            stableStartedAt = 0;
+          }
+          long stableWindowSpread = stableMax - stableMin;
+          if (stableReads >= CALIBRATION_STABLE_READS_REQUIRED &&
+              millis() - stableStartedAt >= CALIBRATION_STABLE_HOLD_MS &&
+              (float)stableWindowSpread <= stabilityLimit) {
+            failureReason = CAL_REJECT_NONE;
+            return true;
+          }
+        } else {
+          capture.raw = currentInfo.smoothedValue;
+          capture.validSamples = currentInfo.validSamples;
+          hasPrevious = true;
+        }
+        previousInfo = currentInfo;
+      }
+    } else if (millis() - lastUpdate > 1500 || scale.getSignalTimeoutFlag()) {
+      capture.signalTimeout = true;
+      failureReason = CAL_REJECT_ADC_TIMEOUT;
+      return false;
+    }
+    delay(2);
+    yield();
   }
 
-  failureReason = CAL_REJECT_NONE;
-  return true;
+  ADS1232DebugInfo info = scale.getDebugInfo();
+  failureReason = capture.validSamples < CALIBRATION_MIN_VALID_SAMPLES &&
+                          info.validSamples < CALIBRATION_MIN_VALID_SAMPLES
+                    ? CAL_REJECT_INSUFFICIENT_SAMPLES
+                    : unstableReason;
+  return false;
 }
 
 void calibrationFail(CalibrationRejectReason reason,
@@ -999,6 +991,7 @@ void calibration(int input) {
         return;
       }
       scale.tare();
+      consumeScaleTareStatus();
       b_calibrationZeroCaptured = true;
       i_lastCalibrationZeroRaw = calibrationZeroCapture.raw;
       i_lastCalibrationLoadRaw = 0;

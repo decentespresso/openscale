@@ -197,9 +197,12 @@ void processWsPendingCmds() {
   if (mask & WSP_TIMER_STOP)  { stopWatch.stop(); }
   if (mask & WSP_TIMER_ZERO)  { stopWatch.reset(); }
   if (mask & WSP_SET_SAMPLES) {
-    scale.setSamplesInUse(samplesInUse);
-    Serial.print("Samples in use set to: ");
-    Serial.println(scale.getSamplesInUse());
+    if (setScaleSamplesInUseWhenReady(samplesInUse, "remote samples")) {
+      Serial.print("Samples in use set to: ");
+      Serial.println(scale.getSamplesInUse());
+    } else {
+      Serial.println("Samples in use refresh failed");
+    }
   }
   if (mask & WSP_WIFI_UPDATE) {
     wifiUpdate();
