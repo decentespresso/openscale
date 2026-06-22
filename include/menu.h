@@ -713,11 +713,54 @@ bool calibrationCaptureRaw(CalibrationRawCapture &capture,
                            CalibrationRejectReason unstableReason,
                            CalibrationRejectReason &failureReason) {
   calibrationEnsureSampleWindow();
+
+  // Wait for the smoothed value to plateau before measuring. The ADS1232 lib
+  // ramps its moving average up after setSamplesInUse() clears the window and
+  // after a load step, so the first reads with validSamples>=16 are still
+  // climbing -- capturing then gives a too-small delta and a large read-to-read
+  // spread that trips the stability gate even though the load cell is fine.
+  // Poll fresh samples until the read-to-read change stays under the stability
+  // limit for several reads in a row; only then is the reading actually settled.
+  const int requiredStableReads = 3;
+  const float stabilityLimit = calibrationStabilityRawLimit(f_calibration_value);
+  unsigned long settleStart = millis();
   ADS1232DebugInfo firstInfo;
   ADS1232DebugInfo secondInfo;
-  if (!calibrationWaitForSample(firstInfo, -1, failureReason)) {
+  long prevRaw = 0;
+  bool havePrev = false;
+  int stableCount = 0;
+  int lastReadIndex = -1;
+  bool settled = false;
+  while (millis() - settleStart < 8000) {
+    if (!calibrationWaitForSample(firstInfo, lastReadIndex, failureReason)) {
+      return false;  // ADC timeout / out-of-range / insufficient samples
+    }
+    lastReadIndex = firstInfo.readIndex;
+    long raw = firstInfo.smoothedValue;
+    if (havePrev) {
+      long step = raw - prevRaw;
+      if (step < 0) {
+        step = -step;
+      }
+      if ((float)step <= stabilityLimit) {
+        if (++stableCount >= requiredStableReads) {
+          settled = true;
+          break;
+        }
+      } else {
+        stableCount = 0;
+      }
+    }
+    prevRaw = raw;
+    havePrev = true;
+  }
+  if (!settled) {
+    // Never plateaued within the budget -- genuinely unstable (or USB noise).
+    failureReason = unstableReason;
     return false;
   }
+
+  // One more settled read to record the residual read-to-read spread.
   if (!calibrationWaitForSample(secondInfo, firstInfo.readIndex, failureReason)) {
     return false;
   }
