@@ -652,9 +652,27 @@ void setup() {
   //loadcell calibration value check
   EEPROM.get(i_addr_calibration_value, f_calibration_value);
   if (!isValidCalibrationValue(f_calibration_value)) {
+    float storedCalibrationValue = f_calibration_value;
+    CalibrationRejectReason bootCalibrationReason = CAL_REJECT_FACTOR_SIGN;
+    if (!isfinite(storedCalibrationValue) ||
+        fabsf(storedCalibrationValue) < CALIBRATION_VALUE_MIN_ABS) {
+      bootCalibrationReason = CAL_REJECT_FACTOR_NEAR_ZERO;
+    } else if (fabsf(storedCalibrationValue) > CALIBRATION_VALUE_MAX_ABS) {
+      bootCalibrationReason = CAL_REJECT_FACTOR_TOO_LARGE;
+    }
+    b_calibrationInvalid = true;
+    snprintf(c_calibrationStatus, sizeof(c_calibrationStatus), "%s",
+             calibrationRejectReasonText(bootCalibrationReason));
+    Serial.print(F("Invalid stored calibration value: "));
+    Serial.print(storedCalibrationValue, 6);
+    Serial.print(F(" reason="));
+    Serial.println(c_calibrationStatus);
     f_calibration_value = CALIBRATION_VALUE_DEFAULT;
-    EEPROM.put(i_addr_calibration_value, f_calibration_value);  //set to default value
-    EEPROM.commit();
+    Serial.println(F("Using temporary default calibration; EEPROM not overwritten."));
+  } else {
+    b_calibrationInvalid = false;
+    snprintf(c_calibrationStatus, sizeof(c_calibrationStatus), "%s",
+             calibrationRejectReasonText(CAL_REJECT_NONE));
   }
   scale.setCalFactor(f_calibration_value);  //设定校准值
 
