@@ -499,6 +499,10 @@ void setup() {
   gpio_hold_dis((gpio_num_t)I2C_SCL);
   gpio_hold_dis((gpio_num_t)I2C_SDA);
 
+  // Disable the global deep-sleep hold feature so GPIOs can be freely
+  // reconfigured during active mode.
+  gpio_deep_sleep_hold_dis();
+
   pinMode(PWR_CTRL, OUTPUT);            // Set the PWR_CTRL pin as an output pin
   digitalWrite(PWR_CTRL, HIGH);         // Set the PWR_CTRL pin to HIGH, turning on the connected device or circuit
 //#if defined(ACC_MPU6050) || defined(ACC_BMA400)

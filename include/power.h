@@ -243,6 +243,10 @@ void esp32_sleep() {
   //#endif
   digitalWrite(PWR_CTRL, LOW);
   gpio_hold_en((gpio_num_t)PWR_CTRL);
+
+  // Global enable: apply all gpio_hold_en latches during deep sleep.
+  gpio_deep_sleep_hold_en();
+
   esp_deep_sleep_start();
 }
 #endif  //ESP32
