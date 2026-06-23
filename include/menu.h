@@ -1092,6 +1092,10 @@ void calibration(int input) {
                                    loadFailureReason)) {
           calibrationFail(loadFailureReason, previousCalibrationValue, 0.0f,
                           &calibrationZeroCapture, &loadCapture, 0.0f);
+          Serial.print("loadCapture.raw = ");
+          Serial.print(loadCapture.raw);
+          Serial.print(" calibrationZeroCapture.raw = ");
+          Serial.println(calibrationZeroCapture.raw);
           return;
         }
 

@@ -969,22 +969,42 @@ void pureScale() {
   } else if (scale.getSignalTimeoutFlag() &&
              millis() - t_lastScaleData > 1500 &&
              millis() - t_lastScaleRecovery > 5000) {
-    Serial.println("Scale ADC timeout. Power cycling ADC.");
+    Serial.println("Scale ADC timeout (DOUT stuck HIGH). SCLK hard reset.");
     b_adc_recovery_active = true;
     if (i_adc_recovery_count < 255) {
       i_adc_recovery_count++;
     }
-    scale.powerDown();
-    delay(5);
-    scale.powerUp();
+    // Use hardReset() instead of bare powerDown/powerUp — the SCLK sequence
+    // resets the internal state machine per datasheet, unlike PDWN toggle alone.
+    scale.hardReset();
     if (refreshScaleDatasetAfterDiscontinuity("ADC recovery") &&
         tareScaleWhenAdcReady("ADC recovery tare")) {
       resetScaleOutputAfterAdcDiscontinuity();
     }
     t_lastScaleRecovery = millis();
     t_lastScaleData = millis();
+  } else if (scale.isAdcStuck() &&
+             millis() - t_lastScaleData > 2000 &&
+             millis() - t_lastScaleRecovery > 5000) {
+    // DOUT stuck LOW — ADC appears "ready" but outputs frozen identical values.
+    // This is the classic low-battery latch-up: the ADS1232 produces 0x800000
+    // (mid-scale) on every read, which after XOR becomes a constant value.
+    // signalTimeoutFlag never fires because DOUT is always LOW.  isAdcStuck()
+    // catches this by tracking consecutive bit-identical raw readings.
+    Serial.println("Scale ADC stuck (DOUT stuck LOW / frozen output). SCLK hard reset.");
+    b_adc_recovery_active = true;
+    if (i_adc_recovery_count < 255) {
+      i_adc_recovery_count++;
+    }
+    scale.hardReset();
+    if (refreshScaleDatasetAfterDiscontinuity("ADC stuck recovery") &&
+        tareScaleWhenAdcReady("ADC stuck recovery tare")) {
+      resetScaleOutputAfterAdcDiscontinuity();
+    }
+    t_lastScaleRecovery = millis();
+    t_lastScaleData = millis();
   }
-  
+
   if (b_newDataReady) {
     float raw_weight = scale.getData();
     updatePressSampling();
