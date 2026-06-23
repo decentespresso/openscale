@@ -484,7 +484,32 @@ void setup() {
   }
   // Release GPIO holds set by esp32_sleep() — all PWR_CTRL-domain pins were
   // latched LOW (or INPUT) to prevent back-feed through ESD diodes.
-  gpio_hold_dis((gpio_num_t)PWR_CTRL);
+  pinMode(PWR_CTRL, OUTPUT);
+  digitalWrite(PWR_CTRL, HIGH);
+  pinMode(ACC_PWR_CTRL, OUTPUT);
+  digitalWrite(ACC_PWR_CTRL, HIGH);
+  pinMode(OLED_SDIN, OUTPUT);
+  digitalWrite(OLED_SDIN, LOW);
+  pinMode(OLED_SCLK, OUTPUT);
+  digitalWrite(OLED_SCLK, LOW);
+  pinMode(OLED_DC, OUTPUT);
+  digitalWrite(OLED_DC, LOW);
+  pinMode(OLED_RST, OUTPUT);
+  digitalWrite(OLED_RST, HIGH);
+  pinMode(OLED_CS, OUTPUT);
+  digitalWrite(OLED_CS, HIGH);
+  pinMode(SCALE_SCLK, OUTPUT);
+  digitalWrite(SCALE_SCLK, LOW);
+  pinMode(SCALE_PDWN, OUTPUT);
+  digitalWrite(SCALE_PDWN, HIGH);
+  pinMode(SCALE_DOUT, INPUT);
+  pinMode(SCALE2_SCLK, OUTPUT);
+  digitalWrite(SCALE2_SCLK, LOW);
+  pinMode(SCALE2_PDWN, OUTPUT);
+  digitalWrite(SCALE2_PDWN, HIGH);
+  pinMode(SCALE2_DOUT, INPUT);
+  pinMode(I2C_SCL, INPUT_PULLUP);
+  pinMode(I2C_SDA, INPUT_PULLUP);
   gpio_hold_dis((gpio_num_t)OLED_SDIN);
   gpio_hold_dis((gpio_num_t)OLED_SCLK);
   gpio_hold_dis((gpio_num_t)OLED_DC);
@@ -498,17 +523,15 @@ void setup() {
   gpio_hold_dis((gpio_num_t)SCALE2_DOUT);
   gpio_hold_dis((gpio_num_t)I2C_SCL);
   gpio_hold_dis((gpio_num_t)I2C_SDA);
+  gpio_hold_dis((gpio_num_t)PWR_CTRL);
 
-  pinMode(PWR_CTRL, OUTPUT);            // Set the PWR_CTRL pin as an output pin
-  digitalWrite(PWR_CTRL, HIGH);         // Set the PWR_CTRL pin to HIGH, turning on the connected device or circuit
 //#if defined(ACC_MPU6050) || defined(ACC_BMA400)
 #if defined(V7_3) || defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
   gpio_hold_dis((gpio_num_t)ACC_PWR_CTRL);  // Disable GPIO hold mode for the specified pin, allowing it to be controlled
-  pinMode(ACC_PWR_CTRL, OUTPUT);            // Set the PWR_CTRL pin as an output pin
-  digitalWrite(ACC_PWR_CTRL, HIGH);         // Set the PWR_CTRL pin to HIGH, turning on the connected device or circuit
   Serial.println("ACC_PWR_CTRL = HIGH");
 #endif
 //#endif
+  gpio_deep_sleep_hold_dis();
 #ifdef ESP32
   Wire.begin(I2C_SDA, I2C_SCL);
 #endif
