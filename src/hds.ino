@@ -427,6 +427,9 @@ void setup() {
   usbCallbacks.setTrackingUpdateInterval = setTrackingUpdateInterval;
   usbCallbacks.buttonSquare_Pressed = buttonSquare_Pressed;
   usbCallbacks.buttonCircle_Pressed = buttonCircle_Pressed;
+#ifdef ESP32
+  releaseWakePinsFromRtcMode();
+#endif
   button_init();
   linkSubmenus();
   pinMode(BATTERY_CHARGING, INPUT_PULLUP);

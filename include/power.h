@@ -9,6 +9,10 @@
 #endif
 #include "espnow.h"
 
+#ifdef ESP32
+#include "driver/rtc_io.h"
+#endif
+
 #ifdef ADS1115ADC
 #include <Adafruit_ADS1X15.h>
 Adafruit_ADS1115 ads;  // Create an ADS1115 object
@@ -89,6 +93,25 @@ void ADS_init() {
 #ifdef ESP32
 
 int i_wakeupPin;
+void configureWakePinForDeepSleep(gpio_num_t pin) {
+  rtc_gpio_init(pin);
+  rtc_gpio_set_direction(pin, RTC_GPIO_MODE_INPUT_ONLY);
+  rtc_gpio_pullup_en(pin);
+  rtc_gpio_pulldown_dis(pin);
+}
+
+void configureWakePinsForDeepSleep() {
+  configureWakePinForDeepSleep((gpio_num_t)BUTTON_CIRCLE);
+  configureWakePinForDeepSleep((gpio_num_t)BUTTON_SQUARE);
+  configureWakePinForDeepSleep((gpio_num_t)BATTERY_CHARGING);
+}
+
+void releaseWakePinsFromRtcMode() {
+  rtc_gpio_deinit((gpio_num_t)BUTTON_CIRCLE);
+  rtc_gpio_deinit((gpio_num_t)BUTTON_SQUARE);
+  rtc_gpio_deinit((gpio_num_t)BATTERY_CHARGING);
+}
+
 void print_wakeup_reason() {
   esp_sleep_wakeup_cause_t wakeup_reason;
 
@@ -184,6 +207,7 @@ void esp32_sleep() {
   // attachInterrupt(GPIO_NUM_BUTTON_POWER, esp32_wakeup, FALLING);
   // esp_sleep_enable_ext0_wakeup(GPIO_NUM_BUTTON_POWER, LOW);
   //new bitmap sleep wakeup pin
+  configureWakePinsForDeepSleep();
   esp_sleep_enable_ext1_wakeup_io(PIN_BITMASK, ESP_EXT1_WAKEUP_ANY_LOW);
 #endif
 
