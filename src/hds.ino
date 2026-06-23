@@ -482,7 +482,23 @@ void setup() {
       b_button_pressed = false;  // Reset mark
     }
   }
-  gpio_hold_dis((gpio_num_t)PWR_CTRL);  // Disable GPIO hold mode for the specified pin, allowing it to be controlled
+  // Release GPIO holds set by esp32_sleep() — all PWR_CTRL-domain pins were
+  // latched LOW (or INPUT) to prevent back-feed through ESD diodes.
+  gpio_hold_dis((gpio_num_t)PWR_CTRL);
+  gpio_hold_dis((gpio_num_t)OLED_SDIN);
+  gpio_hold_dis((gpio_num_t)OLED_SCLK);
+  gpio_hold_dis((gpio_num_t)OLED_DC);
+  gpio_hold_dis((gpio_num_t)OLED_RST);
+  gpio_hold_dis((gpio_num_t)OLED_CS);
+  gpio_hold_dis((gpio_num_t)SCALE_SCLK);
+  gpio_hold_dis((gpio_num_t)SCALE_PDWN);
+  gpio_hold_dis((gpio_num_t)SCALE_DOUT);
+  gpio_hold_dis((gpio_num_t)SCALE2_SCLK);
+  gpio_hold_dis((gpio_num_t)SCALE2_PDWN);
+  gpio_hold_dis((gpio_num_t)SCALE2_DOUT);
+  gpio_hold_dis((gpio_num_t)I2C_SCL);
+  gpio_hold_dis((gpio_num_t)I2C_SDA);
+
   pinMode(PWR_CTRL, OUTPUT);            // Set the PWR_CTRL pin as an output pin
   digitalWrite(PWR_CTRL, HIGH);         // Set the PWR_CTRL pin to HIGH, turning on the connected device or circuit
 //#if defined(ACC_MPU6050) || defined(ACC_BMA400)

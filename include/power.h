@@ -186,6 +186,57 @@ void esp32_sleep() {
   //new bitmap sleep wakeup pin
   esp_sleep_enable_ext1_wakeup_io(PIN_BITMASK, ESP_EXT1_WAKEUP_ANY_LOW);
 #endif
+
+  // ---- Prevent GPIO back-feed into PWR_CTRL domain during deep sleep ----
+  // TPS22860 load switch may not fully isolate its output when off.
+  // If any ESP32 GPIO connected to a powered-down device is HIGH (even
+  // through an external pull-up), current can flow through the device's
+  // internal ESD protection diode into its VDD pin, partially powering it.
+  // A partially-powered ADS1232 / REF5025 / ADS1115 may not trigger POR
+  // on the next wake-up, causing latch-up and the "stuck at 0g" bug.
+  //
+  // Fix: drive every GPIO in the PWR_CTRL domain LOW (or INPUT for DOUT
+  // pins) and enable gpio_hold so the state persists through deep sleep.
+  // I2C is driven LOW to sink the external pull-up current safely instead
+  // of letting it flow through unpowered-device ESD diodes.
+
+  // --- OLED (SPI) ---
+  pinMode(OLED_SDIN, OUTPUT);  digitalWrite(OLED_SDIN, LOW);
+  pinMode(OLED_SCLK, OUTPUT);  digitalWrite(OLED_SCLK, LOW);
+  pinMode(OLED_DC, OUTPUT);    digitalWrite(OLED_DC, LOW);
+  pinMode(OLED_RST, OUTPUT);   digitalWrite(OLED_RST, LOW);
+  pinMode(OLED_CS, OUTPUT);    digitalWrite(OLED_CS, LOW);
+  gpio_hold_en((gpio_num_t)OLED_SDIN);
+  gpio_hold_en((gpio_num_t)OLED_SCLK);
+  gpio_hold_en((gpio_num_t)OLED_DC);
+  gpio_hold_en((gpio_num_t)OLED_RST);
+  gpio_hold_en((gpio_num_t)OLED_CS);
+
+  // --- ADS1232 primary ---
+  pinMode(SCALE_SCLK, OUTPUT); digitalWrite(SCALE_SCLK, LOW);
+  pinMode(SCALE_PDWN, OUTPUT); digitalWrite(SCALE_PDWN, LOW);  // power-down
+  pinMode(SCALE_DOUT, INPUT);                                    // input from ADC
+  gpio_hold_en((gpio_num_t)SCALE_SCLK);
+  gpio_hold_en((gpio_num_t)SCALE_PDWN);
+  gpio_hold_en((gpio_num_t)SCALE_DOUT);
+
+  // --- ADS1232 secondary (if present) ---
+  pinMode(SCALE2_SCLK, OUTPUT); digitalWrite(SCALE2_SCLK, LOW);
+  pinMode(SCALE2_PDWN, OUTPUT); digitalWrite(SCALE2_PDWN, LOW);
+  pinMode(SCALE2_DOUT, INPUT);
+  gpio_hold_en((gpio_num_t)SCALE2_SCLK);
+  gpio_hold_en((gpio_num_t)SCALE2_PDWN);
+  gpio_hold_en((gpio_num_t)SCALE2_DOUT);
+
+  // --- I2C bus (ADS1115 + gyro) ---
+  // Both sides of the bus are unpowered, but external pull-ups to 3.3V
+  // remain.  Driving LOW sinks the pull-up current safely to ESP32 ground
+  // instead of letting it flow through unpowered-device ESD diodes.
+  pinMode(I2C_SCL, OUTPUT); digitalWrite(I2C_SCL, LOW);
+  pinMode(I2C_SDA, OUTPUT); digitalWrite(I2C_SDA, LOW);
+  gpio_hold_en((gpio_num_t)I2C_SCL);
+  gpio_hold_en((gpio_num_t)I2C_SDA);
+
   //#if defined(V7_3) || defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
   digitalWrite(ACC_PWR_CTRL, LOW);
   gpio_hold_en((gpio_num_t)ACC_PWR_CTRL);
