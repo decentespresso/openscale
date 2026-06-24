@@ -170,102 +170,6 @@ public:
   size_t usbRxLen = 0;
   unsigned long usbLastByteAt = 0;
 
-  uint8_t calculatePayloadChecksum(uint8_t *data, size_t len) {
-    uint8_t xorSum = 0;
-    for (size_t i = 0; i < len; i++) {
-      xorSum ^= data[i];
-    }
-    return xorSum;
-  }
-
-  bool hasChecksummedFrame(uint8_t *data, size_t len, size_t frameLen) {
-    if (len < frameLen || frameLen < 2) {
-      return false;
-    }
-    return data[frameLen - 1] == calculatePayloadChecksum(data, frameLen - 1);
-  }
-
-  size_t fixedFrameLength(size_t len, size_t frameLen) {
-    return len >= frameLen ? frameLen : 0;
-  }
-
-  size_t checksummedOrShortFrameLength(uint8_t *data, size_t len, size_t shortLen, size_t frameLen, bool allowShort) {
-    if (hasChecksummedFrame(data, len, frameLen)) {
-      return frameLen;
-    }
-    if (len < shortLen) {
-      return 0;
-    }
-    if (allowShort || len >= frameLen) {
-      return shortLen;
-    }
-    return 0;
-  }
-
-  size_t usbCommandFrameLength(uint8_t *data, size_t len, bool allowShort) {
-    if (data == nullptr || len == 0) {
-      return 0;
-    }
-    if (data[0] != 0x03) {
-      return 1;
-    }
-    if (len < 2) {
-      return 0;
-    }
-
-    switch (data[1]) {
-      case 0x0F:
-        return fixedFrameLength(len, 7);
-      case 0x0A:
-        if (hasChecksummedFrame(data, len, 7)) {
-          return 7;
-        }
-        if (len < 3) {
-          return 0;
-        }
-        if (data[2] == 0x01) {
-          return checksummedOrShortFrameLength(data, len, 6, 7, allowShort);
-        }
-        if (data[2] == 0x03 || data[2] == 0x04) {
-          return checksummedOrShortFrameLength(data, len, 4, 7, allowShort);
-        }
-        return checksummedOrShortFrameLength(data, len, 3, 7, allowShort);
-      case 0x0B:
-        return checksummedOrShortFrameLength(data, len, 3, 7, allowShort);
-      case 0x1A:
-        return fixedFrameLength(len, 3);
-      case 0x1B:
-        return fixedFrameLength(len, 2);
-#ifdef BUZZER
-      case 0x1C:
-        return fixedFrameLength(len, 3);
-#endif
-      case 0x1D:
-        return fixedFrameLength(len, 3);
-      case 0x1E:
-        return fixedFrameLength(len, 4);
-      case 0x1F:
-        return fixedFrameLength(len, 2);
-      case 0x20:
-        if (len < 3) {
-          return 0;
-        }
-        return fixedFrameLength(len, data[2] == 0x01 ? 4 : 3);
-#if defined(ACC_MPU6050) || defined(ACC_BMA400)
-      case 0x21:
-        return fixedFrameLength(len, 2);
-#endif
-      case 0x22:
-        return fixedFrameLength(len, 2);
-      case 0x25:
-        return checksummedOrShortFrameLength(data, len, 3, 4, allowShort);
-      case 0x26:
-        return checksummedOrShortFrameLength(data, len, 3, 4, allowShort);
-      default:
-        return fixedFrameLength(len, 2);
-    }
-  }
-
   void consumeUsbRxBytes(size_t count) {
     if (count >= usbRxLen) {
       usbRxLen = 0;
@@ -316,7 +220,7 @@ public:
       bool timedOut = allowTimeout && usbRxTimedOut();
 
       if (usbRxBuffer[0] == 0x03) {
-        size_t frameLen = usbCommandFrameLength(usbRxBuffer, usbRxLen, timedOut);
+        size_t frameLen = decentCommandFrameLength(usbRxBuffer, usbRxLen, timedOut);
         if (frameLen == 0) {
           if (timedOut) {
             Serial.println("Dropping incomplete USB binary frame");
