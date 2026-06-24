@@ -48,9 +48,9 @@ echo "[stress] WiFi load (WS+churn+mDNS) running ${RDUR}s @ $(ts)"
 
 ASSETS=(/ /dosing_assistant/dosing_assistant.html /dosing_assistant/same_weight.css \
  /dosing_assistant/main.js /dosing_assistant/modules/constants.js /dosing_assistant/modules/dosing.js \
- /dosing_assistant/modules/presets.js /dosing_assistant/modules/export.js \
+ /shared/modules/presets.js /dosing_assistant/modules/export.js \
  /dosing_assistant/modules/state-machine.js /dosing_assistant/modules/ui-controller.js \
- /dosing_assistant/modules/scale.js /dosing_assistant/modules/reconnecting-websocket.js)
+ /dosing_assistant/modules/scale.js /shared/reconnecting-websocket.js)
 
 END=$(( $(date +%s) + RDUR ))
 while [ "$(date +%s)" -lt "$END" ]; do

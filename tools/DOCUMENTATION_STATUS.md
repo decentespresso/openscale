@@ -45,7 +45,7 @@ Last Updated: 2025-03-20
 - Complete packet format specification
 - Python tools usage
 - Example output
-- Interpreting metrics (Std Dev, SPS, etc.)
+- Interpreting metrics (SPS, signal timeout, reset reason)
 - Integration examples (Python & Arduino)
 - Troubleshooting guide
 - Callback system

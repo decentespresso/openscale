@@ -1,4 +1,4 @@
-# ADS1232 Debug System
+﻿# ADS1232 Debug System
 
 This document describes the debug system for the ADS1232 load cell ADC.
 
@@ -57,16 +57,14 @@ When you send the "Get Info" command (`03 25 02`), the firmware responds with a 
 | 6-9 | Raw Value | int32 | Latest 24-bit ADC reading |
 | 10-13 | Smoothed Value | int32 | After averaging filter |
 | 14-17 | Tare Offset | int32 | Current tare/zero offset |
-| 18-19 | Conversion Time | uint16 | Time in ms × 100 (0.01ms precision) |
-| 20-21 | SPS | uint16 | Samples/sec × 100 |
+| 18-19 | Conversion Time | uint16 | Time in ms Ã— 100 (0.01ms precision) |
+| 20-21 | SPS | uint16 | Samples/sec Ã— 100 |
 | 22 | Read Index | uint8 | Current position in sample buffer |
 | 23 | Samples In Use | uint8 | Number of samples being averaged |
-| 24-27 | Data Min | int32 | Minimum value in dataset |
-| 28-31 | Data Max | int32 | Maximum value in dataset |
-| 32-35 | Data Avg | int32 | Average of dataset |
-| 36-37 | Std Dev | uint16 | Standard deviation × 10 (0.1 precision) |
-| 38 | Flags | uint8 | Bit 0: Out of range, Bit 1: Timeout, Bit 2: Tare active |
-| 39 | Tare Times | uint8 | Tare sample counter |
+| 24 | Reset Reason | uint8 | Raw `esp_reset_reason()` code captured at boot |
+| 25-37 | Reserved | bytes | Zero-filled |
+| 38 | Flags | uint8 | Bit 0: Out of range, Bit 1: Timeout |
+| 39 | Reserved | uint8 | Always 0 |
 | 40 | Checksum | uint8 | XOR of bytes 0-39 |
 
 All multi-byte values are **big-endian** (network byte order).
@@ -150,29 +148,15 @@ SPS:            9.98
 Samples Used:   4
 Read Index:     2
 
-Dataset Stats:
-  Min:          8388605
-  Max:          8388615
-  Avg:          8388610
-  Range:        10
-  Std Dev:      3.2 (lower = more stable)
+Reset Reason:   1
 
 Flags:
   Out of Range: False
   Timeout:      False
-  Tare Active:  False
 ==========================
 ```
 
 ## Interpreting the Data
-
-### Standard Deviation (Noise Indicator)
-This is the most important metric for detecting issues:
-
-- **< 10**: Excellent stability - load cell and ADC working perfectly
-- **10-50**: Good - normal operation
-- **50-200**: Fair - some noise, check connections
-- **> 200**: Problems - likely connection, grounding, or EMI issues
 
 ### SPS (Samples Per Second)
 Should be around:
@@ -181,19 +165,14 @@ Should be around:
 
 If SPS is unstable or incorrect, check SCK timing and communication.
 
-### Data Range (Max - Min)
-Shows variation in the sample buffer:
-- Small range (< 20) = stable
-- Large range = noisy or changing weight
-
 ### Signal Timeout Flag
 If true, the ADC is not responding within the expected time. Check:
 - Wiring (DOUT, SCLK, PDWN pins)
 - Power supply
 - ADC chip health
 
-### Tare Progress
-When tare is active, `tareTimes` shows how many samples have been collected for the tare operation.
+### Reset Reason
+Shows the raw ESP32 reset reason code captured at boot. This helps tell a clean boot from brownout, watchdog, panic, or software restart while collecting debug data.
 
 ## Integration Examples
 
@@ -218,11 +197,11 @@ if info:
     
     # Or access specific fields
     print(f"Raw ADC value: {info['rawValue']}")
-    print(f"Std Dev: {info['dataStdDev']}")
+    print(f"Reset reason: {info['resetReason']}")
     
     # Check for issues
-    if info['dataStdDev'] > 100:
-        print("WARNING: High noise detected!")
+    if info['signalTimeout']:
+        print("WARNING: ADC signal timeout!")
 
 ser.close()
 ```
@@ -279,13 +258,6 @@ if (Serial.available() >= 41) {
 2. Check for buffer overflow or partial reads
 3. Verify big-endian byte order
 
-### Constant high standard deviation
-1. Check load cell wiring (excitation +/-, signal +/-)
-2. Verify proper grounding
-3. Check for EMI sources nearby (motors, switching supplies)
-4. Ensure stable power supply to ADC
-5. Check for mechanical vibration
-
 ### SPS shows 0 or incorrect value
 1. ADC may not be initialized properly
 2. Check SCLK and DOUT connections
@@ -298,8 +270,8 @@ For real-time monitoring in firmware, you can register a callback:
 ```cpp
 void myDebugCallback(const ADS1232DebugInfo& info) {
   // Called on every ADC conversion when debug is enabled
-  if (info.dataStdDev > 100) {
-    Serial.println("WARNING: High noise detected!");
+  if (info.signalTimeout) {
+    Serial.println("WARNING: ADC signal timeout!");
   }
 }
 

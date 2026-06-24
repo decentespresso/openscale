@@ -52,24 +52,10 @@ Send these binary commands:
 
 | Metric | Good | Warning | Problem |
 |--------|------|---------|---------|
-| **Std Dev** | < 10 | 10-50 | > 50 |
 | **SPS** | ~10 or ~80 | Unstable | 0 or very high |
 | **Signal Timeout** | False | - | True |
-| **Data Range** | < 20 | 20-100 | > 100 |
-
-### Standard Deviation Interpretation
-- **< 10**: Excellent - Load cell very stable
-- **10-50**: Good - Normal operation
-- **50-200**: Fair - Check connections
-- **> 200**: Bad - Noise/connection issues
 
 ### Quick Diagnostics
-
-**High Std Dev (> 100)?**
-1. Check load cell wiring (E+, E-, S+, S-)
-2. Verify grounding
-3. Look for EMI sources (motors, switching supplies)
-4. Check for mechanical vibration
 
 **Signal Timeout?**
 1. Check DOUT, SCLK, PDWN connections
@@ -110,17 +96,11 @@ SPS:            9.98
 Samples Used:   4
 Read Index:     2
 
-Dataset Stats:
-  Min:          8388605
-  Max:          8388615
-  Avg:          8388610
-  Range:        10
-  Std Dev:      3.2 (lower = more stable)
+Reset Reason:   1
 
 Flags:
   Out of Range: False
   Timeout:      False
-  Tare Active:  False
 ==========================
 
 debug> quit
@@ -149,8 +129,8 @@ if info:
     print_debug_info(info)
     
     # Access individual fields
-    if info['dataStdDev'] > 100:
-        print("WARNING: High noise detected!")
+    if info['signalTimeout']:
+        print("WARNING: ADC signal timeout!")
 
 ser.close()
 ```
