@@ -587,6 +587,27 @@ bool handleWebsocketTextCommand(AsyncWebSocketClient *client, String msg) {
   return false;
 }
 
+bool handleWebsocketNamedJsonCommand(AsyncWebSocketClient *client, JsonDocument &doc, const char *key) {
+  if (!doc[key].is<const char *>()) {
+    return false;
+  }
+
+  String command = doc[key].as<String>();
+  command.trim();
+  command.toLowerCase();
+
+  String action = "";
+  if (doc["action"].is<const char *>()) {
+    action = doc["action"].as<String>();
+  }
+
+  if (command == "rate" && doc["value"].is<const char *>()) {
+    return setWebsocketRateFromValue(client, doc["value"].as<String>());
+  }
+
+  return handleWebsocketControlCommand(client, command, action);
+}
+
 bool handleWebsocketRateCommand(AsyncWebSocketClient *client, String msg) {
   msg.trim();
   String lowerMsg = msg;
@@ -638,32 +659,12 @@ bool handleWebsocketRateCommand(AsyncWebSocketClient *client, String msg) {
     }
   }
 
-  if (doc["command"].is<const char *>()) {
-    String command = doc["command"].as<String>();
-    command.trim();
-    command.toLowerCase();
-    String action = "";
-    if (doc["action"].is<const char *>()) {
-      action = doc["action"].as<String>();
-    }
-    if (command == "rate" && doc["value"].is<const char *>()) {
-      return setWebsocketRateFromValue(client, doc["value"].as<String>());
-    }
-    return handleWebsocketControlCommand(client, command, action);
+  if (handleWebsocketNamedJsonCommand(client, doc, "command")) {
+    return true;
   }
 
-  if (doc["cmd"].is<const char *>()) {
-    String command = doc["cmd"].as<String>();
-    command.trim();
-    command.toLowerCase();
-    String action = "";
-    if (doc["action"].is<const char *>()) {
-      action = doc["action"].as<String>();
-    }
-    if (command == "rate" && doc["value"].is<const char *>()) {
-      return setWebsocketRateFromValue(client, doc["value"].as<String>());
-    }
-    return handleWebsocketControlCommand(client, command, action);
+  if (handleWebsocketNamedJsonCommand(client, doc, "cmd")) {
+    return true;
   }
 
   return false;
