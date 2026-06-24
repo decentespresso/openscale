@@ -465,16 +465,20 @@ void power_off(double sec) {
 }
 
 #ifdef CHECKBATTERY
+float readCheckBatteryVoltage(int pin) {
+  return analogRead(pin) * f_vref / (pow(2, ADC_BIT) - 1) * f_divider_factor;
+}
+
 float get_usb_voltage() {
   Serial.print("get_usb_voltage");
-  Serial.println(analogRead(USB_PIN) * f_vref / (pow(2, ADC_BIT) - 1) * f_divider_factor);
-  return analogRead(USB_PIN) * f_vref / (pow(2, ADC_BIT) - 1) * f_divider_factor;
+  Serial.println(readCheckBatteryVoltage(USB_PIN));
+  return readCheckBatteryVoltage(USB_PIN);
 }
 
 float get_bat_voltage() {
   Serial.print("get_bat_voltage");
-  Serial.println(analogRead(USB_PIN) * f_vref / (pow(2, ADC_BIT) - 1) * f_divider_factor);
-  return analogRead(BATTERY_PIN) * f_vref / (pow(2, ADC_BIT) - 1) * f_divider_factor;
+  Serial.println(readCheckBatteryVoltage(BATTERY_PIN));
+  return readCheckBatteryVoltage(BATTERY_PIN);
 }
 
 #endif  //CHECKBATTERY
