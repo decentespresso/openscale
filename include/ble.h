@@ -159,6 +159,127 @@ class MyServerCallbacks : public BLEServerCallbacks {
         03 2A 00 Power off by button
         03 2A 01 Power off by low power        
 */
+struct BleDecentCommandSink {
+  const char *transportName() {
+    return "BLE";
+  }
+
+  void requestTare() {
+    requestRemoteTare();
+  }
+
+  void displayOff() {
+    b_u8g2Sleep = true;
+    remoteReplacePending(WSP_DISPLAY_OFF, WSP_DISPLAY_ON);
+    sendBleLedResponse();
+  }
+
+  void displayOn() {
+    b_u8g2Sleep = false;
+    remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
+    sendBleLedResponse();
+  }
+
+  void powerOff() {
+    remoteQueuePending(WSP_POWER_OFF);
+  }
+
+  void lowPowerOn() {
+    b_websocketLowPowerEnabled = true;
+    remoteReplacePending(WSP_LOWPWR_ON, WSP_LOWPWR_OFF);
+  }
+
+  void lowPowerOff() {
+    b_websocketLowPowerEnabled = false;
+    remoteReplacePending(WSP_LOWPWR_OFF, WSP_LOWPWR_ON);
+  }
+
+  void softSleepOn() {
+    b_softSleep = true;
+    b_u8g2Sleep = true;
+    remoteReplacePending(WSP_SLEEP_ON, WSP_SLEEP_OFF);
+  }
+
+  void softSleepOff() {
+    b_softSleep = false;
+    b_u8g2Sleep = false;
+    remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);
+  }
+
+  void timerStart() {
+    remoteReplacePending(WSP_TIMER_START, WSP_TIMER_STOP | WSP_TIMER_ZERO);
+  }
+
+  void timerStop() {
+    remoteReplacePending(WSP_TIMER_STOP, WSP_TIMER_START | WSP_TIMER_ZERO);
+  }
+
+  void timerZero() {
+    remoteReplacePending(WSP_TIMER_ZERO, WSP_TIMER_START | WSP_TIMER_STOP);
+  }
+
+  void wifiUpdate() {
+    Serial.println("Start WiFi OTA queued.");
+    remoteQueuePending(WSP_WIFI_UPDATE);
+  }
+
+#ifdef BUZZER
+  void buzzerOff() {
+    b_beep = false;
+  }
+
+  void buzzerOn() {
+    b_beep = true;
+  }
+
+  void buzzerBeep() {
+    buzzer.beep(1, BUZZER_DURATION);
+  }
+#endif
+
+  void setSamplesInUse(uint8_t samplesInUse) {
+    remoteQueueSamplesInUse(samplesInUse);
+    Serial.print("Samples in use queued: ");
+    Serial.println(samplesInUse);
+  }
+
+  void reset() {
+    Serial.println("Reset queued.");
+    remoteQueuePending(WSP_RESET);
+  }
+
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
+  void sendGyro() {
+    Serial.println("BLE gyro response queued.");
+    remoteQueuePending(WSP_BLE_GYRO);
+  }
+#endif
+
+  void sendVoltage() {
+    sendBleVoltage();
+  }
+
+  void adsDebug(uint8_t mode) {
+    if (mode == 0x00) {
+      Serial.println("BLE ADS debug: OFF");
+      bleDebugMode = DEBUG_OFF;
+    } else if (mode == 0x01) {
+      Serial.println("BLE ADS debug: CONTINUOUS");
+      bleDebugMode = DEBUG_CONTINUOUS;
+    } else if (mode == 0x02) {
+      Serial.println("BLE ADS debug: SINGLE");
+      bleDebugMode = DEBUG_SINGLE;
+    }
+  }
+
+  bool supportsAdsReset() {
+    return false;
+  }
+
+  void adsReset(uint8_t mode) {
+  }
+};
+
 class MyCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pWriteCharacteristic) {
     //this is what the esp32 received via ble
@@ -193,283 +314,8 @@ class MyCallbacks : public BLECharacteristicCallbacks {
       Serial.print(" ");
 
       if (data[0] == 0x03) {
-        if (!decentRequireLength("BLE", len, 2, "message header")) {
-          return;
-        }
-        //check if it's a decent scale message
-        if (data[1] == 0x0F) {
-          if (!decentRequireLength("BLE", len, 7, "tare")) {
-            return;
-          }
-          //taring
-          if (decentValidateChecksum(data, len)) {
-            Serial.println("Valid checksum for tare operation. Taring");
-          } else {
-            Serial.println("Invalid checksum for tare operation.");
-            return;
-          }
-          requestRemoteTare();
-          if (data[5] == 0x00) {
-            /*
-            Tare the scale by sending "030F000000000C" (old version, disables heartbeat)
-            Tare the scale by sending "030F000000010D" (new version, leaves heartbeat as set)
-            */
-            b_requireHeartBeat = false;
-            Serial.println("*** Heartbeat detection Off ***");
-          }
-          if (data[5] == 0x01) {
-            /*
-            Tare the scale by sending "030F000000000C" (old version, disables heartbeat)
-            Tare the scale by sending "030F000000010D" (new version, leaves heartbeat as set)
-            */
-            Serial.print("*** Heartbeat detection remained ");
-            if (b_requireHeartBeat)
-              Serial.print("On");
-            else
-              Serial.print("Off");
-            Serial.println(" ***");
-          }
-        } else if (data[1] == 0x0A) {
-          if (!decentRequireLength("BLE", len, 3, "LED/power")) {
-            return;
-          }
-          if (data[2] == 0x00) {
-            Serial.println("LED off detected. Turn off OLED.");
-            b_u8g2Sleep = true;
-            remoteReplacePending(WSP_DISPLAY_OFF, WSP_DISPLAY_ON);
-            sendBleLedResponse();//include weight voltage version
-          } else if (data[2] == 0x01) {
-            Serial.println("LED on detected. Turn on OLED.");
-            b_u8g2Sleep = false;
-            remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
-            sendBleLedResponse();//including weight voltage version
-            if (!decentRequireLength("BLE", len, 6, "LED on")) {
-              return;
-            }
-            if (data[5] == 0x00) {
-              b_requireHeartBeat = false;
-              Serial.println("*** Heartbeat detection Off ***");
-            }
-            if (data[5] == 0x01) {
-              Serial.print("*** Heartbeat detection remained ");
-              if (b_requireHeartBeat)
-                Serial.print("On");
-              else
-                Serial.print("Off");
-              Serial.println(" ***");
-            }
-          } else if (data[2] == 0x02) {
-            Serial.println("Power off detected.");
-            remoteQueuePending(WSP_POWER_OFF);
-          } else if (data[2] == 0x03) {
-            if (!decentRequireLength("BLE", len, 4, "low power")) {
-              return;
-            }
-            if (data[3] == 0x01) {
-              Serial.println("Start Low Power Mode.");
-              b_websocketLowPowerEnabled = true;
-              remoteReplacePending(WSP_LOWPWR_ON, WSP_LOWPWR_OFF);
-            } else if (data[3] == 0x00) {
-              Serial.println("Exit low power mode.");
-              b_websocketLowPowerEnabled = false;
-              remoteReplacePending(WSP_LOWPWR_OFF, WSP_LOWPWR_ON);
-            } else if (data[3] == 0xFF) {
-              if (!decentRequireLength("BLE", len, 7, "heartbeat")) {
-                return;
-              }
-              if (data[4] == 0xFF) {
-                if (data[5] == 0x00) {
-                  if (data[6] == 0x0A) {
-                    t_heartBeat = millis();
-                    Serial.print("*** Heartbeat at ");
-                    Serial.print(t_heartBeat);
-                    Serial.println(" ***");
-                  }
-                }
-              }
-            }
-          } else if (data[2] == 0x04) {
-            if (!decentRequireLength("BLE", len, 4, "soft sleep")) {
-              return;
-            }
-            if (data[3] == 0x01) {
-              Serial.println("Start Soft Sleep.");
-              b_softSleep = true;
-              b_u8g2Sleep = true;
-              remoteReplacePending(WSP_SLEEP_ON, WSP_SLEEP_OFF);
-            } else if (data[3] == 0x00) {
-              Serial.println("Exit Soft Sleep.");
-              b_softSleep = false;
-              b_u8g2Sleep = false;
-              remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);
-            }
-          }
-        } else if (data[1] == 0x0B) {
-          if (!decentRequireLength("BLE", len, 3, "timer")) {
-            return;
-          }
-          if (data[2] == 0x03) {
-            Serial.println("Timer start detected.");
-            remoteReplacePending(WSP_TIMER_START, WSP_TIMER_STOP | WSP_TIMER_ZERO);
-          } else if (data[2] == 0x00) {
-            Serial.println("Timer stop detected.");
-            remoteReplacePending(WSP_TIMER_STOP, WSP_TIMER_START | WSP_TIMER_ZERO);
-          } else if (data[2] == 0x02) {
-            Serial.println("Timer zero detected.");
-            remoteReplacePending(WSP_TIMER_ZERO, WSP_TIMER_START | WSP_TIMER_STOP);
-          }
-        } else if (data[1] == 0x1A) {
-          if (!decentRequireLength("BLE", len, 3, "calibration")) {
-            return;
-          }
-          if (data[2] == 0x00) {
-            Serial.println("Manual Calibration via BLE");
-            b_menu = false;
-            i_cal_weight = 0;
-            i_button_cal_status = 1;
-            i_calibration = 0;
-            b_calibration = true;
-          } else if (data[2] == 0x01) {
-            Serial.println("Smart Calibration via BLE");
-            b_menu = false;
-            i_cal_weight = 0;
-            i_button_cal_status = 1;
-            i_calibration = 1;
-            b_calibration = true;
-          }
-        } else if (data[1] == 0x1B) {
-          Serial.println("Start WiFi OTA queued.");
-          remoteQueuePending(WSP_WIFI_UPDATE);
-        }
-#ifdef BUZZER
-        else if (data[1] == 0x1C) {  //buzzer settings
-          if (!decentRequireLength("BLE", len, 3, "buzzer")) {
-            return;
-          }
-          if (data[2] == 0x00) {
-            Serial.println("Buzzer Off");
-            b_beep = false;  // won't store into eeprom
-          } else if (data[2] == 0x01) {
-            Serial.println("Buzzer On");
-            b_beep = true;  // won't store into eeprom
-          } else if (data[2] == 0x02) {
-            Serial.println("Buzzer Beep");
-            buzzer.beep(1, BUZZER_DURATION);
-          }
-        }
-#endif
-        else if (data[1] == 0x1D) {  //Sample settings
-          if (!decentRequireLength("BLE", len, 3, "sample settings")) {
-            return;
-          }
-          if (data[2] == 0x00) {
-            remoteQueueSamplesInUse(1);
-            Serial.println("Samples in use queued: 1");
-          } else if (data[2] == 0x01) {
-            remoteQueueSamplesInUse(2);
-            Serial.println("Samples in use queued: 2");
-          } else if (data[2] == 0x03) {
-            remoteQueueSamplesInUse(4);
-            Serial.println("Samples in use queued: 4");
-          }
-        } else if (data[1] == 0x1E) {
-          if (!decentRequireLength("BLE", len, 4, "menu/about/debug")) {
-            return;
-          }
-          if (data[2] == 0x00) {
-            //menu control
-            if (data[3] == 0x00) {
-              //hide menu
-              Serial.println("Hide menu");
-              b_menu = false;
-            } else if (data[3] == 0x01) {
-              //show menu
-              Serial.println("Show menu");
-              b_menu = true;
-            }
-          } else if (data[2] == 0x01) {
-            //about info
-            if (data[3] == 0x00) {
-              //hide about info
-              Serial.println("Hide about info");
-              if (b_menu)
-                b_showAbout = false;  //hide about info(code in menu) if it's enabled via menu
-              else
-                b_about = false;  //hide about info(code in loop) if it's enabled via ble command
-            } else if (data[3] == 0x01) {
-              //show about info
-              Serial.println("Show about info");
-              b_debug = false;
-              b_about = true;
-              b_menu = false;
-            }
-          } else if (data[2] == 0x02) {
-            //debug info
-            if (data[3] == 0x00) {
-              Serial.println("Hide debug info");
-              //hide debug info
-              b_debug = false;
-            } else if (data[3] == 0x01) {
-              //show debug info
-              Serial.println("Show debug info");
-              b_about = false;
-              b_debug = true;
-              b_menu = false;
-            }
-          }
-        } else if (data[1] == 0x1F) {
-          Serial.println("Reset queued.");
-          remoteQueuePending(WSP_RESET);
-        } else if (data[1] == 0x20) {
-          if (!decentRequireLength("BLE", len, 3, "USB weight")) {
-            return;
-          }
-          if (data[2] == 0x00) {
-            Serial.println("Weight by USB disabled");
-            b_usbweight_enabled = false;
-          } else if (data[2] == 0x01) {
-            Serial.println("Weight by USB enabled");
-            b_usbweight_enabled = true;
-            if (len >= 4) {
-              uint16_t interval = 100;
-              uint8_t multiplier = data[3];
-              if (multiplier < 1) multiplier = 1;
-              if (multiplier > 50) multiplier = 50;  // 最大支持 5000ms
-
-              interval = multiplier * 100;
-              weightUsbNotifyInterval = interval;
-
-              Serial.print("USB weight interval set to ");
-              Serial.print(weightUsbNotifyInterval);
-              Serial.println(" ms");
-            }
-          }
-        }
-#if defined(ACC_MPU6050) || defined(ACC_BMA400)
-        else if (data[1] == 0x21) {
-          Serial.println("BLE gyro response queued.");
-          remoteQueuePending(WSP_BLE_GYRO);
-        }
-#endif
-        else if (data[1] == 0x22) {
-          sendBleVoltage();
-        }
-        else if (data[1] == 0x25) {
-          if (!decentRequireLength("BLE", len, 3, "ADS debug BLE")) {
-            return;
-          }
-          // 0x25 ADS1232 debug streaming over BLE
-          if (data[2] == 0x00) {
-            Serial.println("BLE ADS debug: OFF");
-            bleDebugMode = DEBUG_OFF;
-          } else if (data[2] == 0x01) {
-            Serial.println("BLE ADS debug: CONTINUOUS");
-            bleDebugMode = DEBUG_CONTINUOUS;
-          } else if (data[2] == 0x02) {
-            Serial.println("BLE ADS debug: SINGLE");
-            bleDebugMode = DEBUG_SINGLE;
-          }
-        }
+        BleDecentCommandSink sink;
+        handleDecentBinaryCommand(sink, data, len);
       }
     }
   }
