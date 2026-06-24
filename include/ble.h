@@ -1,6 +1,7 @@
 #ifndef BLE_H
 #define BLE_H
 #include "declare.h"
+#include "decent_protocol.h"
 #include <math.h>
 
 
@@ -36,32 +37,6 @@ void sendBleGyro();
 #endif
 volatile uint16_t connId = 0xFFFF; // not set to 0 because 0 could be a valid client id.
 
-
-//ble
-// Function to calculate XOR for validation (assuming this might still be needed)
-uint8_t calculateXOR(uint8_t *data, size_t len) {
-  uint8_t xorValue = 0x03;                // Starting value for XOR as per your example
-  for (size_t i = 1; i < len - 1; i++) {  // Start from 1 to len - 1 assuming last byte is XOR value
-    xorValue ^= data[i];
-  }
-  return xorValue;
-}
-
-// Encode weight into two bytes, big endian
-void encodeWeight(float weight, byte &byte1, byte &byte2) {
-  float scaled = weight * 10.0f;  // Convert to grams * 10
-  if (!isfinite(scaled)) {
-    scaled = 0.0f;
-  } else if (scaled > 32767.0f) {
-    scaled = 32767.0f;
-  } else if (scaled < -32768.0f) {
-    scaled = -32768.0f;
-  }
-  int16_t weightInt = (int16_t)scaled;
-  uint16_t encoded = (uint16_t)weightInt;
-  byte1 = (byte)((encoded >> 8) & 0xFF);
-  byte2 = (byte)(encoded & 0xFF);
-}
 
 // This callback will be invoked when a device connects or disconnects.
 //
@@ -185,38 +160,6 @@ class MyServerCallbacks : public BLEServerCallbacks {
         03 2A 01 Power off by low power        
 */
 class MyCallbacks : public BLECharacteristicCallbacks {
-  uint8_t calculateChecksum(uint8_t *data, size_t len) {
-    uint8_t xorSum = 0;
-    // Iterate over each byte in the data, excluding the last one assumed to be the checksum
-    for (size_t i = 0; i < len - 1; i++) {
-      xorSum ^= data[i];
-    }
-    return xorSum;
-  }
-
-  // Validate the checksum of the data
-  bool validateChecksum(uint8_t *data, size_t len) {
-    if (len < 2) {  // Need at least 1 byte of data and 1 byte of checksum
-      return false;
-    }
-    uint8_t expectedChecksum = data[len - 1];
-    uint8_t calculatedChecksum = calculateChecksum(data, len);
-    return expectedChecksum == calculatedChecksum;
-  }
-
-  bool requireLength(size_t actual, size_t required, const char *commandName) {
-    if (actual >= required) {
-      return true;
-    }
-    Serial.print("Ignoring short BLE packet for ");
-    Serial.print(commandName);
-    Serial.print(": ");
-    Serial.print(actual);
-    Serial.print("/");
-    Serial.println(required);
-    return false;
-  }
-
   void onWrite(BLECharacteristic *pWriteCharacteristic) {
     //this is what the esp32 received via ble
     Serial.print("Timer");
@@ -250,16 +193,16 @@ class MyCallbacks : public BLECharacteristicCallbacks {
       Serial.print(" ");
 
       if (data[0] == 0x03) {
-        if (!requireLength(len, 2, "message header")) {
+        if (!decentRequireLength("BLE", len, 2, "message header")) {
           return;
         }
         //check if it's a decent scale message
         if (data[1] == 0x0F) {
-          if (!requireLength(len, 7, "tare")) {
+          if (!decentRequireLength("BLE", len, 7, "tare")) {
             return;
           }
           //taring
-          if (validateChecksum(data, len)) {
+          if (decentValidateChecksum(data, len)) {
             Serial.println("Valid checksum for tare operation. Taring");
           } else {
             Serial.println("Invalid checksum for tare operation.");
@@ -287,7 +230,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
             Serial.println(" ***");
           }
         } else if (data[1] == 0x0A) {
-          if (!requireLength(len, 3, "LED/power")) {
+          if (!decentRequireLength("BLE", len, 3, "LED/power")) {
             return;
           }
           if (data[2] == 0x00) {
@@ -300,7 +243,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
             b_u8g2Sleep = false;
             remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
             sendBleLedResponse();//including weight voltage version
-            if (!requireLength(len, 6, "LED on")) {
+            if (!decentRequireLength("BLE", len, 6, "LED on")) {
               return;
             }
             if (data[5] == 0x00) {
@@ -319,7 +262,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
             Serial.println("Power off detected.");
             remoteQueuePending(WSP_POWER_OFF);
           } else if (data[2] == 0x03) {
-            if (!requireLength(len, 4, "low power")) {
+            if (!decentRequireLength("BLE", len, 4, "low power")) {
               return;
             }
             if (data[3] == 0x01) {
@@ -331,7 +274,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
               b_websocketLowPowerEnabled = false;
               remoteReplacePending(WSP_LOWPWR_OFF, WSP_LOWPWR_ON);
             } else if (data[3] == 0xFF) {
-              if (!requireLength(len, 7, "heartbeat")) {
+              if (!decentRequireLength("BLE", len, 7, "heartbeat")) {
                 return;
               }
               if (data[4] == 0xFF) {
@@ -346,7 +289,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
               }
             }
           } else if (data[2] == 0x04) {
-            if (!requireLength(len, 4, "soft sleep")) {
+            if (!decentRequireLength("BLE", len, 4, "soft sleep")) {
               return;
             }
             if (data[3] == 0x01) {
@@ -362,7 +305,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
             }
           }
         } else if (data[1] == 0x0B) {
-          if (!requireLength(len, 3, "timer")) {
+          if (!decentRequireLength("BLE", len, 3, "timer")) {
             return;
           }
           if (data[2] == 0x03) {
@@ -376,7 +319,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
             remoteReplacePending(WSP_TIMER_ZERO, WSP_TIMER_START | WSP_TIMER_STOP);
           }
         } else if (data[1] == 0x1A) {
-          if (!requireLength(len, 3, "calibration")) {
+          if (!decentRequireLength("BLE", len, 3, "calibration")) {
             return;
           }
           if (data[2] == 0x00) {
@@ -400,7 +343,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
         }
 #ifdef BUZZER
         else if (data[1] == 0x1C) {  //buzzer settings
-          if (!requireLength(len, 3, "buzzer")) {
+          if (!decentRequireLength("BLE", len, 3, "buzzer")) {
             return;
           }
           if (data[2] == 0x00) {
@@ -416,7 +359,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
         }
 #endif
         else if (data[1] == 0x1D) {  //Sample settings
-          if (!requireLength(len, 3, "sample settings")) {
+          if (!decentRequireLength("BLE", len, 3, "sample settings")) {
             return;
           }
           if (data[2] == 0x00) {
@@ -430,7 +373,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
             Serial.println("Samples in use queued: 4");
           }
         } else if (data[1] == 0x1E) {
-          if (!requireLength(len, 4, "menu/about/debug")) {
+          if (!decentRequireLength("BLE", len, 4, "menu/about/debug")) {
             return;
           }
           if (data[2] == 0x00) {
@@ -478,7 +421,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
           Serial.println("Reset queued.");
           remoteQueuePending(WSP_RESET);
         } else if (data[1] == 0x20) {
-          if (!requireLength(len, 3, "USB weight")) {
+          if (!decentRequireLength("BLE", len, 3, "USB weight")) {
             return;
           }
           if (data[2] == 0x00) {
@@ -512,7 +455,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
           sendBleVoltage();
         }
         else if (data[1] == 0x25) {
-          if (!requireLength(len, 3, "ADS debug BLE")) {
+          if (!decentRequireLength("BLE", len, 3, "ADS debug BLE")) {
             return;
           }
           // 0x25 ADS1232 debug streaming over BLE
@@ -591,20 +534,6 @@ void bleShutdown() {
   BLEDevice::deinit(true);
 }
 
-// Build voltage data packet
-void buildVoltagePacket(byte data[7]) {
-  byte voltageByte1, voltageByte2;
-  encodeWeight(f_batteryVoltage, voltageByte1, voltageByte2);
-
-  data[0] = modelByte;
-  data[1] = 0x22;  // Voltage type
-  data[2] = voltageByte1;
-  data[3] = voltageByte2;
-  data[4] = 0x00;
-  data[5] = 0x00;
-  data[6] = calculateXOR(data, 6);
-}
-
 // Send voltage via BLE
 void sendBleVoltage() {
   if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
@@ -612,17 +541,6 @@ void sendBleVoltage() {
   buildVoltagePacket(data);
   pReadCharacteristic->setValue(data, 7);
   pReadCharacteristic->notify();
-}
-
-// Build heartbeat packet
-void buildHeartBeatPacket(byte data[7]) {
-  data[0] = modelByte;
-  data[1] = 0x0A;  // Heartbeat type
-  data[2] = 0x03;
-  data[3] = 0xFF;
-  data[4] = 0xFF;
-  data[5] = 0x00;
-  data[6] = 0x0A;  // Checksum (can also use calculateXOR)
 }
 
 // Send heartbeat via BLE
@@ -635,20 +553,6 @@ void sendBleHeartBeat() {
 }
 
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
-void buildGyroPacket(byte data[7]) {
-  float gyro = gyro_z();
-  byte gyroByte1, gyroByte2;
-  encodeWeight(gyro, gyroByte1, gyroByte2);
-
-  data[0] = modelByte;
-  data[1] = 0x21;  // Gyro type
-  data[2] = gyroByte1;
-  data[3] = gyroByte2;
-  data[4] = 0x00;
-  data[5] = 0x00;
-  data[6] = calculateXOR(data, 6);
-}
-
 void sendBleGyro() {
   if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
   byte data[7];
@@ -657,20 +561,6 @@ void sendBleGyro() {
   pReadCharacteristic->notify();
 }
 #endif
-
-void buildWeightPacket(byte data[7]) {
-  float weight = f_displayedValue;
-  byte weightByte1, weightByte2;
-  encodeWeight(weight, weightByte1, weightByte2);
-
-  data[0] = modelByte;
-  data[1] = 0xCE;  // Weight type
-  data[2] = weightByte1;
-  data[3] = weightByte2;
-  data[4] = 0x00;
-  data[5] = 0x00;
-  data[6] = calculateXOR(data, 6);
-}
 
 // Rate-gating is handled centrally by the unified weight-output tick in the
 // main loop (which honors weightBleNotifyInterval, fixed at 100 ms / 10 Hz for
@@ -684,53 +574,12 @@ void sendBleWeight() {
   pReadCharacteristic->notify();
 }
 
-void buildButtonPacket(byte data[7], int buttonNumber, int buttonShortPress) {
-  //buttonNumber 1 for button O, 2 for button[]
-  //buttonShortPress 1 for short press, 2 for long press
-  data[0] = modelByte;
-  data[1] = 0xAA;  // Button byte
-  data[2] = buttonNumber;
-  data[3] = buttonShortPress;
-  // 0 for release, 1 for click, 2 for long press
-  // Fill the rest with dummy data or real data as needed
-  data[4] = 0x00;
-  data[5] = 0x00;
-  data[6] = calculateXOR(data, 6);
-}
-
 void sendBleButton(int buttonNumber, int buttonShortPress) {
   if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
   byte data[7];
   buildButtonPacket(data, buttonNumber, buttonShortPress);
   pReadCharacteristic->setValue(data, 7);
   pReadCharacteristic->notify();
-}
-
-// Build PowerOff packet into provided data array
-void buildPowerOffPacket(byte data[7], int i_reason) {
-  data[0] = modelByte;       // Model byte
-  data[1] = 0x2A;            // Command ID for PowerOff
-
-  // Initialize default values
-  data[2] = 0x00;
-  data[3] = 0x00;
-  data[4] = 0x00;
-  data[5] = 0x00;
-
-  // Fill reason codes
-  switch (i_reason) {
-    case 0: data[2] = 0x00; break; // Power off failed: disabled
-    case 1: data[2] = 0x10; break; // "O" button double-click
-    case 2: data[2] = 0x11; break; // "[]" button double-click
-    case 3: data[3] = 0x20; break; // Low battery
-#if defined(ACC_MPU6050) || defined(ACC_BMA400)
-    case 4: data[2] = 0x30; break; // Power off from gyro
-#endif
-    default: data[2] = 0x00; break; // Invalid reason
-  }
-
-  // XOR checksum
-  data[6] = calculateXOR(data, 6);
 }
 
 void sendBlePowerOff(int i_reason) {
@@ -745,67 +594,6 @@ void sendBlePowerOff(int i_reason) {
   pReadCharacteristic->notify();
 }
 
-
-/*
-Automatic firmware version extraction from LINE1 (FW: x.y.z)
-BCD encoding for firmware version
-Weight encoding using encodeWeight()
-Charging detection (USB_DET or BATTERY_CHARGING)
-Battery byte: 0xFF if charging, 0x64 (100%) otherwise
-No XOR checksum
-*/
-
-// -----------------------------
-// Build common LED response packet
-// -----------------------------
-void buildLedResponsePacket(byte data[7]) {
-  int major = 0, minor = 0, patch = 0;
-
-  // 1. Extract firmware version
-  if (sscanf(LINE1, "FW: %d.%d.%d", &major, &minor, &patch) != 3) {
-    major = 0;
-    minor = 0;
-    patch = 0;
-  }
-
-  // Convert to BCD format
-  byte verHigh = (byte)(((major / 10) << 4) | (major % 10));
-  byte verLow  = (byte)((minor << 4) | patch);
-
-  // 2. Get current weight
-  float weight = f_displayedValue;
-  byte weightByte1, weightByte2;
-  encodeWeight(weight, weightByte1, weightByte2);
-
-  // 3. Detect charging status
-  bool b_is_charging = false;
-#if defined(USB_DET)
-  b_is_charging = (digitalRead(USB_DET) == LOW);
-#else
-  b_is_charging = (digitalRead(BATTERY_CHARGING) == LOW);
-#endif
-
-  // 4. Compute battery level
-  byte batteryByte;
-  if (b_is_charging) {
-    batteryByte = 0xFF; // Charging
-  } else {
-    float perc = (f_batteryVoltage - showEmptyBatteryBelowVoltage) /
-                 (showFullBatteryAboveVoltage - showEmptyBatteryBelowVoltage) * 100.0f;
-    if (perc < 0) perc = 0;
-    if (perc > 100) perc = 100;
-    batteryByte = (byte)perc;
-  }
-
-  // 5. Fill packet
-  data[0] = 0x03;         // Header
-  data[1] = 0x0A;         // Type (LED response)
-  data[2] = weightByte1;  // Weight high
-  data[3] = weightByte2;  // Weight low
-  data[4] = batteryByte;  // Battery / charging indicator
-  data[5] = verHigh;      // Firmware version high
-  data[6] = verLow;       // Firmware version low
-}
 
 void sendBleLedResponse() {
   // Check BLE enabled, device connected, characteristic exists
