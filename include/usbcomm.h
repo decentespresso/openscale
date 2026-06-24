@@ -2,6 +2,7 @@
 #define USBCOMM_H
 
 #include "ADS1232_ADC.h"
+#include "decent_protocol.h"
 #include <math.h>
 #include <string.h>
 
@@ -44,38 +45,6 @@ public:
   uint8_t usbRxBuffer[USB_RX_BUFFER_SIZE];
   size_t usbRxLen = 0;
   unsigned long usbLastByteAt = 0;
-
-  uint8_t calculateChecksum(uint8_t *data, size_t len) {
-    uint8_t xorSum = 0;
-    // 遍历数据中的每个字节，排除最后一个字节（假设它是校验和）
-    for (size_t i = 0; i < len - 1; i++) {
-      xorSum ^= data[i];
-    }
-    return xorSum;
-  }
-
-  // 校验数据的校验和
-  bool validateChecksum(uint8_t *data, size_t len) {
-    if (len < 2) {  // 至少需要 1 字节数据和 1 字节校验和
-      return false;
-    }
-    uint8_t expectedChecksum = data[len - 1];
-    uint8_t calculatedChecksum = calculateChecksum(data, len);
-    return expectedChecksum == calculatedChecksum;
-  }
-
-  bool requireLength(size_t actual, size_t required, const char *commandName) {
-    if (actual >= required) {
-      return true;
-    }
-    Serial.print("Ignoring short USB packet for ");
-    Serial.print(commandName);
-    Serial.print(": ");
-    Serial.print(actual);
-    Serial.print("/");
-    Serial.println(required);
-    return false;
-  }
 
   uint8_t calculatePayloadChecksum(uint8_t *data, size_t len) {
     uint8_t xorSum = 0;
@@ -294,16 +263,16 @@ public:
       handleStringCommand(input);
       return;
     }
-    if (!requireLength(len, 2, "message header")) {
+    if (!decentRequireLength("USB", len, 2, "message header")) {
       return;
     }
     //check if it's a decent scale message
     if (data[1] == 0x0F) {
-      if (!requireLength(len, 7, "tare")) {
+      if (!decentRequireLength("USB", len, 7, "tare")) {
         return;
       }
       //taring
-      if (validateChecksum(data, len)) {
+      if (decentValidateChecksum(data, len)) {
         Serial.println("Valid checksum for tare operation. Taring");
       } else {
         Serial.println("Invalid checksum for tare operation.");
@@ -331,7 +300,7 @@ public:
         Serial.println(" ***");
       }
     } else if (data[1] == 0x0A) {
-      if (!requireLength(len, 3, "LED/power")) {
+      if (!decentRequireLength("USB", len, 3, "LED/power")) {
         return;
       }
       if (data[2] == 0x00) {
@@ -344,7 +313,7 @@ public:
         u8g2.setPowerSave(0);
         b_u8g2Sleep = false;
         sendUsbLedResponse();
-        if (!requireLength(len, 6, "LED on")) {
+        if (!decentRequireLength("USB", len, 6, "LED on")) {
           return;
         }
         if (data[5] == 0x00) {
@@ -363,7 +332,7 @@ public:
         Serial.println("Power off detected.");
         b_powerOff = true;
       } else if (data[2] == 0x03) {
-        if (!requireLength(len, 4, "low power")) {
+        if (!decentRequireLength("USB", len, 4, "low power")) {
           return;
         }
         if (data[3] == 0x01) {
@@ -374,7 +343,7 @@ public:
           u8g2.setContrast(255);
         }
       } else if (data[2] == 0x04) {
-        if (!requireLength(len, 4, "soft sleep")) {
+        if (!decentRequireLength("USB", len, 4, "soft sleep")) {
           return;
         }
         if (data[3] == 0x01) {
@@ -396,7 +365,7 @@ public:
         }
       }
     } else if (data[1] == 0x0B) {
-      if (!requireLength(len, 3, "timer")) {
+      if (!decentRequireLength("USB", len, 3, "timer")) {
         return;
       }
       if (data[2] == 0x03) {
@@ -411,7 +380,7 @@ public:
         stopWatch.reset();
       }
     } else if (data[1] == 0x1A) {
-      if (!requireLength(len, 3, "calibration")) {
+      if (!decentRequireLength("USB", len, 3, "calibration")) {
         return;
       }
       if (data[2] == 0x00) {
@@ -435,7 +404,7 @@ public:
     }
 #ifdef BUZZER
     else if (data[1] == 0x1C) {  //buzzer settings
-      if (!requireLength(len, 3, "buzzer")) {
+      if (!decentRequireLength("USB", len, 3, "buzzer")) {
         return;
       }
       if (data[2] == 0x00) {
@@ -451,7 +420,7 @@ public:
     }
 #endif
     else if (data[1] == 0x1D) {  //Sample settings
-      if (!requireLength(len, 3, "sample settings")) {
+      if (!decentRequireLength("USB", len, 3, "sample settings")) {
         return;
       }
       uint8_t samplesInUse = 0;
@@ -471,7 +440,7 @@ public:
         }
       }
     } else if (data[1] == 0x1E) {
-      if (!requireLength(len, 4, "menu/about/debug")) {
+      if (!decentRequireLength("USB", len, 4, "menu/about/debug")) {
         return;
       }
       if (data[2] == 0x00) {
@@ -518,7 +487,7 @@ public:
     } else if (data[1] == 0x1F) {
       reset();
     } else if (data[1] == 0x20) {
-      if (!requireLength(len, 3, "USB weight")) {
+      if (!decentRequireLength("USB", len, 3, "USB weight")) {
         return;
       }
       if (data[2] == 0x00) {
@@ -552,7 +521,7 @@ public:
       sendUsbVoltage();
     }
     else if (data[1] == 0x25) {
-      if (!requireLength(len, 3, "ADS debug")) {
+      if (!decentRequireLength("USB", len, 3, "ADS debug")) {
         return;
       }
       // ADS1232 Debug commands
@@ -568,7 +537,7 @@ public:
       }
     }
     else if (data[1] == 0x26) {
-      if (!requireLength(len, 3, "ADS reset")) {
+      if (!decentRequireLength("USB", len, 3, "ADS reset")) {
         return;
       }
       // ADS1232 Reset command
