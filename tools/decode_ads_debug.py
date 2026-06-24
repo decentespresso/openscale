@@ -14,12 +14,10 @@ Packet format (41 bytes total):
 [20-21] = sps (2 bytes, float * 100)
 [22]    = readIndex (1 byte)
 [23]    = samplesInUse (1 byte)
-[24-27] = dataMin (4 bytes, signed long)
-[28-31] = dataMax (4 bytes, signed long)
-[32-35] = dataAvg (4 bytes, signed long)
-[36-37] = dataStdDev (2 bytes, float * 10)
-[38]    = flags (bits: 0=dataOutOfRange, 1=signalTimeout, 2=tareInProgress)
-[39]    = tareTimes (1 byte)
+[24]    = resetReason (raw esp_reset_reason code captured at boot)
+[25-37] = reserved (13 bytes)
+[38]    = flags (bits: 0=dataOutOfRange, 1=signalTimeout)
+[39]    = reserved (1 byte)
 [40]    = checksum (XOR of bytes 0-39)
 
 This module can be used standalone or imported by other scripts.
@@ -28,16 +26,15 @@ This module can be used standalone or imported by other scripts.
 import struct
 import sys
 
+from ads_debug_protocol import format_hex, xor_checksum
+
 def decode_ads_debug_packet(data):
     """Decode a 41-byte ADS debug packet"""
     if len(data) != 41:
         print(f"Error: Expected 41 bytes, got {len(data)}")
         return None
     
-    # Verify checksum
-    checksum = 0
-    for i in range(40):
-        checksum ^= data[i]
+    checksum = xor_checksum(data[:40])
     
     if checksum != data[40]:
         print(f"Error: Checksum mismatch! Calculated: 0x{checksum:02X}, Got: 0x{data[40]:02X}")
@@ -77,27 +74,14 @@ def decode_ads_debug_packet(data):
     # Samples in use (1 byte)
     info['samplesInUse'] = data[23]
     
-    # Data min (4 bytes, big-endian signed)
-    info['dataMin'] = struct.unpack('>i', bytes(data[24:28]))[0]
-    
-    # Data max (4 bytes, big-endian signed)
-    info['dataMax'] = struct.unpack('>i', bytes(data[28:32]))[0]
-    
-    # Data avg (4 bytes, big-endian signed)
-    info['dataAvg'] = struct.unpack('>i', bytes(data[32:36]))[0]
-    
-    # StdDev (2 bytes, big-endian unsigned, divide by 10)
-    stdDev = struct.unpack('>H', bytes(data[36:38]))[0]
-    info['dataStdDev'] = stdDev / 10.0
+    info['resetReason'] = data[24]
+    info['reserved'] = bytes(data[25:38])
     
     # Flags (1 byte)
     flags = data[38]
     info['dataOutOfRange'] = bool(flags & 0x01)
     info['signalTimeout'] = bool(flags & 0x02)
-    info['tareInProgress'] = bool(flags & 0x04)
-    
-    # Tare times (1 byte)
-    info['tareTimes'] = data[39]
+    info['reservedByte'] = data[39]
     
     return info
 
@@ -112,20 +96,12 @@ def print_debug_info(info):
     print(f"SPS:            {info['sps']:.2f}")
     print(f"Samples Used:   {info['samplesInUse']}")
     print(f"Read Index:     {info['readIndex']}")
-    print(f"\nDataset Stats:")
-    print(f"  Min:          {info['dataMin']}")
-    print(f"  Max:          {info['dataMax']}")
-    print(f"  Avg:          {info['dataAvg']}")
-    print(f"  Range:        {info['dataMax'] - info['dataMin']}")
-    print(f"  Std Dev:      {info['dataStdDev']:.1f} (lower = more stable)")
+    print(f"Reset Reason:   {info['resetReason']}")
+    if any(info['reserved']) or info['reservedByte']:
+        print(f"Reserved:       {format_hex(info['reserved'] + bytes([info['reservedByte']]))}")
     print(f"\nFlags:")
     print(f"  Out of Range: {info['dataOutOfRange']}")
     print(f"  Timeout:      {info['signalTimeout']}")
-    print(f"  Tare Active:  {info['tareInProgress']}", end='')
-    if info['tareInProgress']:
-        print(f" ({info['tareTimes']} samples)")
-    else:
-        print()
     print("==========================\n")
 
 def decode_ads_reset_response(data):
@@ -148,7 +124,7 @@ def decode_ads_reset_response(data):
         return None
     
     # Verify checksum
-    checksum = data[0] ^ data[1] ^ data[2] ^ data[3]
+    checksum = xor_checksum(data[:4])
     if checksum != data[4]:
         print(f"Error: Checksum mismatch! Calculated: 0x{checksum:02X}, Got: 0x{data[4]:02X}")
         return None
@@ -195,4 +171,3 @@ if __name__ == "__main__":
         print("\nOr import this module in another script:")
         print("  from decode_ads_debug import decode_ads_debug_packet, print_debug_info")
         sys.exit(1)
-
