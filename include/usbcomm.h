@@ -30,6 +30,130 @@ static inline uint16_t encodeScaledUInt16(float value, float scale) {
   return (uint16_t)scaled;
 }
 
+struct UsbDecentCommandSink {
+  const char *transportName() {
+    return "USB";
+  }
+
+  void requestTare() {
+    requestRemoteTare();
+  }
+
+  void displayOff() {
+    u8g2.setPowerSave(1);
+    b_u8g2Sleep = true;
+    sendUsbLedResponse();
+  }
+
+  void displayOn() {
+    u8g2.setPowerSave(0);
+    b_u8g2Sleep = false;
+    sendUsbLedResponse();
+  }
+
+  void powerOff() {
+    b_powerOff = true;
+  }
+
+  void lowPowerOn() {
+    u8g2.setContrast(0);
+  }
+
+  void lowPowerOff() {
+    u8g2.setContrast(255);
+  }
+
+  void softSleepOn() {
+    u8g2.setPowerSave(1);
+    b_softSleep = true;
+    digitalWrite(PWR_CTRL, LOW);
+    digitalWrite(ACC_PWR_CTRL, LOW);
+  }
+
+  void softSleepOff() {
+    digitalWrite(PWR_CTRL, HIGH);
+    digitalWrite(ACC_PWR_CTRL, HIGH);
+    u8g2.setPowerSave(0);
+    b_softSleep = false;
+  }
+
+  void timerStart() {
+    stopWatch.reset();
+    stopWatch.start();
+  }
+
+  void timerStop() {
+    stopWatch.stop();
+  }
+
+  void timerZero() {
+    stopWatch.reset();
+  }
+
+  void wifiUpdate() {
+    Serial.println("Start WiFi OTA");
+    ::wifiUpdate();
+  }
+
+#ifdef BUZZER
+  void buzzerOff() {
+    b_beep = false;
+  }
+
+  void buzzerOn() {
+    b_beep = true;
+  }
+
+  void buzzerBeep() {
+    buzzer.beep(1, 50);
+  }
+#endif
+
+  void setSamplesInUse(uint8_t samplesInUse) {
+    if (setScaleSamplesInUseWhenReady(samplesInUse, "USB samples")) {
+      Serial.print("Samples in use set to: ");
+      Serial.println(scale.getSamplesInUse());
+    } else {
+      Serial.println("Samples in use refresh failed");
+    }
+  }
+
+  void reset() {
+    ::reset();
+  }
+
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
+  void sendGyro() {
+    sendUsbGyro();
+  }
+#endif
+
+  void sendVoltage() {
+    sendUsbVoltage();
+  }
+
+  void adsDebug(uint8_t mode) {
+    if (mode == 0x00) {
+      Serial.println("ADS debug off via hex");
+      scale.setDebugEnabled(false);
+    } else if (mode == 0x01) {
+      Serial.println("ADS debug on via hex");
+      scale.setDebugEnabled(true);
+    } else if (mode == 0x02) {
+      Serial.println("ADS debug info via hex");
+      sendUsbAdsDebug();
+    }
+  }
+
+  bool supportsAdsReset() {
+    return true;
+  }
+
+  void adsReset(uint8_t mode) {
+    handleAdsReset(mode);
+  }
+};
+
 class MyUsbCallbacks {
 public:
   // Function pointer members
@@ -263,291 +387,8 @@ public:
       handleStringCommand(input);
       return;
     }
-    if (!decentRequireLength("USB", len, 2, "message header")) {
-      return;
-    }
-    //check if it's a decent scale message
-    if (data[1] == 0x0F) {
-      if (!decentRequireLength("USB", len, 7, "tare")) {
-        return;
-      }
-      //taring
-      if (decentValidateChecksum(data, len)) {
-        Serial.println("Valid checksum for tare operation. Taring");
-      } else {
-        Serial.println("Invalid checksum for tare operation.");
-        return;
-      }
-      requestRemoteTare();
-      if (data[5] == 0x00) {
-        /*
-        Tare the scale by sending "030F000000000C" (old version, disables heartbeat)
-        Tare the scale by sending "030F000000010D" (new version, leaves heartbeat as set)
-        */
-        b_requireHeartBeat = false;
-        Serial.println("*** Heartbeat detection Off ***");
-      }
-      if (data[5] == 0x01) {
-        /*
-        Tare the scale by sending "030F000000000C" (old version, disables heartbeat)
-        Tare the scale by sending "030F000000010D" (new version, leaves heartbeat as set)
-        */
-        Serial.print("*** Heartbeat detection remained ");
-        if (b_requireHeartBeat)
-          Serial.print("On");
-        else
-          Serial.print("Off");
-        Serial.println(" ***");
-      }
-    } else if (data[1] == 0x0A) {
-      if (!decentRequireLength("USB", len, 3, "LED/power")) {
-        return;
-      }
-      if (data[2] == 0x00) {
-        Serial.println("LED off detected. Turn off OLED.");
-        u8g2.setPowerSave(1);
-        b_u8g2Sleep = true;
-        sendUsbLedResponse();
-      } else if (data[2] == 0x01) {
-        Serial.print("LED on detected. Turn on OLED.");
-        u8g2.setPowerSave(0);
-        b_u8g2Sleep = false;
-        sendUsbLedResponse();
-        if (!decentRequireLength("USB", len, 6, "LED on")) {
-          return;
-        }
-        if (data[5] == 0x00) {
-          b_requireHeartBeat = false;
-          Serial.println(" *** Heartbeat detection Off ***");
-        }
-        if (data[5] == 0x01) {
-          Serial.print("*** Heartbeat detection remained ");
-          if (b_requireHeartBeat)
-            Serial.print("On");
-          else
-            Serial.print("Off");
-          Serial.println(" ***");
-        }
-      } else if (data[2] == 0x02) {
-        Serial.println("Power off detected.");
-        b_powerOff = true;
-      } else if (data[2] == 0x03) {
-        if (!decentRequireLength("USB", len, 4, "low power")) {
-          return;
-        }
-        if (data[3] == 0x01) {
-          Serial.println("Start Low Power Mode.");
-          u8g2.setContrast(0);
-        } else if (data[3] == 0x00) {
-          Serial.println("Exit low power mode.");
-          u8g2.setContrast(255);
-        }
-      } else if (data[2] == 0x04) {
-        if (!decentRequireLength("USB", len, 4, "soft sleep")) {
-          return;
-        }
-        if (data[3] == 0x01) {
-          Serial.println("Start Soft Sleep.");
-          u8g2.setPowerSave(1);
-          b_softSleep = true;
-          digitalWrite(PWR_CTRL, LOW);
-//#if defined(ACC_MPU6050) || defined(ACC_BMA400)
-          digitalWrite(ACC_PWR_CTRL, LOW);
-//#endif
-        } else if (data[3] == 0x00) {
-          Serial.println("Exit Soft Sleep.");
-          digitalWrite(PWR_CTRL, HIGH);
-//#if defined(ACC_MPU6050) || defined(ACC_BMA400)
-          digitalWrite(ACC_PWR_CTRL, HIGH);
-//#endif
-          u8g2.setPowerSave(0);
-          b_softSleep = false;
-        }
-      }
-    } else if (data[1] == 0x0B) {
-      if (!decentRequireLength("USB", len, 3, "timer")) {
-        return;
-      }
-      if (data[2] == 0x03) {
-        Serial.println("Timer start detected.");
-        stopWatch.reset();
-        stopWatch.start();
-      } else if (data[2] == 0x00) {
-        Serial.println("Timer stop detected.");
-        stopWatch.stop();
-      } else if (data[2] == 0x02) {
-        Serial.println("Timer zero detected.");
-        stopWatch.reset();
-      }
-    } else if (data[1] == 0x1A) {
-      if (!decentRequireLength("USB", len, 3, "calibration")) {
-        return;
-      }
-      if (data[2] == 0x00) {
-        Serial.println("Manual Calibration via BLE");
-        b_menu = false;
-        i_cal_weight = 0;
-        i_button_cal_status = 1;
-        i_calibration = 0;
-        b_calibration = true;
-      } else if (data[2] == 0x01) {
-        Serial.println("Smart Calibration via BLE");
-        b_menu = false;
-        i_cal_weight = 0;
-        i_button_cal_status = 1;
-        i_calibration = 1;
-        b_calibration = true;
-      }
-    } else if (data[1] == 0x1B) {
-      Serial.println("Start WiFi OTA");
-      wifiUpdate();
-    }
-#ifdef BUZZER
-    else if (data[1] == 0x1C) {  //buzzer settings
-      if (!decentRequireLength("USB", len, 3, "buzzer")) {
-        return;
-      }
-      if (data[2] == 0x00) {
-        Serial.println("Buzzer Off");
-        b_beep = false;  // won't store into eeprom
-      } else if (data[2] == 0x01) {
-        Serial.println("Buzzer On");
-        b_beep = true;  // won't store into eeprom
-      } else if (data[2] == 0x02) {
-        Serial.println("Buzzer Beep");
-        buzzer.beep(1, 50);
-      }
-    }
-#endif
-    else if (data[1] == 0x1D) {  //Sample settings
-      if (!decentRequireLength("USB", len, 3, "sample settings")) {
-        return;
-      }
-      uint8_t samplesInUse = 0;
-      if (data[2] == 0x00) {
-        samplesInUse = 1;
-      } else if (data[2] == 0x01) {
-        samplesInUse = 2;
-      } else if (data[2] == 0x03) {
-        samplesInUse = 4;
-      }
-      if (samplesInUse > 0) {
-        if (setScaleSamplesInUseWhenReady(samplesInUse, "USB samples")) {
-          Serial.print("Samples in use set to: ");
-          Serial.println(scale.getSamplesInUse());
-        } else {
-          Serial.println("Samples in use refresh failed");
-        }
-      }
-    } else if (data[1] == 0x1E) {
-      if (!decentRequireLength("USB", len, 4, "menu/about/debug")) {
-        return;
-      }
-      if (data[2] == 0x00) {
-        //menu control
-        if (data[3] == 0x00) {
-          //hide menu
-          Serial.println("Hide menu");
-          b_menu = false;
-        } else if (data[3] == 0x01) {
-          //show menu
-          Serial.println("Show menu");
-          b_menu = true;
-        }
-      } else if (data[2] == 0x01) {
-        //about info
-        if (data[3] == 0x00) {
-          //hide about info
-          Serial.println("Hide about info");
-          if (b_menu)
-            b_showAbout = false;  //hide about info(code in menu) if it's enabled via menu
-          else
-            b_about = false;  //hide about info(code in loop) if it's enabled via ble command
-        } else if (data[3] == 0x01) {
-          //show about info
-          Serial.println("Show about info");
-          b_debug = false;
-          b_about = true;
-          b_menu = false;
-        }
-      } else if (data[2] == 0x02) {
-        //debug info
-        if (data[3] == 0x00) {
-          //hide debug info
-          Serial.println("Hide debug info");
-          b_debug = false;
-        } else if (data[3] == 0x01) {
-          //show debug info
-          Serial.println("Show debug info");
-          b_about = false;
-          b_debug = true;
-          b_menu = false;
-        }
-      }
-    } else if (data[1] == 0x1F) {
-      reset();
-    } else if (data[1] == 0x20) {
-      if (!decentRequireLength("USB", len, 3, "USB weight")) {
-        return;
-      }
-      if (data[2] == 0x00) {
-        Serial.println("Weight by USB disabled");
-        b_usbweight_enabled = false;
-      } else if (data[2] == 0x01) {
-        Serial.println("Weight by USB enabled");
-        b_usbweight_enabled = true;
-        if (len >= 4) {
-          uint16_t interval = 100;
-          uint8_t multiplier = data[3];
-          if (multiplier < 1) multiplier = 1;
-          if (multiplier > 50) multiplier = 50;  // 最大支持 5000ms
-
-          interval = multiplier * 100;
-          weightUsbNotifyInterval = interval;
-
-          Serial.print("USB weight interval set to ");
-          Serial.print(weightUsbNotifyInterval);
-          Serial.println(" ms");
-        }
-      }
-
-    }
-#if defined(ACC_MPU6050) || defined(ACC_BMA400)
-    else if (data[1] == 0x21) {
-      sendUsbGyro();
-    }
-#endif
-    else if (data[1] == 0x22) {
-      sendUsbVoltage();
-    }
-    else if (data[1] == 0x25) {
-      if (!decentRequireLength("USB", len, 3, "ADS debug")) {
-        return;
-      }
-      // ADS1232 Debug commands
-      if (data[2] == 0x00) {
-        Serial.println("ADS debug off via hex");
-        scale.setDebugEnabled(false);
-      } else if (data[2] == 0x01) {
-        Serial.println("ADS debug on via hex");
-        scale.setDebugEnabled(true);
-      } else if (data[2] == 0x02) {
-        Serial.println("ADS debug info via hex");
-        sendUsbAdsDebug();
-      }
-    }
-    else if (data[1] == 0x26) {
-      if (!decentRequireLength("USB", len, 3, "ADS reset")) {
-        return;
-      }
-      // ADS1232 Reset command
-      if (data[2] <= 0x02) {
-        handleAdsReset(data[2]);
-      } else {
-        Serial.print("ADS reset: unknown mode 0x");
-        Serial.println(data[2], HEX);
-      }
-    }
+    UsbDecentCommandSink sink;
+    handleDecentBinaryCommand(sink, data, len);
   }
     
   
