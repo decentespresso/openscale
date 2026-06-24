@@ -38,6 +38,24 @@ static bool httpIsPageLoadRequest(const String &url) {
   return url == "/" || url.endsWith(".html");
 }
 
+static bool parseWifiSetupCredentials(JsonVariant &json, String &ssid, String &pass) {
+  JsonObject jsonObj = json.as<JsonObject>();
+  if (jsonObj.isNull()) {
+    return false;
+  }
+  if (!jsonObj["ssid"].is<const char *>()) {
+    return false;
+  }
+  if (jsonObj["pass"] != NULL && !jsonObj["pass"].is<const char *>()) {
+    return false;
+  }
+
+  ssid = jsonObj["ssid"].as<String>();
+  pass = jsonObj["pass"].is<const char *>() ? jsonObj["pass"].as<String>() : "";
+  return ssid.length() <= WIFI_SETUP_MAX_SSID_BYTES &&
+         pass.length() <= WIFI_SETUP_MAX_PASS_BYTES;
+}
+
 void startWebServer() {
   // Handlers must be registered before server.begin(), and only once across
   // stop/start cycles — server.end() doesn't clear the handler list.
@@ -45,23 +63,9 @@ void startWebServer() {
   if (!handlersRegistered) {
     AsyncCallbackJsonWebHandler *wifiHandler = new AsyncCallbackJsonWebHandler(
         "/setup/wifi", [](AsyncWebServerRequest *request, JsonVariant &json) {
-          JsonObject jsonObj = json.as<JsonObject>();
-          if (jsonObj.isNull()) {
-            request->send(400);
-            return;
-          }
-          if (!jsonObj["ssid"].is<const char *>()) {
-            request->send(400);
-            return;
-          }
-          if (jsonObj["pass"] != NULL && !jsonObj["pass"].is<const char *>()) {
-            request->send(400);
-            return;
-          }
-          String ssid = jsonObj["ssid"].as<String>();
-          String pass = jsonObj["pass"].is<const char *>() ? jsonObj["pass"].as<String>() : "";
-          if (ssid.length() > WIFI_SETUP_MAX_SSID_BYTES ||
-              pass.length() > WIFI_SETUP_MAX_PASS_BYTES) {
+          String ssid;
+          String pass;
+          if (!parseWifiSetupCredentials(json, ssid, pass)) {
             request->send(400);
             return;
           }
