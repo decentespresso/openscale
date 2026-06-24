@@ -73,7 +73,7 @@ The Decent Scale Dosing Assistant is a web application that interfaces with a Bl
 - Consistent file naming
 - Browser compatibility for downloads
 
-### Preset Manager (`modules/presets.js`)
+### Preset Manager (`../shared/modules/presets.js`)
 **Purpose:** Manages saved dosing presets.
 
 **Key Functionality:**

@@ -2,7 +2,7 @@ import { DecentScale } from './modules/scale.js';
 import { StateMachine } from './modules/state-machine.js';
 import { UIController } from './modules/ui-controller.js';
 import { DataExport } from './modules/export.js';
-import { PresetManager } from './modules/presets.js';
+import { PresetManager } from '../shared/modules/presets.js';
 import { SCALE_CONSTANTS } from './modules/constants.js';
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize components
