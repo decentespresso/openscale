@@ -11,13 +11,14 @@ import time
 import sys
 import argparse
 from decode_ads_debug import decode_ads_debug_packet, print_debug_info, decode_ads_reset_response, print_reset_response
-
-def calculate_checksum(data):
-    """Calculate XOR checksum for command"""
-    checksum = 0
-    for byte in data:
-        checksum ^= byte
-    return checksum
+from ads_debug_protocol import (
+    build_debug_command,
+    build_reset_command,
+    build_samples_command,
+    find_debug_packet,
+    find_reset_response,
+    format_hex,
+)
 
 def send_debug_command(ser, command_type):
     """
@@ -27,14 +28,11 @@ def send_debug_command(ser, command_type):
         ser: Serial port object
         command_type: 0=OFF, 1=ON, 2=GET_INFO
     """
-    cmd = bytes([0x03, 0x25, command_type])
-    checksum = calculate_checksum(cmd)
-    cmd += bytes([checksum])
-    
+    cmd = build_debug_command(command_type)
     ser.write(cmd)
     
     cmd_names = {0: "DEBUG OFF", 1: "DEBUG ON", 2: "GET INFO"}
-    print(f"Sent: {cmd_names.get(command_type, 'UNKNOWN')} ({' '.join(f'{b:02X}' for b in cmd)})")
+    print(f"Sent: {cmd_names.get(command_type, 'UNKNOWN')} ({format_hex(cmd)})")
     
     return command_type == 2  # Return True if we expect a response
 
@@ -46,14 +44,11 @@ def send_reset_command(ser, mode):
         ser: Serial port object
         mode: 0=reset+refresh, 1=reset+refresh, 2=reset+refresh+tare complete
     """
-    cmd = bytes([0x03, 0x26, mode])
-    checksum = calculate_checksum(cmd)
-    cmd += bytes([checksum])
-    
+    cmd = build_reset_command(mode)
     ser.write(cmd)
     
     mode_names = {0: "RESET + REFRESH", 1: "RESET + REFRESH", 2: "RESET + REFRESH + TARE COMPLETE"}
-    print(f"Sent: {mode_names.get(mode, 'UNKNOWN')} ({' '.join(f'{b:02X}' for b in cmd)})")
+    print(f"Sent: {mode_names.get(mode, 'UNKNOWN')} ({format_hex(cmd)})")
 
 def send_samples_command(ser, sample_count):
     """
@@ -63,16 +58,9 @@ def send_samples_command(ser, sample_count):
         ser: Serial port object
         sample_count: 1, 2, or 4
     """
-    # Firmware mapping: 0x00=1, 0x01=2, 0x03=4
-    count_to_byte = {1: 0x00, 2: 0x01, 4: 0x03}
-    mode = count_to_byte[sample_count]
-    
-    cmd = bytes([0x03, 0x1D, mode])
-    checksum = calculate_checksum(cmd)
-    cmd += bytes([checksum])
-    
+    cmd = build_samples_command(sample_count)
     ser.write(cmd)
-    print(f"Sent: SET SAMPLES={sample_count} ({' '.join(f'{b:02X}' for b in cmd)})")
+    print(f"Sent: SET SAMPLES={sample_count} ({format_hex(cmd)})")
 
 def read_serial_text(ser, timeout=1.0):
     """
@@ -99,26 +87,6 @@ def read_serial_text(ser, timeout=1.0):
                 print(f"Firmware: {text}")
         except Exception:
             print(f"Firmware (hex): {' '.join(f'{b:02X}' for b in output)}")
-
-def find_reset_response(buffer):
-    """
-    Search buffer for reset response packet (0x03 0x26 ... 5 bytes total)
-    
-    Returns:
-        tuple: (packet_data, remaining_buffer) or (None, buffer)
-    """
-    for i in range(len(buffer) - 1):
-        if buffer[i] == 0x03 and buffer[i+1] == 0x26:
-            if len(buffer) >= i + 5:
-                packet = buffer[i:i+5]
-                remaining = buffer[i+5:]
-                return (packet, remaining)
-            else:
-                return (None, buffer)
-    
-    if len(buffer) > 0:
-        return (None, buffer[-1:])
-    return (None, buffer)
 
 def read_reset_response(ser, timeout=5.0):
     """
@@ -149,33 +117,8 @@ def read_reset_response(ser, timeout=5.0):
     
     print(f"Timeout waiting for reset response (received {len(buffer)} bytes)")
     if len(buffer) > 0:
-        print(f"Buffer: {' '.join(f'{b:02X}' for b in buffer[:20])}...")
+        print(f"Buffer: {format_hex(buffer[:20])}...")
     return None
-
-def find_debug_packet(buffer):
-    """
-    Search buffer for debug packet (0x03 0x25 ... 41 bytes total)
-    
-    Returns:
-        tuple: (packet_data, remaining_buffer) or (None, buffer)
-    """
-    # Look for packet start (0x03 0x25)
-    for i in range(len(buffer) - 1):
-        if buffer[i] == 0x03 and buffer[i+1] == 0x25:
-            # Found potential packet start
-            if len(buffer) >= i + 41:
-                # We have enough bytes for a full packet
-                packet = buffer[i:i+41]
-                remaining = buffer[i+41:]
-                return (packet, remaining)
-            else:
-                # Not enough bytes yet, keep buffer as is
-                return (None, buffer)
-    
-    # No packet start found, keep last byte in case it's the start of 0x03
-    if len(buffer) > 0:
-        return (None, buffer[-1:])
-    return (None, buffer)
 
 def read_debug_packet(ser, timeout=2.0):
     """
@@ -206,7 +149,7 @@ def read_debug_packet(ser, timeout=2.0):
     
     print(f"Timeout waiting for debug packet (received {len(buffer)} bytes)")
     if len(buffer) > 0:
-        print(f"Buffer: {' '.join(f'{b:02X}' for b in buffer[:20])}...")
+        print(f"Buffer: {format_hex(buffer[:20])}...")
     return None
 
 def monitor_mode(ser, interval=1.0):

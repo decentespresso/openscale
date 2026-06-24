@@ -30,6 +30,12 @@ except ImportError:
     sys.exit(1)
 
 from decode_ads_debug import decode_ads_debug_packet, print_debug_info
+from ads_debug_protocol import (
+    build_debug_command,
+    format_hex,
+    HEARTBEAT_CMD,
+    is_debug_packet,
+)
 
 SERVICE_UUID = "0000fff0-0000-1000-8000-00805f9b34fb"
 WRITE_UUID   = "000036f5-0000-1000-8000-00805f9b34fb"
@@ -38,21 +44,6 @@ NOTIFY_UUID  = "0000fff4-0000-1000-8000-00805f9b34fb"
 DEFAULT_NAME = "Decent Scale"
 
 
-def xor_checksum(data):
-    c = 0
-    for b in data:
-        c ^= b
-    return c
-
-
-def build_debug_command(mode):
-    """mode: 0=OFF, 1=CONTINUOUS, 2=SINGLE"""
-    payload = bytes([0x03, 0x25, mode])
-    return payload + bytes([xor_checksum(payload)])
-
-
-# Decent Scale heartbeat: firmware disconnects after 5s without one
-HEARTBEAT_CMD = bytes([0x03, 0x0A, 0x03, 0xFF, 0xFF, 0x00, 0x0A])
 HEARTBEAT_INTERVAL = 2.0
 
 
@@ -124,7 +115,7 @@ class BleMonitor:
     def _on_notify(self, _char, data):
         # Filter to debug packets only (header 0x03 0x25, length 41).
         # Other notifications on fff4 (weight, voltage, etc.) are ignored.
-        if len(data) == 41 and data[0] == 0x03 and data[1] == 0x25:
+        if is_debug_packet(data):
             info = decode_ads_debug_packet(bytes(data))
             if info and self._packet_handler:
                 self._packet_handler(info)
@@ -132,7 +123,7 @@ class BleMonitor:
     async def send(self, mode):
         cmd = build_debug_command(mode)
         mode_names = {0: "OFF", 1: "CONTINUOUS", 2: "SINGLE"}
-        print(f"Sent: {mode_names.get(mode, '?')} ({' '.join(f'{b:02X}' for b in cmd)})")
+        print(f"Sent: {mode_names.get(mode, '?')} ({format_hex(cmd)})")
         # Firmware characteristic 36f5 is PROPERTY_WRITE only (with response).
         # Using response=False here would be silently dropped by some stacks.
         await self.client.write_gatt_char(WRITE_UUID, cmd, response=True)
