@@ -267,6 +267,7 @@ bool refreshScaleDatasetAfterDiscontinuity(const char *context);
 void resetScaleOutputAfterAdcDiscontinuity();
 bool tareScaleWhenAdcReady(const char *context);
 bool setScaleSamplesInUseWhenReady(uint8_t samplesInUse, const char *context);
+bool wakeScaleFromSoftSleep(const char *context);
 void consumeScaleTareStatus();
 void clearPendingAutomaticTareState();
 unsigned long t_extraction_begin = 0;       //开始萃取打点
