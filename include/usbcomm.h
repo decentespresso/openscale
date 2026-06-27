@@ -71,10 +71,7 @@ struct UsbDecentCommandSink {
   }
 
   void softSleepOff() {
-    digitalWrite(PWR_CTRL, HIGH);
-    digitalWrite(ACC_PWR_CTRL, HIGH);
-    u8g2.setPowerSave(0);
-    b_softSleep = false;
+    wakeScaleFromSoftSleep("USB soft wake");
   }
 
   void timerStart() {

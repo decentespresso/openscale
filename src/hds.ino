@@ -74,12 +74,7 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
   }
   if (b_softSleep) {
     Serial.println("Exit Soft Sleep.");
-    digitalWrite(PWR_CTRL, HIGH);
-    //#if defined(ACC_MPU6050) || defined(ACC_BMA400)
-    digitalWrite(ACC_PWR_CTRL, HIGH);
-    //#endif
-    u8g2.setPowerSave(0);
-    b_softSleep = false;
+    wakeScaleFromSoftSleep("button soft wake");
   }
   u8g2.setContrast(255);  //set oled brightness to max when button is pressed
   b_websocketLowPowerEnabled = false;  // button forced full contrast; keep WS low_power status truthful
@@ -1205,6 +1200,21 @@ void resetStableOutput() {
   if (b_weight_in_serial) {
     Serial.println("Stable output reset");
   }
+}
+
+bool wakeScaleFromSoftSleep(const char *context) {
+  digitalWrite(PWR_CTRL, HIGH);
+  digitalWrite(ACC_PWR_CTRL, HIGH);
+  delay(5);
+  scale.powerUp();
+  u8g2.setPowerSave(0);
+  b_softSleep = false;
+  b_u8g2Sleep = false;
+  if (refreshScaleDatasetAfterDiscontinuity(context)) {
+    resetScaleOutputAfterAdcDiscontinuity();
+    return true;
+  }
+  return false;
 }
 
 bool refreshScaleDatasetAfterDiscontinuity(const char *context) {
