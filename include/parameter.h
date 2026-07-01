@@ -149,6 +149,12 @@ volatile bool b_u8g2Sleep = true;
 unsigned long t_bootTare = 0;
 bool b_bootTare = false;
 int i_bootTareDelay = 1000;
+bool b_bootFreshTarePending = false;
+uint8_t i_bootFreshTareSamplesInUse = 1;
+unsigned long t_bootFreshTare = 0;
+const uint8_t BOOT_FRESH_TARE_SAMPLES = 4;
+const unsigned long BOOT_FRESH_TARE_TIMEOUT = 3000;
+const unsigned long BOOT_FRESH_TARE_INPUT_SETTLE = 1000;
 //int i_tareDelay = 200;             //tare delay for button
 int i_tareDelay = 0;             //tare delay 0ms for finger detection
 unsigned long t_tareByButton = 0;  //tare time stamp used by button to mimic delay
@@ -267,6 +273,7 @@ bool refreshScaleDatasetAfterDiscontinuity(const char *context);
 void resetScaleOutputAfterAdcDiscontinuity();
 bool tareScaleWhenAdcReady(const char *context);
 bool setScaleSamplesInUseWhenReady(uint8_t samplesInUse, const char *context);
+bool wakeScaleFromSoftSleep(const char *context);
 void consumeScaleTareStatus();
 void clearPendingAutomaticTareState();
 unsigned long t_extraction_begin = 0;       //开始萃取打点

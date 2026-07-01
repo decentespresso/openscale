@@ -176,9 +176,7 @@ void processWsPendingCmds() {
   if (mask & WSP_LOWPWR_ON)   { u8g2.setContrast(0); }
   if (mask & WSP_LOWPWR_OFF)  { u8g2.setContrast(255); }
   if (mask & WSP_SLEEP_OFF) {
-    digitalWrite(PWR_CTRL, HIGH);
-    digitalWrite(ACC_PWR_CTRL, HIGH);
-    u8g2.setPowerSave(0);
+    wakeScaleFromSoftSleep("remote soft wake");
   }
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
   if ((mask & WSP_BLE_GYRO) && !(mask & WSP_SLEEP_ON) && !b_softSleep) {
