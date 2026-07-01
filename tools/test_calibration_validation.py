@@ -12,8 +12,38 @@ USBCOMM_HEADER = ROOT / "include" / "usbcomm.h"
 WEBSOCKET_HEADER = ROOT / "include" / "websocket.h"
 
 
+def read(path):
+    return path.read_text(encoding="utf-8")
+
+
+def method_body(path, name):
+    text = read(path)
+    match = re.search(rf"\b\w+\s+{re.escape(name)}\(", text)
+    if match is None:
+        raise AssertionError(f"method not found: {name}")
+    opening = text.index("{", match.start())
+    depth = 0
+    for index in range(opening, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[opening + 1:index]
+    raise AssertionError(f"method body not found: {name}")
+
+
+def assert_ordered(body, snippets):
+    cursor = 0
+    for snippet in snippets:
+        index = body.find(snippet, cursor)
+        if index < 0:
+            raise AssertionError(f"missing ordered snippet: {snippet}")
+        cursor = index + len(snippet)
+
+
 def const_float(name):
-    text = HEADER.read_text(encoding="utf-8")
+    text = read(HEADER)
     match = re.search(rf"const float {name} = ([0-9.]+)f;", text)
     if not match:
         raise AssertionError(f"missing {name}")
@@ -21,7 +51,7 @@ def const_float(name):
 
 
 def const_uint8(name):
-    text = HEADER.read_text(encoding="utf-8")
+    text = read(HEADER)
     match = re.search(rf"const uint8_t {name} = ([0-9]+);", text)
     if not match:
         raise AssertionError(f"missing {name}")
@@ -29,7 +59,7 @@ def const_uint8(name):
 
 
 def const_ulong(name):
-    text = HEADER.read_text(encoding="utf-8")
+    text = read(HEADER)
     match = re.search(rf"const unsigned long {name} = ([0-9]+);", text)
     if not match:
         raise AssertionError(f"missing {name}")
@@ -181,13 +211,13 @@ def tare_when_adc_ready_model(scale):
 
 
 def assert_contains(path, text):
-    contents = path.read_text(encoding="utf-8")
+    contents = read(path)
     if text not in contents:
         raise AssertionError(f"{path.name} missing {text}")
 
 
 def assert_not_contains(path, text):
-    contents = path.read_text(encoding="utf-8")
+    contents = read(path)
     if text in contents:
         raise AssertionError(f"{path.name} still contains {text}")
 
@@ -268,7 +298,13 @@ def main():
     assert_contains(PARAMETER_HEADER, "void resetScaleOutputAfterAdcDiscontinuity")
     assert_contains(PARAMETER_HEADER, "bool tareScaleWhenAdcReady")
     assert_contains(PARAMETER_HEADER, "void clearPendingAutomaticTareState")
+    assert_contains(PARAMETER_HEADER, "bool b_bootFreshTarePending")
+    assert_contains(PARAMETER_HEADER, "const uint8_t BOOT_FRESH_TARE_SAMPLES = 4")
+    assert_contains(PARAMETER_HEADER, "const unsigned long BOOT_FRESH_TARE_INPUT_SETTLE")
     assert_contains(HDS_SOURCE, "bool tareScaleWhenAdcReady")
+    assert_contains(HDS_SOURCE, "bool startBootFreshTare")
+    assert_contains(HDS_SOURCE, "bool processBootFreshTare")
+    assert_contains(HDS_SOURCE, "bool isBootFreshTareInputSettled")
     assert_contains(HDS_SOURCE, "void consumeScaleTareStatus")
     assert_contains(HDS_SOURCE, "void clearPendingAutomaticTareState")
     assert_contains(USBCOMM_HEADER, "setScaleSamplesInUseWhenReady(samplesInUse, \"USB samples\")")
@@ -276,7 +312,62 @@ def main():
     assert_contains(HEADER.parent / "menu.h", "setScaleSamplesInUseWhenReady(1, \"calibration restore\")")
     assert_contains(HEADER.parent / "menu.h", "consumeScaleTareStatus();")
     assert_contains(HEADER.parent / "menu.h", "clearPendingAutomaticTareState();")
-    assert HDS_SOURCE.read_text(encoding="utf-8").count("scale.tareNoDelay()") == 1
+    assert read(HDS_SOURCE).count("scale.tareNoDelay()") == 1
+    assert read(HDS_SOURCE).count("scale.tareFreshNoDelay()") == 1
+    assert_not_contains(HDS_SOURCE, 'tareScaleWhenAdcReady("boot tare")')
+
+    fast_tare = method_body(HDS_SOURCE, "tareScaleWhenAdcReady")
+    assert "scale.tareNoDelay();" in fast_tare
+    if "tareFresh" in fast_tare:
+        raise AssertionError("runtime tare must stay fast")
+
+    boot_start = method_body(HDS_SOURCE, "startBootFreshTare")
+    assert_ordered(
+        boot_start,
+        [
+            "scale.setSamplesInUse(BOOT_FRESH_TARE_SAMPLES);",
+            "scale.tareFreshNoDelay();",
+            "b_bootFreshTarePending = true;",
+        ],
+    )
+
+    boot_process = method_body(HDS_SOURCE, "processBootFreshTare")
+    assert_ordered(
+        boot_process,
+        [
+            "if (!isBootFreshTareInputSettled())",
+            "t_bootTare = millis();",
+            "if (millis() - t_bootTare <= (unsigned long)i_bootTareDelay)",
+            "return startBootFreshTare();",
+            "if (scale.getTareStatus())",
+            "restoreBootFreshTareSamples();",
+            "resetScaleOutputAfterAdcDiscontinuity();",
+            "b_bootTare = false;",
+        ],
+    )
+    if "b_bootTare = false;" in boot_process.split("if (scale.getTareStatus())", 1)[0]:
+        raise AssertionError("boot tare cleared before fresh tare completion")
+
+    loop_body = method_body(HDS_SOURCE, "loop")
+    assert "processBootFreshTare();" in loop_body
+    assert 'tareScaleWhenAdcReady("button tare")' in loop_body
+    assert 'tareScaleWhenAdcReady("remote tare")' in loop_body
+
+    boot_gate = method_body(HDS_SOURCE, "isBootFreshTareInputSettled")
+    for expected in (
+            "b_menu || b_calibration || GPIO_power_on_with == BATTERY_CHARGING",
+            "digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW",
+            "millis() - t_menuExitTime <= BOOT_FRESH_TARE_INPUT_SETTLE"):
+        if expected not in boot_gate:
+            raise AssertionError(f"boot tare input gate missing {expected}")
+
+    menu_header = HEADER.parent / "menu.h"
+    for name in ("driftCompOff", "driftComp0050", "driftComp0075",
+                 "driftComp0100", "driftComp0200"):
+        body = method_body(menu_header, name)
+        if "tare" in body.lower():
+            raise AssertionError(f"{name} must not tare")
+
     assert_not_contains(USBCOMM_HEADER, "scale.setSamplesInUse")
     assert_not_contains(WEBSOCKET_HEADER, "scale.setSamplesInUse")
     print("calibration validation tests passed")

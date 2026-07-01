@@ -597,12 +597,9 @@ void setup() {
   } while (u8g2.nextPage());
   //adc init
   unsigned long stabilizingtime = 500;
-  //taring duration. longer for better reading.
-  bool _tare = true;  //电子秤初始化去皮，如果不想去皮则设为false
-  //whether the scale will tare on start.
   scale.begin();
   scale.setSamplesInUse(1);  //设置灵敏度 (SAMPLES=4 allows runtime change via hex cmd)
-  scale.start(stabilizingtime, _tare);
+  scale.start(stabilizingtime, false);
   resetAdcRecoveryState();
   scale.setCalFactor(f_calibration_value);  //设置偏移量
   //set the calibration value
@@ -1132,7 +1129,7 @@ void pureScale() {
   }
   
   // Reset temperature compensation on TARE
-  if (scale.getTareStatus()) {
+  if (!b_bootFreshTarePending && scale.getTareStatus()) {
     t_tareStatus = millis();
     b_weight_quick_zero = false;
     resetTracking();
@@ -1243,6 +1240,99 @@ void resetScaleOutputAfterAdcDiscontinuity() {
                   i_decimal_precision);
 }
 
+void holdScaleOutputAtZero() {
+  f_driftCompensation = 0.0;
+  f_displayedValue = 0.0;
+  formatFloatSafe(c_weight, sizeof(c_weight), f_displayedValue,
+                  i_decimal_precision);
+}
+
+bool isBootFreshTareInputSettled() {
+  if (b_menu || b_calibration || GPIO_power_on_with == BATTERY_CHARGING) {
+    return false;
+  }
+  if (digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW) {
+    return false;
+  }
+  if (t_menuExitTime > 0 &&
+      millis() - t_menuExitTime <= BOOT_FRESH_TARE_INPUT_SETTLE) {
+    return false;
+  }
+  return true;
+}
+
+void restoreBootFreshTareSamples() {
+  uint8_t samplesInUse = i_bootFreshTareSamplesInUse > 0
+                           ? i_bootFreshTareSamplesInUse
+                           : 1;
+  if (scale.getSamplesInUse() != samplesInUse) {
+    scale.setSamplesInUse(samplesInUse);
+  }
+  i_bootFreshTareSamplesInUse = samplesInUse;
+}
+
+bool startBootFreshTare() {
+  if (b_bootFreshTarePending) {
+    return true;
+  }
+
+  int currentSamplesInUse = scale.getSamplesInUse();
+  i_bootFreshTareSamplesInUse = currentSamplesInUse > 0
+                                  ? (uint8_t)currentSamplesInUse
+                                  : 1;
+  if (scale.getSamplesInUse() != BOOT_FRESH_TARE_SAMPLES) {
+    scale.setSamplesInUse(BOOT_FRESH_TARE_SAMPLES);
+  }
+  scale.tareFreshNoDelay();
+  t_bootFreshTare = millis();
+  b_bootFreshTarePending = true;
+  holdScaleOutputAtZero();
+  Serial.println("Boot fresh tare started");
+  return true;
+}
+
+bool processBootFreshTare() {
+  holdScaleOutputAtZero();
+
+  if (!b_bootFreshTarePending) {
+    if (!isBootFreshTareInputSettled()) {
+      t_bootTare = millis();
+      return false;
+    }
+    if (millis() - t_bootTare <= (unsigned long)i_bootTareDelay) {
+      return false;
+    }
+    return startBootFreshTare();
+  }
+
+  if (scale.getTareStatus()) {
+    b_bootFreshTarePending = false;
+    restoreBootFreshTareSamples();
+    if (!refreshScaleDatasetAfterDiscontinuity("boot tare restore")) {
+      t_bootTare = millis();
+      resetScaleOutputAfterAdcDiscontinuity();
+      Serial.println("Boot fresh tare restore failed");
+      return false;
+    }
+    resetScaleOutputAfterAdcDiscontinuity();
+    b_bootTare = false;
+    t_bootFreshTare = 0;
+    Serial.println("Boot fresh tare complete");
+    return true;
+  }
+
+  if (millis() - t_bootFreshTare > BOOT_FRESH_TARE_TIMEOUT) {
+    b_bootFreshTarePending = false;
+    restoreBootFreshTareSamples();
+    resetScaleOutputAfterAdcDiscontinuity();
+    t_bootTare = millis();
+    t_bootFreshTare = 0;
+    Serial.println("Boot fresh tare timeout");
+  }
+
+  return false;
+}
+
 bool tareScaleWhenAdcReady(const char *context) {
   ADS1232DebugInfo info = scale.getDebugInfo();
   if (info.samplesInUse > 0 && info.validSamples < info.samplesInUse) {
@@ -1259,10 +1349,15 @@ void consumeScaleTareStatus() {
 }
 
 void clearPendingAutomaticTareState() {
+  if (b_bootFreshTarePending) {
+    restoreBootFreshTareSamples();
+  }
+  b_bootFreshTarePending = false;
   b_bootTare = false;
   b_weight_quick_zero = false;
   b_tareByButton = false;
   b_tareByBle = false;
+  t_bootFreshTare = 0;
   t_quickZeroStart = 0;
   consumeRemoteTareRequests();
 }
@@ -1586,11 +1681,7 @@ void loop() {
           }
         }
         if (b_bootTare) {
-          //tare after boot
-          if (millis() - t_bootTare > i_bootTareDelay) {
-            tareScaleWhenAdcReady("boot tare");
-            b_bootTare = false;
-          }
+          processBootFreshTare();
         } else if (b_tareByButton) {
           // Tare by button, ensure 500ms delay to avoid touch interference
           if (millis() - t_tareByButton > i_tareDelay) {

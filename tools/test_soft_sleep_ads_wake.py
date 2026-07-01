@@ -58,7 +58,8 @@ def main():
             "resetScaleOutputAfterAdcDiscontinuity();",
         ],
     )
-    if "tareScaleWhenAdcReady" in helper or "tareNoDelay" in helper:
+    if ("tareScaleWhenAdcReady" in helper or "tareNoDelay" in helper or
+            "tareFresh" in helper):
         raise AssertionError("soft wake must not tare automatically")
 
     button_handler = method_body(HDS_SOURCE, "aceButtonHandleEvent")
