@@ -1,6 +1,10 @@
 #ifndef GRINDER_RUNTIME_LOW_LATENCY_H
 #define GRINDER_RUNTIME_LOW_LATENCY_H
 
+#ifndef GRINDER_CUTOFF_ZERO_EXIT_PROTECTION_MS
+#define GRINDER_CUTOFF_ZERO_EXIT_PROTECTION_MS 1500
+#endif
+
 static inline bool grinderActivePlugValidated() {
   return grinderIsMac(grinderSettings.selectedMac) &&
          strcmp(grinderRuntime.activePlugMac, grinderSettings.selectedMac) == 0;
@@ -60,16 +64,37 @@ static inline bool grinderRuntimeLocksScaleSampling() {
           grinderRuntime.state == GRINDER_STATE_STOPPING);
 }
 
+static inline void grinderResetCutoffGuard() {
+  grinderRuntime.cutoffGuardActive = false;
+  grinderRuntime.cutoffGuardZeroExitAt = 0;
+}
+
+static inline bool grinderCutoffProtected(float weight, uint32_t now) {
+  if (grinderWeightInZeroRange(weight)) {
+    grinderResetCutoffGuard();
+    return true;
+  }
+  if (!grinderRuntime.cutoffGuardActive) {
+    grinderRuntime.cutoffGuardActive = true;
+    grinderRuntime.cutoffGuardZeroExitAt = now;
+    return true;
+  }
+  return now - grinderRuntime.cutoffGuardZeroExitAt < GRINDER_CUTOFF_ZERO_EXIT_PROTECTION_MS;
+}
+
 static inline void grinderTickGrindingCutoff(float weight) {
   if (grinderRuntime.state != GRINDER_STATE_GRINDING) {
     return;
   }
+  const uint32_t now = millis();
   grinderUpdateRate(weight);
   const float rate = grinderRuntime.rateSamples > 0 ? grinderRuntime.grindRateGps : 0.0f;
-  const float cutoff = grinderCutoffGrams(grinderSettings.targetGrams, rate, grinderSettings.effectiveLatencySeconds, grinderSettings.safetyMarginGrams);
-  if (weight < cutoff) {
+  const float cutoff = grinderCutoffGrams(grinderSettings.targetGrams, grinderSettings.safetyMarginGrams);
+  const bool protectedByZeroExit = grinderCutoffProtected(weight, now);
+  if (weight < cutoff || protectedByZeroExit) {
     return;
   }
+  const uint32_t guardAge = now - grinderRuntime.cutoffGuardZeroExitAt;
   grinderRuntime.stopWeight = weight;
   if (!grinderSendOff()) {
     grinderEnterError("off send failed");
@@ -77,12 +102,13 @@ static inline void grinderTickGrindingCutoff(float weight) {
   }
   grinderSetStatus("stopping");
   grinderSetState(GRINDER_STATE_STOPPING);
-  Serial.printf("[grinder] cutoff weight=%.2f target=%.2f rate=%.2f cutoff=%.2f safety=%.2f\n",
+  Serial.printf("[grinder] cutoff weight=%.2f target=%.2f rate=%.2f cutoff=%.2f safety=%.2f guard=%lu\n",
                 weight,
                 grinderSettings.targetGrams,
                 rate,
                 cutoff,
-                grinderSettings.safetyMarginGrams);
+                grinderSettings.safetyMarginGrams,
+                (unsigned long)guardAge);
 }
 
 static inline void grinderRuntimeFreshWeightTick(float weight, uint32_t sampleSequence) {

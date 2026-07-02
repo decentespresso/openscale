@@ -41,7 +41,6 @@ struct GrinderSettings {
   float safetyMarginGrams = 0.2f;
   float zeroMinGrams = -1.0f;
   float zeroMaxGrams = 1.0f;
-  float effectiveLatencySeconds = 0.25f;
   float targetToleranceGrams = 0.5f;
   GrinderAdaptiveSafetyStore adaptiveSafety;
   uint32_t zeroHoldMs = 1000;
@@ -75,6 +74,7 @@ struct GrinderRuntime {
   bool zeroTracking = false;
   bool settingsDirty = false;
   bool wifiLowLatency = false;
+  bool cutoffGuardActive = false;
   GrinderAdaptiveShot adaptiveShot;
   float zeroTrackWeight = 0.0f;
   float lastWeight = 0.0f;
@@ -89,6 +89,7 @@ struct GrinderRuntime {
   uint32_t stateEnteredAt = 0;
   uint32_t lastRuntimeLogAt = 0;
   uint32_t lastFastWeightSequence = 0;
+  uint32_t cutoffGuardZeroExitAt = 0;
 };
 
 GrinderSettings grinderSettings;
@@ -141,9 +142,6 @@ static inline void grinderNormalizeSettings() {
     grinderSettings.zeroMinGrams = -1.0f;
     grinderSettings.zeroMaxGrams = 1.0f;
   }
-  if (!grinderFiniteInRange(grinderSettings.effectiveLatencySeconds, 0.0f, 5.0f)) {
-    grinderSettings.effectiveLatencySeconds = 0.25f;
-  }
   if (!grinderFiniteInRange(grinderSettings.targetToleranceGrams, 0.1f, 10.0f)) {
     grinderSettings.targetToleranceGrams = 0.5f;
   }
@@ -167,7 +165,6 @@ static inline void grinderLoadSettings() {
   grinderSettings.safetyMarginGrams = preferences.getFloat("safety", 0.2f);
   grinderSettings.zeroMinGrams = preferences.getFloat("zmin", -1.0f);
   grinderSettings.zeroMaxGrams = preferences.getFloat("zmax", 1.0f);
-  grinderSettings.effectiveLatencySeconds = preferences.getFloat("latency", 0.25f);
   grinderSettings.targetToleranceGrams = preferences.getFloat("tol", 0.5f);
   grinderSettings.adaptiveSafety.count = (uint8_t)preferences.getUInt("safe_count", 0);
   grinderSettings.adaptiveSafety.next = (uint8_t)preferences.getUInt("safe_next", 0);
@@ -193,7 +190,6 @@ static inline void grinderSaveSettings() {
   preferences.putFloat("safety", grinderSettings.safetyMarginGrams);
   preferences.putFloat("zmin", grinderSettings.zeroMinGrams);
   preferences.putFloat("zmax", grinderSettings.zeroMaxGrams);
-  preferences.putFloat("latency", grinderSettings.effectiveLatencySeconds);
   preferences.putFloat("tol", grinderSettings.targetToleranceGrams);
   preferences.putUInt("safe_count", grinderSettings.adaptiveSafety.count);
   preferences.putUInt("safe_next", grinderSettings.adaptiveSafety.next);
@@ -263,12 +259,15 @@ static inline void grinderCloseClient() {
   grinderResetLineReader();
 }
 
+static inline void grinderResetCutoffGuard();
+
 static inline void grinderDisconnectToFinding() {
   grinderCloseClient();
   grinderRuntime.resolvePhase = 0;
   grinderRuntime.lastConnectAttempt = 0;
   grinderRuntime.grindRateGps = 0.0f;
   grinderRuntime.rateSamples = 0;
+  grinderResetCutoffGuard();
   grinderAdaptiveShotReset(&grinderRuntime.adaptiveShot);
   grinderSetState(grinderSettings.enabled ? GRINDER_STATE_FINDING_PLUG : GRINDER_STATE_DISABLED);
 }
@@ -326,6 +325,7 @@ static inline void grinderClearDosingMetrics(float weight) {
   grinderRuntime.lastWeightAt = millis();
   grinderRuntime.stopWeight = 0.0f;
   grinderRuntime.removalSeen = false;
+  grinderResetCutoffGuard();
   grinderAdaptiveShotReset(&grinderRuntime.adaptiveShot);
 }
 
@@ -686,6 +686,7 @@ static inline void grinderRuntimeReset() {
   grinderRuntime.rateSamples = 0;
   grinderRuntime.removalSeen = false;
   grinderRuntime.lastFastWeightSequence = 0;
+  grinderResetCutoffGuard();
   grinderAdaptiveShotReset(&grinderRuntime.adaptiveShot);
   grinderSetStatus(grinderSettings.enabled ? "idle" : "off");
   grinderSetState(grinderSettings.enabled ? GRINDER_STATE_FINDING_PLUG : GRINDER_STATE_DISABLED);

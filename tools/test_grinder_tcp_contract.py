@@ -39,8 +39,8 @@ def parse_response(line):
     return None
 
 
-def cutoff(target, grind_rate, latency, safety):
-    return target - max(grind_rate, 0.0) * latency - safety
+def cutoff(target, safety):
+    return target - safety
 
 
 def clamp(value, minimum, maximum):
@@ -195,11 +195,12 @@ class GrinderModel:
         self.zero_hold = 1000
         self.target = 20.0
         self.safety = 0.2
-        self.latency = 0.25
         self.grind_rate = 0.0
         self.rate_samples = 0
         self.zero_since = None
         self.zero_track = None
+        self.cutoff_guard_active = False
+        self.cutoff_guard_zero_exit_at = None
         self.now = 0
         self.last_command_at = 0
         self.sent = []
@@ -225,6 +226,17 @@ class GrinderModel:
         self.sent.append("!\n")
         self.pending = "OFF"
         self.last_command_at = self.now
+
+    def cutoff_protected(self, weight):
+        if self.zero_min <= weight <= self.zero_max:
+            self.cutoff_guard_active = False
+            self.cutoff_guard_zero_exit_at = None
+            return True
+        if not self.cutoff_guard_active:
+            self.cutoff_guard_active = True
+            self.cutoff_guard_zero_exit_at = self.now
+            return True
+        return self.now - self.cutoff_guard_zero_exit_at < 1500
 
     def handle_response(self, line):
         response = parse_response(line)
@@ -253,9 +265,11 @@ class GrinderModel:
             self.state = "armed"
         if self.state == "armed" and self.pending is None:
             self.send("ON")
-        if self.state == "grinding" and weight >= cutoff(self.target, self.grind_rate if self.rate_samples else 0.0, self.latency, self.safety):
-            self.state = "stopping"
-            self.send_off()
+        if self.state == "grinding":
+            protected = self.cutoff_protected(weight)
+            if weight >= cutoff(self.target, self.safety) and not protected:
+                self.state = "stopping"
+                self.send_off()
         if self.state == "stopping" and self.pending == "OFF" and self.now - self.last_command_at >= 150:
             self.send_off()
 
@@ -275,8 +289,8 @@ def test_response_parser_and_wrong_mac():
 
 
 def test_cutoff_math():
-    assert abs(cutoff(20.0, 4.0, 0.25, 0.2) - 18.8) < 0.0001
-    assert abs(cutoff(20.0, -4.0, 0.25, 0.2) - 19.8) < 0.0001
+    assert abs(cutoff(20.0, 0.2) - 19.8) < 0.0001
+    assert abs(cutoff(15.0, 2.0) - 13.0) < 0.0001
 
 
 def test_adaptive_safety_learns_from_valid_grinds():
@@ -394,9 +408,48 @@ def test_fast_off_emits_emergency_line():
     model = GrinderModel()
     model.state = "grinding"
     model.target = 10.0
-    model.tick(9.9, 1000)
+    model.tick(1.2, 1000)
+    model.tick(9.9, 2500)
     assert model.sent == ["!\n"]
     assert model.pending == "OFF"
+
+
+def test_zero_exit_guard_blocks_fast_jump_before_1500_ms():
+    model = GrinderModel()
+    model.state = "grinding"
+    model.target = 15.0
+    model.safety = 0.2
+    model.tick(20.0, 1000)
+    model.tick(20.0, 2499)
+    assert model.sent == []
+    assert model.state == "grinding"
+
+
+def test_zero_exit_guard_allows_cutoff_after_1500_ms():
+    model = GrinderModel()
+    model.state = "grinding"
+    model.target = 15.0
+    model.safety = 0.2
+    model.tick(1.2, 1000)
+    model.tick(14.8, 2500)
+    assert model.sent == ["!\n"]
+    assert model.state == "stopping"
+
+
+def test_zero_exit_guard_resets_inside_zero_range():
+    model = GrinderModel()
+    model.state = "grinding"
+    model.target = 15.0
+    model.safety = 0.2
+    model.tick(20.0, 1000)
+    model.tick(0.2, 1800)
+    model.tick(20.0, 1900)
+    model.tick(20.0, 3399)
+    assert model.sent == []
+    assert model.state == "grinding"
+    model.tick(20.0, 3400)
+    assert model.sent == ["!\n"]
+    assert model.state == "stopping"
 
 
 def test_duplicate_off_retry_safe():
@@ -421,6 +474,9 @@ def test_low_latency_source_order_and_weight_sources():
     assert "const uint8_t command[] = { '!', '\\n' };" in low_latency
     assert "grinderRuntime.client.write(command, sizeof(command))" in low_latency
     assert 'return grinderSendSimpleCommand("OFF", GRINDER_COMMAND_OFF);' in low_latency
+    assert "GRINDER_CUTOFF_ZERO_EXIT_PROTECTION_MS 1500" in low_latency
+    assert "grinderCutoffProtected" in low_latency
+    assert "grinderCutoffGrams(grinderSettings.targetGrams, grinderSettings.safetyMarginGrams)" in low_latency
 
     hds = HDS_SOURCE.read_text(encoding="utf-8")
     assert hds.index("f_grinder_fast_weight = tracking_compensated;") < hds.index("float stable_output = applyStableOutput(tracking_compensated);")
@@ -448,6 +504,11 @@ def test_firmware_contracts():
     assert_contains(PROTOCOL_HEADER, "grinderParseResponse")
     assert_contains(PROTOCOL_HEADER, "grinderCopyMacPrefix")
     assert_contains(PROTOCOL_HEADER, "grinderCutoffGrams")
+    assert_contains(PROTOCOL_HEADER, "return targetGrams - safetyMarginGrams;")
+    assert_not_contains(PROTOCOL_HEADER, "effectiveLatencySeconds")
+    assert_not_contains(RUNTIME_HEADER, "effectiveLatencySeconds")
+    assert_not_contains(RUNTIME_HEADER, 'preferences.getFloat("latency"')
+    assert_not_contains(RUNTIME_HEADER, 'preferences.putFloat("latency"')
     assert_contains(RUNTIME_HEADER, "targetGrams = 15.0f")
     assert_contains(RUNTIME_HEADER, 'preferences.begin("grinder"')
     assert_contains(RUNTIME_HEADER, '#include "grinder_runtime_adaptive.h"')
@@ -535,6 +596,9 @@ if __name__ == "__main__":
     test_on_blocked_until_stable_zero()
     test_lost_connection_enters_error()
     test_fast_off_emits_emergency_line()
+    test_zero_exit_guard_blocks_fast_jump_before_1500_ms()
+    test_zero_exit_guard_allows_cutoff_after_1500_ms()
+    test_zero_exit_guard_resets_inside_zero_range()
     test_duplicate_off_retry_safe()
     test_low_latency_source_order_and_weight_sources()
     test_sampling_changes_blocked_during_grinder_cutoff_states()

@@ -189,9 +189,8 @@ static inline int grinderFormatHello(char *output, size_t outputSize, const char
   return snprintf(output, outputSize, "HELLO %s", scaleMac);
 }
 
-static inline float grinderCutoffGrams(float targetGrams, float grindRateGps, float effectiveLatencySeconds, float safetyMarginGrams) {
-  const float safeRate = grindRateGps > 0.0f ? grindRateGps : 0.0f;
-  return targetGrams - (safeRate * effectiveLatencySeconds) - safetyMarginGrams;
+static inline float grinderCutoffGrams(float targetGrams, float safetyMarginGrams) {
+  return targetGrams - safetyMarginGrams;
 }
 
 #endif
