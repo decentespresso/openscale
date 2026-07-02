@@ -11,6 +11,7 @@
 #include "webserver.h"
 #include "websocket.h"
 #include "wifi_ota.h"
+#include "grinder_runtime.h"
 
 
 #include "menu.h"
@@ -384,6 +385,10 @@ const char *resetReasonStr(esp_reset_reason_t r) {
   }
 }
 
+void beforeDeepSleepFlush() {
+  grinderFlushSettingsIfDirty();
+}
+
 void setup() {
   Serial.begin(115200);
   while (!Serial)  // Wait for the Serial port to initialize (typically used in Arduino to ensure the Serial monitor is ready)
@@ -399,6 +404,7 @@ void setup() {
       delay(1000);
     }
   }
+  grinderLoadSettings();
 
   b_quickBoot = storageGetBool(KEY_QUICK_BOOT, false);
   i_buttonBootDelay = b_quickBoot ? 0 : 500;
@@ -703,6 +709,11 @@ void setup() {
   }
 #endif
   b_wifiOnBoot = storageGetBool(KEY_WIFI_BOOT, false);
+  if (grinderSettings.enabled && !b_wifiOnBoot) {
+    b_wifiOnBoot = true;
+    storagePutBool(KEY_WIFI_BOOT, true);
+  }
+  grinderRuntimeBegin();
   if (b_wifiOnBoot && GPIO_power_on_with != BATTERY_CHARGING) {
     wifi_init();
   }
@@ -1030,6 +1041,12 @@ void pureScale() {
     
     // 4. Original processing pipeline
     float tracking_compensated = applyTrackingCompensation(temperature_compensated);
+    f_grinder_fast_weight = tracking_compensated;
+    grinderFastWeightSequence++;
+    if (grinderFastWeightSequence == 0) {
+      grinderFastWeightSequence = 1;
+    }
+    grinderRuntimeFreshWeightTick(f_grinder_fast_weight, grinderFastWeightSequence);
     float stable_output = applyStableOutput(tracking_compensated);
     
     if (stable_output >= -0.14 && stable_output <= 0.14) {
@@ -1094,6 +1111,7 @@ void pureScale() {
     resetStableOutput();
     f_driftCompensation = 0.0;
     f_displayedValue = 0.0;
+    f_grinder_fast_weight = 0.0f;
     if (b_weight_in_serial) {
       Serial.println("TARE: Temperature drift compensation reset");
     }
@@ -1104,6 +1122,7 @@ void pureScale() {
     resetTracking();
     resetStableOutput();
     f_driftCompensation = 0.0;
+    f_grinder_fast_weight = 0.0f;
   }
 
   
@@ -1194,6 +1213,7 @@ void resetScaleOutputAfterAdcDiscontinuity() {
   resetStableOutput();
   f_driftCompensation = 0.0;
   f_displayedValue = 0.0;
+  f_grinder_fast_weight = 0.0f;
   formatFloatSafe(c_weight, sizeof(c_weight), f_displayedValue,
                   i_decimal_precision);
 }
@@ -1321,6 +1341,11 @@ void clearPendingAutomaticTareState() {
 }
 
 bool setScaleSamplesInUseWhenReady(uint8_t samplesInUse, const char *context) {
+  if (grinderRuntimeLocksScaleSampling()) {
+    Serial.print("Samples in use locked by grinder: ");
+    Serial.println(context);
+    return false;
+  }
   scale.setSamplesInUse(samplesInUse);
   if (!refreshScaleDatasetAfterDiscontinuity(context)) {
     return false;
@@ -1481,7 +1506,7 @@ void loop() {
   // connected WS client streaming weight resets the auto-off timer just like a
   // BLE central does -- otherwise a WiFi-only client on battery loses the scale
   // to the 15-min auto-off mid-stream (WiFi activity didn't reset t_power_off).
-  if (deviceConnected || (b_wifiEnabled && websocket.count() > 0)) {
+  if (deviceConnected || (b_wifiEnabled && websocket.count() > 0) || grinderRuntimeKeepsAwake()) {
     power_off(-1);  //reset power off timer
   } else {
     //if (!b_tempDisablePowerOff)
@@ -1527,6 +1552,9 @@ void loop() {
     }
     checkBattery();
     if (b_menu) {
+      if (b_wifiEnabled) {
+        wifiSupervise();
+      }
       showMenu();
     } else if (GPIO_power_on_with == BATTERY_CHARGING) {
       if (b_chargingOLED) {
@@ -1664,6 +1692,7 @@ void loop() {
           }
         }
         pureScale();
+        grinderRuntimeTick(f_displayedValue);
         updateOled();
       }
     }
@@ -1765,6 +1794,7 @@ void updateOled() {
       drawButton();
       drawBle();
       drawHeartBeat();
+      drawGrinder();
       drawTare();
       drawShutdownFail();
       drawAbout();
@@ -1946,6 +1976,16 @@ void drawBle() {
 void drawHeartBeat(){
   if (b_heartBeatIcon)
     u8g2.drawXBM(30, 51, 13, 13, image_heart_13x13);
+}
+
+void drawGrinder() {
+  if (!grinderSettings.enabled) {
+    return;
+  }
+  char text[28];
+  grinderShortStatus(text, sizeof(text));
+  u8g2.setFont(u8g2_font_5x8_tr);
+  u8g2.drawStr(46, 64, text);
 }
 
 void drawBattery() {

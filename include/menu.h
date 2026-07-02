@@ -4,6 +4,7 @@
 #include "esp32-hal.h"
 #include "parameter.h"
 #include "wifi_setup.h"
+#include "grinder_runtime.h"
 const char *weights[] = { "Exit", "50g", "100g", "200g", "500g", "1000g" };
 const float weight_values[] = { 0.0, 50.0, 100.0, 200.0, 500.0, 1000.0 };
 bool b_showAbout = false;
@@ -65,6 +66,13 @@ void driftComp0050();
 void driftComp0075();
 void driftComp0100();
 void driftComp0200();
+void grinderOn();
+void grinderOff();
+void grinderSelectPlugMenu();
+void grinderTargetMenu();
+void grinderSafetyMenu();
+void grinderZeroRangeMenu();
+void wifi_init();
 
 
 // Top-level menu options
@@ -87,6 +95,7 @@ Menu menuBtnFuncWhileConnected = { "Button with BLE", NULL, NULL, NULL };
 Menu menuAutoSleep = { "Auto Sleep", NULL, NULL, NULL };
 Menu menuQuickBoot = { "Quick Boot", NULL, NULL, NULL };
 Menu menuDriftComp = { "Drift Comp", NULL, NULL, NULL };
+Menu menuGrinder = { "Grinder Plug", NULL, NULL, NULL };
 
 
 // 2/5 define the 2st level menu
@@ -170,6 +179,15 @@ Menu menuQuickBoot0100 = { "0.1g", driftComp0100, NULL, &menuDriftComp };
 Menu menuQuickBoot0200 = { "0.2g", driftComp0200, NULL, &menuDriftComp };
 Menu *driftCompMenu[] = { &menuDriftCompBack, &menuDriftCompOff, &menuQuickBoot0050, &menuQuickBoot0075, &menuQuickBoot0100, &menuQuickBoot0200 };
 
+Menu menuGrinderBack = { "Back", NULL, NULL, &menuGrinder };
+Menu menuGrinderOn = { "Grinder On", grinderOn, NULL, &menuGrinder };
+Menu menuGrinderOff = { "Grinder Off", grinderOff, NULL, &menuGrinder };
+Menu menuGrinderSelect = { "Select Plug", grinderSelectPlugMenu, NULL, &menuGrinder };
+Menu menuGrinderTarget = { "Target g", grinderTargetMenu, NULL, &menuGrinder };
+Menu menuGrinderSafety = { "Safety g", grinderSafetyMenu, NULL, &menuGrinder };
+Menu menuGrinderZero = { "Zero Range", grinderZeroRangeMenu, NULL, &menuGrinder };
+Menu *grinderMenu[] = { &menuGrinderBack, &menuGrinderOn, &menuGrinderOff, &menuGrinderSelect, &menuGrinderTarget, &menuGrinderSafety, &menuGrinderZero };
+
 // Menu menuFactoryBack = { "Back", NULL, NULL, &menuFactory };
 // Menu menuCalibrateVoltage = { "Calibrate 4.2v", calibrateVoltage, NULL,
 // &menuFactory }; Menu menuFactoryDebug = { "Debug Info", enableDebug, NULL,
@@ -187,6 +205,7 @@ Menu *mainMenu[] = {
   // &menuWiFiUpdate,
   &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen, &menuTimeOnTop,
   &menuBtnFuncWhileConnected, &menuAutoSleep, &menuQuickBoot, &menuDriftComp,
+  &menuGrinder,
   //, &menuFactory
 };
 //  &menuHolder1, &menuHolder2, &menuHolder3, &menuHolder4,
@@ -215,6 +234,7 @@ void linkSubmenus() {
   menuAutoSleep.subMenu = autoSleepMenu[0];
   menuQuickBoot.subMenu = quickBootMenu[0];
   menuDriftComp.subMenu = driftCompMenu[0];
+  menuGrinder.subMenu = grinderMenu[0];
   // menuFactory.subMenu = factoryMenu[0];
 }
 
@@ -328,6 +348,7 @@ void showStatus() {
   char bleLine[32];
   char sleepLine[32];
   char driftLine[32];
+  char grinderLine[32];
   snprintf(wifiLine, sizeof(wifiLine), "WiFi:%s %s %s",
            b_wifiOnBoot ? "On" : "Off",
            wifiCredentialsSaved() ? "Saved" : "NoCred",
@@ -342,6 +363,9 @@ void showStatus() {
   snprintf(driftLine, sizeof(driftLine), "T:%s Drift:%.3fg",
            b_timeOnTop ? "Top" : "Bot",
            f_maxDriftCompensation);
+  snprintf(grinderLine, sizeof(grinderLine), "Gr:%s %.1fg",
+           grinderRuntime.status[0] ? grinderRuntime.status : grinderStateText(grinderRuntime.state),
+           grinderSettings.targetGrams);
 
   u8g2.firstPage();
   do {
@@ -350,7 +374,7 @@ void showStatus() {
     u8g2.drawStr(0, 22, wifiLine);
     u8g2.drawStr(0, 34, bleLine);
     u8g2.drawStr(0, 46, sleepLine);
-    u8g2.drawStr(0, 58, driftLine);
+    u8g2.drawStr(0, 58, grinderSettings.enabled ? grinderLine : driftLine);
   } while (u8g2.nextPage());
   delay(1000);
   while (b_showStatusData) {
@@ -523,6 +547,247 @@ void driftComp0200() {
   Serial.println("Drift Comp 0.2g stored in NVS.");
 }
 
+void grinderSetActionMessage(const char *line1, const char *line2 = nullptr) {
+  actionMessage = line1;
+  actionMessage2 = line2 == nullptr ? "Default" : line2;
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1500;
+}
+
+void grinderOn() {
+  grinderSetEnabled(true);
+  b_wifiOnBoot = true;
+  EEPROM.put(i_addr_enableWifiOnBoot, true);
+  EEPROM.commit();
+  if (!b_wifiEnabled && GPIO_power_on_with != BATTERY_CHARGING) {
+    wifi_init();
+  }
+  grinderSetActionMessage("Grinder On", "WiFi On");
+  Serial.printf("[grinder] enabled selected=%s ip=%s\n",
+                grinderSettings.selectedMac,
+                grinderSettings.lastIp.toString().c_str());
+}
+
+void grinderOff() {
+  grinderSetEnabled(false);
+  grinderSetActionMessage("Grinder Off");
+  Serial.println("Grinder Off stored in NVS.");
+}
+
+bool grinderEnsureWifiReadyForDiscovery() {
+  if (!b_wifiEnabled && GPIO_power_on_with != BATTERY_CHARGING) {
+    b_wifiOnBoot = true;
+    wifi_init();
+  }
+  const uint32_t startedAt = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startedAt < 12000) {
+    refreshOLED((char *)"WiFi", (char *)"Connecting");
+    if (b_wifiEnabled) {
+      wifiSupervise();
+    }
+    delay(250);
+  }
+  if (b_wifiEnabled) {
+    wifiSupervise();
+  }
+  return WiFi.status() == WL_CONNECTED;
+}
+
+uint8_t grinderFindPlugsForSelection() {
+  if (!grinderEnsureWifiReadyForDiscovery()) {
+    grinderSetActionMessage("WiFi Wait", "No Plugs");
+    return 0;
+  }
+  refreshOLED((char *)"Finding", (char *)"Plugs");
+  uint8_t count = grinderDiscoverPlugs();
+  char message[24];
+  if (count == 0) {
+    grinderSetActionMessage(grinderRuntime.status[0] ? grinderRuntime.status : "No Plugs");
+  } else {
+    snprintf(message, sizeof(message), "Found %u", count);
+    grinderSetActionMessage(message);
+  }
+  return count;
+}
+
+void grinderWaitForButtonRelease() {
+  while (digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW) {
+    delay(20);
+  }
+}
+
+void grinderDrawPlugList(uint8_t selected) {
+  const uint8_t total = grinderRuntime.discoveredCount + 1;
+  const uint8_t rows = 6;
+  uint8_t first = (selected / rows) * rows;
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_5x8_tr);
+    for (uint8_t row = 0; row < rows; row++) {
+      const uint8_t choice = first + row;
+      if (choice >= total) {
+        break;
+      }
+      const uint8_t y = 9 + row * 10;
+      if (choice == selected) {
+        u8g2.drawStr(0, y, ">");
+      }
+      if (choice == 0) {
+        u8g2.drawStr(8, y, "Back");
+      } else {
+        u8g2.drawStr(8, y, grinderRuntime.discovered[choice - 1].mac);
+      }
+    }
+  } while (u8g2.nextPage());
+}
+
+void grinderSelectPlugMenu() {
+  if (grinderFindPlugsForSelection() == 0) {
+    return;
+  }
+  grinderWaitForButtonRelease();
+  uint8_t selected = 0;
+  bool selecting = true;
+  while (selecting) {
+    power_off(-1);
+    grinderDrawPlugList(selected);
+    if (digitalRead(BUTTON_CIRCLE) == LOW) {
+      selected = (selected + 1) % (grinderRuntime.discoveredCount + 1);
+      grinderWaitForButtonRelease();
+    }
+    if (digitalRead(BUTTON_SQUARE) == LOW) {
+      if (selected == 0) {
+        selecting = false;
+      } else {
+        grinderSaveSelectedDiscovery(grinderRuntime.discovered[selected - 1]);
+        grinderRuntimeReset();
+        Serial.printf("[grinder] selected mac=%s host=%s ip=%s enabled=%d\n",
+                      grinderSettings.selectedMac,
+                      grinderSettings.hostname,
+                      grinderSettings.lastIp.toString().c_str(),
+                      grinderSettings.enabled ? 1 : 0);
+        grinderSetActionMessage("Plug Selected", grinderSettings.enabled ? "Saved" : "Turn Grinder On");
+        selecting = false;
+      }
+      grinderWaitForButtonRelease();
+    }
+    delay(40);
+  }
+}
+
+static inline float grinderClampDraft(float value, float minValue, float maxValue) {
+  if (value < minValue) {
+    return minValue;
+  }
+  if (value > maxValue) {
+    return maxValue;
+  }
+  return value;
+}
+
+static inline void grinderDrawNumberEditor(const char *title, float value, uint8_t selected) {
+  char valueLine[24];
+  snprintf(valueLine, sizeof(valueLine), "%.1fg Save", value);
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_6x12_tr);
+    u8g2.drawStr(0, 10, title);
+    const char *lines[] = { "Back", "-0.1", "+0.1", valueLine };
+    for (uint8_t row = 0; row < 4; row++) {
+      const uint8_t y = 25 + row * 12;
+      if (row == selected) {
+        u8g2.drawStr(0, y, ">");
+      }
+      u8g2.drawStr(10, y, lines[row]);
+    }
+  } while (u8g2.nextPage());
+}
+
+static inline float grinderApplyDraftStep(float draft, float step, float minValue, float maxValue) {
+  return grinderClampDraft(draft + step, minValue, maxValue);
+}
+
+static inline float grinderHandleDraftAdjust(const char *title, float draft, float step, float minValue, float maxValue, uint8_t selected) {
+  const uint32_t startedAt = millis();
+  uint32_t lastStepAt = 0;
+  bool held = false;
+  while (digitalRead(BUTTON_SQUARE) == LOW) {
+    power_off(-1);
+    const uint32_t now = millis();
+    if (now - startedAt >= 650 && now - lastStepAt >= 250) {
+      draft = grinderApplyDraftStep(draft, step * 10.0f, minValue, maxValue);
+      grinderDrawNumberEditor(title, draft, selected);
+      lastStepAt = now;
+      held = true;
+    }
+    delay(20);
+  }
+  if (!held) {
+    draft = grinderApplyDraftStep(draft, step, minValue, maxValue);
+  }
+  return draft;
+}
+
+static inline bool grinderEditNumber(const char *title, float *output, float minValue, float maxValue) {
+  float draft = *output;
+  uint8_t selected = 0;
+  grinderWaitForButtonRelease();
+  while (true) {
+    power_off(-1);
+    grinderDrawNumberEditor(title, draft, selected);
+    if (digitalRead(BUTTON_CIRCLE) == LOW) {
+      selected = (selected + 1) % 4;
+      grinderWaitForButtonRelease();
+    }
+    if (digitalRead(BUTTON_SQUARE) == LOW) {
+      if (selected == 0) {
+        grinderWaitForButtonRelease();
+        return false;
+      }
+      if (selected == 1) {
+        draft = grinderHandleDraftAdjust(title, draft, -0.1f, minValue, maxValue, selected);
+      } else if (selected == 2) {
+        draft = grinderHandleDraftAdjust(title, draft, 0.1f, minValue, maxValue, selected);
+      } else {
+        *output = draft;
+        grinderWaitForButtonRelease();
+        return true;
+      }
+    }
+    delay(40);
+  }
+}
+
+void grinderTargetMenu() {
+  float value = grinderSettings.targetGrams;
+  if (grinderEditNumber("Target g", &value, 1.0f, 200.0f)) {
+    grinderSettings.targetGrams = value;
+    grinderResetAdaptiveSafety();
+    grinderSaveSettings();
+    grinderSetActionMessage("Target Saved");
+  }
+}
+
+void grinderSafetyMenu() {
+  float value = grinderSettings.safetyMarginGrams;
+  if (grinderEditNumber("Safety g", &value, 0.0f, 10.0f)) {
+    grinderSettings.safetyMarginGrams = value;
+    grinderResetAdaptiveSafety();
+    grinderSaveSettings();
+    grinderSetActionMessage("Safety Saved");
+  }
+}
+
+void grinderZeroRangeMenu() {
+  float value = grinderSettings.zeroMaxGrams;
+  if (grinderEditNumber("Zero +/-g", &value, 0.1f, 20.0f)) {
+    grinderSettings.zeroMinGrams = -value;
+    grinderSettings.zeroMaxGrams = value;
+    grinderSaveSettings();
+    grinderSetActionMessage("Zero Saved");
+  }
+}
+
 void calibrate() {
   b_menu = false;
   b_calibration = true;  // 让按钮进入校准状态3
@@ -563,6 +828,10 @@ void calibrationResetLastDiagnostics() {
 
 void calibrationEnsureSampleWindow() {
   if (!b_calibrationSampleWindowActive) {
+    if (grinderRuntimeLocksScaleSampling()) {
+      Serial.println("Calibration samples locked by grinder");
+      return;
+    }
     scale.setSamplesInUse(16);
     b_calibrationSampleWindowActive = true;
   }
@@ -1338,6 +1607,9 @@ void selectMenu() {
     } else if (currentSelection == &menuDriftComp) {
       currentMenu = driftCompMenu;
       currentMenuSize = getMenuSize(driftCompMenu);
+    } else if (currentSelection == &menuGrinder) {
+      currentMenu = grinderMenu;
+      currentMenuSize = getMenuSize(grinderMenu);
     }
     // else if (currentSelection == &menuFactory) {
     //   currentMenu = factoryMenu;

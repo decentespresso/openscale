@@ -9,6 +9,7 @@ void stopWifi();
 void saveCredentials(String ssid, String pass); // ssid, pass
 bool saveCredentialsForRestart(String ssid, String pass);
 bool wifiCredentialsSaved();
+bool wifiEnsureMdnsReadyForSta();
 
 // Periodic health log + STA reconnect supervisor; call once per main-loop pass
 // when WiFi is enabled. Recovers from a silent STA disconnect (which the old
