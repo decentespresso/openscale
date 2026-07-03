@@ -76,7 +76,7 @@ MIN_VALID_SAMPLES = const_uint8("CALIBRATION_MIN_VALID_SAMPLES")
 STABLE_READS_REQUIRED = const_uint8("CALIBRATION_STABLE_READS_REQUIRED")
 CAPTURE_TIMEOUT_MS = const_ulong("CALIBRATION_CAPTURE_TIMEOUT_MS")
 STABLE_HOLD_MS = const_ulong("CALIBRATION_STABLE_HOLD_MS")
-ALLOW_NEGATIVE = False
+ALLOW_NEGATIVE = True
 
 
 def sign_allowed(value):
@@ -229,12 +229,14 @@ def test(name, actual, expected):
 
 def main():
     test("stored positive factor", valid_value(1000.0), True)
-    test("stored negative factor rejected by default", valid_value(-1000.0), False)
+    test("stored negative factor accepted", valid_value(-1000.0), True)
     test("stored huge factor rejected", valid_value(1500000.0), False)
 
     test("normal positive raw delta", validate_basics(50.0, 50000, 1000.0), "ok")
     test("normal positive verification", validate_verification(50.0, 49.9), "ok")
-    test("negative raw delta rejected by default", validate_basics(50.0, -50000, -1000.0), "factor_sign")
+    test("negative raw delta accepted with negative factor", validate_basics(50.0, -50000, -1000.0), "ok")
+    test("negative raw delta rejects positive factor", validate_basics(50.0, -50000, 1000.0), "factor_sign")
+    test("positive raw delta rejects negative factor", validate_basics(50.0, 50000, -1000.0), "factor_sign")
     test("stale tare inverted verification", validate_verification(50.0, -49.9), "verify_inverted")
     test("zero raw delta", validate_basics(50.0, 0, 0.0), "raw_delta_too_small")
     test("too small raw delta", validate_basics(50.0, 20, 1.1), "raw_delta_too_small")
