@@ -358,7 +358,7 @@ def main():
     boot_gate = method_body(HDS_SOURCE, "isBootFreshTareInputSettled")
     for expected in (
             "b_menu || b_calibration || GPIO_power_on_with == BATTERY_CHARGING",
-            "digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW",
+            "digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW",
             "millis() - t_menuExitTime <= BOOT_FRESH_TARE_INPUT_SETTLE"):
         if expected not in boot_gate:
             raise AssertionError(f"boot tare input gate missing {expected}")

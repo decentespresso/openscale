@@ -1251,7 +1251,7 @@ bool isBootFreshTareInputSettled() {
   if (b_menu || b_calibration || GPIO_power_on_with == BATTERY_CHARGING) {
     return false;
   }
-  if (digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW) {
+  if (digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW) {
     return false;
   }
   if (t_menuExitTime > 0 &&
