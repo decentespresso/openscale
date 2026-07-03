@@ -2,6 +2,7 @@ import { SCALE_CONSTANTS } from './constants.js';
 import { StateMachine } from './state-machine.js';
 import { UIController } from './ui-controller.js';
 import { DataExport } from './export.js';
+import { downloadFile } from '../../shared/modules/download-file.js';
 import { BluetoothConnection } from './connections/bluetooth-connection.js';
 import { USBConnection } from './connections/usb-connection.js';
 import { DebugLogger as Debug } from './debug-logger.js';
@@ -529,7 +530,7 @@ async connect(type) {
 
         try {
             const result = DataExport.exportToCSV(this.weightData);
-            DataExport.downloadFile(result.content, result.filename, result.type);
+            downloadFile(result.content, result.filename, result.type);
             console.log('CSV export completed');
         } catch (error) {
             console.error('CSV export error:', error);
@@ -545,7 +546,7 @@ async connect(type) {
 
         try {
             const result = DataExport.exportToJSON(this.weightData);
-            DataExport.downloadFile(result.content, result.filename, result.type);
+            downloadFile(result.content, result.filename, result.type);
             console.log('JSON export completed');
         } catch (error) {
             console.error('JSON export error:', error);
