@@ -2,10 +2,6 @@
 #define DECLARE_H
 #include "config.h"
 
-#ifdef HX711ADC
-#include <HX711_ADC.h>
-HX711_ADC scale(HX711_SDA, HX711_SCL);  //HX711模数转换初始化
-#endif
 #ifdef ADS1232ADC
 #include <ADS1232_ADC.h>
 ADS1232_ADC scale(SCALE_DOUT, SCALE_SCLK, SCALE_PDWN, SCALE_A0);

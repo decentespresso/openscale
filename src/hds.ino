@@ -810,22 +810,6 @@ void setup() {
   Serial.println("");
 
 #endif
-#ifdef HX711ADC
-  Serial.println("Button:\tI2C_SDA\tI2C_SCK\t711SDA\t711SCK\tBUZZER");
-  Serial.print("Pin:");
-  Serial.print("\t");
-  Serial.print(I2C_SDA);
-  Serial.print("\t");
-  Serial.print(I2C_SCL);
-  Serial.print("\t");
-  Serial.print(HX711_SDA);
-  Serial.print("\t");
-  Serial.print(HX711_SCL);
-  Serial.print("\t");
-  Serial.println(BUZZER);
-#endif
-
-
   Serial.println("Setup complete...");
   t_bootTare = millis();
   b_bootTare = true;
