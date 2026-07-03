@@ -109,15 +109,13 @@ To explore, modify, or contribute to this application:
 
 ## Code Structure Highlights
 
-The core logic resides within the `DecentScale` class (`ble_jvs_QCv2.1.js`):
+The core logic resides within the `DecentScale` class (`quality_control.js`):
 
 * **`constructor()`**: Initializes properties, sets up event listeners after DOM is loaded, and loads saved presets.
 * **`initializeElements()` & `addEventListeners()`**: Handles linking JavaScript to HTML elements and attaching user interaction handlers.
-* **`_findAddress()`, `_connect()`, `disconnect()`**: Manages the Web BLE connection lifecycle.
-* **`notification_handler(event)`**: The primary event listener for incoming weight data, where the QC state machine logic and weight evaluation happen.
-* **`toggleConnectDisconnect()`**: A utility function to switch between connecting and disconnecting.
-* **`executeCommand(command)` & `_send(cmd)`**: Provides a queued approach to sending commands to the scale, improving reliability.
-* **`_tare()` / `tare()`**: Implements the tare functionality for the scale.
+* **`handleWebSocketWeight(weight)`**: Updates the displayed weight from `/snapshot`.
+* **`processQCWeight(weight)`**: Runs the QC state machine and weight evaluation.
+* **`tare()`**: Sends the WebSocket tare command.
 * **`evaluateWeight(weight)`**: Simple logic to determine if a reading is "pass" or "fail" based on thresholds.
 * **`playSound(type)`**: Generates audible feedback for pass/fail results.
 * **`toggleQCmode()`, `startQCMode()`, `stopQCMode()`**: Controls the overall QC mode activation and deactivation.

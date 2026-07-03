@@ -1,22 +1,8 @@
 class DecentScale {
     constructor() {
-        // Initialize elements and listeners directly, as this class is now
-        // instantiated after the DOM is loaded.
         this.initializeElements();
         this.addEventListeners();
-
-        // Keep other constructor initializations
-        this.device = null;
-        this.server = null;
         this.readingCount = 0;
-        this.readCharacteristic = null;
-        this.writeCharacteristic = null;
-        this.timeout = 20;
-        this.fixDroppedCommand = true;
-        this.notificationHandler = (event) => this.notification_handler(event);
-        this.CHAR_READ = '0000fff0-0000-1000-8000-00805f9b34fb';
-        this.CHAR_WRITE = '000036f5-0000-1000-8000-00805f9b34fb';
-        this.ledOn = false;
         this.weightReadings = [];
         this.weightData = [];
         this.qcMode = false;
@@ -29,26 +15,21 @@ class DecentScale {
         };
         this.stabilityTimer = null;
         this.lastStableWeight = 0;
-        this.commandQueue = Promise.resolve();
         this.lastWeight = 0;
         this.weightIsStable = false;
-        this.stabilityThreshold = 0.2; // 0.2g threshold for stability
+        this.stabilityThreshold = 0.2;
         this.nearzerotolerance =0.2; 
         this.countdownInterval = null;
         this.loadPresets();
         this.setupPresetHandlers();
-        
-        // QC State machine
         this.QC_STATES = {
-            
             MEASURING: 'measuring',
             REMOVAL_PENDING: 'removal_pending',
             WAITING_FOR_NEXT: 'waiting_for_next'
         };
         this.currentQCState = this.QC_STATES.WAITING_FOR_NEXT;
         this.removalTimeout = null;
-        this.removalTimeoutDuration = 5000; // 5 seconds
-        //websocket 
+        this.removalTimeoutDuration = 5000;
         this.ws = new ReconnectingWebSocket(`ws://${window.location.host}/snapshot`);
         this.ws.debug =true;
     this.ws.addEventListener('message', (event) => {
@@ -62,8 +43,9 @@ class DecentScale {
 
         if (jsondata.grams !== undefined) {
             const parsedWeight = Number(jsondata.grams);
-            const weight = isNaN(parsedWeight) ? 0 : parsedWeight;
-            this.handleWebSocketWeight(weight);
+            if (Number.isFinite(parsedWeight)) {
+                this.handleWebSocketWeight(parsedWeight);
+            }
         }
     });
 
@@ -83,22 +65,16 @@ class DecentScale {
     }
 
     initializeElements() {
-        // Initialize export buttons first
         this.exportCSVButton = document.getElementById('exportCSV');
         this.exportJSONButton = document.getElementById('exportJSON');
-        
-        // Log button initialization status
         console.log('Export CSV button found:', !!this.exportCSVButton);
         console.log('Export JSON button found:', !!this.exportJSONButton);
 
-        // Initialize other elements
-        this.connectButton = document.getElementById('connectButton');
         this.weightDisplay = document.getElementById('weight');
         this.statusDisplay = document.getElementById('status');
         this.tareButton = document.getElementById('tareButton');
         this.weightReadingsList = document.getElementById('weightReadings');
         this.toggleQC = document.getElementById('toggleQC');
-        //fullscreenButton
         this.fullscreenButton = document.getElementById('fullscreen-button');
         this.setupFullscreenHandler();
         
@@ -112,19 +88,13 @@ class DecentScale {
 
     addEventListeners() {
         console.log('addEventListeners() is running');
-        this.connectButton.addEventListener('click', () => this.toggleConnectDisconnect());
         this.tareButton.addEventListener('click', () => this.tare());
-        // this.toggleLedButton.addEventListener('click', () => this.toggleLed());
-        // this.disconnectButton.addEventListener('click', () => this.disconnect());
-        // Add QC mode control listeners
         document.getElementById('toggleQC').addEventListener('click', () => this.toggleQCmode());
-        // document.getElementById('stopQC').addEventListener('click', () => this.stopQCMode());
         document.getElementById('testPassSound').addEventListener('click', () => {
-            this.qcSettings.enableSounds = true; // Temporarily enable sounds
+            this.qcSettings.enableSounds = true;
             this.playSound('pass');
             setTimeout(() => {this.playSound('fail');}, 500);
         }); 
-        // Add export button listeners with logging
         if (this.exportCSVButton) {
             console.log('Adding CSV export button listener');
             this.exportCSVButton.addEventListener('click', () => {
@@ -144,40 +114,6 @@ class DecentScale {
         } else {
             console.error('JSON export button not initialized properly');
         }
-    }
-    //websocket
-
-    async _findAddress() {
-        try {
-            const device = await navigator.bluetooth.requestDevice({
-                filters: [
-                    { name: 'Decent Scale' }
-                ],
-                optionalServices: [this.CHAR_READ]
-            });
-            return device;
-        } catch (error) {
-            console.error('Find address error:', error);
-            return null;
-        }
-    }
-
-    async _disconnect() {
-        if (this.server) {
-            await this._disable_notification();
-            this.server.disconnect();
-            console.log('Disconnected');
-        }
-        this.device = null;
-        this.server = null;
-        this.readCharacteristic = null;
-        this.writeCharacteristic = null;
-        this.statusDisplay.textContent = 'Status: Not connected';
-    }
-
-    async disconnect() {
-        await this._disconnect();
-        this.connectButton.textContent = 'Connect to Scale'; // <---- Update button text back to "Connect to Scale"
     }
 
     displayWeightReadings() {
@@ -319,298 +255,14 @@ class DecentScale {
         }
     }
 
-    notification_handler(event) {
-        try {
-            const data = event.target.value;
-            if (data.getUint8(0) !== 0x03 || data.byteLength !== 7) return;
-
-            const type = data.getUint8(1);
-            if (type === 0xCE || type === 0xCA) {
-                const weight = data.getInt16(2, false) / 10;
-                this.weightDisplay.textContent = `Weight: ${weight.toFixed(1)} g`;
-
-                if (this.qcMode) {
-                    // Handle QC mode, change state based on weight. 
-                    console.log('Current state:', this.currentQCState, 'Current weight:', weight);
-                    console.log( 'scale weight:',weight, 'userweight',this.qcSettings.minWeight);
-                    
-
-                    switch (this.currentQCState ) {
-                        case this.QC_STATES.WAITING_FOR_NEXT:
-                            if (weight >= this.qcSettings.minWeight) {
-                                console.log('State : Waiting for next. New object detected, transitioning to measuring');
-                                this.updateQCStatus(
-                                    this.QC_STATES.MEASURING,
-                                    'Stabilizing...'
-                                );
-                                console.log('State :WAITING_FOR_NEXT transitioning to measuring');
-                                this.currentQCState = this.QC_STATES.MEASURING;// Update currentQCState and move to measuring state
-                                this.weightIsStable = false; // Reset weightIsStable
-                                this.lastWeight = weight; // Update lastWeight
-                            }
-                            break;
-
-                        case this.QC_STATES.MEASURING:
-                            const weightChange = Math.abs(weight - this.lastWeight);
-                            console.log('Measuring State Now ,Weight change:', weightChange);
-                            console.log("Weight change, threshold:", weightChange, this.stabilityThreshold);
-                            console.log("Weight and minWeight (MEASURING):", weight, this.qcSettings.minWeight);
-                            console.log("weightIsStable:", this.weightIsStable);
-                            
-
-                            if (weightChange <= this.stabilityThreshold ) {
-                                // if (!this.weightIsStable) 
-                                if (weight >= this.qcSettings.minWeight) {
-                                    this.weightIsStable = true;
-                                    console.log('Weight stabilized + Larger than minweight at:', weight);
-                                    const result = this.evaluateWeight(weight);
-                                    this.saveMeasurement(weight, result);
-                                    console.log('Weight Stabled and result taken=',result);
-                                    this.updateQCStatus(
-                                        this.QC_STATES.REMOVAL_PENDING,
-                                        'Place next object on scale'
-                                    );
-                                    // successfully weight record move on to next state
-                                    this.currentQCState = this.QC_STATES.REMOVAL_PENDING;// Update currentQCState and move to measuring state
-                                    // Set a timeout to automatically transition to WAITING_FOR_NEXT
-                                    this.removalTimeout = setTimeout(() => {
-                                        if (this.currentQCState === this.QC_STATES.REMOVAL_PENDING && weight >= this.qcSettings.minWeight) {
-                                            console.log('W>Min,Timeout: Object not removed, transitioning to waiting state');
-                                            this.weightIsStable = false;
-                                            this.updateQCStatus(
-                                                this.QC_STATES.REMOVAL_PENDING,
-                                                'Ready - Place next object on scale (Check if previous object was left)'
-                                            );
-                                            console.log('Timeout+measuring done > removal pending state');
-
-                                        }
-                                    }, this.removalTimeoutDuration);}
-                                    else if(weight< this.qcSettings.minWeight){
-                                        this.weightIsStable = true;
-                                        console.log('Weight < minweight,Weight stabilized at:', weight);
-                                        const result = this.evaluateWeight(weight);
-                                        this.saveMeasurement(weight, result);
-                                        console.log('Weight Stabled and Result taken:',result);
-                                        this.updateQCStatus(
-                                            this.QC_STATES.REMOVAL_PENDING,
-                                            'Place next object on scale'
-                                        );
-                                        console.log('user msg:(TO2)Place next object on scale');    
-                                        this.currentQCState = this.QC_STATES.REMOVAL_PENDING;
-                                        this.removalTimeout = setTimeout(() => {
-                                            if (this.currentQCState === this.QC_STATES.REMOVAL_PENDING && weight < this.qcSettings.minWeight) {
-                                                console.log('Timeout: Object not removed, transitioning from measuring to removal pending');
-                                                this.weightIsStable = false;
-                                                this.updateQCStatus(
-                                                    this.QC_STATES.REMOVAL_PENDING,
-                                                    'Ready - Place next object on scale (Check if previous object was left)'
-                                                );
-                                                console.log('user msg:(TO2)Ready - Place next object on scale (Check if previous object was left) ');
-                                            }
-                                        }, this.removalTimeoutDuration);
-                                        console.log('Timeout+measuring done > removal pending state');
-                                    }
-                                    else if ((weight <= this.nearzerotolerance ) ){ // New condition: weight is <= 0.2 
-                                        console.log("Weight is 0 . Transitioning to WAITING_FOR_NEXT.");
-                                        this.weightIsStable = false; // Reset the flag
-                                        this.updateQCStatus(this.QC_STATES.WAITING_FOR_NEXT, 'No Object Detected - Place next one on scale'); // Or a more appropriate message
-                                        this.currentQCState = this.QC_STATES.WAITING_FOR_NEXT; // Transition to WAITING_FOR_NEXT
-                                        clearTimeout(this.removalTimeout); // Clear any existing timeout.
-                                    }
-                            } else {
-                                this.weightIsStable = false;
-                                console.log('in measruing state but weight not stable');
-                                // Keep showing "Stabilizing..." message
-                                this.updateQCStatus(
-                                    this.QC_STATES.MEASURING,
-                                    'Stabilizing...'
-                                );
-                            }
-                            break;
-
-                        case this.QC_STATES.REMOVAL_PENDING:
-                            if (weight >this.nearzerotolerance) {
-                                console.log('Object not removed, ask user to remove');
-                                this.weightIsStable = false;
-                                // this.removalTimeout = setTimeout(() => {
-                                    console.log('Timeout: Object not removed, stay at removal pending state');
-                                    this.updateQCStatus(
-                                        this.QC_STATES.REMOVAL_PENDING,
-                                        'Remove this object, and then place the next object'
-                                    );
-                                    this.currentQCState = this.QC_STATES.REMOVAL_PENDING;
-                                    console.log('State:removal_pending,TO3,User msg REMOVE OBJECT NOW and Place next object on scale');
-                                // }, this.removalTimeoutDuration); // Closing parenthesis added
-                            }
-                            else if (weight == 0 || weight <= this.nearzerotolerance){
-                                console.log('No weight detected assume user putting next object');
-                                this.updateQCStatus(
-                                    this.QC_STATES.WAITING_FOR_NEXT,
-                                    'Ready ! Place next object on scale'
-                                );
-                                console.log('User notified, waiting object');
-                                this.currentQCState = this.QC_STATES.WAITING_FOR_NEXT;
-                                console.log('State: REMOVAL_PENDING, transitioned to WAITING_FOR_NEXT');
-                            }
-                            break;
-                    }
-
-                    this.lastWeight = weight;
-                }
-            }
-        } catch (error) {
-            console.error('Weight update error:', error);
-        }
-    }
-    
-    toggleConnectDisconnect() {
-        if (this.device) { // If device is currently connected (this.device is not null)
-            this.disconnect(); // Call disconnect function
-        } else {
-            this.connect();    // Call connect function
-        }
-    }
-    async connect() {
-        try {
-            this.statusDisplay.textContent = 'Status: Scanning...';
-
-            this.device = await this._findAddress();
-            if (!this.device) {
-                throw new Error('Decent Scale not found');
-            }
-
-            this.statusDisplay.textContent = 'Status: Connecting...';
-            await this._connect(this.device);
-
-            this.statusDisplay.textContent = 'Status: Connected';
-            this.connectButton.textContent = 'Disconnect'; // <---- Update button text to "Disconnect"
-
-        } catch (error) {
-            console.error('Detailed error:', error);
-            this.statusDisplay.textContent = `Status: Error - ${error.message}`;
-            this._disconnect();
-        }
-    }
-
-    async _connect(device) {
-        try {
-            this.server = await device.gatt.connect();
-            console.log('Service found');
-            const service = await this.server.getPrimaryService(this.CHAR_READ);
-            console.log('Service found');
-
-            this.readCharacteristic = await service.getCharacteristic('0000fff4-0000-1000-8000-00805f9b34fb');
-            this.writeCharacteristic = await service.getCharacteristic('000036f5-0000-1000-8000-00805f9b34fb');
-            console.log('Characteristics found');
-
-            await this._enableNotification();
-        } catch (error) {
-            console.error('Connect error:', error);
-            throw error;
-        }
-    }
-
-    async executeCommand(command) {
-        return new Promise(async (resolve, reject) => {
-            try {
-                await this.commandQueue;
-                this.commandQueue = command();
-                const result = await this.commandQueue;
-                resolve(result);
-            } catch (error) {
-                console.error('Command execution error:', error);
-                reject(error);
-            }
-        });
-    }
-
-    async _send(cmd) {
-        if (!this.writeCharacteristic) {
-            throw new Error('Device not connected');
-        }
-        
-        await this.writeCharacteristic.writeValue(new Uint8Array(cmd));
-        if (this.fixDroppedCommand) {
-            await new Promise(resolve => setTimeout(resolve, 50));
-            await this.writeCharacteristic.writeValue(new Uint8Array(cmd));
-        }
-    }
-
-    async _tare() {
-        await this._send([0x03, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x0C]);
-    }
-
-    async tare() {
-       
+    tare() {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             this.ws.send('tare');
-            console.log('Tare requested via WebSocket');
-            return; // If you only want WebSocket tare, you can return here
-        } else {
-            alert('WebSocket not connected.');
+            return;
         }
-        if (this.writeCharacteristic) {
-        try {
-            console.log('Tare requested via BLE');
-            await this.executeCommand(() => this._tare());
-        } catch (error) {
-            console.error('Tare error:', error);
-            if (this.statusDisplay) {
-                this.statusDisplay.textContent = `Status: Tare Error - ${error.message}`;
-            }
-        }
-        return;
-    }
-     // If neither is connected, show error
-    alert('No scale connection for tare.');
+        alert('WebSocket not connected.');
     }
 
-    
-
-    async _led_on() {
-        await this._send([0x03, 0x0A, 0x01, 0x01, 0x00, 0x00, 0x09]);
-        this.ledOn = true;
-    }
-
-    async _led_off() {
-        await this._send([0x03, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x09]);
-        this.ledOn = false;
-    }
-
-    async toggleLed() {
-        try {
-            console.log('Toggle LED requested, current state:', this.ledOn);
-            if (this.ledOn) {
-                await this.executeCommand(() => this._led_off());
-            } else {
-                await this.executeCommand(() => this._led_on());
-            }
-        } catch (error) {
-            console.error('Toggle LED error:', error);
-            this.statusDisplay.textContent = `Status: LED Toggle Error - ${error.message}`;
-        }
-    }
-
-    async _enableNotification() {
-        try {
-            await this.readCharacteristic.startNotifications();
-            this.readCharacteristic.addEventListener('characteristicvaluechanged',
-                this.notificationHandler);
-        } catch (error) {
-            console.error('Enable notification error:', error);
-            throw error;
-        }
-    }
-    async _disable_notification() {
-        try {
-            await this.readCharacteristic.stopNotifications();
-            this.readCharacteristic.removeEventListener('characteristicvaluechanged',
-                this.notificationHandler);
-        } catch (error) {
-            console.error('Disable notification error:', error);
-            throw error;
-        }
-    }
     evaluateWeight(weight) {
         if (weight >= this.qcSettings.lowThreshold && 
             weight <= this.qcSettings.highThreshold) {
