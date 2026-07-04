@@ -675,6 +675,23 @@ void calibrationShowFailure(CalibrationRejectReason reason) {
   delay(1000);
 }
 
+void calibrationShowUsbWarning() {
+  Serial.println(F("Calibration warning: USB connected"));
+  u8g2.firstPage();
+  u8g2.setFont(FONT_S);
+  do {
+    u8g2.drawUTF8(AC((char *)"Unplug USB"),
+                  u8g2.getMaxCharHeight() + i_margin_top,
+                  (char *)"Unplug USB");
+    u8g2.drawUTF8(AC((char *)"Cal in 5s"), LCDHeight - i_margin_bottom,
+                  (char *)"Cal in 5s");
+  } while (u8g2.nextPage());
+#ifdef BUZZER
+  buzzer.off();
+#endif
+  delay(5000);
+}
+
 long calibrationRawSpread(long firstRaw, long secondRaw) {
   long spread = secondRaw - firstRaw;
   return spread < 0 ? -spread : spread;
@@ -913,9 +930,7 @@ void calibration(int input) {
         return;
       }
       if (b_is_charging) {
-        calibrationFail(CAL_REJECT_UNPLUG_USB, f_calibration_value, 0.0f,
-                        nullptr, nullptr, 0.0f);
-        return;
+        calibrationShowUsbWarning();
       }
       // scale.update();
       if (input == 0) {
