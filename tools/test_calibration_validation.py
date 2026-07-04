@@ -313,6 +313,7 @@ def main():
     assert_contains(WEBSOCKET_HEADER, "setScaleSamplesInUseWhenReady(samplesInUse, \"remote samples\")")
     assert_contains(HEADER.parent / "menu.h", "setScaleSamplesInUseWhenReady(1, \"calibration restore\")")
     assert_contains(HEADER.parent / "menu.h", "calibrationShowUsbWarning();")
+    assert_not_contains(HEADER.parent / "menu.h", "Unplug scale")
     assert_not_contains(HEADER.parent / "menu.h", "calibrationFail(CAL_REJECT_UNPLUG_USB")
     assert_contains(HEADER.parent / "menu.h", "consumeScaleTareStatus();")
     assert_contains(HEADER.parent / "menu.h", "clearPendingAutomaticTareState();")

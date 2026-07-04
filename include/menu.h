@@ -855,50 +855,41 @@ void calibration(int input) {
           u8g2.setFontMode(1);
           u8g2.setDrawColor(1);
           u8g2.setFont(FONT_S);
-          if (b_is_charging) {
-            u8g2.drawUTF8(AC((char *)"Unplug scale"),
-                          u8g2.getMaxCharHeight() + i_margin_top,
-                          (char *)"Unplug scale");
-            u8g2.drawUTF8(AC((char *)"to start calibration"),
-                          LCDHeight - i_margin_bottom,
-                          (char *)"to start calibration");
-          } else {
-            int x, y;
+          int x, y;
+          x = 0;
+          y = u8g2.getMaxCharHeight();
+          u8g2.drawUTF8(x, y, "Calibration Weight");
+          // u8g2.setFont(FONT_M);
+          x += 5;
+          y += u8g2.getMaxCharHeight();
+          u8g2.drawUTF8(x, y, weights[0]);
+          x = 64;
+          u8g2.drawUTF8(x, y, weights[3]);
+          x = 5;
+          y += u8g2.getMaxCharHeight();
+          u8g2.drawUTF8(x, y, weights[1]);
+          x = 64;
+          u8g2.drawUTF8(x, y, weights[4]);
+          x = 5;
+          y += u8g2.getMaxCharHeight();
+          u8g2.drawUTF8(x, y, weights[2]);
+          x = 64;
+          u8g2.drawUTF8(x, y, weights[5]);
+          if (i_cal_weight == 0 || i_cal_weight == 3)
+            y = y - u8g2.getMaxCharHeight() * 2;
+          if (i_cal_weight == 1 || i_cal_weight == 4)
+            y = y - u8g2.getMaxCharHeight();
+          if (i_cal_weight == 0 || i_cal_weight == 1 || i_cal_weight == 2)
             x = 0;
-            y = u8g2.getMaxCharHeight();
-            u8g2.drawUTF8(x, y, "Calibration Weight");
-            // u8g2.setFont(FONT_M);
-            x += 5;
-            y += u8g2.getMaxCharHeight();
-            u8g2.drawUTF8(x, y, weights[0]);
-            x = 64;
-            u8g2.drawUTF8(x, y, weights[3]);
-            x = 5;
-            y += u8g2.getMaxCharHeight();
-            u8g2.drawUTF8(x, y, weights[1]);
-            x = 64;
-            u8g2.drawUTF8(x, y, weights[4]);
-            x = 5;
-            y += u8g2.getMaxCharHeight();
-            u8g2.drawUTF8(x, y, weights[2]);
-            x = 64;
-            u8g2.drawUTF8(x, y, weights[5]);
-            if (i_cal_weight == 0 || i_cal_weight == 3)
-              y = y - u8g2.getMaxCharHeight() * 2;
-            if (i_cal_weight == 1 || i_cal_weight == 4)
-              y = y - u8g2.getMaxCharHeight();
-            if (i_cal_weight == 0 || i_cal_weight == 1 || i_cal_weight == 2)
-              x = 0;
-            else
-              x = 64 - 5;
-            int x0 = x;
-            int x1 = x;
-            int x2 = x0 + 4;
-            int y0 = y - u8g2.getMaxCharHeight() + 6;
-            int y1 = y;
-            int y2 = y - (y1 - y0) / 2;
-            u8g2.drawTriangle(x0, y0, x1, y1, x2, y2);
-          }
+          else
+            x = 64 - 5;
+          int x0 = x;
+          int x1 = x;
+          int x2 = x0 + 4;
+          int y0 = y - u8g2.getMaxCharHeight() + 6;
+          int y1 = y;
+          int y2 = y - (y1 - y0) / 2;
+          u8g2.drawTriangle(x0, y0, x1, y1, x2, y2);
 
           u8g2.setDrawColor(2);
           drawButton();
