@@ -93,7 +93,22 @@ void connectToWifi() {
   }
 }
 
-void stopWifi() { WiFi.disconnect(true); }
+void stopWifi() {
+  const wifi_mode_t mode = WiFi.getMode();
+  if (mode == WIFI_MODE_NULL) {
+    b_wifiEnabled = false;
+    return;
+  }
+
+  if ((mode & WIFI_MODE_STA) && WiFi.status() == WL_CONNECTED) {
+    WiFi.disconnect(false);
+  }
+  if (mode & WIFI_MODE_AP) {
+    WiFi.softAPdisconnect(false);
+  }
+  WiFi.mode(WIFI_OFF);
+  b_wifiEnabled = false;
+}
 
 // ---------------------------------------------------------------------------
 // WiFi resilience + instrumentation. The firmware used to connect once at boot
