@@ -20,6 +20,10 @@
 #include "finger_detection.h"
 //#include "wificomm.h"
 
+#ifndef GRINDER_MENU_CHORD_HOLD_MS
+#define GRINDER_MENU_CHORD_HOLD_MS 500
+#endif
+
 // ADS1232 Debug Callback - called every time a new conversion is ready
 void adsDebugCallback(const ADS1232DebugInfo& info) {
   // This will be called frequently, so you may want to throttle output
@@ -327,6 +331,39 @@ void buttonSquare_LongPressed() {
     // }
     //b_debug = false;
   }
+}
+
+bool handleGrinderMenuChord() {
+  static bool handled = false;
+  static uint32_t pressedAt = 0;
+  const bool bothPressed = digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW;
+  if (!bothPressed) {
+    handled = false;
+    pressedAt = 0;
+    return false;
+  }
+  if (handled) {
+    return true;
+  }
+  if (!grinderSettings.enabled || b_menu || b_calibration || GPIO_power_on_with == BATTERY_CHARGING) {
+    return false;
+  }
+  const uint32_t now = millis();
+  if (pressedAt == 0) {
+    pressedAt = now;
+    return true;
+  }
+  if (now - pressedAt < GRINDER_MENU_CHORD_HOLD_MS) {
+    return true;
+  }
+  b_menu = true;
+  currentMenu = grinderMenu;
+  currentMenuSize = getMenuSize(grinderMenu);
+  currentIndex = 0;
+  currentSelection = currentMenu[currentIndex];
+  handled = true;
+  Serial.println("[grinder] menu chord");
+  return true;
 }
 
 
@@ -1112,6 +1149,7 @@ void pureScale() {
     f_driftCompensation = 0.0;
     f_displayedValue = 0.0;
     f_grinder_fast_weight = 0.0f;
+    grinderRuntimeNotifyTareComplete();
     if (b_weight_in_serial) {
       Serial.println("TARE: Temperature drift compensation reset");
     }
@@ -1318,6 +1356,7 @@ bool tareScaleWhenAdcReady(const char *context) {
       return false;
     }
   }
+  grinderRuntimeNotifyTareRequested();
   scale.tareNoDelay();
   return true;
 }
@@ -1523,8 +1562,10 @@ void loop() {
   }
   usbCallbacks.poll();
 
-  buttonCircle.check();
-  buttonSquare.check();
+  if (!handleGrinderMenuChord()) {
+    buttonCircle.check();
+    buttonSquare.check();
+  }
 #ifdef BUZZER
   buzzer.check();
 #endif

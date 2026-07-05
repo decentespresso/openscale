@@ -11,6 +11,18 @@
 #include "grinder_adaptive_safety.h"
 #include "grinder_protocol.h"
 
+#ifndef GRINDER_RUNTIME_RECONNECT_INTERVAL_MS
+#define GRINDER_RUNTIME_RECONNECT_INTERVAL_MS 3000
+#endif
+
+#ifndef GRINDER_RUNTIME_STARTUP_DISCOVERY_DELAY_MS
+#define GRINDER_RUNTIME_STARTUP_DISCOVERY_DELAY_MS 15000
+#endif
+
+#ifndef GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS
+#define GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS 250
+#endif
+
 enum GrinderDosingState {
   GRINDER_STATE_DISABLED,
   GRINDER_STATE_FINDING_PLUG,
@@ -75,11 +87,17 @@ struct GrinderRuntime {
   bool settingsDirty = false;
   bool wifiLowLatency = false;
   bool cutoffGuardActive = false;
+  bool tarePending = false;
+  bool grindConfirmed = false;
+  bool grindCandidateActive = false;
+  bool setupMassBlocked = false;
   GrinderAdaptiveShot adaptiveShot;
   float zeroTrackWeight = 0.0f;
   float lastWeight = 0.0f;
   float grindRateGps = 0.0f;
   float stopWeight = 0.0f;
+  float grindCandidateStartWeight = 0.0f;
+  float grindCandidateLastWeight = 0.0f;
   uint32_t lastConnectAttempt = 0;
   uint32_t lastPingAt = 0;
   uint32_t lastRxAt = 0;
@@ -90,6 +108,8 @@ struct GrinderRuntime {
   uint32_t lastRuntimeLogAt = 0;
   uint32_t lastFastWeightSequence = 0;
   uint32_t cutoffGuardZeroExitAt = 0;
+  uint32_t grindCandidateStartAt = 0;
+  uint8_t grindCandidatePositiveSamples = 0;
 };
 
 GrinderSettings grinderSettings;
@@ -260,6 +280,7 @@ static inline void grinderCloseClient() {
 }
 
 static inline void grinderResetCutoffGuard();
+static inline void grinderResetGrindConfirmation();
 
 static inline void grinderDisconnectToFinding() {
   grinderCloseClient();
@@ -268,6 +289,8 @@ static inline void grinderDisconnectToFinding() {
   grinderRuntime.grindRateGps = 0.0f;
   grinderRuntime.rateSamples = 0;
   grinderResetCutoffGuard();
+  grinderResetGrindConfirmation();
+  grinderRuntime.tarePending = false;
   grinderAdaptiveShotReset(&grinderRuntime.adaptiveShot);
   grinderSetState(grinderSettings.enabled ? GRINDER_STATE_FINDING_PLUG : GRINDER_STATE_DISABLED);
 }
@@ -326,6 +349,7 @@ static inline void grinderClearDosingMetrics(float weight) {
   grinderRuntime.stopWeight = 0.0f;
   grinderRuntime.removalSeen = false;
   grinderResetCutoffGuard();
+  grinderResetGrindConfirmation();
   grinderAdaptiveShotReset(&grinderRuntime.adaptiveShot);
 }
 
@@ -526,7 +550,7 @@ static inline bool grinderAttemptHostnameConnect() {
   if (len > 6 && strcmp(host + len - 6, ".local") == 0) {
     host[len - 6] = 0;
   }
-  IPAddress ip = MDNS.queryHost(host, 1000);
+  IPAddress ip = MDNS.queryHost(host, GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS);
   if (!grinderIpValid(ip)) {
     Serial.printf("[grinder] host resolve failed host=%s\n", host);
     return false;
@@ -538,7 +562,7 @@ static inline bool grinderAttemptHostnameConnect() {
 
 static inline bool grinderAttemptMdnsConnect() {
   GrinderDiscoveredPlug plug;
-  if (!grinderFindSelectedByMdns(&plug)) {
+  if (!grinderFindSelectedByMdns(&plug, false)) {
     return false;
   }
   return grinderAttemptConnect(plug.ip);
@@ -553,21 +577,23 @@ static inline void grinderResolveAndConnect() {
     }
     return;
   }
-  if (now - grinderRuntime.lastConnectAttempt < 3000) {
+  if (now - grinderRuntime.lastConnectAttempt < GRINDER_RUNTIME_RECONNECT_INTERVAL_MS) {
     return;
   }
   grinderRuntime.lastConnectAttempt = now;
   if (grinderRuntime.resolvePhase == 0) {
     grinderRuntime.resolvePhase = 1;
-    if (grinderAttemptConnect(grinderSettings.lastIp)) {
-      return;
-    }
+    grinderAttemptConnect(grinderSettings.lastIp);
+    return;
+  }
+  if (now - grinderRuntime.stateEnteredAt < GRINDER_RUNTIME_STARTUP_DISCOVERY_DELAY_MS) {
+    grinderRuntime.resolvePhase = 0;
+    return;
   }
   if (grinderRuntime.resolvePhase == 1) {
     grinderRuntime.resolvePhase = 2;
-    if (grinderAttemptHostnameConnect()) {
-      return;
-    }
+    grinderAttemptHostnameConnect();
+    return;
   }
   grinderRuntime.resolvePhase = 0;
   grinderAttemptMdnsConnect();
@@ -687,6 +713,8 @@ static inline void grinderRuntimeReset() {
   grinderRuntime.removalSeen = false;
   grinderRuntime.lastFastWeightSequence = 0;
   grinderResetCutoffGuard();
+  grinderResetGrindConfirmation();
+  grinderRuntime.tarePending = false;
   grinderAdaptiveShotReset(&grinderRuntime.adaptiveShot);
   grinderSetStatus(grinderSettings.enabled ? "idle" : "off");
   grinderSetState(grinderSettings.enabled ? GRINDER_STATE_FINDING_PLUG : GRINDER_STATE_DISABLED);

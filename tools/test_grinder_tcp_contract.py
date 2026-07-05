@@ -56,7 +56,7 @@ def adaptive_recommendation(current_safety, target, start_weight, final_weight, 
     if span < 2.0:
         return current_safety, history, False
     average_rate = span / (duration_ms / 1000.0)
-    if average_rate <= 0.0 or average_rate > 4.0:
+    if average_rate <= 0.0 or average_rate > 6.0:
         return current_safety, history, False
     error = final_weight - target
     if abs(error) > 5.0:
@@ -77,7 +77,7 @@ def skip_reason(current_safety, target, start_weight, final_weight, duration_ms,
     if span < 2.0:
         return "span"
     average_rate = span / (duration_ms / 1000.0)
-    if average_rate <= 0.0 or average_rate > 4.0:
+    if average_rate <= 0.0 or average_rate > 6.0:
         return "rate"
     if abs(final_weight - target) > 5.0:
         return "error"
@@ -201,6 +201,14 @@ class GrinderModel:
         self.zero_track = None
         self.cutoff_guard_active = False
         self.cutoff_guard_zero_exit_at = None
+        self.tare_pending = False
+        self.grind_confirmed = False
+        self.grind_candidate_active = False
+        self.setup_mass_blocked = False
+        self.grind_candidate_start_at = None
+        self.grind_candidate_start_weight = 0.0
+        self.grind_candidate_last_weight = 0.0
+        self.grind_candidate_positive_samples = 0
         self.now = 0
         self.last_command_at = 0
         self.sent = []
@@ -238,6 +246,83 @@ class GrinderModel:
             return True
         return self.now - self.cutoff_guard_zero_exit_at < 1500
 
+    def reset_grind_confirmation(self):
+        self.grind_confirmed = False
+        self.grind_candidate_active = False
+        self.setup_mass_blocked = False
+        self.grind_candidate_start_at = None
+        self.grind_candidate_start_weight = 0.0
+        self.grind_candidate_last_weight = 0.0
+        self.grind_candidate_positive_samples = 0
+
+    def notify_tare_requested(self):
+        self.tare_pending = True
+
+    def notify_tare_complete(self):
+        self.tare_pending = False
+        self.grind_rate = 0.0
+        self.rate_samples = 0
+        self.cutoff_guard_active = False
+        self.cutoff_guard_zero_exit_at = None
+        self.reset_grind_confirmation()
+
+    def start_grind_candidate(self, weight):
+        self.grind_candidate_active = True
+        self.grind_candidate_start_at = self.now
+        self.grind_candidate_start_weight = self.zero_max
+        self.grind_candidate_last_weight = weight
+        self.grind_candidate_positive_samples = 0
+
+    def candidate_rate_valid(self, weight):
+        if not self.grind_candidate_active or self.grind_candidate_start_at is None:
+            return False
+        duration_ms = self.now - self.grind_candidate_start_at
+        if duration_ms <= 0:
+            return False
+        rise = weight - self.grind_candidate_start_weight
+        if rise <= 0:
+            return False
+        return rise / (duration_ms / 1000.0) <= 6.0
+
+    def track_grind_confirmation(self, weight):
+        if self.grind_confirmed:
+            return True
+        if not self.grind_candidate_active:
+            if weight > self.zero_max + 3.0:
+                self.setup_mass_blocked = True
+                return False
+            self.start_grind_candidate(weight)
+            return False
+        if weight > self.grind_candidate_last_weight + 0.03:
+            self.grind_candidate_positive_samples += 1
+        self.grind_candidate_last_weight = weight
+        duration_ms = self.now - self.grind_candidate_start_at
+        rise = weight - self.grind_candidate_start_weight
+        if (
+            duration_ms < 1500
+            or rise < 2.0
+            or self.grind_candidate_positive_samples < 4
+            or not self.candidate_rate_valid(weight)
+        ):
+            return False
+        self.grind_confirmed = True
+        self.setup_mass_blocked = False
+        return True
+
+    def cutoff_eligible(self, weight, protected):
+        if self.tare_pending:
+            return False
+        if self.zero_min <= weight <= self.zero_max:
+            self.reset_grind_confirmation()
+            return False
+        if self.setup_mass_blocked:
+            return False
+        if self.track_grind_confirmation(weight):
+            return True
+        if weight >= cutoff(self.target, self.safety) and not protected:
+            self.setup_mass_blocked = True
+        return False
+
     def handle_response(self, line):
         response = parse_response(line)
         if response is None:
@@ -267,7 +352,8 @@ class GrinderModel:
             self.send("ON")
         if self.state == "grinding":
             protected = self.cutoff_protected(weight)
-            if weight >= cutoff(self.target, self.safety) and not protected:
+            eligible = self.cutoff_eligible(weight, protected)
+            if weight >= cutoff(self.target, self.safety) and not protected and eligible:
                 self.state = "stopping"
                 self.send_off()
         if self.state == "stopping" and self.pending == "OFF" and self.now - self.last_command_at >= 150:
@@ -409,7 +495,11 @@ def test_fast_off_emits_emergency_line():
     model.state = "grinding"
     model.target = 10.0
     model.tick(1.2, 1000)
-    model.tick(9.9, 2500)
+    model.tick(2.5, 1500)
+    model.tick(4.0, 2000)
+    model.tick(6.0, 2500)
+    model.tick(8.2, 3000)
+    model.tick(9.9, 3500)
     assert model.sent == ["!\n"]
     assert model.pending == "OFF"
 
@@ -431,7 +521,12 @@ def test_zero_exit_guard_allows_cutoff_after_1500_ms():
     model.target = 15.0
     model.safety = 0.2
     model.tick(1.2, 1000)
-    model.tick(14.8, 2500)
+    model.tick(3.0, 1600)
+    model.tick(5.0, 2200)
+    model.tick(8.0, 2800)
+    model.tick(10.0, 3400)
+    model.tick(12.0, 4000)
+    model.tick(14.8, 4600)
     assert model.sent == ["!\n"]
     assert model.state == "stopping"
 
@@ -448,8 +543,124 @@ def test_zero_exit_guard_resets_inside_zero_range():
     assert model.sent == []
     assert model.state == "grinding"
     model.tick(20.0, 3400)
+    assert model.sent == []
+    assert model.setup_mass_blocked
+
+
+def test_cup_placement_above_cutoff_blocks_without_off():
+    model = GrinderModel()
+    model.state = "grinding"
+    model.target = 15.0
+    model.safety = 0.2
+    model.tick(180.0, 1000)
+    model.tick(180.0, 2500)
+    assert model.sent == []
+    assert model.state == "grinding"
+    assert model.setup_mass_blocked
+    assert not model.grind_confirmed
+
+
+def test_tare_request_blocks_cutoff_immediately():
+    model = GrinderModel()
+    model.state = "grinding"
+    model.target = 15.0
+    model.safety = 0.2
+    model.grind_confirmed = True
+    model.cutoff_guard_active = True
+    model.cutoff_guard_zero_exit_at = 0
+    model.notify_tare_requested()
+    model.tick(14.8, 3000)
+    assert model.sent == []
+    assert model.state == "grinding"
+    assert model.tare_pending
+
+
+def test_tare_complete_resets_guard_and_grind_confirmation():
+    model = GrinderModel()
+    model.state = "grinding"
+    model.tare_pending = True
+    model.grind_confirmed = True
+    model.setup_mass_blocked = True
+    model.cutoff_guard_active = True
+    model.cutoff_guard_zero_exit_at = 1000
+    model.notify_tare_complete()
+    assert not model.tare_pending
+    assert not model.grind_confirmed
+    assert not model.setup_mass_blocked
+    assert not model.cutoff_guard_active
+
+
+def test_after_tare_real_rising_grind_can_cutoff():
+    model = GrinderModel()
+    model.state = "grinding"
+    model.target = 15.0
+    model.safety = 0.2
+    model.notify_tare_requested()
+    model.tick(180.0, 1000)
+    model.notify_tare_complete()
+    model.tick(0.0, 1100)
+    model.tick(1.2, 1200)
+    model.tick(3.0, 1800)
+    model.tick(5.0, 2300)
+    model.tick(8.0, 3000)
+    model.tick(10.0, 3600)
+    model.tick(14.9, 5000)
     assert model.sent == ["!\n"]
     assert model.state == "stopping"
+
+
+def test_returning_to_zero_resets_setup_mass_block():
+    model = GrinderModel()
+    model.state = "grinding"
+    model.target = 15.0
+    model.tick(30.0, 1000)
+    model.tick(30.0, 2500)
+    assert model.setup_mass_blocked
+    model.tick(0.0, 2600)
+    assert not model.setup_mass_blocked
+    assert not model.grind_confirmed
+
+
+def test_real_grind_below_four_gps_reaches_cutoff():
+    model = GrinderModel()
+    model.state = "grinding"
+    model.target = 15.0
+    model.safety = 0.2
+    model.tick(1.2, 1000)
+    model.tick(3.0, 1600)
+    model.tick(4.8, 2100)
+    model.tick(9.0, 3300)
+    model.tick(14.8, 5000)
+    assert model.grind_confirmed
+    assert model.sent == ["!\n"]
+
+
+def test_too_fast_step_rise_is_setup_mass_not_grind():
+    model = GrinderModel()
+    model.state = "grinding"
+    model.target = 15.0
+    model.safety = 0.2
+    model.tick(1.2, 1000)
+    model.tick(20.0, 2500)
+    assert model.sent == []
+    assert model.setup_mass_blocked
+    assert not model.grind_confirmed
+
+
+def test_fast_grind_near_six_gps_reaches_cutoff():
+    model = GrinderModel()
+    model.state = "grinding"
+    model.target = 15.0
+    model.safety = 0.2
+    model.tick(1.2, 1000)
+    model.tick(3.4, 1400)
+    model.tick(5.8, 1800)
+    model.tick(8.2, 2200)
+    model.tick(10.6, 2600)
+    model.tick(13.0, 3000)
+    model.tick(14.8, 3300)
+    assert model.grind_confirmed
+    assert model.sent == ["!\n"]
 
 
 def test_duplicate_off_retry_safe():
@@ -476,17 +687,28 @@ def test_low_latency_source_order_and_weight_sources():
     assert 'return grinderSendSimpleCommand("OFF", GRINDER_COMMAND_OFF);' in low_latency
     assert "GRINDER_CUTOFF_ZERO_EXIT_PROTECTION_MS 1500" in low_latency
     assert "grinderCutoffProtected" in low_latency
+    assert "grinderCutoffEligible" in low_latency
+    assert "grinderRuntimeNotifyTareRequested" in low_latency
+    assert "grinderRuntimeNotifyTareComplete" in low_latency
+    assert "GRINDER_CONFIRM_MIN_POSITIVE_SAMPLES 4" in low_latency
+    assert "GRINDER_CONFIRM_MAX_INITIAL_GRAMS 3.0f" in low_latency
+    assert "GRINDER_ADAPTIVE_MAX_AVERAGE_RATE_GPS" in low_latency
     assert "grinderCutoffGrams(grinderSettings.targetGrams, grinderSettings.safetyMarginGrams)" in low_latency
 
     hds = HDS_SOURCE.read_text(encoding="utf-8")
     assert hds.index("f_grinder_fast_weight = tracking_compensated;") < hds.index("float stable_output = applyStableOutput(tracking_compensated);")
     assert "grinderRuntimeFreshWeightTick(f_grinder_fast_weight, grinderFastWeightSequence);" in hds
     assert "grinderRuntimeTick(f_displayedValue);" in hds
+    assert "grinderRuntimeNotifyTareRequested();" in hds
+    assert "grinderRuntimeNotifyTareComplete();" in hds
 
     runtime = RUNTIME_HEADER.read_text(encoding="utf-8")
     assert "case GRINDER_STATE_GRINDING:" in runtime
     assert "grinderTrackAdaptiveShot(weight);" in runtime
     assert "grinderTickGrinding(weight);" not in runtime
+    assert "tarePending" in runtime
+    assert "grindConfirmed" in runtime
+    assert "setupMassBlocked" in runtime
 
 
 def test_sampling_changes_blocked_during_grinder_cutoff_states():
@@ -510,6 +732,9 @@ def test_firmware_contracts():
     assert_not_contains(RUNTIME_HEADER, 'preferences.getFloat("latency"')
     assert_not_contains(RUNTIME_HEADER, 'preferences.putFloat("latency"')
     assert_contains(RUNTIME_HEADER, "targetGrams = 15.0f")
+    assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_RECONNECT_INTERVAL_MS 3000")
+    assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_STARTUP_DISCOVERY_DELAY_MS 15000")
+    assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS 250")
     assert_contains(RUNTIME_HEADER, 'preferences.begin("grinder"')
     assert_contains(RUNTIME_HEADER, '#include "grinder_runtime_adaptive.h"')
     assert_contains(RUNTIME_ADAPTIVE_HEADER, "grinderResetAdaptiveSafety")
@@ -533,6 +758,13 @@ def test_firmware_contracts():
     assert_contains(RUNTIME_HEADER, "[grinder] bad response line=")
     assert_contains(RUNTIME_HEADER, '#include "grinder_discovery.h"')
     assert_contains(DISCOVERY_HEADER, 'MDNS.queryService("grinderplug", "tcp")')
+    assert_contains(DISCOVERY_HEADER, "grinderDiscoverPlugs(bool debugRaw = true, uint8_t attempts = 3)")
+    assert_contains(DISCOVERY_HEADER, "grinderDiscoverPlugsByRawMdns")
+    assert_contains(DISCOVERY_HEADER, "grinderAddDiscoveryFromRawMdnsResult")
+    assert_contains(DISCOVERY_HEADER, "grinderDiscoverPlugsByRawMdns(350, false)")
+    assert_contains(DISCOVERY_HEADER, "grinderFindSelectedByMdns(GrinderDiscoveredPlug *plug, bool debugRaw = true)")
+    assert_contains(RUNTIME_HEADER, "grinderFindSelectedByMdns(&plug, false)")
+    assert_contains(RUNTIME_HEADER, "now - grinderRuntime.stateEnteredAt < GRINDER_RUNTIME_STARTUP_DISCOVERY_DELAY_MS")
     assert_contains(DISCOVERY_HEADER, "GRINDER_DISCOVERY_ENABLE_TCP_FALLBACK 0")
     assert_contains(DISCOVERY_HEADER, "wifiEnsureMdnsReadyForSta")
     assert_contains(DISCOVERY_HEADER, "WiFi.setSleep(false)")
@@ -542,7 +774,7 @@ def test_firmware_contracts():
     assert_contains(DISCOVERY_HEADER, "grinderDiscoverPlugsByTcpScan")
     assert_contains(DISCOVERY_HEADER, "GRINDER_DISCOVERY_CONNECT_TIMEOUT_MS")
     assert_contains(DISCOVERY_HEADER, "GRINDER_TCP_RESPONSE_BUSY")
-    assert_contains(ADAPTIVE_HEADER, "GRINDER_ADAPTIVE_MAX_AVERAGE_RATE_GPS 4.0f")
+    assert_contains(ADAPTIVE_HEADER, "GRINDER_ADAPTIVE_MAX_AVERAGE_RATE_GPS 6.0f")
     assert_contains(ADAPTIVE_HEADER, "GRINDER_ADAPTIVE_FINAL_DELAY_MS 1000")
     assert_contains(ADAPTIVE_HEADER, "GRINDER_ADAPTIVE_FINAL_STABLE_MS 1500")
     assert_contains(ADAPTIVE_HEADER, "GRINDER_ADAPTIVE_FINAL_STABLE_TOLERANCE_GRAMS 0.15f")
@@ -578,6 +810,10 @@ def test_firmware_contracts():
     assert_not_contains(RUNTIME_HEADER, "grinderCycleTarget")
     assert_contains(HDS_SOURCE, "grinderLoadSettings();")
     assert_contains(HDS_SOURCE, "grinderRuntimeTick(f_displayedValue);")
+    assert_contains(HDS_SOURCE, "GRINDER_MENU_CHORD_HOLD_MS 500")
+    assert_contains(HDS_SOURCE, "bool handleGrinderMenuChord()")
+    assert_contains(HDS_SOURCE, "currentMenu = grinderMenu;")
+    assert_contains(HDS_SOURCE, "if (!handleGrinderMenuChord())")
     assert_contains(HDS_SOURCE, "void beforeDeepSleepFlush()")
     assert_contains(HDS_SOURCE, "grinderFlushSettingsIfDirty();")
     assert_contains(POWER_HEADER, "beforeDeepSleepFlush();")
@@ -599,6 +835,14 @@ if __name__ == "__main__":
     test_zero_exit_guard_blocks_fast_jump_before_1500_ms()
     test_zero_exit_guard_allows_cutoff_after_1500_ms()
     test_zero_exit_guard_resets_inside_zero_range()
+    test_cup_placement_above_cutoff_blocks_without_off()
+    test_tare_request_blocks_cutoff_immediately()
+    test_tare_complete_resets_guard_and_grind_confirmation()
+    test_after_tare_real_rising_grind_can_cutoff()
+    test_returning_to_zero_resets_setup_mass_block()
+    test_real_grind_below_four_gps_reaches_cutoff()
+    test_too_fast_step_rise_is_setup_mass_not_grind()
+    test_fast_grind_near_six_gps_reaches_cutoff()
     test_duplicate_off_retry_safe()
     test_low_latency_source_order_and_weight_sources()
     test_sampling_changes_blocked_during_grinder_cutoff_states()
