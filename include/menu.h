@@ -581,7 +581,7 @@ void grinderOff() {
 }
 
 bool grinderEnsureWifiReadyForDiscovery() {
-  if (!b_wifiEnabled && GPIO_power_on_with != BATTERY_CHARGING) {
+  if (!b_wifiEnabled) {
     b_wifiOnBoot = true;
     wifi_init();
   }

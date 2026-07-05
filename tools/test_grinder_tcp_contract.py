@@ -804,6 +804,8 @@ def test_firmware_contracts():
     assert_contains(MENU_HEADER, "grinderDrawPlugList")
     assert_contains(MENU_HEADER, "grinderEditNumber")
     assert_contains(MENU_HEADER, "grinderHandleDraftAdjust")
+    assert_contains(MENU_HEADER, "bool grinderEnsureWifiReadyForDiscovery()")
+    assert_contains(MENU_HEADER, "if (!b_wifiEnabled) {\n    b_wifiOnBoot = true;\n    wifi_init();")
     assert_contains(MENU_HEADER, "step * 10.0f")
     assert_contains(MENU_HEADER, "grinderResetAdaptiveSafety();")
     assert_contains(MENU_HEADER, "bool b_grinderMenuDirectEntry = false")
