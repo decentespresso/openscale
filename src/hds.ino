@@ -24,6 +24,22 @@
 #define GRINDER_MENU_CHORD_HOLD_MS 500
 #endif
 
+bool b_buttonChordSuppressUntilRelease = false;
+
+bool anyScaleButtonPressed() {
+  return digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW;
+}
+
+bool buttonChecksSuppressedUntilRelease() {
+  if (!b_buttonChordSuppressUntilRelease) {
+    return false;
+  }
+  if (!anyScaleButtonPressed()) {
+    b_buttonChordSuppressUntilRelease = false;
+  }
+  return true;
+}
+
 // ADS1232 Debug Callback - called every time a new conversion is ready
 void adsDebugCallback(const ADS1232DebugInfo& info) {
   // This will be called frequently, so you may want to throttle output
@@ -357,6 +373,8 @@ bool handleGrinderMenuChord() {
     return true;
   }
   b_menu = true;
+  b_grinderMenuDirectEntry = true;
+  b_buttonChordSuppressUntilRelease = true;
   currentMenu = grinderMenu;
   currentMenuSize = getMenuSize(grinderMenu);
   currentIndex = 0;
@@ -757,6 +775,8 @@ void setup() {
   // Enter Menu
   if (digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW) {
     b_menu = true;
+    b_buttonChordSuppressUntilRelease = true;
+    b_grinderMenuDirectEntry = false;
     refreshOLED((char *)"HDS Setup", FONT_EXTRACTION);
     delay(1000);
   }
@@ -1562,7 +1582,7 @@ void loop() {
   }
   usbCallbacks.poll();
 
-  if (!handleGrinderMenuChord()) {
+  if (!buttonChecksSuppressedUntilRelease() && !handleGrinderMenuChord()) {
     buttonCircle.check();
     buttonSquare.check();
   }

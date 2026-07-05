@@ -214,6 +214,7 @@ Menu **currentMenu = mainMenu;
 Menu *currentSelection = mainMenu[0];
 int currentMenuSize = getMenuSize(mainMenu);  // Top-level menu size
 int currentIndex = 0;
+bool b_grinderMenuDirectEntry = false;
 const int linesPerPage =
   4;                                                  // Maximum number of lines that can fit on the display
 int currentPage = 0;                                  // Determine the current page
@@ -250,6 +251,11 @@ void exitMenu() {
 #endif
   delay(1000);
   b_menu = false;
+  b_grinderMenuDirectEntry = false;
+  currentMenu = mainMenu;
+  currentMenuSize = getMenuSize(mainMenu);
+  currentIndex = 0;
+  currentSelection = currentMenu[currentIndex];
   // Optionally reset or perform an exit action
   t_menuExitTime = millis();
   // Capture the moment when menu exit begins to establish a reference point
@@ -1608,6 +1614,7 @@ void selectMenu() {
       currentMenu = driftCompMenu;
       currentMenuSize = getMenuSize(driftCompMenu);
     } else if (currentSelection == &menuGrinder) {
+      b_grinderMenuDirectEntry = false;
       currentMenu = grinderMenu;
       currentMenuSize = getMenuSize(grinderMenu);
     }
@@ -1622,6 +1629,10 @@ void selectMenu() {
     // Execute the action if available
     currentSelection->action();
   } else if (currentSelection->parentMenu) {
+    if (currentSelection->parentMenu == &menuGrinder && b_grinderMenuDirectEntry) {
+      exitMenu();
+      return;
+    }
     // Go back to the parent menu
     currentMenu = mainMenu;
     currentMenuSize = getMenuSize(mainMenu);
