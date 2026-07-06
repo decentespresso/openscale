@@ -19,14 +19,6 @@
 #define GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS 250
 #endif
 
-#ifndef GRINDER_RUNTIME_BACKGROUND_MDNS_INTERVAL_MS
-#define GRINDER_RUNTIME_BACKGROUND_MDNS_INTERVAL_MS 30000
-#endif
-
-#ifndef GRINDER_RUNTIME_BACKGROUND_MDNS_TIMEOUT_MS
-#define GRINDER_RUNTIME_BACKGROUND_MDNS_TIMEOUT_MS 150
-#endif
-
 #ifndef GRINDER_RUNTIME_PING_TIMEOUT_MS
 #define GRINDER_RUNTIME_PING_TIMEOUT_MS 1200
 #endif
@@ -67,12 +59,9 @@ struct GrinderSettings {
 };
 
 struct GrinderDiscoveredPlug {
-  bool valid = false;
   char mac[18] = { 0 };
-  char name[32] = { 0 };
   char hostname[64] = { 0 };
   IPAddress ip = IPAddress((uint32_t)0);
-  uint16_t port = GRINDER_TCP_PORT;
 };
 
 struct GrinderRuntime {
@@ -114,7 +103,6 @@ struct GrinderRuntime {
   uint32_t lastWeightAt = 0;
   uint32_t stateEnteredAt = 0;
   uint32_t lastRuntimeLogAt = 0;
-  uint32_t lastBackgroundMdnsAt = 0;
   uint32_t lastFastWeightSequence = 0;
   uint32_t cutoffGuardZeroExitAt = 0;
   uint32_t grindCandidateStartAt = 0;
@@ -594,31 +582,6 @@ static inline bool grinderAttemptHostnameConnect() {
   return grinderAttemptConnect(ip);
 }
 
-static inline bool grinderAttemptBackgroundMdnsConnect(uint32_t now) {
-  if (now - grinderRuntime.lastBackgroundMdnsAt < GRINDER_RUNTIME_BACKGROUND_MDNS_INTERVAL_MS) {
-    return false;
-  }
-  grinderRuntime.lastBackgroundMdnsAt = now;
-  if (!wifiEnsureMdnsReadyForSta()) {
-    grinderSetStatus("wifi wait");
-    return false;
-  }
-  grinderPrepareWifiForDiscovery();
-  grinderClearDiscoveries();
-  grinderDiscoverPlugsByRawMdns(GRINDER_RUNTIME_BACKGROUND_MDNS_TIMEOUT_MS, false);
-  grinderMaintainWifiLatencyMode();
-  for (uint8_t i = 0; i < grinderRuntime.discoveredCount; i++) {
-    GrinderDiscoveredPlug *plug = &grinderRuntime.discovered[i];
-    if (strcmp(plug->mac, grinderSettings.selectedMac) == 0) {
-      grinderSaveLookupHintsIfChanged(plug->hostname, plug->ip);
-      Serial.printf("[grinder] mdns selected ip=%s\n", plug->ip.toString().c_str());
-      return grinderAttemptConnect(plug->ip);
-    }
-  }
-  grinderSetStatus("plug wait");
-  return false;
-}
-
 static inline void grinderResolveAndConnect() {
   const uint32_t now = millis();
   if (grinderRuntime.pendingCommand == GRINDER_COMMAND_HELLO) {
@@ -638,9 +601,7 @@ static inline void grinderResolveAndConnect() {
     return;
   }
   grinderRuntime.resolvePhase = 0;
-  if (!grinderAttemptHostnameConnect()) {
-    grinderAttemptBackgroundMdnsConnect(now);
-  }
+  grinderAttemptHostnameConnect();
 }
 
 static inline void grinderSendPingIfDue() {
@@ -752,7 +713,6 @@ static inline void grinderRuntimeReset() {
   grinderRuntime.lastCommandAt = 0;
   grinderRuntime.zeroStableSince = 0;
   grinderRuntime.lastRuntimeLogAt = 0;
-  grinderRuntime.lastBackgroundMdnsAt = 0;
   grinderRuntime.grindRateGps = 0.0f;
   grinderRuntime.rateSamples = 0;
   grinderRuntime.removalSeen = false;
