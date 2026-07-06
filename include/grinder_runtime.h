@@ -642,22 +642,30 @@ static inline void grinderTickConnected(float weight) {
 }
 
 static inline void grinderTickArmed() {
+  const uint32_t now = millis();
   if (grinderRuntime.pendingCommand == GRINDER_COMMAND_NONE) {
     Serial.println("[grinder] armed send ON");
     grinderSendSimpleCommand("ON", GRINDER_COMMAND_ON);
+    return;
+  }
+  if (grinderRuntime.pendingCommand == GRINDER_COMMAND_ON &&
+      now - grinderRuntime.lastCommandAt > 2500) {
+    grinderEnterError("on timeout");
   }
 }
 
 static inline void grinderTickStopping(float weight) {
   grinderTrackAdaptiveShot(weight);
+  const uint32_t now = millis();
+  if (now - grinderRuntime.stateEnteredAt > 2500) {
+    grinderEnterError("off timeout");
+    return;
+  }
   if (grinderRuntime.pendingCommand != GRINDER_COMMAND_OFF) {
     grinderSendOff();
     return;
   }
-  const uint32_t elapsed = millis() - grinderRuntime.lastCommandAt;
-  if (elapsed > 2500) {
-    grinderEnterError("off timeout");
-  } else if (elapsed >= 150) {
+  if (now - grinderRuntime.lastCommandAt >= 150) {
     grinderSendOff();
   }
 }

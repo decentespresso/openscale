@@ -156,8 +156,22 @@ def test_low_latency_cutoff_source_contracts():
     assert "grinderRuntime.setupMassBlocked = true" in low_latency
     assert "grinderRuntime.grindConfirmed = true" in low_latency
     assert "grinderCutoffGrams(grinderSettings.targetGrams, grinderSettings.safetyMarginGrams)" in low_latency
-    assert "elapsed >= 150" in runtime
+    assert "now - grinderRuntime.lastCommandAt >= 150" in runtime
     assert "grinderEnterError(\"lost plug\")" in runtime
+
+
+def test_pending_command_timeouts_source_contracts():
+    runtime = source(RUNTIME_HEADER)
+    armed_start = runtime.index("static inline void grinderTickArmed")
+    stopping_start = runtime.index("static inline void grinderTickStopping")
+    removal_start = runtime.index("static inline bool grinderWeightIndicatesRemoval")
+    armed = runtime[armed_start:stopping_start]
+    stopping = runtime[stopping_start:removal_start]
+    assert "grinderRuntime.pendingCommand == GRINDER_COMMAND_ON" in armed
+    assert 'grinderEnterError("on timeout")' in armed
+    assert "now - grinderRuntime.stateEnteredAt > 2500" in stopping
+    assert "now - grinderRuntime.lastCommandAt >= 150" in stopping
+    assert stopping.index("stateEnteredAt > 2500") < stopping.index("grinderSendOff();")
 
 
 def test_weight_and_loop_source_order():
@@ -276,6 +290,7 @@ if __name__ == "__main__":
     test_adaptive_safety_rejects_bad_samples()
     test_adaptive_safety_source_contracts()
     test_low_latency_cutoff_source_contracts()
+    test_pending_command_timeouts_source_contracts()
     test_weight_and_loop_source_order()
     test_sampling_changes_blocked_during_grinder_cutoff_states()
     test_discovery_contracts()
