@@ -5,6 +5,7 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 HDS_SOURCE = ROOT / "src" / "hds.ino"
 PARAMETER_HEADER = ROOT / "include" / "parameter.h"
+BLE_HEADER = ROOT / "include" / "ble.h"
 USBCOMM_HEADER = ROOT / "include" / "usbcomm.h"
 WEBSOCKET_HEADER = ROOT / "include" / "websocket.h"
 
@@ -68,9 +69,41 @@ def main():
         raise AssertionError("button soft wake must use wakeScaleFromSoftSleep")
 
     usb_soft_off = method_body(USBCOMM_HEADER, "softSleepOff")
-    assert_ordered(usb_soft_off, ['wakeScaleFromSoftSleep("USB soft wake")'])
+    assert_ordered(
+        usb_soft_off,
+        [
+            "if (b_softSleep)",
+            'wakeScaleFromSoftSleep("USB soft wake")',
+            "u8g2.setPowerSave(0);",
+            "b_u8g2Sleep = false;",
+        ],
+    )
     if "digitalWrite(PWR_CTRL, HIGH);" in usb_soft_off:
         raise AssertionError("USB soft wake must use wakeScaleFromSoftSleep")
+
+    ble_soft_off = method_body(BLE_HEADER, "softSleepOff")
+    assert_ordered(
+        ble_soft_off,
+        [
+            "bool wasSoftSleep = b_softSleep;",
+            "b_softSleep = false;",
+            "if (wasSoftSleep)",
+            "remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);",
+            "remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);",
+        ],
+    )
+
+    ws_handler = read(WEBSOCKET_HEADER)
+    assert_ordered(
+        ws_handler,
+        [
+            'if (action == "off" || action == "wake")',
+            "bool wasSoftSleep = b_softSleep;",
+            "if (wasSoftSleep)",
+            "wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);",
+            "wsReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);",
+        ],
+    )
 
     ws_pending = method_body(WEBSOCKET_HEADER, "processWsPendingCmds")
     assert_ordered(ws_pending, ['wakeScaleFromSoftSleep("remote soft wake")'])
