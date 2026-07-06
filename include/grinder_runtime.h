@@ -15,12 +15,16 @@
 #define GRINDER_RUNTIME_RECONNECT_INTERVAL_MS 3000
 #endif
 
-#ifndef GRINDER_RUNTIME_STARTUP_DISCOVERY_DELAY_MS
-#define GRINDER_RUNTIME_STARTUP_DISCOVERY_DELAY_MS 15000
-#endif
-
 #ifndef GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS
 #define GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS 250
+#endif
+
+#ifndef GRINDER_RUNTIME_BACKGROUND_MDNS_INTERVAL_MS
+#define GRINDER_RUNTIME_BACKGROUND_MDNS_INTERVAL_MS 30000
+#endif
+
+#ifndef GRINDER_RUNTIME_BACKGROUND_MDNS_TIMEOUT_MS
+#define GRINDER_RUNTIME_BACKGROUND_MDNS_TIMEOUT_MS 150
 #endif
 
 #ifndef GRINDER_RUNTIME_PING_TIMEOUT_MS
@@ -110,6 +114,7 @@ struct GrinderRuntime {
   uint32_t lastWeightAt = 0;
   uint32_t stateEnteredAt = 0;
   uint32_t lastRuntimeLogAt = 0;
+  uint32_t lastBackgroundMdnsAt = 0;
   uint32_t lastFastWeightSequence = 0;
   uint32_t cutoffGuardZeroExitAt = 0;
   uint32_t grindCandidateStartAt = 0;
@@ -258,6 +263,15 @@ static inline void grinderSetState(GrinderDosingState state) {
     grinderRuntime.zeroStableSince = 0;
     grinderRuntime.zeroTracking = false;
   }
+}
+
+static inline bool grinderRuntimeLogDue(uint32_t intervalMs) {
+  const uint32_t now = millis();
+  if (now - grinderRuntime.lastRuntimeLogAt < intervalMs) {
+    return false;
+  }
+  grinderRuntime.lastRuntimeLogAt = now;
+  return true;
 }
 
 static inline void grinderFormatScaleMac() {
@@ -527,19 +541,23 @@ static inline void grinderReadClient(float weight) {
 
 static inline bool grinderAttemptConnect(IPAddress ip) {
   if (!grinderIpValid(ip)) {
+    grinderSetStatus("plug wait");
     return false;
   }
   grinderCloseClient();
   grinderSetStatus("connecting");
-  Serial.printf("[grinder] connect ip=%s selected=%s\n",
-                ip.toString().c_str(),
-                grinderSettings.selectedMac);
   grinderRuntime.client.setTimeout(50);
   if (!grinderRuntime.client.connect(ip, GRINDER_TCP_PORT, GRINDER_DISCOVERY_CONNECT_TIMEOUT_MS)) {
-    Serial.printf("[grinder] connect failed ip=%s\n", ip.toString().c_str());
+    grinderSetStatus("plug wait");
+    if (grinderRuntimeLogDue(10000)) {
+      Serial.printf("[grinder] plug wait ip=%s\n", ip.toString().c_str());
+    }
     grinderCloseClient();
     return false;
   }
+  Serial.printf("[grinder] connect ip=%s selected=%s\n",
+                ip.toString().c_str(),
+                grinderSettings.selectedMac);
   grinderRuntime.client.setNoDelay(true);
   grinderRuntime.lastRxAt = millis();
   grinderRuntime.lastPingAt = 0;
@@ -554,6 +572,7 @@ static inline bool grinderAttemptConnect(IPAddress ip) {
 
 static inline bool grinderAttemptHostnameConnect() {
   if (grinderSettings.hostname[0] == 0) {
+    grinderSetStatus("plug wait");
     return false;
   }
   char host[64];
@@ -564,7 +583,10 @@ static inline bool grinderAttemptHostnameConnect() {
   }
   IPAddress ip = MDNS.queryHost(host, GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS);
   if (!grinderIpValid(ip)) {
-    Serial.printf("[grinder] host resolve failed host=%s\n", host);
+    grinderSetStatus("plug wait");
+    if (grinderRuntimeLogDue(10000)) {
+      Serial.printf("[grinder] plug wait host=%s\n", host);
+    }
     return false;
   }
   Serial.printf("[grinder] host resolved host=%s ip=%s\n", host, ip.toString().c_str());
@@ -572,12 +594,29 @@ static inline bool grinderAttemptHostnameConnect() {
   return grinderAttemptConnect(ip);
 }
 
-static inline bool grinderAttemptMdnsConnect() {
-  GrinderDiscoveredPlug plug;
-  if (!grinderFindSelectedByMdns(&plug, false)) {
+static inline bool grinderAttemptBackgroundMdnsConnect(uint32_t now) {
+  if (now - grinderRuntime.lastBackgroundMdnsAt < GRINDER_RUNTIME_BACKGROUND_MDNS_INTERVAL_MS) {
     return false;
   }
-  return grinderAttemptConnect(plug.ip);
+  grinderRuntime.lastBackgroundMdnsAt = now;
+  if (!wifiEnsureMdnsReadyForSta()) {
+    grinderSetStatus("wifi wait");
+    return false;
+  }
+  grinderPrepareWifiForDiscovery();
+  grinderClearDiscoveries();
+  grinderDiscoverPlugsByRawMdns(GRINDER_RUNTIME_BACKGROUND_MDNS_TIMEOUT_MS, false);
+  grinderMaintainWifiLatencyMode();
+  for (uint8_t i = 0; i < grinderRuntime.discoveredCount; i++) {
+    GrinderDiscoveredPlug *plug = &grinderRuntime.discovered[i];
+    if (strcmp(plug->mac, grinderSettings.selectedMac) == 0) {
+      grinderSaveLookupHintsIfChanged(plug->hostname, plug->ip);
+      Serial.printf("[grinder] mdns selected ip=%s\n", plug->ip.toString().c_str());
+      return grinderAttemptConnect(plug->ip);
+    }
+  }
+  grinderSetStatus("plug wait");
+  return false;
 }
 
 static inline void grinderResolveAndConnect() {
@@ -585,7 +624,7 @@ static inline void grinderResolveAndConnect() {
   if (grinderRuntime.pendingCommand == GRINDER_COMMAND_HELLO) {
     if (now - grinderRuntime.lastCommandAt > 1200) {
       grinderCloseClient();
-      grinderRuntime.resolvePhase = (grinderRuntime.resolvePhase + 1) % 3;
+      grinderRuntime.resolvePhase = (grinderRuntime.resolvePhase + 1) % 2;
     }
     return;
   }
@@ -598,17 +637,10 @@ static inline void grinderResolveAndConnect() {
     grinderAttemptConnect(grinderSettings.lastIp);
     return;
   }
-  if (now - grinderRuntime.stateEnteredAt < GRINDER_RUNTIME_STARTUP_DISCOVERY_DELAY_MS) {
-    grinderRuntime.resolvePhase = 0;
-    return;
-  }
-  if (grinderRuntime.resolvePhase == 1) {
-    grinderRuntime.resolvePhase = 2;
-    grinderAttemptHostnameConnect();
-    return;
-  }
   grinderRuntime.resolvePhase = 0;
-  grinderAttemptMdnsConnect();
+  if (!grinderAttemptHostnameConnect()) {
+    grinderAttemptBackgroundMdnsConnect(now);
+  }
 }
 
 static inline void grinderSendPingIfDue() {
@@ -720,6 +752,7 @@ static inline void grinderRuntimeReset() {
   grinderRuntime.lastCommandAt = 0;
   grinderRuntime.zeroStableSince = 0;
   grinderRuntime.lastRuntimeLogAt = 0;
+  grinderRuntime.lastBackgroundMdnsAt = 0;
   grinderRuntime.grindRateGps = 0.0f;
   grinderRuntime.rateSamples = 0;
   grinderRuntime.removalSeen = false;
@@ -741,7 +774,11 @@ static inline void grinderRuntimeTick(float weight) {
     return;
   }
   if (!grinderSelectedMacSet()) {
-    grinderEnterError("select plug");
+    grinderSetStatus("plug wait");
+    if (grinderRuntime.state != GRINDER_STATE_FINDING_PLUG) {
+      grinderCloseClient();
+      grinderSetState(GRINDER_STATE_FINDING_PLUG);
+    }
     return;
   }
   grinderReadClient(weight);

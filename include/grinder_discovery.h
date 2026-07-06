@@ -104,7 +104,9 @@ static inline bool grinderAddDiscoveryFromMdnsIndex(int index) {
 
 static inline void grinderPrepareWifiForDiscovery() {
   WiFi.setSleep(false);
-  esp_wifi_set_ps(WIFI_PS_NONE);
+  if (esp_wifi_set_ps(WIFI_PS_NONE) == ESP_OK) {
+    grinderRuntime.wifiLowLatency = true;
+  }
 }
 
 static inline const char *grinderRawMdnsTxt(const mdns_result_t *result, const char *key) {
@@ -343,6 +345,7 @@ static inline uint8_t grinderDiscoverPlugs(bool debugRaw = true, uint8_t attempt
   } else {
     grinderSetStatus("found");
   }
+  grinderMaintainWifiLatencyMode();
   return grinderRuntime.discoveredCount;
 }
 

@@ -1753,8 +1753,8 @@ void loop() {
           }
         }
         pureScale();
-        grinderRuntimeTick(f_displayedValue);
         updateOled();
+        grinderRuntimeTick(f_displayedValue);
       }
     }
   }

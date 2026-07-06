@@ -565,7 +565,7 @@ void grinderOn() {
   b_wifiOnBoot = true;
   EEPROM.put(i_addr_enableWifiOnBoot, true);
   EEPROM.commit();
-  if (!b_wifiEnabled && GPIO_power_on_with != BATTERY_CHARGING) {
+  if (!b_wifiEnabled) {
     wifi_init();
   }
   grinderSetActionMessage("Grinder On", "WiFi On");

@@ -703,6 +703,7 @@ def test_low_latency_source_order_and_weight_sources():
     assert hds.index("f_grinder_fast_weight = tracking_compensated;") < hds.index("float stable_output = applyStableOutput(tracking_compensated);")
     assert "grinderRuntimeFreshWeightTick(f_grinder_fast_weight, grinderFastWeightSequence);" in hds
     assert "grinderRuntimeTick(f_displayedValue);" in hds
+    assert hds.index("pureScale();") < hds.index("updateOled();") < hds.index("grinderRuntimeTick(f_displayedValue);")
     assert "grinderRuntimeNotifyTareRequested();" in hds
     assert "grinderRuntimeNotifyTareComplete();" in hds
 
@@ -739,8 +740,9 @@ def test_firmware_contracts():
     assert_not_contains(RUNTIME_HEADER, 'preferences.putFloat("latency"')
     assert_contains(RUNTIME_HEADER, "targetGrams = 15.0f")
     assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_RECONNECT_INTERVAL_MS 3000")
-    assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_STARTUP_DISCOVERY_DELAY_MS 15000")
     assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS 250")
+    assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_BACKGROUND_MDNS_INTERVAL_MS 30000")
+    assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_BACKGROUND_MDNS_TIMEOUT_MS 150")
     assert_contains(RUNTIME_HEADER, 'preferences.begin("grinder"')
     assert_contains(RUNTIME_HEADER, '#include "grinder_runtime_adaptive.h"')
     assert_contains(RUNTIME_ADAPTIVE_HEADER, "grinderResetAdaptiveSafety")
@@ -769,11 +771,18 @@ def test_firmware_contracts():
     assert_contains(DISCOVERY_HEADER, "grinderAddDiscoveryFromRawMdnsResult")
     assert_contains(DISCOVERY_HEADER, "grinderDiscoverPlugsByRawMdns(350, false)")
     assert_contains(DISCOVERY_HEADER, "grinderFindSelectedByMdns(GrinderDiscoveredPlug *plug, bool debugRaw = true)")
-    assert_contains(RUNTIME_HEADER, "grinderFindSelectedByMdns(&plug, false)")
-    assert_contains(RUNTIME_HEADER, "now - grinderRuntime.stateEnteredAt < GRINDER_RUNTIME_STARTUP_DISCOVERY_DELAY_MS")
+    assert_not_contains(RUNTIME_HEADER, "grinderFindSelectedByMdns")
+    assert_not_contains(RUNTIME_HEADER, "grinderAttemptMdnsConnect")
+    assert_not_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_STARTUP_DISCOVERY_DELAY_MS")
+    assert_not_contains(RUNTIME_HEADER, "MDNS.queryService")
+    assert_not_contains(RUNTIME_HEADER, "stateEnteredAt < GRINDER_RUNTIME_STARTUP_DISCOVERY_DELAY_MS")
+    assert_contains(RUNTIME_HEADER, "grinderAttemptBackgroundMdnsConnect")
+    assert_contains(RUNTIME_HEADER, "grinderDiscoverPlugsByRawMdns(GRINDER_RUNTIME_BACKGROUND_MDNS_TIMEOUT_MS, false)")
     assert_contains(DISCOVERY_HEADER, "GRINDER_DISCOVERY_ENABLE_TCP_FALLBACK 0")
     assert_contains(DISCOVERY_HEADER, "wifiEnsureMdnsReadyForSta")
     assert_contains(DISCOVERY_HEADER, "WiFi.setSleep(false)")
+    assert_contains(DISCOVERY_HEADER, "grinderRuntime.wifiLowLatency = true")
+    assert_contains(DISCOVERY_HEADER, "grinderMaintainWifiLatencyMode();")
     assert_contains(DISCOVERY_HEADER, 'mdns_query_ptr("_grinderplug", "_tcp"')
     assert_contains(DISCOVERY_HEADER, "grinderDebugRawMdnsQuery")
     assert_contains(DISCOVERY_HEADER, 'model != "NOUS_A6T"')
@@ -804,6 +813,8 @@ def test_firmware_contracts():
     assert_contains(LOW_LATENCY_HEADER, "esp_wifi_set_ps(WIFI_PS_NONE)")
     assert_contains(LOW_LATENCY_HEADER, "esp_wifi_set_ps(WIFI_PS_MIN_MODEM)")
     assert_contains(RUNTIME_HEADER, "client.connect(ip, GRINDER_TCP_PORT, GRINDER_DISCOVERY_CONNECT_TIMEOUT_MS)")
+    assert_contains(RUNTIME_HEADER, 'grinderSetStatus("plug wait")')
+    assert_not_contains(RUNTIME_HEADER, 'grinderEnterError("select plug")')
     assert_contains(MENU_HEADER, "menuGrinder")
     assert_contains(MENU_HEADER, "Grinder Plug")
     assert_contains(MENU_HEADER, "grinderFindPlugsForSelection")
