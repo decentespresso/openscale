@@ -34,9 +34,9 @@ To enable WiFi mode, go to HDS setup menu and find "Wifi settings" entry. From t
 
 **Discovery:** the scale advertises itself via mDNS (`hds.local`) and DNS-SD (`_decentscale._tcp`) so apps can discover it on the LAN without knowing the IP.
 
-## Experimental Tasmota grinder mode
+## Tasmota grinder mode
 
-HDS can optionally control a selected Tasmota grinder plug over local TCP. The feature is experimental and intended for trusted local WLANs only.
+HDS can optionally control a selected Tasmota grinder plug over local TCP. This feature is intended for trusted local WLANs only.
 
 Full setup, usage, FAQ, and troubleshooting are documented in [docs/hds-tasmota-grinder.md](docs/hds-tasmota-grinder.md).
 

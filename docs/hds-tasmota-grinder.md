@@ -1,6 +1,6 @@
 # HDS Tasmota Grinder Mode
 
-Experimental HDS scale-side support for controlling a Tasmota grinder plug over local TCP.
+HDS support for using a Tasmota smart plug as a grinder power switch.
 
 Plug-side firmware lives at:
 
@@ -10,33 +10,19 @@ This is a trusted-local-WLAN feature. The plug MAC is used as an identity label,
 
 ## What It Does
 
-- Finds compatible grinder plugs via `_grinderplug._tcp.local`
-- Stores one selected plug MAC in scale settings
-- Uses hostname and last IP only as lookup hints
-- Keeps one TCP connection open while active
-- Sends `HELLO <scale_mac>` and validates the returned plug MAC
-- Sends `ON` only after a stable zero hold
-- Sends fast OFF with `!` at cutoff after the plug is validated
-- Uses PING heartbeats while connected
-- Enters grinder error if the plug connection is lost while grinding
-- Keeps weighing responsive when the selected plug is offline
-- Learns adaptive safety from valid completed grinds
+- Lets the scale switch the grinder plug on and off automatically
+- Starts only after the empty cup is stable on the scale
+- Stops the grinder when the dose reaches the target
+- Waits for cup removal before preparing the next dose
+- Learns a better safety value from normal shots over time
+- Keeps the plug off if the connection is lost while grinding
+- Keeps normal weighing responsive even when the plug is offline
 
-## Plug Requirements
+The grinder itself still needs to be ready to run. This feature controls power to the plug, not the physical grinder switch.
 
-The plug firmware must advertise:
+## Plug Setup
 
-```text
-service: _grinderplug._tcp.local
-port: 31980
-TXT mac=<plug_mac>
-TXT model=NOUS_A6T
-TXT proto=1
-```
-
-The plug relay must default to OFF on boot. If the active TCP connection drops, the plug must also turn the relay OFF.
-
-Each plug accepts one active scale connection. A second client receives `BUSY` and is closed.
+Install the linked plug firmware on the Tasmota plug, then connect the plug to the same WiFi network as the scale.
 
 ## Scale Setup
 
@@ -53,6 +39,8 @@ Each plug accepts one active scale connection. A second client receives `BUSY` a
 The selected MAC is the saved identity. Hostname and IP are cached only to find the plug faster later.
 
 ## Settings
+
+From the normal weight view, hold both buttons for 500 ms to open the `Grinder Plug` menu when grinder mode is on. Use `Target g` there for quick target changes.
 
 Defaults:
 
@@ -125,6 +113,28 @@ Learning is skipped when the shot does not look like a normal grind:
 - final result was too far from target
 
 Adaptive changes are saved before deep sleep instead of on every loop.
+
+## Technical Details
+
+The plug advertises itself with mDNS:
+
+```text
+service: _grinderplug._tcp.local
+port: 31980
+TXT mac=<plug_mac>
+TXT model=NOUS_A6T
+TXT proto=1
+```
+
+The scale stores the selected plug MAC as the identity. Hostname and last IP are only cached lookup hints.
+
+The scale keeps one TCP connection open while active. It sends `HELLO <scale_mac>` and only accepts the plug if the returned MAC matches the selected MAC.
+
+After validation, cutoff uses the fast OFF command `!`. The scale also sends PING heartbeats while connected.
+
+The plug relay must default to OFF on boot. If the active TCP connection drops, the plug must also turn the relay OFF.
+
+Each plug accepts one active scale connection. A second client receives `BUSY` and is closed.
 
 ## Troubleshooting
 
