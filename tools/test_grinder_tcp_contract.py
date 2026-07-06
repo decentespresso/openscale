@@ -486,8 +486,10 @@ def test_on_blocked_until_stable_zero():
 def test_lost_connection_enters_error():
     model = GrinderModel()
     model.state = "grinding"
-    model.tick(5.0, 1000, connected=False)
+    model.target = 10.0
+    model.tick(12.0, 2500, connected=False)
     assert model.state == "error"
+    assert model.sent == []
 
 
 def test_fast_off_emits_emergency_line():
@@ -694,6 +696,8 @@ def test_low_latency_source_order_and_weight_sources():
     assert "GRINDER_CONFIRM_MAX_INITIAL_GRAMS 3.0f" in low_latency
     assert "GRINDER_ADAPTIVE_MAX_AVERAGE_RATE_GPS" in low_latency
     assert "grinderCutoffGrams(grinderSettings.targetGrams, grinderSettings.safetyMarginGrams)" in low_latency
+    fresh_start = low_latency.index("static inline void grinderRuntimeFreshWeightTick")
+    assert low_latency.index("grinderPlugConnectionStale(millis())", fresh_start) < low_latency.index("grinderTickGrindingCutoff(weight);", fresh_start)
 
     hds = HDS_SOURCE.read_text(encoding="utf-8")
     assert hds.index("f_grinder_fast_weight = tracking_compensated;") < hds.index("float stable_output = applyStableOutput(tracking_compensated);")
@@ -709,6 +713,8 @@ def test_low_latency_source_order_and_weight_sources():
     assert "tarePending" in runtime
     assert "grindConfirmed" in runtime
     assert "setupMassBlocked" in runtime
+    assert "GRINDER_RUNTIME_PING_TIMEOUT_MS 1200" in runtime
+    assert "grinderRuntime.pendingCommand == GRINDER_COMMAND_PING" in runtime
 
 
 def test_sampling_changes_blocked_during_grinder_cutoff_states():

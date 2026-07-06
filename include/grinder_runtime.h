@@ -23,6 +23,10 @@
 #define GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS 250
 #endif
 
+#ifndef GRINDER_RUNTIME_PING_TIMEOUT_MS
+#define GRINDER_RUNTIME_PING_TIMEOUT_MS 1200
+#endif
+
 enum GrinderDosingState {
   GRINDER_STATE_DISABLED,
   GRINDER_STATE_FINDING_PLUG,
@@ -394,6 +398,14 @@ static inline void grinderUpdateRate(float weight) {
   grinderRuntime.lastWeightAt = now;
 }
 
+static inline bool grinderPlugConnectionStale(uint32_t now) {
+  if (!grinderRuntime.client.connected()) {
+    return true;
+  }
+  return grinderRuntime.pendingCommand == GRINDER_COMMAND_PING &&
+         now - grinderRuntime.lastCommandAt > GRINDER_RUNTIME_PING_TIMEOUT_MS;
+}
+
 #include "grinder_runtime_low_latency.h"
 
 static inline bool grinderLineRead(char value) {
@@ -614,7 +626,7 @@ static inline void grinderCheckConnectionLoss() {
       grinderRuntime.state == GRINDER_STATE_ERROR) {
     return;
   }
-  if (!grinderRuntime.client.connected()) {
+  if (grinderPlugConnectionStale(millis())) {
     if (grinderRuntime.state == GRINDER_STATE_GRINDING || grinderRuntime.state == GRINDER_STATE_STOPPING) {
       grinderEnterError("lost plug");
     } else {
