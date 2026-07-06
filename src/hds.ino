@@ -160,6 +160,22 @@ void scaleTimer() {
   }
 }
 
+void wakeFromChargingUi(uint8_t buttonPin) {
+  if (GPIO_power_on_with != BATTERY_CHARGING && !b_showChargingUI) {
+    return;
+  }
+  GPIO_power_on_with = buttonPin;
+  b_showChargingUI = false;
+  b_is_charging = false;
+  if (!b_ble_enabled) {
+    b_ble_enabled = true;
+    ble_init();
+  }
+  if (!b_wifiEnabled) {
+    wifi_init();
+  }
+}
+
 void buttonCircle_Released() {
   Serial.println("O button released");
   onButtonReleased(BUTTON_CIRCLE);
@@ -167,12 +183,7 @@ void buttonCircle_Released() {
 
 void buttonCircle_Pressed() {
   if (b_showChargingUI && i_buttonBootDelay == 0) {
-    //change GPIO_power_on_with from BATTERY_CHARGING to enter scale loop
-    GPIO_power_on_with = BUTTON_CIRCLE;
-    b_showChargingUI = false;
-    b_ble_enabled = true;
-    ble_init();
-    wifi_init();
+    wakeFromChargingUi(BUTTON_CIRCLE);
   }
 
   if (b_menu) {
@@ -200,7 +211,7 @@ void buttonSquare_Released() {
 
 void buttonSquare_Pressed() {
   if (b_showChargingUI && i_buttonBootDelay == 0) {
-    GPIO_power_on_with = BUTTON_SQUARE;
+    wakeFromChargingUi(BUTTON_SQUARE);
   }
   if (b_menu) {
     selectMenu();
@@ -306,11 +317,7 @@ void buttonCircle_LongPressed() {
     buzzer.beep(1, 200);
 #endif
     if (GPIO_power_on_with == BATTERY_CHARGING) {
-      //change GPIO_power_on_with from BATTERY_CHARGING to enter scale loop
-      GPIO_power_on_with = BUTTON_CIRCLE;
-      b_ble_enabled = true;
-      ble_init();
-      wifi_init();
+      wakeFromChargingUi(BUTTON_CIRCLE);
     }     
     // sendUsbButton(1, 2);
     // if (deviceConnected) {
@@ -327,8 +334,7 @@ void buttonSquare_LongPressed() {
     buzzer.beep(1, 200);
 #endif
     if (GPIO_power_on_with == BATTERY_CHARGING) {
-      //change GPIO_power_on_with from BATTERY_CHARGING to enter scale loop
-      GPIO_power_on_with = BUTTON_SQUARE;
+      wakeFromChargingUi(BUTTON_SQUARE);
     }
     // sendUsbButton(2, 2);
     // if (deviceConnected) {
