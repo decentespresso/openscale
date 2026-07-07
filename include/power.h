@@ -219,10 +219,46 @@ void esp32_sleep() {
   // A partially-powered ADS1232 / REF5025 / ADS1115 may not trigger POR
   // on the next wake-up, causing latch-up and the "stuck at 0g" bug.
   //
-  // Fix: drive every GPIO in the PWR_CTRL domain LOW (or INPUT for DOUT
-  // pins) and enable gpio_hold so the state persists through deep sleep.
-  // I2C is driven LOW to sink the external pull-up current safely instead
-  // of letting it flow through unpowered-device ESD diodes.
+  // Default (SLEEP_GPIO_INPUT not defined): drive every GPIO in the
+  // PWR_CTRL domain LOW (or INPUT for DOUT pins) and enable gpio_hold so
+  // the state persists through deep sleep.  I2C is driven LOW to sink the
+  // external pull-up current safely instead of letting it flow through
+  // unpowered-device ESD diodes.
+  //
+  // When SLEEP_GPIO_INPUT is defined: configure all PWR_CTRL domain GPIOs
+  // as INPUT with no pull-up/pull-down.  This saves the pull-up sink
+  // current (~0.7 mA per I2C pin) during deep sleep, at the cost of
+  // possible ESD-diode back-feed through external pull-ups.
+
+#ifdef SLEEP_GPIO_INPUT
+  // --- INPUT mode: pins float, no gpio_hold needed (INPUT is the default
+  //     reset state so pins naturally return to input after wake-up). ---
+
+  // --- OLED (SPI) ---
+  pinMode(OLED_SDIN, INPUT);
+  pinMode(OLED_SCLK, INPUT);
+  pinMode(OLED_DC, INPUT);
+  pinMode(OLED_RST, INPUT);
+  pinMode(OLED_CS, INPUT);
+
+  // --- ADS1232 primary ---
+  pinMode(SCALE_SCLK, INPUT);
+  pinMode(SCALE_PDWN, INPUT);
+  pinMode(SCALE_DOUT, INPUT);
+
+  // --- ADS1232 secondary (if present) ---
+  pinMode(SCALE2_SCLK, INPUT);
+  pinMode(SCALE2_PDWN, INPUT);
+  pinMode(SCALE2_DOUT, INPUT);
+
+  // --- I2C bus (ADS1115 + gyro) ---
+  pinMode(I2C_SCL, INPUT);
+  pinMode(I2C_SDA, INPUT);
+
+  pinMode(ACC_PWR_CTRL, INPUT);
+  pinMode(PWR_CTRL, INPUT);
+#else
+  // --- OUTPUT LOW mode with gpio_hold (default) ---
 
   // --- OLED (SPI) ---
   pinMode(OLED_SDIN, OUTPUT);  digitalWrite(OLED_SDIN, LOW);
@@ -268,6 +304,24 @@ void esp32_sleep() {
   digitalWrite(PWR_CTRL, LOW);
   gpio_hold_en((gpio_num_t)PWR_CTRL);
   gpio_deep_sleep_hold_en();
+#endif
+
+#ifdef SLEEP_ISOLATE_UNUSED
+  // --- Unused pins: INPUT + rtc_gpio_isolate to prevent any leakage ---
+  // rtc_gpio_isolate disconnects the pad driver internally so no current
+  // can flow regardless of external pull-ups or floating voltages.
+  // These pins are unused by firmware; they stay isolated after wake-up.
+  // Pin list per config.h SLEEP_ISOLATE_GPIO_CNT:
+  //   22,23,38=unconnected  35-37=PSRAM  39-43=JTAG
+  {
+    static const uint8_t unused[] = {22, 23, 35, 36, 37, 38, 39, 40, 41, 42, 43};
+    for (uint8_t i = 0; i < sizeof(unused) / sizeof(unused[0]); i++) {
+      gpio_num_t pin = (gpio_num_t)unused[i];
+      pinMode(pin, INPUT);
+      rtc_gpio_isolate(pin);
+    }
+  }
+#endif
   esp_deep_sleep_start();
 }
 #endif  //ESP32

@@ -119,6 +119,12 @@
 #define SCALE_A0 -1
 #define HX711_SCL 12
 #define HX711_SDA 11
+	// Unused pins isolated during deep sleep (INPUT + rtc_gpio_isolate):
+	//   22, 23, 38          — unconnected pads
+	//   35, 36, 37          — octal PSRAM (powered off during sleep)
+	//   39, 40, 41, 42, 43  — JTAG header
+	// See include/power.h esp32_sleep() for the isolation array.
+	#define SLEEP_ISOLATE_GPIO_CNT 11
 #endif
 
 
