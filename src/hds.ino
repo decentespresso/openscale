@@ -12,6 +12,7 @@
 #include "websocket.h"
 #include "wifi_ota.h"
 #include "grinder_runtime.h"
+#include "pull_ota.h"
 
 
 #include "menu.h"
