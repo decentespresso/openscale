@@ -259,7 +259,18 @@ Simply run `pio run -t buildfs -t uploadfs` with the Esp32s3 connected to your c
 
 Trunk-based: `main` is the single long-lived branch and is always releasable. Do work on short-lived feature branches and merge into `main` once CI passes.
 
-Releases: tag a known-good commit on `main` with the version (`vX.Y.Z`), then run the "Release firmware" workflow with that tag.
+Releases: tag a known-good commit on `main` with the version (`vX.Y.Z`), then run the "Release firmware" workflow with that tag. The workflow publishes the legacy ZIP plus machine-readable OTA assets:
+
+- `firmware.bin`: raw OTA firmware image.
+- `littlefs.bin`: raw filesystem image. The workflow input `littlefs_required` defaults to `true` so skipped versions and test builds with unknown filesystem state are brought back to the production filesystem.
+- `manifest.json`: release metadata downloaded by the scale before installing.
+- `manifest.sig`: detached SHA-256 signature. The workflow requires `HDS_OTA_SIGNING_KEY_PEM` as a repository secret and `HDS_OTA_MANIFEST_PUBLIC_KEY_PEM` as a repository variable.
+
+The scale checks `https://github.com/decentespresso/openscale/releases/latest/download/manifest.json`, downloads `manifest.sig`, verifies the detached signature with the public key compiled into the firmware, then verifies `model`, optional `pcb`, `min_from`, chip, environment, flash size, partition schema, filesystem partition size/schema, HTTPS certificate chain, asset URL prefix, asset size, and SHA-256 before writing firmware. Manifest `version` and `min_from` must be stable numeric `major.minor.patch` values. The workflow builds a signed catalog from `v3.1.13` upward by merging the previous latest stable signed manifest with the new release, deduping compatible entries, and sorting newest to oldest. The WiFi updater lists compatible stable releases except the firmware version already running.
+
+When `littlefs.required` is true, OTA is staged. The current firmware stores the LittleFS asset metadata in NVS, writes only `firmware.bin` to the inactive app OTA slot, and reboots. The new firmware boots with the same NVS-stored WiFi credentials, passes the normal setup checks, marks itself valid so it owns recovery, then downloads `littlefs.bin`, writes it to the data partition, verifies the raw partition SHA-256 plus partition size/schema and LittleFS mount, clears the pending state, shows completion, and reboots. If WiFi or filesystem update fails, the pending LittleFS state remains in NVS so the next boot or WiFi Update menu can retry. Set `HDS_RELEASE_MIN_FROM` as a repository variable to raise the oldest version that can self-update.
+
+This is safer than writing LittleFS before firmware because old firmware does not intentionally boot with a new filesystem. It is still not the same as A/B data partitions: a power loss during the LittleFS write can leave the single filesystem partition incomplete, but the new firmware has already been marked valid and will retry the pending filesystem update instead of rolling back to old firmware with a changed filesystem.
 
 # Automated builds
 
