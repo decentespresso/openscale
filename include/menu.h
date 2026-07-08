@@ -214,7 +214,6 @@ Menu **currentMenu = mainMenu;
 Menu *currentSelection = mainMenu[0];
 int currentMenuSize = getMenuSize(mainMenu);  // Top-level menu size
 int currentIndex = 0;
-bool b_grinderMenuDirectEntry = false;
 const int linesPerPage =
   4;                                                  // Maximum number of lines that can fit on the display
 int currentPage = 0;                                  // Determine the current page
@@ -287,6 +286,11 @@ void buzzerOff() {
 
 void toggleWifiOn() {
   b_wifiOnBoot = true;
+  if (grinderSettings.enabled) {
+    grinderSettings.previousWifiOnBoot = true;
+    grinderSettings.previousWifiOnBootSaved = true;
+    grinderSaveSettings();
+  }
   actionMessage = "WiFi Enabled";
   actionMessage2 = "Restart scale";
   t_actionMessage = millis();
@@ -296,6 +300,17 @@ void toggleWifiOn() {
 }
 
 void toggleWifiOff() {
+  if (grinderSettings.enabled) {
+    grinderSettings.previousWifiOnBoot = false;
+    grinderSettings.previousWifiOnBootSaved = true;
+    grinderSaveSettings();
+    actionMessage = "Grinder Needs WiFi";
+    actionMessage2 = "Off After Grinder";
+    t_actionMessage = millis();
+    t_actionMessageDelay = 1500;
+    Serial.println("WiFi Off deferred until Grinder Off.");
+    return;
+  }
   b_wifiOnBoot = false;
   actionMessage = "WiFi Disabled";
   actionMessage2 = "Restart scale";
@@ -561,6 +576,10 @@ void grinderSetActionMessage(const char *line1, const char *line2 = nullptr) {
 }
 
 void grinderOn() {
+  if (!grinderSettings.previousWifiOnBootSaved) {
+    grinderSettings.previousWifiOnBoot = b_wifiOnBoot;
+    grinderSettings.previousWifiOnBootSaved = true;
+  }
   grinderSetEnabled(true);
   b_wifiOnBoot = true;
   EEPROM.put(i_addr_enableWifiOnBoot, true);
@@ -575,7 +594,17 @@ void grinderOn() {
 }
 
 void grinderOff() {
+  const bool restoreWifiOnBoot = grinderSettings.previousWifiOnBoot;
+  const bool restoreWifiOnBootSaved = grinderSettings.previousWifiOnBootSaved;
   grinderSetEnabled(false);
+  if (restoreWifiOnBootSaved) {
+    b_wifiOnBoot = restoreWifiOnBoot;
+    EEPROM.put(i_addr_enableWifiOnBoot, restoreWifiOnBoot);
+    EEPROM.commit();
+    grinderSettings.previousWifiOnBoot = false;
+    grinderSettings.previousWifiOnBootSaved = false;
+    grinderSaveSettings();
+  }
   grinderSetActionMessage("Grinder Off");
   Serial.println("Grinder Off stored in NVS.");
 }
@@ -604,6 +633,7 @@ uint8_t grinderFindPlugsForSelection() {
     grinderSetActionMessage("WiFi Wait", "No Plugs");
     return 0;
   }
+  grinderReleaseClientForDiscovery();
   refreshOLED((char *)"Finding", (char *)"Plugs");
   uint8_t count = grinderDiscoverPlugs();
   char message[24];

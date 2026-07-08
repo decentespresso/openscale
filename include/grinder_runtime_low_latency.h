@@ -38,29 +38,6 @@ static inline bool grinderSendOff() {
   return grinderSendSimpleCommand("OFF", GRINDER_COMMAND_OFF);
 }
 
-static inline void grinderMaintainWifiLatencyMode() {
-  const bool active = grinderSettings.enabled &&
-                      WiFi.status() == WL_CONNECTED &&
-                      grinderRuntime.state != GRINDER_STATE_DISABLED &&
-                      grinderRuntime.state != GRINDER_STATE_FINDING_PLUG &&
-                      grinderRuntime.state != GRINDER_STATE_ERROR;
-  if (active) {
-    if (!grinderRuntime.wifiLowLatency) {
-      WiFi.setSleep(false);
-      if (esp_wifi_set_ps(WIFI_PS_NONE) == ESP_OK) {
-        grinderRuntime.wifiLowLatency = true;
-      }
-    }
-    return;
-  }
-  if (grinderRuntime.wifiLowLatency) {
-    WiFi.setSleep(true);
-    if (esp_wifi_set_ps(WIFI_PS_MIN_MODEM) == ESP_OK) {
-      grinderRuntime.wifiLowLatency = false;
-    }
-  }
-}
-
 static inline bool grinderRuntimeLocksScaleSampling() {
   return grinderSettings.enabled &&
          (grinderRuntime.state == GRINDER_STATE_GRINDING ||

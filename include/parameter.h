@@ -120,6 +120,8 @@ int GPIO_power_on_with = -1;
 
 unsigned long t_power_on_button = 0;  // Variable to store the timestamp when the button is pressed
 bool b_button_pressed = false;        // Boolean flag to indicate whether the button is currently pressed
+bool b_buttonChordSuppressUntilRelease = false;
+bool b_grinderMenuDirectEntry = false;
 
 
 float INPUTCOFFEEPOUROVER = 20.0;
@@ -214,6 +216,10 @@ volatile bool b_autoSleep = true;
 volatile bool b_quickBoot = false;
 unsigned int i_buttonBootDelay = 500;
 bool b_showChargingUI = false;
+struct GrinderSettings;
+struct GrinderRuntime;
+extern GrinderSettings grinderSettings;
+extern GrinderRuntime grinderRuntime;
 
 //电子秤参数和计时点
 // Enhanced tracking system global variables

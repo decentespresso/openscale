@@ -6,7 +6,6 @@
 #include <Preferences.h>
 #include <WiFi.h>
 #include <esp_mac.h>
-#include <esp_wifi.h>
 #include <math.h>
 #include "grinder_adaptive_safety.h"
 #include "grinder_protocol.h"
@@ -56,6 +55,8 @@ struct GrinderSettings {
   float targetToleranceGrams = 0.5f;
   GrinderAdaptiveSafetyStore adaptiveSafety;
   uint32_t zeroHoldMs = 1000;
+  bool previousWifiOnBoot = false;
+  bool previousWifiOnBootSaved = false;
 };
 
 struct GrinderDiscoveredPlug {
@@ -82,7 +83,6 @@ struct GrinderRuntime {
   bool removalSeen = false;
   bool zeroTracking = false;
   bool settingsDirty = false;
-  bool wifiLowLatency = false;
   bool cutoffGuardActive = false;
   bool tarePending = false;
   bool grindConfirmed = false;
@@ -189,6 +189,8 @@ static inline void grinderLoadSettings() {
   grinderSettings.adaptiveSafety.history[1] = preferences.isKey("safe1") ? preferences.getFloat("safe1", 0.0f) : 0.0f;
   grinderSettings.adaptiveSafety.history[2] = preferences.isKey("safe2") ? preferences.getFloat("safe2", 0.0f) : 0.0f;
   grinderSettings.zeroHoldMs = preferences.getUInt("zerohold", 1000);
+  grinderSettings.previousWifiOnBoot = preferences.getBool("wifi_prev", false);
+  grinderSettings.previousWifiOnBootSaved = preferences.getBool("wifi_saved", false);
   preferences.end();
   grinderNormalizeSettings();
 }
@@ -214,6 +216,8 @@ static inline void grinderSaveSettings() {
   preferences.putFloat("safe1", grinderSettings.adaptiveSafety.history[1]);
   preferences.putFloat("safe2", grinderSettings.adaptiveSafety.history[2]);
   preferences.putUInt("zerohold", grinderSettings.zeroHoldMs);
+  preferences.putBool("wifi_prev", grinderSettings.previousWifiOnBoot);
+  preferences.putBool("wifi_saved", grinderSettings.previousWifiOnBootSaved);
   preferences.end();
   grinderRuntime.settingsDirty = false;
 }
@@ -734,7 +738,6 @@ static inline void grinderRuntimeReset() {
 }
 
 static inline void grinderRuntimeTick(float weight) {
-  grinderMaintainWifiLatencyMode();
   if (!grinderSettings.enabled) {
     if (grinderRuntime.state != GRINDER_STATE_DISABLED) {
       grinderRuntimeReset();
@@ -793,6 +796,17 @@ static inline bool grinderRuntimeKeepsAwake() {
   return grinderSettings.enabled && grinderRuntime.state != GRINDER_STATE_DISABLED;
 }
 
+static inline void grinderReleaseClientForDiscovery() {
+  if (grinderRuntime.client.connected()) {
+    grinderSendOff();
+    delay(250);
+    grinderRuntime.client.print("BYE\n");
+    delay(250);
+  }
+  grinderCloseClient();
+  delay(250);
+}
+
 static inline void grinderShortStatus(char *output, size_t outputSize) {
   if (output == nullptr || outputSize == 0) {
     return;
@@ -810,7 +824,6 @@ static inline void grinderSetEnabled(bool enabled) {
   }
   grinderSettings.enabled = enabled;
   grinderSaveSettings();
-  grinderMaintainWifiLatencyMode();
   grinderRuntimeReset();
 }
 

@@ -2,16 +2,16 @@
 #define GRINDER_DISCOVERY_H
 
 #include <esp_err.h>
-#include <esp_wifi.h>
 #include <mdns.h>
+#include <strings.h>
 #include "wifi_setup.h"
 
 #ifndef GRINDER_DISCOVERY_CONNECT_TIMEOUT_MS
-#define GRINDER_DISCOVERY_CONNECT_TIMEOUT_MS 90
+#define GRINDER_DISCOVERY_CONNECT_TIMEOUT_MS 250
 #endif
 
 #ifndef GRINDER_DISCOVERY_READ_TIMEOUT_MS
-#define GRINDER_DISCOVERY_READ_TIMEOUT_MS 180
+#define GRINDER_DISCOVERY_READ_TIMEOUT_MS 350
 #endif
 
 static inline void grinderSaveSelectedDiscovery(const GrinderDiscoveredPlug &plug) {
@@ -58,43 +58,6 @@ static inline bool grinderAddDiscovery(const char *mac, const char *hostname, IP
   return true;
 }
 
-static inline bool grinderAddDiscoveryFromMdnsIndex(int index) {
-  const String mac = MDNS.txt(index, "mac");
-  const String model = MDNS.txt(index, "model");
-  const String proto = MDNS.txt(index, "proto");
-  const String hostname = MDNS.hostname(index);
-  const String address = MDNS.address(index).toString();
-  Serial.printf("[grinder] mdns[%d] port=%u mac=%s model=%s proto=%s host=%s ip=%s txt=%d\n",
-                index,
-                MDNS.port(index),
-                mac.c_str(),
-                model.c_str(),
-                proto.c_str(),
-                hostname.c_str(),
-                address.c_str(),
-                MDNS.numTxt(index));
-  if (MDNS.port(index) != GRINDER_TCP_PORT) {
-    Serial.println("[grinder] mdns reject port");
-    return false;
-  }
-  if (model != "NOUS_A6T" || proto != "1" || !grinderIsMac(mac.c_str())) {
-    Serial.println("[grinder] mdns reject txt");
-    return false;
-  }
-  char hostnameOutput[64] = { 0 };
-  grinderCopyString(hostnameOutput, sizeof(hostnameOutput), hostname);
-  const bool added = grinderAddDiscovery(mac.c_str(), hostnameOutput, MDNS.address(index));
-  Serial.printf("[grinder] mdns add %s\n", added ? "ok" : "skip");
-  return added;
-}
-
-static inline void grinderPrepareWifiForDiscovery() {
-  WiFi.setSleep(false);
-  if (esp_wifi_set_ps(WIFI_PS_NONE) == ESP_OK) {
-    grinderRuntime.wifiLowLatency = true;
-  }
-}
-
 static inline const char *grinderRawMdnsTxt(const mdns_result_t *result, const char *key) {
   if (result == nullptr || key == nullptr) {
     return "";
@@ -119,41 +82,89 @@ static inline IPAddress grinderRawMdnsIpv4(const mdns_result_t *result) {
   return IPAddress((uint32_t)0);
 }
 
+static inline void grinderStripLocalSuffix(char *host) {
+  if (host == nullptr) {
+    return;
+  }
+  const size_t len = strlen(host);
+  const char suffix[] = ".local";
+  const size_t suffixLen = sizeof(suffix) - 1;
+  if (len > suffixLen && strcasecmp(host + len - suffixLen, suffix) == 0) {
+    host[len - suffixLen] = 0;
+  }
+}
+
+static inline IPAddress grinderResolveRawMdnsIpv4(const mdns_result_t *result) {
+  const IPAddress ip = grinderRawMdnsIpv4(result);
+  if (grinderIpValid(ip)) {
+    return ip;
+  }
+  if (result == nullptr || result->hostname == nullptr || result->hostname[0] == 0) {
+    return IPAddress((uint32_t)0);
+  }
+  char host[64] = { 0 };
+  grinderCopyCString(host, sizeof(host), result->hostname);
+  grinderStripLocalSuffix(host);
+  esp_ip4_addr_t address;
+  address.addr = 0;
+  if (mdns_query_a(host, 2000, &address) == ESP_OK && address.addr != 0) {
+    return IPAddress(address.addr);
+  }
+  return IPAddress((uint32_t)0);
+}
+
+static inline bool grinderProbeDiscoveryIp(IPAddress ip, const char *hostname);
+
 static inline bool grinderAddDiscoveryFromRawMdnsResult(const mdns_result_t *result) {
   if (result == nullptr || result->port != GRINDER_TCP_PORT) {
     return false;
   }
   const char *mac = grinderRawMdnsTxt(result, "mac");
-  const char *model = grinderRawMdnsTxt(result, "model");
   const char *proto = grinderRawMdnsTxt(result, "proto");
-  if (strcmp(model, "NOUS_A6T") != 0 || strcmp(proto, "1") != 0 || !grinderIsMac(mac)) {
+  if ((proto[0] != 0 && strcmp(proto, "1") != 0) ||
+      (mac[0] != 0 && !grinderIsMac(mac))) {
     return false;
   }
   const char *hostname = result->hostname != nullptr ? result->hostname : "";
-  const IPAddress ip = grinderRawMdnsIpv4(result);
-  return grinderIpValid(ip) && grinderAddDiscovery(mac, hostname, ip);
+  const IPAddress ip = grinderResolveRawMdnsIpv4(result);
+  if (!grinderIpValid(ip)) {
+    return false;
+  }
+  if (grinderIsMac(mac)) {
+    return grinderAddDiscovery(mac, hostname, ip);
+  }
+  return grinderProbeDiscoveryIp(ip, hostname);
 }
 
 static inline uint8_t grinderDiscoverPlugsByRawMdns(uint32_t timeoutMs, bool debug) {
   mdns_result_t *results = nullptr;
   const esp_err_t err = mdns_query_ptr("_grinderplug", "_tcp", timeoutMs, 8, &results);
   if (debug) {
-    Serial.printf("[grinder] raw mdns err=%s results=%p wifi=%d ip=%s\n",
+    Serial.printf("[grinder] raw mdns ptr err=%s results=%p timeout=%lu wifi=%d ip=%s rssi=%d heap=%u\n",
                   esp_err_to_name(err),
                   results,
+                  (unsigned long)timeoutMs,
                   (int)WiFi.status(),
-                  WiFi.localIP().toString().c_str());
+                  WiFi.localIP().toString().c_str(),
+                  WiFi.RSSI(),
+                  ESP.getFreeHeap());
+  }
+  if (err != ESP_OK || results == nullptr) {
+    if (results != nullptr) {
+      mdns_query_results_free(results);
+    }
+    return grinderRuntime.discoveredCount;
   }
   uint8_t count = 0;
-  for (mdns_result_t *result = results; result != nullptr; result = result->next) {
+  for (mdns_result_t *result = results; result != nullptr && grinderRuntime.discoveredCount < 8; result = result->next) {
     count++;
     if (debug) {
-      Serial.printf("[grinder] raw mdns[%d] instance=%s host=%s port=%u txt=%u\n",
-                    count,
+      Serial.printf("[grinder] raw mdns result instance=%s host=%s port=%u txt=%u addr=%p\n",
                     result->instance_name ? result->instance_name : "",
                     result->hostname ? result->hostname : "",
                     result->port,
-                    (unsigned)result->txt_count);
+                    (unsigned)result->txt_count,
+                    result->addr);
       for (size_t t = 0; t < result->txt_count; t++) {
         Serial.printf("[grinder] raw mdns[%d] txt[%u] %s=%s\n",
                       count,
@@ -179,21 +190,6 @@ static inline uint8_t grinderDiscoverPlugsByRawMdns(uint32_t timeoutMs, bool deb
 
 static inline void grinderDebugRawMdnsQuery() {
   grinderDiscoverPlugsByRawMdns(5000, true);
-}
-
-static inline void grinderDiscoverPlugsByMdns() {
-  if (!wifiEnsureMdnsReadyForSta()) {
-    grinderSetStatus("mdns wait");
-    return;
-  }
-  const int count = MDNS.queryService("grinderplug", "tcp");
-  Serial.printf("[grinder] mdns query _grinderplug._tcp count=%d wifi=%d ip=%s\n",
-                count,
-                (int)WiFi.status(),
-                WiFi.localIP().toString().c_str());
-  for (int i = 0; i < count && grinderRuntime.discoveredCount < 8; i++) {
-    grinderAddDiscoveryFromMdnsIndex(i);
-  }
 }
 
 static inline bool grinderDiscoveryReadLine(WiFiClient &client, char *line, size_t lineSize, uint32_t deadline) {
@@ -236,7 +232,7 @@ static inline bool grinderDiscoveryReadLine(WiFiClient &client, char *line, size
   return false;
 }
 
-static inline bool grinderProbeDiscoveryIp(IPAddress ip) {
+static inline bool grinderProbeDiscoveryIp(IPAddress ip, const char *hostname) {
   if (!grinderIpValid(ip) || ip == WiFi.localIP() || grinderDiscoveryIpExists(ip)) {
     return false;
   }
@@ -272,7 +268,7 @@ static inline bool grinderProbeDiscoveryIp(IPAddress ip) {
                 response.plugMac,
                 ip.toString().c_str(),
                 response.kind == GRINDER_TCP_RESPONSE_BUSY ? "busy" : "ok");
-  return grinderAddDiscovery(response.plugMac, "", ip);
+  return grinderAddDiscovery(response.plugMac, hostname, ip);
 }
 
 static inline void grinderDiscoverPlugsByTcpScan() {
@@ -280,13 +276,27 @@ static inline void grinderDiscoverPlugsByTcpScan() {
   if (!grinderIpValid(local)) {
     return;
   }
+  if (grinderIpValid(grinderSettings.lastIp)) {
+    for (uint8_t attempt = 0; attempt < 3 && grinderRuntime.discoveredCount == 0; attempt++) {
+      grinderProbeDiscoveryIp(grinderSettings.lastIp, grinderSettings.hostname);
+      if (grinderRuntime.discoveredCount == 0) {
+        delay(250);
+      }
+    }
+  }
   const uint8_t ownHost = local[3];
   for (uint16_t radius = 1; radius < 255 && grinderRuntime.discoveredCount < 8; radius++) {
     if ((uint16_t)ownHost + radius <= 254) {
-      grinderProbeDiscoveryIp(IPAddress(local[0], local[1], local[2], ownHost + radius));
+      const IPAddress ip(local[0], local[1], local[2], ownHost + radius);
+      if (ip != grinderSettings.lastIp) {
+        grinderProbeDiscoveryIp(ip, "");
+      }
     }
     if (radius < ownHost) {
-      grinderProbeDiscoveryIp(IPAddress(local[0], local[1], local[2], ownHost - radius));
+      const IPAddress ip(local[0], local[1], local[2], ownHost - radius);
+      if (ip != grinderSettings.lastIp) {
+        grinderProbeDiscoveryIp(ip, "");
+      }
     }
     delay(1);
   }
@@ -298,29 +308,31 @@ static inline uint8_t grinderDiscoverPlugs(bool debugRaw = true, uint8_t attempt
     grinderSetStatus("wifi wait");
     return 0;
   }
-  grinderPrepareWifiForDiscovery();
-  grinderSetStatus("finding");
-  for (uint8_t attempt = 0; attempt < attempts && grinderRuntime.discoveredCount == 0; attempt++) {
-    grinderDiscoverPlugsByMdns();
-    if (grinderRuntime.discoveredCount == 0 && attempt + 1 < attempts) {
-      delay(500);
-    }
+  if (!wifiEnsureMdnsReadyForSta()) {
+    grinderSetStatus("mdns wait");
+    return 0;
   }
-  if (debugRaw && grinderRuntime.discoveredCount == 0) {
-    grinderDebugRawMdnsQuery();
-  } else if (!debugRaw && grinderRuntime.discoveredCount == 0) {
-    grinderDiscoverPlugsByRawMdns(350, false);
+  grinderSetStatus("finding");
+  const uint32_t timeouts[] = { 1500, 2500, 3500 };
+  for (uint8_t attempt = 0; attempt < attempts && grinderRuntime.discoveredCount == 0; attempt++) {
+    const uint8_t timeoutIndex = attempt < 3 ? attempt : 2;
+    grinderDiscoverPlugsByRawMdns(timeouts[timeoutIndex], debugRaw);
+    if (grinderRuntime.discoveredCount == 0 && attempt + 1 < attempts) {
+      delay(350);
+    }
   }
   if (grinderRuntime.discoveredCount == 0) {
     grinderSetStatus("scan tcp");
     grinderDiscoverPlugsByTcpScan();
+  }
+  if (debugRaw && grinderRuntime.discoveredCount == 0) {
+    grinderDebugRawMdnsQuery();
   }
   if (grinderRuntime.discoveredCount == 0) {
     grinderSetStatus("none found");
   } else {
     grinderSetStatus("found");
   }
-  grinderMaintainWifiLatencyMode();
   return grinderRuntime.discoveredCount;
 }
 

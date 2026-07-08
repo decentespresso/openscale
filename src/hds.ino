@@ -24,8 +24,6 @@
 #define GRINDER_MENU_CHORD_HOLD_MS 500
 #endif
 
-bool b_buttonChordSuppressUntilRelease = false;
-
 bool anyScaleButtonPressed() {
   return digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW;
 }
@@ -766,7 +764,6 @@ void setup() {
   b_wifiOnBoot = storageGetBool(KEY_WIFI_BOOT, false);
   if (grinderSettings.enabled && !b_wifiOnBoot) {
     b_wifiOnBoot = true;
-    storagePutBool(KEY_WIFI_BOOT, true);
   }
   grinderRuntimeBegin();
   if (b_wifiOnBoot && GPIO_power_on_with != BATTERY_CHARGING) {
