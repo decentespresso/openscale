@@ -13,6 +13,7 @@
 #include "wifi_ota.h"
 #include "grinder_runtime.h"
 #include "pull_ota.h"
+#include "ota_rollback.h"
 
 
 #include "menu.h"
@@ -452,6 +453,7 @@ void setup() {
     esp_reset_reason_t r = esp_reset_reason();
     g_resetReasonCode = (uint8_t)r;
     Serial.printf("[boot] reset_reason=%s (%u)\n", resetReasonStr(r), (unsigned)g_resetReasonCode);
+    hdsOtaRollbackBegin(r);
   }
   if (!storageInit()) {
     Serial.println("NVS settings init failed!");
@@ -768,7 +770,8 @@ void setup() {
     b_wifiOnBoot = true;
   }
   grinderRuntimeBegin();
-  if (b_wifiOnBoot && GPIO_power_on_with != BATTERY_CHARGING) {
+  bool b_pendingOtaLittleFs = pullOtaHasPendingLittleFs();
+  if (b_wifiOnBoot && GPIO_power_on_with != BATTERY_CHARGING && !b_pendingOtaLittleFs) {
     wifi_init();
   }
   // Enter Menu
@@ -852,10 +855,29 @@ void setup() {
   Serial.println("");
 
 #endif
+#ifdef HX711ADC
+  Serial.println("Button:\tI2C_SDA\tI2C_SCK\t711SDA\t711SCK\tBUZZER");
+  Serial.print("Pin:");
+  Serial.print("\t");
+  Serial.print(I2C_SDA);
+  Serial.print("\t");
+  Serial.print(I2C_SCL);
+  Serial.print("\t");
+  Serial.print(HX711_SDA);
+  Serial.print("\t");
+  Serial.print(HX711_SCL);
+  Serial.print("\t");
+  Serial.println(BUZZER);
+#endif
+
   Serial.println("Setup complete...");
   t_bootTare = millis();
   b_bootTare = true;
   updateBattery(BATTERY_PIN);
+  hdsOtaRollbackMarkValid();
+  if (b_pendingOtaLittleFs) {
+    pullOtaResumePendingLittleFs();
+  }
 }
 
 /**
@@ -1612,6 +1634,11 @@ void loop() {
       t_batteryRefresh = millis();
     }
     checkBattery();
+    if (b_ota) {
+      ElegantOTA.loop();
+      processOtaDisplayUpdate();
+      return;
+    }
     if (b_menu) {
       if (b_wifiEnabled) {
         wifiSupervise();
@@ -1653,11 +1680,6 @@ void loop() {
         }
       }
     } else {
-      if (b_ota) {
-        ElegantOTA.loop();
-        processOtaDisplayUpdate();
-        return;
-      }
       if (b_calibration == true) {
         calibration(i_calibration);
       } else if (b_usbLinked == true) {
