@@ -208,12 +208,13 @@ def test_discovery_contracts():
     assert_contains(DISCOVERY_HEADER, "grinderDebugRawMdnsQuery")
     assert_contains(DISCOVERY_HEADER, 'model != "NOUS_A6T"')
     assert_contains(DISCOVERY_HEADER, "GRINDER_DISCOVERY_CONNECT_TIMEOUT_MS")
+    assert_contains(DISCOVERY_HEADER, "grinderDiscoverPlugsByTcpScan")
+    assert_contains(DISCOVERY_HEADER, "grinderProbeDiscoveryIp")
+    assert_contains(DISCOVERY_HEADER, "grinderDiscoveryReadLine")
+    assert_contains(DISCOVERY_HEADER, "grinderSetStatus(\"scan tcp\")")
     assert_not_contains(DISCOVERY_HEADER, "grinderDiscoverPlugsLightweight")
     assert_not_contains(DISCOVERY_HEADER, "grinderFindSelectedByMdns")
     assert_not_contains(DISCOVERY_HEADER, "GRINDER_DISCOVERY_ENABLE_TCP_FALLBACK")
-    assert_not_contains(DISCOVERY_HEADER, "grinderDiscoverPlugsByTcpScan")
-    assert_not_contains(DISCOVERY_HEADER, "grinderProbeDiscoveryIp")
-    assert_not_contains(DISCOVERY_HEADER, "grinderDiscoveryReadLine")
 
 
 def test_firmware_contracts():
@@ -250,6 +251,7 @@ def test_firmware_contracts():
     assert_not_contains(RUNTIME_HEADER, "grinderFindSelectedByMdns")
     assert_not_contains(RUNTIME_HEADER, "grinderAttemptMdnsConnect")
     assert_not_contains(RUNTIME_HEADER, "grinderAttemptBackgroundMdnsConnect")
+    assert_not_contains(RUNTIME_HEADER, "grinderDiscoverPlugsByTcpScan")
     assert_not_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_STARTUP_DISCOVERY_DELAY_MS")
     assert_not_contains(RUNTIME_HEADER, "MDNS.queryService")
     assert_not_contains(RUNTIME_HEADER, "stateEnteredAt < GRINDER_RUNTIME_STARTUP_DISCOVERY_DELAY_MS")

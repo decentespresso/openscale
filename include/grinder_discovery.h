@@ -10,6 +10,10 @@
 #define GRINDER_DISCOVERY_CONNECT_TIMEOUT_MS 90
 #endif
 
+#ifndef GRINDER_DISCOVERY_READ_TIMEOUT_MS
+#define GRINDER_DISCOVERY_READ_TIMEOUT_MS 180
+#endif
+
 static inline void grinderSaveSelectedDiscovery(const GrinderDiscoveredPlug &plug) {
   grinderCopyCString(grinderSettings.selectedMac, sizeof(grinderSettings.selectedMac), plug.mac);
   grinderCopyCString(grinderSettings.hostname, sizeof(grinderSettings.hostname), plug.hostname);
@@ -27,6 +31,15 @@ static inline void grinderClearDiscoveries() {
 static inline bool grinderDiscoveryMacExists(const char *mac) {
   for (uint8_t i = 0; i < grinderRuntime.discoveredCount; i++) {
     if (strcmp(grinderRuntime.discovered[i].mac, mac) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static inline bool grinderDiscoveryIpExists(IPAddress ip) {
+  for (uint8_t i = 0; i < grinderRuntime.discoveredCount; i++) {
+    if (grinderRuntime.discovered[i].ip == ip) {
       return true;
     }
   }
@@ -183,6 +196,102 @@ static inline void grinderDiscoverPlugsByMdns() {
   }
 }
 
+static inline bool grinderDiscoveryReadLine(WiFiClient &client, char *line, size_t lineSize, uint32_t deadline) {
+  if (line == nullptr || lineSize == 0) {
+    return false;
+  }
+  uint16_t length = 0;
+  bool pendingCr = false;
+  line[0] = 0;
+  while ((int32_t)(millis() - deadline) < 0) {
+    while (client.available()) {
+      const int value = client.read();
+      if (value < 0) {
+        continue;
+      }
+      const char c = (char)value;
+      if (c == '\r') {
+        pendingCr = true;
+        continue;
+      }
+      if (c == '\n') {
+        line[length] = 0;
+        return length > 0;
+      }
+      if (pendingCr) {
+        if (length + 1 >= lineSize) {
+          return false;
+        }
+        line[length++] = '\r';
+        pendingCr = false;
+      }
+      const uint8_t byteValue = (uint8_t)c;
+      if (byteValue < 32 || byteValue > 126 || length + 1 >= lineSize) {
+        return false;
+      }
+      line[length++] = c;
+    }
+    delay(1);
+  }
+  return false;
+}
+
+static inline bool grinderProbeDiscoveryIp(IPAddress ip) {
+  if (!grinderIpValid(ip) || ip == WiFi.localIP() || grinderDiscoveryIpExists(ip)) {
+    return false;
+  }
+  WiFiClient probe;
+  probe.setTimeout(50);
+  if (!probe.connect(ip, GRINDER_TCP_PORT, GRINDER_DISCOVERY_CONNECT_TIMEOUT_MS)) {
+    probe.stop();
+    return false;
+  }
+  probe.setNoDelay(true);
+  char hello[32] = { 0 };
+  if (grinderRuntime.scaleMac[0] == 0) {
+    grinderFormatScaleMac();
+  }
+  grinderFormatHello(hello, sizeof(hello), grinderRuntime.scaleMac);
+  probe.write((const uint8_t *)hello, strlen(hello));
+  probe.write((const uint8_t *)"\n", 1);
+  char line[GRINDER_TCP_MAX_LINE_LENGTH + 1] = { 0 };
+  const bool lineRead = grinderDiscoveryReadLine(probe, line, sizeof(line), millis() + GRINDER_DISCOVERY_READ_TIMEOUT_MS);
+  GrinderTcpResponse response;
+  const bool parsed = lineRead && grinderParseResponse(line, &response);
+  if (parsed && response.kind == GRINDER_TCP_RESPONSE_OK) {
+    probe.write((const uint8_t *)"BYE\n", 4);
+  }
+  probe.stop();
+  if (!parsed || !grinderIsMac(response.plugMac)) {
+    return false;
+  }
+  if (response.kind != GRINDER_TCP_RESPONSE_OK && response.kind != GRINDER_TCP_RESPONSE_BUSY) {
+    return false;
+  }
+  Serial.printf("[grinder] tcp found %s at %s %s\n",
+                response.plugMac,
+                ip.toString().c_str(),
+                response.kind == GRINDER_TCP_RESPONSE_BUSY ? "busy" : "ok");
+  return grinderAddDiscovery(response.plugMac, "", ip);
+}
+
+static inline void grinderDiscoverPlugsByTcpScan() {
+  const IPAddress local = WiFi.localIP();
+  if (!grinderIpValid(local)) {
+    return;
+  }
+  const uint8_t ownHost = local[3];
+  for (uint16_t radius = 1; radius < 255 && grinderRuntime.discoveredCount < 8; radius++) {
+    if ((uint16_t)ownHost + radius <= 254) {
+      grinderProbeDiscoveryIp(IPAddress(local[0], local[1], local[2], ownHost + radius));
+    }
+    if (radius < ownHost) {
+      grinderProbeDiscoveryIp(IPAddress(local[0], local[1], local[2], ownHost - radius));
+    }
+    delay(1);
+  }
+}
+
 static inline uint8_t grinderDiscoverPlugs(bool debugRaw = true, uint8_t attempts = 3) {
   grinderClearDiscoveries();
   if (!b_wifiEnabled || WiFi.status() != WL_CONNECTED) {
@@ -201,6 +310,10 @@ static inline uint8_t grinderDiscoverPlugs(bool debugRaw = true, uint8_t attempt
     grinderDebugRawMdnsQuery();
   } else if (!debugRaw && grinderRuntime.discoveredCount == 0) {
     grinderDiscoverPlugsByRawMdns(350, false);
+  }
+  if (grinderRuntime.discoveredCount == 0) {
+    grinderSetStatus("scan tcp");
+    grinderDiscoverPlugsByTcpScan();
   }
   if (grinderRuntime.discoveredCount == 0) {
     grinderSetStatus("none found");
