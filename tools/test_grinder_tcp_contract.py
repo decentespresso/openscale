@@ -227,6 +227,8 @@ def test_firmware_contracts():
     assert_not_contains(RUNTIME_HEADER, 'preferences.getFloat("latency"')
     assert_not_contains(RUNTIME_HEADER, 'preferences.putFloat("latency"')
     assert_contains(RUNTIME_HEADER, "targetGrams = 15.0f")
+    assert_contains(RUNTIME_HEADER, "safetyMarginGrams = 2.0f")
+    assert_contains(RUNTIME_HEADER, 'preferences.getFloat("safety", 2.0f)')
     assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_RECONNECT_INTERVAL_MS 3000")
     assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS 250")
     assert_not_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_BACKGROUND_MDNS_INTERVAL_MS")

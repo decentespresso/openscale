@@ -100,7 +100,7 @@ static inline void grinderAdaptiveSafetyNormalize(GrinderAdaptiveSafetyStore *st
   if (store->next >= GRINDER_ADAPTIVE_SAFETY_HISTORY_SIZE) {
     store->next = 0;
   }
-  const float safeFallback = isfinite(fallback) ? grinderClampFloat(fallback, 0.0f, 10.0f) : 0.2f;
+  const float safeFallback = isfinite(fallback) ? grinderClampFloat(fallback, 0.0f, 10.0f) : 2.0f;
   for (uint8_t index = 0; index < GRINDER_ADAPTIVE_SAFETY_HISTORY_SIZE; index++) {
     if (!isfinite(store->history[index]) || store->history[index] < 0.0f || store->history[index] > 10.0f) {
       store->history[index] = safeFallback;

@@ -47,7 +47,7 @@ Defaults:
 ```text
 Grinder: Off
 Target: 15.0 g
-Safety: 0.2 g
+Safety: 2.0 g
 Zero range: -1.0 g to 1.0 g
 Zero hold: 1000 ms
 Target tolerance: 0.5 g

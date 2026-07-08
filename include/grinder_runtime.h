@@ -50,7 +50,7 @@ struct GrinderSettings {
   char hostname[64] = { 0 };
   IPAddress lastIp = IPAddress((uint32_t)0);
   float targetGrams = 15.0f;
-  float safetyMarginGrams = 0.2f;
+  float safetyMarginGrams = 2.0f;
   float zeroMinGrams = -1.0f;
   float zeroMaxGrams = 1.0f;
   float targetToleranceGrams = 0.5f;
@@ -147,7 +147,7 @@ static inline void grinderNormalizeSettings() {
     grinderSettings.targetGrams = 15.0f;
   }
   if (!grinderFiniteInRange(grinderSettings.safetyMarginGrams, 0.0f, 10.0f)) {
-    grinderSettings.safetyMarginGrams = 0.2f;
+    grinderSettings.safetyMarginGrams = 2.0f;
   }
   if (!grinderFiniteInRange(grinderSettings.zeroMinGrams, -20.0f, 0.0f)) {
     grinderSettings.zeroMinGrams = -1.0f;
@@ -179,7 +179,7 @@ static inline void grinderLoadSettings() {
   grinderCopyString(grinderSettings.hostname, sizeof(grinderSettings.hostname), preferences.getString("host", ""));
   grinderSettings.lastIp = IPAddress(preferences.getUInt("ip", 0));
   grinderSettings.targetGrams = preferences.getFloat("target", 15.0f);
-  grinderSettings.safetyMarginGrams = preferences.getFloat("safety", 0.2f);
+  grinderSettings.safetyMarginGrams = preferences.getFloat("safety", 2.0f);
   grinderSettings.zeroMinGrams = preferences.getFloat("zmin", -1.0f);
   grinderSettings.zeroMaxGrams = preferences.getFloat("zmax", 1.0f);
   grinderSettings.targetToleranceGrams = preferences.getFloat("tol", 0.5f);
