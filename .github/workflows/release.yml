@@ -6,10 +6,6 @@ on:
       tag:
         description: "Tag to release (must already exist on main)"
         required: true
-      littlefs_required:
-        description: "Publish littlefs.bin and stage it for second-step WiFi OTA"
-        required: true
-        default: "true"
 
 jobs:
   build-and-release:
@@ -73,11 +69,9 @@ jobs:
       - name: Prepare release assets
         env:
           TAG: ${{ github.event.inputs.tag }}
-          LITTLEFS_REQUIRED: ${{ github.event.inputs.littlefs_required }}
           HDS_RELEASE_TAG: ${{ github.event.inputs.tag }}
           HDS_RELEASE_REPOSITORY: ${{ github.repository }}
           HDS_RELEASE_MIN_FROM: ${{ vars.HDS_RELEASE_MIN_FROM || '3.0.0' }}
-          HDS_LITTLEFS_REQUIRED: ${{ github.event.inputs.littlefs_required }}
           HDS_OTA_SIGNING_KEY_PEM: ${{ secrets.HDS_OTA_SIGNING_KEY_PEM }}
           HDS_OTA_MANIFEST_PUBLIC_KEY_PEM: ${{ vars.HDS_OTA_MANIFEST_PUBLIC_KEY_PEM }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -93,9 +87,7 @@ jobs:
           fi
           mkdir -p release-files legacy-files
           cp ".pio.nosync/build/esp32s3/firmware.bin" release-files/
-          if [ "$LITTLEFS_REQUIRED" = "true" ]; then
-            cp ".pio.nosync/build/esp32s3/littlefs.bin" release-files/
-          fi
+          cp ".pio.nosync/build/esp32s3/littlefs.bin" release-files/
           for file in firmware.bin bootloader.bin partitions.bin littlefs.bin; do
             if [ ! -f ".pio.nosync/build/esp32s3/$file" ]; then
               echo "Error: File .pio.nosync/build/esp32s3/$file not found"
@@ -130,7 +122,6 @@ jobs:
       - name: Create draft release
         env:
           TAG: ${{ github.event.inputs.tag }}
-          LITTLEFS_REQUIRED: ${{ github.event.inputs.littlefs_required }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
@@ -139,17 +130,13 @@ jobs:
             --title="$TAG" \
             --generate-notes \
             "HDS_FW_${TAG}.zip" \
-            release-files/firmware.bin
-          if [ -f release-files/littlefs.bin ]; then
-            gh release upload "$TAG" release-files/littlefs.bin
-          fi
+            release-files/firmware.bin \
+            release-files/littlefs.bin
           gh release upload "$TAG" release-files/manifest.sig
           gh release upload "$TAG" release-files/manifest.json
           gh release view "$TAG" --json assets --jq '.assets[].name' > release-assets.txt
           grep -Fx firmware.bin release-assets.txt
+          grep -Fx littlefs.bin release-assets.txt
           grep -Fx manifest.json release-assets.txt
           grep -Fx manifest.sig release-assets.txt
-          if [ "$LITTLEFS_REQUIRED" = "true" ]; then
-            grep -Fx littlefs.bin release-assets.txt
-          fi
           gh release edit "$TAG" --draft=false

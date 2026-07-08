@@ -262,7 +262,7 @@ Trunk-based: `main` is the single long-lived branch and is always releasable. Do
 Releases: tag a known-good commit on `main` with the version (`vX.Y.Z`), then run the "Release firmware" workflow with that tag. The workflow publishes the legacy ZIP plus machine-readable OTA assets:
 
 - `firmware.bin`: raw OTA firmware image.
-- `littlefs.bin`: raw filesystem image. The workflow input `littlefs_required` defaults to `true` so skipped versions and test builds with unknown filesystem state are brought back to the production filesystem.
+- `littlefs.bin`: raw filesystem image. WiFi OTA releases always publish and require it so skipped versions and test builds with unknown filesystem state are brought back to the production filesystem.
 - `manifest.json`: release metadata downloaded by the scale before installing.
 - `manifest.sig`: detached SHA-256 signature. The workflow requires `HDS_OTA_SIGNING_KEY_PEM` as a repository secret and `HDS_OTA_MANIFEST_PUBLIC_KEY_PEM` as a repository variable.
 

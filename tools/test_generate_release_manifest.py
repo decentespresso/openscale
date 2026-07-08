@@ -36,7 +36,6 @@ class GenerateReleaseManifestTest(unittest.TestCase):
                 repository="decentespresso/openscale",
                 model="hds",
                 min_from="3.0.0",
-                littlefs_required=True,
                 pcb="PCB: 8.1",
                 chip="esp32s3",
                 environment="esp32s3",
@@ -87,33 +86,29 @@ class GenerateReleaseManifestTest(unittest.TestCase):
             self.assertTrue(data["littlefs"]["required"])
             self.assertNotIn("releases", data)
 
-    def test_littlefs_is_optional(self):
+    def test_littlefs_is_required(self):
         module = load_module()
         with tempfile.TemporaryDirectory() as temp_dir:
             build_dir = Path(temp_dir)
             (build_dir / "firmware.bin").write_bytes(b"firmware image")
-            (build_dir / "littlefs.bin").write_bytes(b"littlefs image")
 
-            manifest = module.build_manifest(
-                build_dir=build_dir,
-                tag="3.1.0",
-                repository="decentespresso/openscale",
-                model="hds",
-                min_from="3.0.0",
-                littlefs_required=False,
-                pcb=None,
-                chip="esp32s3",
-                environment="esp32s3",
-                flash_size=8388608,
-                partition_schema="esp32s3-default-8mb-ota-spiffs-1536k",
-                app_partition_min_size=3342336,
-                fs_partition_label="spiffs",
-                fs_partition_size=1572864,
-                fs_schema=1,
-            )
-
-            self.assertNotIn("littlefs", manifest)
-            self.assertEqual(manifest["min_from"], "3.0.0")
+            with self.assertRaises(FileNotFoundError):
+                module.build_manifest(
+                    build_dir=build_dir,
+                    tag="3.1.0",
+                    repository="decentespresso/openscale",
+                    model="hds",
+                    min_from="3.0.0",
+                    pcb=None,
+                    chip="esp32s3",
+                    environment="esp32s3",
+                    flash_size=8388608,
+                    partition_schema="esp32s3-default-8mb-ota-spiffs-1536k",
+                    app_partition_min_size=3342336,
+                    fs_partition_label="spiffs",
+                    fs_partition_size=1572864,
+                    fs_schema=1,
+                )
 
     def test_rejects_versions_the_device_rejects(self):
         module = load_module()
@@ -128,7 +123,6 @@ class GenerateReleaseManifestTest(unittest.TestCase):
                     repository="decentespresso/openscale",
                     model="hds",
                     min_from="3.0.0",
-                    littlefs_required=False,
                     pcb=None,
                     chip="esp32s3",
                     environment="esp32s3",
@@ -145,6 +139,7 @@ class GenerateReleaseManifestTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             build_dir = Path(temp_dir)
             (build_dir / "firmware.bin").write_bytes(b"new firmware")
+            (build_dir / "littlefs.bin").write_bytes(b"new littlefs")
             previous = {
                 "model": "hds",
                 "version": "3.0.9",
@@ -171,7 +166,6 @@ class GenerateReleaseManifestTest(unittest.TestCase):
                 repository="decentespresso/openscale",
                 model="hds",
                 min_from="3.0.0",
-                littlefs_required=False,
                 pcb=None,
                 chip="esp32s3",
                 environment="esp32s3",
@@ -192,6 +186,7 @@ class GenerateReleaseManifestTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             build_dir = Path(temp_dir)
             (build_dir / "firmware.bin").write_bytes(b"new firmware")
+            (build_dir / "littlefs.bin").write_bytes(b"new littlefs")
             previous = {
                 "releases": [
                     {
@@ -220,7 +215,6 @@ class GenerateReleaseManifestTest(unittest.TestCase):
                 repository="decentespresso/openscale",
                 model="hds",
                 min_from="3.0.0",
-                littlefs_required=False,
                 pcb=None,
                 chip="esp32s3",
                 environment="esp32s3",
@@ -240,6 +234,7 @@ class GenerateReleaseManifestTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             build_dir = Path(temp_dir)
             (build_dir / "firmware.bin").write_bytes(b"new firmware")
+            (build_dir / "littlefs.bin").write_bytes(b"new littlefs")
             previous = {
                 "releases": [
                     {
@@ -262,7 +257,6 @@ class GenerateReleaseManifestTest(unittest.TestCase):
                 repository="decentespresso/openscale",
                 model="hds",
                 min_from="3.0.0",
-                littlefs_required=False,
                 pcb=None,
                 chip="esp32s3",
                 environment="esp32s3",

@@ -102,7 +102,6 @@ def build_manifest(
     repository,
     model,
     min_from,
-    littlefs_required,
     pcb=None,
     chip=DEFAULT_CHIP,
     environment=DEFAULT_ENVIRONMENT,
@@ -135,12 +134,11 @@ def build_manifest(
     if pcb:
         manifest["pcb"] = pcb
     littlefs_path = build_dir / "littlefs.bin"
-    if littlefs_required and littlefs_path.is_file():
-        littlefs = asset_manifest(build_dir, repository, tag, "littlefs.bin")
-        littlefs["required"] = True
-        manifest["littlefs"] = littlefs
-    elif littlefs_required:
+    if not littlefs_path.is_file():
         raise FileNotFoundError(littlefs_path)
+    littlefs = asset_manifest(build_dir, repository, tag, "littlefs.bin")
+    littlefs["required"] = True
+    manifest["littlefs"] = littlefs
     return manifest
 
 
@@ -190,10 +188,6 @@ def build_catalog_manifest(latest_manifest, previous_manifests, min_version=None
     return catalog
 
 
-def parse_bool(value):
-    return str(value).strip().lower() in {"1", "true", "yes", "on", "required"}
-
-
 def sign_manifest(manifest_path, signature_path, signing_key_path):
     subprocess.run(
         [
@@ -238,7 +232,6 @@ def parser():
     parser.add_argument("--model", default=os.environ.get("HDS_RELEASE_MODEL", DEFAULT_MODEL))
     parser.add_argument("--min-from", default=os.environ.get("HDS_RELEASE_MIN_FROM", DEFAULT_MIN_FROM))
     parser.add_argument("--release-notes-url", default=os.environ.get("HDS_RELEASE_NOTES_URL"))
-    parser.add_argument("--littlefs-required", default=os.environ.get("HDS_LITTLEFS_REQUIRED", "false"))
     parser.add_argument("--config", type=Path, default=Path("include") / "config.h")
     parser.add_argument("--pcb", default=os.environ.get("HDS_RELEASE_PCB"))
     parser.add_argument("--chip", default=os.environ.get("HDS_RELEASE_CHIP", DEFAULT_CHIP))
@@ -265,7 +258,6 @@ def main():
         repository=args.repository,
         model=args.model,
         min_from=args.min_from,
-        littlefs_required=parse_bool(args.littlefs_required),
         pcb=args.pcb if args.pcb is not None else detect_pcb_version(args.config),
         chip=args.chip,
         environment=args.environment,
