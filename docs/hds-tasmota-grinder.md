@@ -122,8 +122,8 @@ The plug advertises itself with mDNS:
 service: _grinderplug._tcp.local
 port: 31980
 TXT mac=<plug_mac>
-TXT model=NOUS_A6T
 TXT proto=1
+TXT model=<optional model name>
 ```
 
 The scale stores the selected plug MAC as the identity. Hostname and last IP are only cached lookup hints.
@@ -152,8 +152,8 @@ Expected result:
 ```text
 port=31980
 mac=<plug_mac>
-model=NOUS_A6T
 proto=1
+model=<optional model name>
 ```
 
 If `_http._tcp` appears but `_grinderplug._tcp` does not, the plug service advertisement is wrong.
