@@ -1,4 +1,6 @@
-import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -14,7 +16,7 @@ MENU_HEADER = ROOT / "include" / "menu.h"
 HDS_SOURCE = ROOT / "src" / "hds.ino"
 POWER_HEADER = ROOT / "include" / "power.h"
 PARAMETER_HEADER = ROOT / "include" / "parameter.h"
-MAC_PATTERN = re.compile(r"^[0-9A-F]{2}(:[0-9A-F]{2}){5}$")
+HOST_CONTRACT = ROOT / "tools" / "test_grinder_contract.cpp"
 
 
 def source(path):
@@ -29,86 +31,24 @@ def assert_not_contains(path, text):
     assert text not in source(path), f"{path} unexpectedly contains {text!r}"
 
 
-def parse_response(line):
-    parts = line.split()
-    if len(parts) == 3 and parts[0] == "OK" and MAC_PATTERN.match(parts[1]):
-        state = parts[2].removeprefix("state=")
-        if state in {"ON", "OFF"}:
-            return {"kind": "OK", "mac": parts[1], "relay_on": state == "ON"}
-    if len(parts) == 2 and parts[0] == "BUSY" and MAC_PATTERN.match(parts[1]):
-        return {"kind": "BUSY", "mac": parts[1], "relay_on": False}
-    if len(parts) == 3 and parts[0] == "ERR" and MAC_PATTERN.match(parts[1]) and parts[2].startswith("reason="):
-        return {"kind": "ERR", "mac": parts[1], "reason": parts[2][7:], "relay_on": False}
-    return None
+def test_production_contract():
+    assert HOST_CONTRACT.exists()
+    compiler = next((shutil.which(name) for name in ("g++", "clang++") if shutil.which(name)), None)
+    if compiler is None:
+        print("native C++ grinder contract skipped: no host compiler")
+        return
+    with tempfile.TemporaryDirectory() as directory:
+        executable = Path(directory) / "grinder_contract"
+        subprocess.run(
+            [compiler, "-std=c++11", "-I", str(ROOT / "include"), str(HOST_CONTRACT), "-o", str(executable)],
+            check=True,
+        )
+        subprocess.run([str(executable)], check=True)
 
 
-def cutoff(target, safety):
-    return target - safety
-
-
-def clamp(value, minimum, maximum):
-    return max(minimum, min(maximum, value))
-
-
-def adaptive_recommendation(current_safety, target, start_weight, final_weight, duration_ms, history, final_locked=True, valid=True):
-    if not valid or not final_locked:
-        return current_safety, history, False
-    if duration_ms < 500:
-        return current_safety, history, False
-    span = final_weight - start_weight
-    if span < 2.0:
-        return current_safety, history, False
-    average_rate = span / (duration_ms / 1000.0)
-    if average_rate <= 0.0 or average_rate > 6.0:
-        return current_safety, history, False
-    error = final_weight - target
-    if abs(error) > 5.0:
-        return current_safety, history, False
-    recommendation = clamp(current_safety + clamp(error, -2.0, 2.0), 0.0, 10.0)
-    next_history = (history + [recommendation])[-3:]
-    return sum(next_history) / len(next_history), next_history, True
-
-
-def test_response_parser_and_wrong_mac():
-    assert parse_response("OK A4:C1:38:12:34:56 state=OFF") == {
-        "kind": "OK",
-        "mac": "A4:C1:38:12:34:56",
-        "relay_on": False,
-    }
-    assert parse_response("OK A4:C1:38:12:34:56 state=ON")["relay_on"]
-    assert parse_response("BUSY A4:C1:38:12:34:56")["kind"] == "BUSY"
-    assert parse_response("ERR A4:C1:38:12:34:56 reason=bad_mac")["reason"] == "bad_mac"
-    assert parse_response("NOPE A4:C1:38:12:34:56 state=OFF") is None
+def test_wrong_mac_runtime_contract():
     assert_contains(RUNTIME_HEADER, "if (!grinderResponseMatchesSelection(response))")
     assert_contains(RUNTIME_HEADER, 'grinderEnterError("wrong mac")')
-
-
-def test_cutoff_math():
-    assert abs(cutoff(20.0, 0.2) - 19.8) < 0.0001
-    assert abs(cutoff(15.0, 2.0) - 13.0) < 0.0001
-
-
-def test_adaptive_safety_math():
-    safety, history, learned = adaptive_recommendation(0.2, 15.0, 1.0, 15.2, 5000, [])
-    assert learned
-    assert abs(safety - 0.4) < 0.0001
-    safety, history, learned = adaptive_recommendation(safety, 15.0, 1.0, 14.9, 5000, history)
-    assert learned
-    assert abs(safety - 0.35) < 0.0001
-    safety, history, learned = adaptive_recommendation(safety, 15.0, 1.0, 15.1, 5000, history)
-    assert learned
-    assert abs(safety - 0.3833333) < 0.0001
-    safety, history, learned = adaptive_recommendation(safety, 15.0, 1.0, 15.4, 5000, history)
-    assert learned
-    assert abs(safety - 0.5111111) < 0.0001
-
-
-def test_adaptive_safety_rejects_bad_samples():
-    assert adaptive_recommendation(0.2, 15.0, 1.0, 15.2, 1000, [])[2] is False
-    assert adaptive_recommendation(0.2, 15.0, 1.0, 2.0, 5000, [])[2] is False
-    assert adaptive_recommendation(0.2, 15.0, 1.0, 15.2, 1000, [], final_locked=False)[2] is False
-    assert adaptive_recommendation(0.2, 15.0, 1.0, 15.2, 2000, [], valid=False)[2] is False
-    assert adaptive_recommendation(0.2, 15.0, 1.0, 15.2, 2000, [])[2] is False
 
 
 def test_adaptive_safety_source_contracts():
@@ -148,14 +88,19 @@ def test_low_latency_cutoff_source_contracts():
     assert 'return grinderSendSimpleCommand("OFF", GRINDER_COMMAND_OFF);' in low_latency
     assert low_latency.index("grinderSendOff()", cutoff_start) < low_latency.index("[grinder] cutoff", cutoff_start)
     assert low_latency.index("grinderPlugConnectionStale(millis())", fresh_start) < low_latency.index("grinderTickGrindingCutoff(weight);", fresh_start)
-    assert "GRINDER_CUTOFF_ZERO_EXIT_PROTECTION_MS 1500" in low_latency
+    assert_contains(PROTOCOL_HEADER, "GRINDER_CUTOFF_ZERO_EXIT_PROTECTION_MS 1500")
     assert "GRINDER_CONFIRM_MIN_DURATION_MS 1500" in low_latency
     assert "GRINDER_CONFIRM_MIN_RISE_GRAMS 2.0f" in low_latency
     assert "GRINDER_CONFIRM_MIN_POSITIVE_SAMPLES 4" in low_latency
-    assert "GRINDER_CONFIRM_MAX_INITIAL_GRAMS 3.0f" in low_latency
     assert "grinderRuntime.tarePending" in low_latency
-    assert "grinderRuntime.setupMassBlocked = true" in low_latency
+    assert "setupMassBlocked" not in low_latency
+    assert "GRINDER_ADAPTIVE_MAX_AVERAGE_RATE_GPS" not in low_latency
     assert "grinderRuntime.grindConfirmed = true" in low_latency
+    assert "grinderWeightInPositiveDoseRange(weight)" in low_latency
+    assert "grinderCutoffShouldStop" in low_latency
+    assert "grinderRuntime.userTareComplete" not in low_latency[cutoff_start:fresh_start]
+    assert 'grinderSetStatus("ready");' in runtime
+    assert low_latency.index('grinderSetStatus("grinding");') > low_latency.index("grinderRuntime.grindConfirmed = true")
     assert "grinderCutoffGrams(grinderSettings.targetGrams, grinderSettings.safetyMarginGrams)" in low_latency
     assert "now - grinderRuntime.lastCommandAt >= 150" in runtime
     assert "grinderEnterError(\"lost plug\")" in runtime
@@ -180,9 +125,14 @@ def test_weight_and_loop_source_order():
     assert hds.index("f_grinder_fast_weight = tracking_compensated;") < hds.index("float stable_output = applyStableOutput(tracking_compensated);")
     assert "grinderRuntimeFreshWeightTick(f_grinder_fast_weight, grinderFastWeightSequence);" in hds
     assert "grinderRuntimeTick(f_displayedValue);" in hds
-    assert hds.index("pureScale();") < hds.index("updateOled();") < hds.index("grinderRuntimeTick(f_displayedValue);")
-    assert "grinderRuntimeNotifyTareRequested();" in hds
+    assert hds.index("pureScale();") < hds.index("updateOled();") < hds.rindex("grinderRuntimeTick(f_displayedValue);")
+    assert "grinderRuntimeNotifyTareRequested(userRequested);" in hds
     assert "grinderRuntimeNotifyTareComplete();" in hds
+    assert 'tareScaleWhenAdcReady("button tare", true)' in hds
+    assert 'tareScaleWhenAdcReady("remote tare", true)' in hds
+    assert 'tareScaleWhenAdcReady("ADC recovery tare")' in hds
+    assert 'tareScaleWhenAdcReady("charging wake tare")' in hds
+    assert 'tareScaleWhenAdcReady("ADS reset tare")' in source(ROOT / "include" / "usbcomm.h")
 
 
 def test_sampling_changes_blocked_during_grinder_cutoff_states():
@@ -239,6 +189,9 @@ def test_firmware_contracts():
     assert_contains(PROTOCOL_HEADER, "GRINDER_TCP_PORT 31980")
     assert_contains(PROTOCOL_HEADER, "grinderParseResponse")
     assert_contains(PROTOCOL_HEADER, "grinderCopyMacPrefix")
+    assert_contains(PROTOCOL_HEADER, "strlen(value) < 17")
+    assert_contains(PROTOCOL_HEADER, "length != 29 && length != 30")
+    assert_contains(PROTOCOL_HEADER, "length < 30 || length > GRINDER_TCP_MAX_LINE_LENGTH")
     assert_contains(PROTOCOL_HEADER, "grinderCutoffGrams")
     assert_contains(PROTOCOL_HEADER, "return targetGrams - safetyMarginGrams;")
     assert_not_contains(PROTOCOL_HEADER, "effectiveLatencySeconds")
@@ -247,6 +200,14 @@ def test_firmware_contracts():
     assert_not_contains(RUNTIME_HEADER, 'preferences.putFloat("latency"')
     assert_contains(RUNTIME_HEADER, "targetGrams = 15.0f")
     assert_contains(RUNTIME_HEADER, "safetyMarginGrams = 2.0f")
+    assert_contains(RUNTIME_HEADER, "grinderNormalizeTargetGrams")
+    assert_contains(RUNTIME_HEADER, "grinderNormalizeSafetyGrams")
+    assert_contains(RUNTIME_HEADER, 'grinderSetStatus("tare to arm")')
+    assert_contains(RUNTIME_HEADER, "bool userTareComplete = false")
+    assert_contains(RUNTIME_HEADER, "grinderRuntime.userTareComplete = false")
+    assert_contains(RUNTIME_HEADER, "grinderRuntime.tareRearmRequested = response.relayOn")
+    assert_not_contains(RUNTIME_HEADER, "grind timeout")
+    assert_not_contains(RUNTIME_HEADER, "setupMassBlocked")
     assert_contains(RUNTIME_HEADER, 'preferences.getFloat("safety", 2.0f)')
     assert_contains(RUNTIME_HEADER, "previousWifiOnBoot")
     assert_contains(RUNTIME_HEADER, 'preferences.getBool("wifi_prev", false)')
@@ -305,6 +266,8 @@ def test_firmware_contracts():
     assert_contains(MENU_HEADER, "EEPROM.put(i_addr_enableWifiOnBoot, restoreWifiOnBoot);")
     assert_contains(MENU_HEADER, "WiFi Off deferred until Grinder Off.")
     assert_contains(MENU_HEADER, "step * 10.0f")
+    assert_contains(MENU_HEADER, "GRINDER_TARGET_MIN_GRAMS")
+    assert_contains(MENU_HEADER, "grinderMaxSafetyGrams(grinderSettings.targetGrams)")
     assert_contains(MENU_HEADER, "grinderResetAdaptiveSafety();")
     assert_contains(PARAMETER_HEADER, "bool b_grinderMenuDirectEntry = false")
     assert_contains(PARAMETER_HEADER, "bool b_buttonChordSuppressUntilRelease = false")
@@ -320,7 +283,12 @@ def test_firmware_contracts():
     assert_contains(HDS_SOURCE, "bool handleGrinderMenuChord()")
     assert_contains(HDS_SOURCE, "currentMenu = grinderMenu;")
     assert_contains(HDS_SOURCE, "b_buttonChordSuppressUntilRelease = true")
+    assert_contains(HDS_SOURCE, "grinderPauseForMenu();")
+    assert_contains(HDS_SOURCE, "grinderRuntimeTick(f_displayedValue);\n      showMenu();")
     assert_contains(HDS_SOURCE, "buttonChecksSuppressedUntilRelease()")
+    assert_contains(MENU_HEADER, "grinderResumeAfterMenu();")
+    assert_contains(RUNTIME_HEADER, "bool menuPaused = false")
+    assert_contains(RUNTIME_HEADER, "static inline void grinderTickWhileMenuOpen(float weight)")
     assert_contains(HDS_SOURCE, "if (!buttonChecksSuppressedUntilRelease() && !handleGrinderMenuChord())")
     assert_contains(HDS_SOURCE, "void beforeDeepSleepFlush()")
     assert_contains(HDS_SOURCE, "grinderFlushSettingsIfDirty();")
@@ -328,10 +296,8 @@ def test_firmware_contracts():
 
 
 if __name__ == "__main__":
-    test_response_parser_and_wrong_mac()
-    test_cutoff_math()
-    test_adaptive_safety_math()
-    test_adaptive_safety_rejects_bad_samples()
+    test_production_contract()
+    test_wrong_mac_runtime_contract()
     test_adaptive_safety_source_contracts()
     test_low_latency_cutoff_source_contracts()
     test_pending_command_timeouts_source_contracts()

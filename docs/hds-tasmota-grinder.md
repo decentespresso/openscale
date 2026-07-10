@@ -11,7 +11,7 @@ This is a trusted-local-WLAN feature. The plug MAC is used as an identity label,
 ## What It Does
 
 - Lets the scale switch the grinder plug on and off automatically
-- Starts only after the empty cup is stable on the scale
+- Starts only after you tare the empty cup and it becomes stable
 - Stops the grinder when the dose reaches the target
 - Waits for cup removal before preparing the next dose
 - Learns a better safety value from normal shots over time
@@ -67,27 +67,33 @@ Latency compensation is not used. Adaptive safety is the only early-stop compens
 
 1. Turn grinder mode on and select a plug.
 2. Put the empty dosing cup on the scale.
-3. Tare the scale.
-4. Wait until the cup is stable inside the zero range.
-5. The scale sends `ON` to the plug.
-6. Start the grinder physically if needed.
-7. The scale sends fast OFF when cutoff is reached.
-8. Remove the filled cup.
-9. Put the empty cup back.
-10. The scale rearms after stable zero hold.
+3. On a new plug connection, the display shows `Tare to arm`.
+4. Tare the scale.
+5. Wait until the cup is stable inside the zero range.
+6. The display shows `Ready` and the scale sends `ON` to the plug.
+7. Start the grinder physically if needed.
+8. The display changes to `Grinding` after a rising dose is detected.
+9. The scale sends fast OFF when cutoff is reached.
+10. Remove the filled cup.
+11. Put the empty cup back.
+12. The scale rearms after stable zero hold without requiring another tare.
+
+After a reconnect, tare the empty cup once again when `Tare to arm` appears. Automatic startup, charging-wake, and ADC-recovery tares do not arm the grinder.
 
 ## Cutoff Protection
 
 OFF is blocked until all of these are true:
 
 - tare is not pending
+- one user-requested tare completed after the current plug connection
 - weight has left zero range
 - 1500 ms passed since leaving zero range
-- a real grind pattern was confirmed
 - weight is at or above `target - safety`
 - the selected plug connection is still valid
 
-If a cup or other setup mass is placed on the scale before tare, the scale shows `tare cup` and blocks cutoff until the user tares or the weight returns to zero range.
+Grind confirmation changes the display from `Ready` to `Grinding`; it does not block fail-safe cutoff. A significant basket or load change while the plug is ON can therefore switch the plug OFF. Tare the basket to recover and rearm without a latched error.
+
+`Target g` accepts 10.0 to 200.0 g. `Safety g` accepts 0.0 to the smaller of 10.0 g or `target - 1.0 g`.
 
 ## Adaptive Safety
 
@@ -194,6 +200,10 @@ Common causes:
 - `OFF` timed out
 
 The plug is expected to turn OFF automatically when the active TCP connection drops.
+
+### Scale Shows Tare To Arm
+
+The plug connection is valid, but the grinder remains OFF until a user-requested tare completes. Put the empty basket on the scale and press tare. Startup and recovery tares do not clear this prompt.
 
 ### Plug Is Offline And Weighing Must Stay Responsive
 
