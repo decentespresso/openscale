@@ -20,7 +20,9 @@
 #define GRINDER_TARGET_MAX_GRAMS 200.0f
 #define GRINDER_SAFETY_DEFAULT_GRAMS 2.0f
 #define GRINDER_SAFETY_MAX_GRAMS 10.0f
+#define GRINDER_MIN_CUTOFF_GRAMS 5.0f
 #define GRINDER_CUTOFF_ZERO_EXIT_PROTECTION_MS 1500
+#define GRINDER_MAX_GRIND_RATE_GPS 6.0f
 
 enum GrinderTcpResponseKind {
   GRINDER_TCP_RESPONSE_INVALID,
@@ -229,7 +231,7 @@ static inline float grinderNormalizeTargetGrams(float targetGrams) {
 }
 
 static inline float grinderMaxSafetyGrams(float targetGrams) {
-  const float targetLimit = grinderNormalizeTargetGrams(targetGrams) - 1.0f;
+  const float targetLimit = grinderNormalizeTargetGrams(targetGrams) - GRINDER_MIN_CUTOFF_GRAMS;
   return targetLimit < GRINDER_SAFETY_MAX_GRAMS ? targetLimit : GRINDER_SAFETY_MAX_GRAMS;
 }
 
@@ -251,22 +253,38 @@ static inline bool grinderCutoffShouldStop(float weight,
                                            bool tarePending,
                                            uint32_t now,
                                            bool *guardActive,
-                                           uint32_t *zeroExitAt) {
-  if (guardActive == nullptr || zeroExitAt == nullptr) {
+                                           uint32_t *zeroExitAt,
+                                           bool *setupMassBlocked) {
+  if (guardActive == nullptr || zeroExitAt == nullptr || setupMassBlocked == nullptr) {
     return false;
   }
   if (weight <= zeroMaxGrams) {
     *guardActive = false;
     *zeroExitAt = 0;
+    *setupMassBlocked = false;
     return false;
   }
   if (!*guardActive) {
     *guardActive = true;
     *zeroExitAt = now;
+    if (weight >= grinderCutoffGrams(targetGrams, safetyMarginGrams)) {
+      *setupMassBlocked = true;
+    }
     return false;
   }
-  return !tarePending && now - *zeroExitAt >= GRINDER_CUTOFF_ZERO_EXIT_PROTECTION_MS &&
-         weight >= grinderCutoffGrams(targetGrams, safetyMarginGrams);
+  if (*setupMassBlocked || tarePending || weight < grinderCutoffGrams(targetGrams, safetyMarginGrams)) {
+    return false;
+  }
+  const uint32_t elapsed = now - *zeroExitAt;
+  if (elapsed < GRINDER_CUTOFF_ZERO_EXIT_PROTECTION_MS) {
+    return false;
+  }
+  const float averageRate = (weight - zeroMaxGrams) / ((float)elapsed / 1000.0f);
+  if (averageRate > GRINDER_MAX_GRIND_RATE_GPS) {
+    *setupMassBlocked = true;
+    return false;
+  }
+  return true;
 }
 
 static inline bool grinderCanArmAfterTare(bool userTareComplete, bool zeroStable) {

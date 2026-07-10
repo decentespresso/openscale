@@ -90,6 +90,7 @@ struct GrinderRuntime {
   bool tareRearmRequested = false;
   bool grindConfirmed = false;
   bool grindCandidateActive = false;
+  bool setupMassBlocked = false;
   bool menuPaused = false;
   GrinderAdaptiveShot adaptiveShot;
   float zeroTrackWeight = 0.0f;

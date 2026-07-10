@@ -45,6 +45,7 @@ static inline bool grinderRuntimeLocksScaleSampling() {
 static inline void grinderResetCutoffGuard() {
   grinderRuntime.cutoffGuardActive = false;
   grinderRuntime.cutoffGuardZeroExitAt = 0;
+  grinderRuntime.setupMassBlocked = false;
 }
 
 static inline void grinderResetGrindConfirmation() {
@@ -147,6 +148,7 @@ static inline void grinderTickGrindingCutoff(float weight) {
   } else {
     grinderTrackGrindConfirmation(weight, now);
   }
+  const bool setupMassWasBlocked = grinderRuntime.setupMassBlocked;
   if (!grinderCutoffShouldStop(weight,
                                grinderSettings.zeroMaxGrams,
                                grinderSettings.targetGrams,
@@ -154,7 +156,13 @@ static inline void grinderTickGrindingCutoff(float weight) {
                                grinderRuntime.tarePending,
                                now,
                                &grinderRuntime.cutoffGuardActive,
-                               &grinderRuntime.cutoffGuardZeroExitAt)) {
+                               &grinderRuntime.cutoffGuardZeroExitAt,
+                               &grinderRuntime.setupMassBlocked)) {
+    if (grinderRuntime.setupMassBlocked) {
+      grinderSetStatus("tare cup");
+    } else if (setupMassWasBlocked) {
+      grinderSetStatus("ready");
+    }
     return;
   }
   const uint32_t guardAge = now - grinderRuntime.cutoffGuardZeroExitAt;
