@@ -52,6 +52,7 @@ def main():
     assert_contains(PULL_OTA_HEADER, "wifi_init();")
     assert_contains(PULL_OTA_HEADER, "pullOtaStorePendingLittleFs")
     assert_contains(PULL_OTA_HEADER, "pullOtaLoadPendingLittleFs")
+    assert_contains(PULL_OTA_HEADER, "loaded.version != pullOtaCurrentVersion()")
     assert_contains(PULL_OTA_HEADER, "pullOtaResumePendingLittleFs")
     assert_contains(PULL_OTA_HEADER, "pullOtaClearPendingLittleFs")
     assert_contains(PULL_OTA_HEADER, 'preferences.begin("ota_fs"')

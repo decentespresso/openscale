@@ -917,6 +917,7 @@ bool pullOtaLoadPendingLittleFs(PullOtaPendingLittleFs &pending) {
   loaded.asset.sha256.trim();
   loaded.asset.sha256.toLowerCase();
   loaded.version = preferences.getString("version", "");
+  loaded.version.trim();
   loaded.restore = preferences.getBool("restore", false);
   loaded.restoreAttempted = preferences.getBool("restore_try", false);
   loaded.filesystemDirty = preferences.getBool("fs_dirty", false);
@@ -948,6 +949,17 @@ bool pullOtaLoadPendingLittleFs(PullOtaPendingLittleFs &pending) {
        !pullOtaShaLooksValid(loaded.rollbackAsset.sha256) ||
        loaded.rollbackAsset.size != HDS_OTA_FS_PARTITION_SIZE ||
        !pullOtaVersionLooksStable(loaded.rollbackVersion))) {
+    pullOtaClearPendingLittleFs();
+    return false;
+  }
+  if (loaded.version != pullOtaCurrentVersion()) {
+    if (!loaded.restore && loaded.filesystemDirty &&
+        loaded.rollbackVersion == pullOtaCurrentVersion()) {
+      if (!pullOtaActivateRollbackLittleFs(loaded)) {
+        pullOtaRecoveryError();
+      }
+      return pullOtaLoadPendingLittleFs(pending);
+    }
     pullOtaClearPendingLittleFs();
     return false;
   }
