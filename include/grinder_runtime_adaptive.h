@@ -31,8 +31,10 @@ static inline void grinderLearnAdaptiveSafety() {
   }
   grinderRuntime.adaptiveShot.learned = true;
   const float previousSafety = grinderSettings.safetyMarginGrams;
+  const float maxSafety = grinderMaxSafetyGrams(grinderSettings.targetGrams);
   const GrinderAdaptiveSafetyResult result = grinderAdaptiveSafetyCalculate(previousSafety,
                                                                            grinderSettings.targetGrams,
+                                                                           maxSafety,
                                                                            &grinderRuntime.adaptiveShot);
   if (!result.valid) {
     Serial.printf("[grinder] safety learn skipped reason=%s final=%.2f target=%.2f avg=%.2f\n",
@@ -44,7 +46,8 @@ static inline void grinderLearnAdaptiveSafety() {
   }
   grinderSettings.safetyMarginGrams = grinderAdaptiveSafetyRecord(&grinderSettings.adaptiveSafety,
                                                                   result.recommendationGrams,
-                                                                  previousSafety);
+                                                                  previousSafety,
+                                                                  maxSafety);
   grinderMarkSettingsDirty();
   Serial.printf("[grinder] safety learn final=%.2f target=%.2f error=%.2f avg=%.2f safety=%.2f->%.2f count=%u hist=%.2f,%.2f,%.2f\n",
                 grinderRuntime.adaptiveShot.finalWeight,

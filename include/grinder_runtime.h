@@ -7,8 +7,8 @@
 #include <WiFi.h>
 #include <esp_mac.h>
 #include <math.h>
-#include "grinder_adaptive_safety.h"
 #include "grinder_protocol.h"
+#include "grinder_adaptive_safety.h"
 
 #ifndef GRINDER_RUNTIME_RECONNECT_INTERVAL_MS
 #define GRINDER_RUNTIME_RECONNECT_INTERVAL_MS 3000
@@ -85,9 +85,12 @@ struct GrinderRuntime {
   bool settingsDirty = false;
   bool cutoffGuardActive = false;
   bool tarePending = false;
+  bool tareRequestArmsGrinder = false;
+  bool userTareComplete = false;
+  bool tareRearmRequested = false;
   bool grindConfirmed = false;
   bool grindCandidateActive = false;
-  bool setupMassBlocked = false;
+  bool menuPaused = false;
   GrinderAdaptiveShot adaptiveShot;
   float zeroTrackWeight = 0.0f;
   float lastWeight = 0.0f;
@@ -143,12 +146,8 @@ static inline void grinderNormalizeSettings() {
   if (!grinderIsMac(grinderSettings.selectedMac)) {
     grinderSettings.selectedMac[0] = 0;
   }
-  if (!grinderFiniteInRange(grinderSettings.targetGrams, 1.0f, 200.0f)) {
-    grinderSettings.targetGrams = 15.0f;
-  }
-  if (!grinderFiniteInRange(grinderSettings.safetyMarginGrams, 0.0f, 10.0f)) {
-    grinderSettings.safetyMarginGrams = 2.0f;
-  }
+  grinderSettings.targetGrams = grinderNormalizeTargetGrams(grinderSettings.targetGrams);
+  grinderSettings.safetyMarginGrams = grinderNormalizeSafetyGrams(grinderSettings.safetyMarginGrams, grinderSettings.targetGrams);
   if (!grinderFiniteInRange(grinderSettings.zeroMinGrams, -20.0f, 0.0f)) {
     grinderSettings.zeroMinGrams = -1.0f;
   }
@@ -165,7 +164,9 @@ static inline void grinderNormalizeSettings() {
   if (grinderSettings.zeroHoldMs < 100 || grinderSettings.zeroHoldMs > 10000) {
     grinderSettings.zeroHoldMs = 1000;
   }
-  grinderAdaptiveSafetyNormalize(&grinderSettings.adaptiveSafety, grinderSettings.safetyMarginGrams);
+  grinderAdaptiveSafetyNormalize(&grinderSettings.adaptiveSafety,
+                                 grinderSettings.safetyMarginGrams,
+                                 grinderMaxSafetyGrams(grinderSettings.targetGrams));
 }
 
 static inline void grinderLoadSettings() {
@@ -301,6 +302,9 @@ static inline void grinderDisconnectToFinding() {
   grinderResetCutoffGuard();
   grinderResetGrindConfirmation();
   grinderRuntime.tarePending = false;
+  grinderRuntime.tareRequestArmsGrinder = false;
+  grinderRuntime.userTareComplete = false;
+  grinderRuntime.tareRearmRequested = false;
   grinderAdaptiveShotReset(&grinderRuntime.adaptiveShot);
   grinderSetState(grinderSettings.enabled ? GRINDER_STATE_FINDING_PLUG : GRINDER_STATE_DISABLED);
 }
@@ -365,6 +369,10 @@ static inline void grinderClearDosingMetrics(float weight) {
 
 static inline bool grinderWeightInZeroRange(float weight) {
   return weight >= grinderSettings.zeroMinGrams && weight <= grinderSettings.zeroMaxGrams;
+}
+
+static inline bool grinderWeightInPositiveDoseRange(float weight) {
+  return weight > grinderSettings.zeroMaxGrams;
 }
 
 static inline bool grinderZeroStable(float weight) {
@@ -450,14 +458,25 @@ static inline void grinderHandleOkResponse(const GrinderTcpResponse &response, f
   switch (grinderRuntime.pendingCommand) {
     case GRINDER_COMMAND_HELLO:
       grinderRuntime.pendingCommand = GRINDER_COMMAND_NONE;
-      grinderSetStatus("connected");
-      grinderSetState(GRINDER_STATE_CONNECTED);
+      grinderRuntime.tareRequestArmsGrinder = false;
+      grinderRuntime.userTareComplete = false;
+      grinderRuntime.tareRearmRequested = response.relayOn;
+      grinderSetStatus("tare to arm");
+      if (response.relayOn) {
+        if (!grinderSendOff()) {
+          grinderEnterError("off send failed");
+          break;
+        }
+        grinderSetState(GRINDER_STATE_STOPPING);
+      } else {
+        grinderSetState(GRINDER_STATE_CONNECTED);
+      }
       break;
     case GRINDER_COMMAND_ON:
       grinderRuntime.pendingCommand = GRINDER_COMMAND_NONE;
       if (response.relayOn) {
         grinderClearDosingMetrics(weight);
-        grinderSetStatus("grinding");
+        grinderSetStatus("ready");
         grinderSetState(GRINDER_STATE_GRINDING);
       } else {
         grinderEnterError("on failed");
@@ -469,8 +488,14 @@ static inline void grinderHandleOkResponse(const GrinderTcpResponse &response, f
         grinderMarkAdaptiveShotOff(weight);
         grinderRuntime.stopWeight = weight;
         grinderRuntime.removalSeen = false;
-        grinderSetStatus("remove cup");
-        grinderSetState(GRINDER_STATE_AWAIT_REMOVAL);
+        if (grinderRuntime.tareRearmRequested) {
+          grinderRuntime.tareRearmRequested = false;
+          grinderSetStatus("zero wait");
+          grinderSetState(GRINDER_STATE_CONNECTED);
+        } else {
+          grinderSetStatus("remove cup");
+          grinderSetState(GRINDER_STATE_AWAIT_REMOVAL);
+        }
       }
       break;
     case GRINDER_COMMAND_PING:
@@ -633,7 +658,11 @@ static inline void grinderCheckConnectionLoss() {
 }
 
 static inline void grinderTickConnected(float weight) {
-  if (grinderZeroStable(weight)) {
+  if (!grinderRuntime.userTareComplete) {
+    grinderSetStatus("tare to arm");
+    return;
+  }
+  if (grinderCanArmAfterTare(grinderRuntime.userTareComplete, grinderZeroStable(weight))) {
     grinderSetStatus("armed");
     grinderSetState(GRINDER_STATE_ARMED);
   } else if (millis() - grinderRuntime.lastRuntimeLogAt >= 2000) {
@@ -732,9 +761,51 @@ static inline void grinderRuntimeReset() {
   grinderResetCutoffGuard();
   grinderResetGrindConfirmation();
   grinderRuntime.tarePending = false;
+  grinderRuntime.tareRequestArmsGrinder = false;
+  grinderRuntime.userTareComplete = false;
+  grinderRuntime.tareRearmRequested = false;
   grinderAdaptiveShotReset(&grinderRuntime.adaptiveShot);
   grinderSetStatus(grinderSettings.enabled ? "idle" : "off");
   grinderSetState(grinderSettings.enabled ? GRINDER_STATE_FINDING_PLUG : GRINDER_STATE_DISABLED);
+}
+
+static inline void grinderPauseForMenu() {
+  if (!grinderSettings.enabled) {
+    return;
+  }
+  grinderRuntime.menuPaused = true;
+  if (!grinderRuntime.client.connected() ||
+      (grinderRuntime.state != GRINDER_STATE_ARMED && grinderRuntime.state != GRINDER_STATE_GRINDING)) {
+    return;
+  }
+  if (!grinderSendOff()) {
+    grinderEnterError("off send failed");
+    return;
+  }
+  grinderRuntime.tareRearmRequested = true;
+  grinderSetStatus("menu stop");
+  grinderSetState(GRINDER_STATE_STOPPING);
+}
+
+static inline void grinderResumeAfterMenu() {
+  grinderRuntime.menuPaused = false;
+}
+
+static inline void grinderTickWhileMenuOpen(float weight) {
+  if (!grinderSelectedMacSet() || grinderRuntime.state == GRINDER_STATE_FINDING_PLUG ||
+      grinderRuntime.state == GRINDER_STATE_ERROR) {
+    return;
+  }
+  grinderReadClient(weight);
+  grinderCheckConnectionLoss();
+  if (grinderRuntime.state == GRINDER_STATE_ERROR) {
+    return;
+  }
+  if (grinderRuntime.state == GRINDER_STATE_STOPPING) {
+    grinderTickStopping(weight);
+    return;
+  }
+  grinderSendPingIfDue();
 }
 
 static inline void grinderRuntimeTick(float weight) {
@@ -742,6 +813,10 @@ static inline void grinderRuntimeTick(float weight) {
     if (grinderRuntime.state != GRINDER_STATE_DISABLED) {
       grinderRuntimeReset();
     }
+    return;
+  }
+  if (grinderRuntime.menuPaused) {
+    grinderTickWhileMenuOpen(weight);
     return;
   }
   if (!grinderSelectedMacSet()) {
@@ -815,7 +890,10 @@ static inline void grinderShortStatus(char *output, size_t outputSize) {
     snprintf(output, outputSize, "Gr:Off");
     return;
   }
-  snprintf(output, outputSize, "Gr:%s", grinderStateText(grinderRuntime.state));
+  snprintf(output,
+           outputSize,
+           "Gr:%s",
+           grinderRuntime.status[0] ? grinderRuntime.status : grinderStateText(grinderRuntime.state));
 }
 
 static inline void grinderSetEnabled(bool enabled) {

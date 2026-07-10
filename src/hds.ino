@@ -377,6 +377,7 @@ bool handleGrinderMenuChord() {
   currentMenuSize = getMenuSize(grinderMenu);
   currentIndex = 0;
   currentSelection = currentMenu[currentIndex];
+  grinderPauseForMenu();
   handled = true;
   Serial.println("[grinder] menu chord");
   return true;
@@ -774,6 +775,7 @@ void setup() {
     b_menu = true;
     b_buttonChordSuppressUntilRelease = true;
     b_grinderMenuDirectEntry = false;
+    grinderPauseForMenu();
     refreshOLED((char *)"HDS Setup", FONT_EXTRACTION);
     delay(1000);
   }
@@ -1366,14 +1368,14 @@ bool processBootFreshTare() {
   return false;
 }
 
-bool tareScaleWhenAdcReady(const char *context) {
+bool tareScaleWhenAdcReady(const char *context, bool userRequested) {
   ADS1232DebugInfo info = scale.getDebugInfo();
   if (info.samplesInUse > 0 && info.validSamples < info.samplesInUse) {
     if (!refreshScaleDatasetAfterDiscontinuity(context)) {
       return false;
     }
   }
-  grinderRuntimeNotifyTareRequested();
+  grinderRuntimeNotifyTareRequested(userRequested);
   scale.tareNoDelay();
   return true;
 }
@@ -1613,6 +1615,7 @@ void loop() {
       if (b_wifiEnabled) {
         wifiSupervise();
       }
+      grinderRuntimeTick(f_displayedValue);
       showMenu();
     } else if (GPIO_power_on_with == BATTERY_CHARGING) {
       if (b_chargingOLED) {
@@ -1729,14 +1732,14 @@ void loop() {
         } else if (b_tareByButton) {
           // Tare by button, ensure 500ms delay to avoid touch interference
           if (millis() - t_tareByButton > i_tareDelay) {
-            bool tareDone = tareScaleWhenAdcReady("button tare");
+            bool tareDone = tareScaleWhenAdcReady("button tare", true);
             b_tareByButton = false;  // reset status
             Serial.println(tareDone ? "Tare by button" : "Tare by button failed");
           }
         } else if (hasRemoteTareRequest()) {
           // Tare by BLE, performed instantly without delay
           uint8_t remoteTareRequests = consumeRemoteTareRequests();
-          bool tareDone = tareScaleWhenAdcReady("remote tare");
+          bool tareDone = tareScaleWhenAdcReady("remote tare", true);
           if (tareDone) {
             Serial.print("Tare by remote command");
             if (remoteTareRequests > 1) {

@@ -1,12 +1,10 @@
 #ifndef GRINDER_RUNTIME_LOW_LATENCY_H
 #define GRINDER_RUNTIME_LOW_LATENCY_H
 
-#define GRINDER_CUTOFF_ZERO_EXIT_PROTECTION_MS 1500
 #define GRINDER_CONFIRM_MIN_DURATION_MS 1500
 #define GRINDER_CONFIRM_MIN_RISE_GRAMS 2.0f
 #define GRINDER_CONFIRM_MIN_POSITIVE_SAMPLES 4
 #define GRINDER_CONFIRM_MIN_STEP_GRAMS 0.03f
-#define GRINDER_CONFIRM_MAX_INITIAL_GRAMS 3.0f
 
 static inline bool grinderActivePlugValidated() {
   return grinderIsMac(grinderSettings.selectedMac) &&
@@ -52,18 +50,18 @@ static inline void grinderResetCutoffGuard() {
 static inline void grinderResetGrindConfirmation() {
   grinderRuntime.grindConfirmed = false;
   grinderRuntime.grindCandidateActive = false;
-  grinderRuntime.setupMassBlocked = false;
   grinderRuntime.grindCandidateStartAt = 0;
   grinderRuntime.grindCandidateStartWeight = 0.0f;
   grinderRuntime.grindCandidateLastWeight = 0.0f;
   grinderRuntime.grindCandidatePositiveSamples = 0;
 }
 
-static inline void grinderRuntimeNotifyTareRequested() {
+static inline void grinderRuntimeNotifyTareRequested(bool userRequested) {
   if (!grinderSettings.enabled || grinderRuntime.state == GRINDER_STATE_DISABLED) {
     return;
   }
   grinderRuntime.tarePending = true;
+  grinderRuntime.tareRequestArmsGrinder = grinderRuntime.tareRequestArmsGrinder || userRequested;
   grinderSetStatus("tare wait");
 }
 
@@ -72,7 +70,12 @@ static inline void grinderRuntimeNotifyTareComplete() {
     grinderRuntime.tarePending = false;
     return;
   }
+  const bool userRequested = grinderRuntime.tareRequestArmsGrinder;
   grinderRuntime.tarePending = false;
+  grinderRuntime.tareRequestArmsGrinder = false;
+  if (userRequested) {
+    grinderRuntime.userTareComplete = true;
+  }
   grinderRuntime.grindRateGps = 0.0f;
   grinderRuntime.rateSamples = 0;
   grinderRuntime.lastWeight = 0.0f;
@@ -82,21 +85,17 @@ static inline void grinderRuntimeNotifyTareComplete() {
   grinderResetGrindConfirmation();
   grinderAdaptiveShotReset(&grinderRuntime.adaptiveShot);
   if (grinderRuntime.state == GRINDER_STATE_GRINDING) {
-    grinderSetStatus("grinding");
+    grinderSetStatus("ready");
+  } else if (userRequested && grinderRuntime.state == GRINDER_STATE_STOPPING) {
+    grinderRuntime.tareRearmRequested = true;
+  } else if (userRequested &&
+             (grinderRuntime.state == GRINDER_STATE_AWAIT_REMOVAL || grinderRuntime.state == GRINDER_STATE_AWAIT_ZERO)) {
+    grinderRuntime.tareRearmRequested = false;
+    grinderSetStatus("zero wait");
+    grinderSetState(GRINDER_STATE_CONNECTED);
+  } else if (grinderRuntime.state == GRINDER_STATE_CONNECTED) {
+    grinderSetStatus(grinderRuntime.userTareComplete ? "zero wait" : "tare to arm");
   }
-}
-
-static inline bool grinderCutoffProtected(float weight, uint32_t now) {
-  if (grinderWeightInZeroRange(weight)) {
-    grinderResetCutoffGuard();
-    return true;
-  }
-  if (!grinderRuntime.cutoffGuardActive) {
-    grinderRuntime.cutoffGuardActive = true;
-    grinderRuntime.cutoffGuardZeroExitAt = now;
-    return true;
-  }
-  return now - grinderRuntime.cutoffGuardZeroExitAt < GRINDER_CUTOFF_ZERO_EXIT_PROTECTION_MS;
 }
 
 static inline void grinderStartGrindCandidate(float weight, uint32_t now) {
@@ -107,29 +106,14 @@ static inline void grinderStartGrindCandidate(float weight, uint32_t now) {
   grinderRuntime.grindCandidatePositiveSamples = 0;
 }
 
-static inline bool grinderCandidateRateValid(float weight, uint32_t now) {
-  if (!grinderRuntime.grindCandidateActive || now <= grinderRuntime.grindCandidateStartAt) {
-    return false;
-  }
-  const float durationSeconds = (now - grinderRuntime.grindCandidateStartAt) / 1000.0f;
-  const float rise = weight - grinderRuntime.grindCandidateStartWeight;
-  if (durationSeconds <= 0.0f || rise <= 0.0f) {
-    return false;
-  }
-  const float averageRate = rise / durationSeconds;
-  return averageRate > 0.0f && averageRate <= GRINDER_ADAPTIVE_MAX_AVERAGE_RATE_GPS;
-}
-
 static inline bool grinderTrackGrindConfirmation(float weight, uint32_t now) {
   if (grinderRuntime.grindConfirmed) {
     return true;
   }
+  if (!grinderWeightInPositiveDoseRange(weight)) {
+    return false;
+  }
   if (!grinderRuntime.grindCandidateActive) {
-    if (weight > grinderSettings.zeroMaxGrams + GRINDER_CONFIRM_MAX_INITIAL_GRAMS) {
-      grinderRuntime.setupMassBlocked = true;
-      grinderSetStatus("tare cup");
-      return false;
-    }
     grinderStartGrindCandidate(weight, now);
     return false;
   }
@@ -142,36 +126,12 @@ static inline bool grinderTrackGrindConfirmation(float weight, uint32_t now) {
   const float rise = weight - grinderRuntime.grindCandidateStartWeight;
   if (duration < GRINDER_CONFIRM_MIN_DURATION_MS ||
       rise < GRINDER_CONFIRM_MIN_RISE_GRAMS ||
-      grinderRuntime.grindCandidatePositiveSamples < GRINDER_CONFIRM_MIN_POSITIVE_SAMPLES ||
-      !grinderCandidateRateValid(weight, now)) {
+      grinderRuntime.grindCandidatePositiveSamples < GRINDER_CONFIRM_MIN_POSITIVE_SAMPLES) {
     return false;
   }
   grinderRuntime.grindConfirmed = true;
-  grinderRuntime.setupMassBlocked = false;
   grinderSetStatus("grinding");
   return true;
-}
-
-static inline bool grinderCutoffEligible(float weight, uint32_t now, float cutoff, bool protectedByZeroExit) {
-  if (grinderRuntime.tarePending) {
-    return false;
-  }
-  if (grinderWeightInZeroRange(weight)) {
-    grinderResetGrindConfirmation();
-    return false;
-  }
-  if (grinderRuntime.setupMassBlocked) {
-    grinderSetStatus("tare cup");
-    return false;
-  }
-  if (grinderTrackGrindConfirmation(weight, now)) {
-    return true;
-  }
-  if (weight >= cutoff && !protectedByZeroExit) {
-    grinderRuntime.setupMassBlocked = true;
-    grinderSetStatus("tare cup");
-  }
-  return false;
 }
 
 static inline void grinderTickGrindingCutoff(float weight) {
@@ -182,9 +142,19 @@ static inline void grinderTickGrindingCutoff(float weight) {
   grinderUpdateRate(weight);
   const float rate = grinderRuntime.rateSamples > 0 ? grinderRuntime.grindRateGps : 0.0f;
   const float cutoff = grinderCutoffGrams(grinderSettings.targetGrams, grinderSettings.safetyMarginGrams);
-  const bool protectedByZeroExit = grinderCutoffProtected(weight, now);
-  const bool eligible = grinderCutoffEligible(weight, now, cutoff, protectedByZeroExit);
-  if (weight < cutoff || protectedByZeroExit || !eligible) {
+  if (!grinderWeightInPositiveDoseRange(weight)) {
+    grinderResetGrindConfirmation();
+  } else {
+    grinderTrackGrindConfirmation(weight, now);
+  }
+  if (!grinderCutoffShouldStop(weight,
+                               grinderSettings.zeroMaxGrams,
+                               grinderSettings.targetGrams,
+                               grinderSettings.safetyMarginGrams,
+                               grinderRuntime.tarePending,
+                               now,
+                               &grinderRuntime.cutoffGuardActive,
+                               &grinderRuntime.cutoffGuardZeroExitAt)) {
     return;
   }
   const uint32_t guardAge = now - grinderRuntime.cutoffGuardZeroExitAt;

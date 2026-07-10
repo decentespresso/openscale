@@ -249,6 +249,7 @@ void exitMenu() {
   buzzer.off();
 #endif
   delay(1000);
+  grinderResumeAfterMenu();
   b_menu = false;
   b_grinderMenuDirectEntry = false;
   currentMenu = mainMenu;
@@ -796,8 +797,9 @@ static inline bool grinderEditNumber(const char *title, float *output, float min
 
 void grinderTargetMenu() {
   float value = grinderSettings.targetGrams;
-  if (grinderEditNumber("Target g", &value, 1.0f, 200.0f)) {
+  if (grinderEditNumber("Target g", &value, GRINDER_TARGET_MIN_GRAMS, GRINDER_TARGET_MAX_GRAMS)) {
     grinderSettings.targetGrams = value;
+    grinderNormalizeSettings();
     grinderResetAdaptiveSafety();
     grinderSaveSettings();
     grinderSetActionMessage("Target Saved");
@@ -806,7 +808,7 @@ void grinderTargetMenu() {
 
 void grinderSafetyMenu() {
   float value = grinderSettings.safetyMarginGrams;
-  if (grinderEditNumber("Safety g", &value, 0.0f, 10.0f)) {
+  if (grinderEditNumber("Safety g", &value, 0.0f, grinderMaxSafetyGrams(grinderSettings.targetGrams))) {
     grinderSettings.safetyMarginGrams = value;
     grinderResetAdaptiveSafety();
     grinderSaveSettings();

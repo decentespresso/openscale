@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -13,6 +14,13 @@
 #ifndef GRINDER_TCP_MAX_LINE_LENGTH
 #define GRINDER_TCP_MAX_LINE_LENGTH 96
 #endif
+
+#define GRINDER_TARGET_DEFAULT_GRAMS 15.0f
+#define GRINDER_TARGET_MIN_GRAMS 10.0f
+#define GRINDER_TARGET_MAX_GRAMS 200.0f
+#define GRINDER_SAFETY_DEFAULT_GRAMS 2.0f
+#define GRINDER_SAFETY_MAX_GRAMS 10.0f
+#define GRINDER_CUTOFF_ZERO_EXIT_PROTECTION_MS 1500
 
 enum GrinderTcpResponseKind {
   GRINDER_TCP_RESPONSE_INVALID,
@@ -83,7 +91,7 @@ static inline bool grinderCopyMac(char *output, const char *input) {
 }
 
 static inline bool grinderIsMacPrefix(const char *value) {
-  if (value == nullptr) {
+  if (value == nullptr || strlen(value) < 17) {
     return false;
   }
   for (uint8_t i = 0; i < 17; i++) {
@@ -109,6 +117,13 @@ static inline bool grinderCopyMacPrefix(char *output, const char *input) {
 }
 
 static inline bool grinderParseOkResponse(const char *line, GrinderTcpResponse *response) {
+  if (line == nullptr || response == nullptr) {
+    return false;
+  }
+  const size_t length = strlen(line);
+  if (length != 29 && length != 30) {
+    return false;
+  }
   if (strncmp(line, "OK ", 3) != 0) {
     return false;
   }
@@ -131,6 +146,9 @@ static inline bool grinderParseOkResponse(const char *line, GrinderTcpResponse *
 }
 
 static inline bool grinderParseBusyResponse(const char *line, GrinderTcpResponse *response) {
+  if (line == nullptr || response == nullptr) {
+    return false;
+  }
   if (strncmp(line, "BUSY ", 5) != 0) {
     return false;
   }
@@ -146,6 +164,13 @@ static inline bool grinderParseBusyResponse(const char *line, GrinderTcpResponse
 }
 
 static inline bool grinderParseErrResponse(const char *line, GrinderTcpResponse *response) {
+  if (line == nullptr || response == nullptr) {
+    return false;
+  }
+  const size_t length = strlen(line);
+  if (length < 30 || length > GRINDER_TCP_MAX_LINE_LENGTH) {
+    return false;
+  }
   if (strncmp(line, "ERR ", 4) != 0) {
     return false;
   }
@@ -191,6 +216,61 @@ static inline int grinderFormatHello(char *output, size_t outputSize, const char
 
 static inline float grinderCutoffGrams(float targetGrams, float safetyMarginGrams) {
   return targetGrams - safetyMarginGrams;
+}
+
+static inline float grinderNormalizeTargetGrams(float targetGrams) {
+  if (!isfinite(targetGrams)) {
+    return GRINDER_TARGET_DEFAULT_GRAMS;
+  }
+  if (targetGrams < GRINDER_TARGET_MIN_GRAMS) {
+    return GRINDER_TARGET_MIN_GRAMS;
+  }
+  return targetGrams > GRINDER_TARGET_MAX_GRAMS ? GRINDER_TARGET_MAX_GRAMS : targetGrams;
+}
+
+static inline float grinderMaxSafetyGrams(float targetGrams) {
+  const float targetLimit = grinderNormalizeTargetGrams(targetGrams) - 1.0f;
+  return targetLimit < GRINDER_SAFETY_MAX_GRAMS ? targetLimit : GRINDER_SAFETY_MAX_GRAMS;
+}
+
+static inline float grinderNormalizeSafetyGrams(float safetyMarginGrams, float targetGrams) {
+  const float maxSafety = grinderMaxSafetyGrams(targetGrams);
+  if (!isfinite(safetyMarginGrams)) {
+    return GRINDER_SAFETY_DEFAULT_GRAMS < maxSafety ? GRINDER_SAFETY_DEFAULT_GRAMS : maxSafety;
+  }
+  if (safetyMarginGrams < 0.0f) {
+    return 0.0f;
+  }
+  return safetyMarginGrams > maxSafety ? maxSafety : safetyMarginGrams;
+}
+
+static inline bool grinderCutoffShouldStop(float weight,
+                                           float zeroMaxGrams,
+                                           float targetGrams,
+                                           float safetyMarginGrams,
+                                           bool tarePending,
+                                           uint32_t now,
+                                           bool *guardActive,
+                                           uint32_t *zeroExitAt) {
+  if (guardActive == nullptr || zeroExitAt == nullptr) {
+    return false;
+  }
+  if (weight <= zeroMaxGrams) {
+    *guardActive = false;
+    *zeroExitAt = 0;
+    return false;
+  }
+  if (!*guardActive) {
+    *guardActive = true;
+    *zeroExitAt = now;
+    return false;
+  }
+  return !tarePending && now - *zeroExitAt >= GRINDER_CUTOFF_ZERO_EXIT_PROTECTION_MS &&
+         weight >= grinderCutoffGrams(targetGrams, safetyMarginGrams);
+}
+
+static inline bool grinderCanArmAfterTare(bool userTareComplete, bool zeroStable) {
+  return userTareComplete && zeroStable;
 }
 
 #endif

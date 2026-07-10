@@ -1,8 +1,8 @@
 #ifndef GRINDER_ADAPTIVE_SAFETY_H
 #define GRINDER_ADAPTIVE_SAFETY_H
 
-#include <Arduino.h>
 #include <math.h>
+#include <stdint.h>
 
 #define GRINDER_ADAPTIVE_SAFETY_HISTORY_SIZE 3
 #define GRINDER_ADAPTIVE_MAX_AVERAGE_RATE_GPS 6.0f
@@ -92,7 +92,7 @@ static inline uint8_t grinderAdaptiveSafetyNormalizeCount(uint8_t count) {
   return count > GRINDER_ADAPTIVE_SAFETY_HISTORY_SIZE ? GRINDER_ADAPTIVE_SAFETY_HISTORY_SIZE : count;
 }
 
-static inline void grinderAdaptiveSafetyNormalize(GrinderAdaptiveSafetyStore *store, float fallback) {
+static inline void grinderAdaptiveSafetyNormalize(GrinderAdaptiveSafetyStore *store, float fallback, float maxSafety) {
   if (store == nullptr) {
     return;
   }
@@ -100,10 +100,12 @@ static inline void grinderAdaptiveSafetyNormalize(GrinderAdaptiveSafetyStore *st
   if (store->next >= GRINDER_ADAPTIVE_SAFETY_HISTORY_SIZE) {
     store->next = 0;
   }
-  const float safeFallback = isfinite(fallback) ? grinderClampFloat(fallback, 0.0f, 10.0f) : 2.0f;
+  const float safeFallback = isfinite(fallback) ? grinderClampFloat(fallback, 0.0f, maxSafety) : grinderClampFloat(2.0f, 0.0f, maxSafety);
   for (uint8_t index = 0; index < GRINDER_ADAPTIVE_SAFETY_HISTORY_SIZE; index++) {
-    if (!isfinite(store->history[index]) || store->history[index] < 0.0f || store->history[index] > 10.0f) {
+    if (!isfinite(store->history[index])) {
       store->history[index] = safeFallback;
+    } else {
+      store->history[index] = grinderClampFloat(store->history[index], 0.0f, maxSafety);
     }
   }
 }
@@ -131,13 +133,13 @@ static inline float grinderAdaptiveSafetyAverage(const GrinderAdaptiveSafetyStor
   return total / count;
 }
 
-static inline float grinderAdaptiveSafetyRecord(GrinderAdaptiveSafetyStore *store, float recommendation, float fallback) {
+static inline float grinderAdaptiveSafetyRecord(GrinderAdaptiveSafetyStore *store, float recommendation, float fallback, float maxSafety) {
   if (store == nullptr || !isfinite(recommendation)) {
     return fallback;
   }
-  grinderAdaptiveSafetyNormalize(store, fallback);
+  grinderAdaptiveSafetyNormalize(store, fallback, maxSafety);
   const uint8_t index = store->next % GRINDER_ADAPTIVE_SAFETY_HISTORY_SIZE;
-  store->history[index] = grinderClampFloat(recommendation, 0.0f, 10.0f);
+  store->history[index] = grinderClampFloat(recommendation, 0.0f, maxSafety);
   if (store->count < GRINDER_ADAPTIVE_SAFETY_HISTORY_SIZE) {
     store->count++;
   }
@@ -251,6 +253,7 @@ static inline void grinderAdaptiveShotMarkOff(GrinderAdaptiveShot *shot,
 
 static inline GrinderAdaptiveSafetyResult grinderAdaptiveSafetyCalculate(float currentSafetyGrams,
                                                                          float targetGrams,
+                                                                         float maxSafetyGrams,
                                                                          const GrinderAdaptiveShot *shot) {
   GrinderAdaptiveSafetyResult result;
   result.recommendationGrams = currentSafetyGrams;
@@ -295,7 +298,7 @@ static inline GrinderAdaptiveSafetyResult grinderAdaptiveSafetyCalculate(float c
     return result;
   }
   const float boundedError = grinderClampFloat(result.errorGrams, -GRINDER_ADAPTIVE_MAX_SINGLE_STEP_GRAMS, GRINDER_ADAPTIVE_MAX_SINGLE_STEP_GRAMS);
-  result.recommendationGrams = grinderClampFloat(currentSafetyGrams + boundedError, 0.0f, 10.0f);
+  result.recommendationGrams = grinderClampFloat(currentSafetyGrams + boundedError, 0.0f, maxSafetyGrams);
   result.valid = true;
   return result;
 }

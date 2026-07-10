@@ -275,7 +275,7 @@ static inline void resetAdcRecoveryState() {
 }
 bool refreshScaleDatasetAfterDiscontinuity(const char *context);
 void resetScaleOutputAfterAdcDiscontinuity();
-bool tareScaleWhenAdcReady(const char *context);
+bool tareScaleWhenAdcReady(const char *context, bool userRequested = false);
 bool setScaleSamplesInUseWhenReady(uint8_t samplesInUse, const char *context);
 bool wakeScaleFromSoftSleep(const char *context);
 void consumeScaleTareStatus();
