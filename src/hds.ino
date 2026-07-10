@@ -874,9 +874,12 @@ void setup() {
   t_bootTare = millis();
   b_bootTare = true;
   updateBattery(BATTERY_PIN);
-  hdsOtaRollbackMarkValid();
   if (b_pendingOtaLittleFs) {
-    pullOtaResumePendingLittleFs();
+    if (!pullOtaResumePendingLittleFs()) {
+      hdsOtaRollback("LittleFS update");
+    }
+  } else {
+    hdsOtaRollbackMarkValid();
   }
 }
 
