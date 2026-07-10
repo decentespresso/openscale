@@ -117,8 +117,6 @@
 #endif
 
 #define SCALE_A0 -1
-#define HX711_SCL 12
-#define HX711_SDA 11
 #endif
 
 
@@ -160,8 +158,6 @@
 #define BUZZER 38
 
 #define SCALE_A0 -1
-#define HX711_SCL 12
-#define HX711_SDA 11
 #endif
 
 
@@ -202,8 +198,6 @@
 //#define BUZZER 38
 
 #define SCALE_A0 -1
-#define HX711_SCL 12
-#define HX711_SDA 11
 #endif
 
 
@@ -242,8 +236,6 @@
 #define BUZZER 38
 
 #define SCALE_A0 -1
-#define HX711_SCL 9
-#define HX711_SDA 8
 #endif
 
 
@@ -281,8 +273,6 @@
 
 #define SCALE_A0 -1
 #define BUZZER_LED 38
-#define HX711_SCL 9
-#define HX711_SDA 8
 #endif
 
 #ifdef V7_2
@@ -317,8 +307,6 @@
 
 #define BUZZER 38
 #define BUZZER_LED 38
-#define HX711_SCL 9
-#define HX711_SDA 8
 #endif
 
 #ifdef V6
@@ -349,8 +337,6 @@
 
 #define BUZZER 38
 #define BUZZER_LED 38
-#define HX711_SCL 9
-#define HX711_SDA 8
 #endif
 
 #ifdef V5
@@ -381,8 +367,6 @@
 
 #define BUZZER 13
 #define BUZZER_LED 13
-#define HX711_SCL 18
-#define HX711_SDA 5
 
 #endif
 
@@ -411,8 +395,6 @@
 #define SCALE_PDWN 15
 #define SCALE_TEMP 16
 #define SCALE_A0 8
-#define HX711_SCL 3
-#define HX711_SDA 9
 #endif
 
 #ifdef V3
@@ -432,13 +414,9 @@
 #define OLED_CS 10
 #define OLED_DC 21
 #define OLED_RST 14
-// #define HX711_SCL 18
-// #define HX711_SDA 5
 #define SCALE_DOUT 45
 #define SCALE_SCLK 48
 #define SCALE_PDWN 47
-#define HX711_SCL SCALE_SCLK
-#define HX711_SDA SCALE_DOUT
 //#define OLED_RST 17
 
 #endif

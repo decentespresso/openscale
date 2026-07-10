@@ -96,7 +96,7 @@ The Decent Scale Dosing Assistant is a web application that interfaces with a Bl
 - Consistent use throughout application
 - Proper threshold values for accurate measurements
 
-### Dosing Module (`modules/dosing.js`)
+### Dosing Logic (`modules/scale.js`, `modules/state-machine.js`)
 **Purpose:** Handles the core dosing logic.
 
 **Key Functionality:**

@@ -1,7 +1,7 @@
 <title>Decent Scale Dosing Assistant</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="connect-src 'self' ws:;">
-<link href="./same_weight.css" rel="stylesheet">
+<link href="../shared/app.css" rel="stylesheet">
 <head>
        <meta charset="UTF-8">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 32 32' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cellipse cx='16' cy='16' rx='12' ry='8' stroke='currentColor' stroke-width='1.5'/%3E%3Crect x='10' y='10' width='12' height='4' rx='0.5' fill='currentColor'/%3E%3C/svg%3E">
@@ -19,13 +19,6 @@
                     <a href="https://decentespresso.com/support/decentscale" class="text-xl font-bold text-gray-800">Dosing Assistant</a>
                     <span id="status" class="mr-2">Status: Not connected</span>
                     <div class="relative">
-                        <button 
-                            id="connectButton" 
-                            class="invisible font-medium text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg"
-                        >
-                            Connect to Scale
-                        </button>
-                        <!-- Position fullscreen button absolutely -->
                         <button 
                                 id="fullscreen-button" 
                                 title="Toggle fullscreen"

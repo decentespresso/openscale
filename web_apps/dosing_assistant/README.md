@@ -117,7 +117,7 @@ The core logic is modularized to handle different aspects of the dosing process:
 
 * **`main.js`**: Likely the entry point, coordinating the different components, managing UI, and handling overall application state.
 * **`scale.js`**: Encapsulates all Web Bluetooth API interactions, including device discovery, connection, characteristic operations, and more.
-* **`dosing.js`**: Contains the dosing mode, evaluate weight against target, container weight , enter and exit the dosing mode.
+* **`scale.js` / `state-machine.js`**: Contain dosing mode, weight evaluation, container weight handling, and dosing state transitions.
 * **`ui_controller.js`**: Responsible for updating the DOM, displaying status messages, managing input fields, and handling user interface events.
 * **`state-machine.js`**: Handles state machine transition and state definition.
 * **`presets.js`**: Manages user presets , save the user input date. 

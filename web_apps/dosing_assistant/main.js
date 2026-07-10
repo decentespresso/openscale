@@ -1,33 +1,19 @@
 import { DecentScale } from './modules/scale.js';
 import { StateMachine } from './modules/state-machine.js';
 import { UIController } from './modules/ui-controller.js';
-import { DataExport } from './modules/export.js';
 import { PresetManager } from '../shared/modules/presets.js';
-import { SCALE_CONSTANTS } from './modules/constants.js';
+
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialize components
     const ui = new UIController();
     const stateMachine = new StateMachine(ui);
     const presetManager = new PresetManager();
-    
-    // Pass components to DecentScale
     const scale = new DecentScale(ui, stateMachine, presetManager);
-    ui.setScale(scale); // Add this line
-    
-    // Connect button event listener - using correct ID
-    document.getElementById('connectButton').addEventListener('click', async () => {
-        if (scale.device) {
-            await scale.disconnect();
-        } else {
-            await scale.connect();
-            await scale.tare();
-        }
-    });
-    //websocket 
-    const ws = new ReconnectingWebSocket(`ws://${window.location.host}/snapshot`); // or your server URL
-    
-    ws.debug=true;
+    ui.setScale(scale);
+
+    const ws = new ReconnectingWebSocket(`ws://${window.location.host}/snapshot`);
+    ws.debug = true;
     scale.ws = ws;
+
     ws.addEventListener('open', () => {
         ui.updateStatus('WebSocket Connected');
         console.log('WebSocket connected');
@@ -54,13 +40,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (jsondata.grams !== undefined) {
             const weight = Number(jsondata.grams);
-            if (!isNaN(weight)) {
-                // Pass weight to scale logic
+            if (Number.isFinite(weight)) {
                 scale.handleWebSocketWeight(weight);
             }
         }
     });
-    // Other button listeners - using correct IDs
+
     document.getElementById('tareButton')?.addEventListener('click', () => 
         scale.tare()
     );
@@ -73,12 +58,10 @@ document.addEventListener('DOMContentLoaded', () => {
         scale.toggleDosingMode()
     );
 
-    // Setup preset manager with reference to scale
     presetManager.init(scale);
     presetManager.loadPresets();
     presetManager.setupPresetHandlers();
-    
-    // Add export functionality
+
     const exportCSVButton = document.getElementById('exportCSV');
     const exportJSONButton = document.getElementById('exportJSON');
     
@@ -93,8 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
             scale.exportToJSON();
         });
     }
-    
-    // Initialize UI
+
     if (ui.setContainerWeightButton) {
         ui.setContainerWeightButton.classList.add('invisible');
         ui.setContainerWeightButton.setAttribute('disabled', '');

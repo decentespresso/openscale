@@ -1,6 +1,5 @@
 import { SCALE_CONSTANTS } from './constants.js';
-import { DecentScale } from './scale.js';
-//the main core for dosing assistant logic is a Finite-state machine , below you will 4 states - Waiting for next , Measuring, removal pending, container removed. 
+
 export class StateMachine {
     constructor(uiController) {
         this.currentState = SCALE_CONSTANTS.FSM_STATES.WAITING_FOR_NEXT;
