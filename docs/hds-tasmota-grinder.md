@@ -91,9 +91,9 @@ OFF is blocked until all of these are true:
 - weight is at or above `target - safety`
 - the selected plug connection is still valid
 
-Grind confirmation changes the display from `Ready` to `Grinding`; it does not block fail-safe cutoff. A significant basket or load change while the plug is ON can therefore switch the plug OFF. Tare the basket to recover and rearm without a latched error.
+Grind confirmation changes the display from `Ready` to `Grinding`. If cutoff weight is reached at an impossible average rate above 6 g/s, the scale treats it as cup/setup mass and does not send OFF. This block remains until tare or return to zero, so a stationary cup cannot later become a valid grind merely because time passes.
 
-`Target g` accepts 10.0 to 200.0 g. `Safety g` accepts 0.0 to the smaller of 10.0 g or `target - 1.0 g`.
+`Target g` accepts 10.0 to 200.0 g. `Safety g` accepts 0.0 to the smaller of 10.0 g or `target - 5.0 g`, keeping cutoff at 5.0 g or higher.
 
 ## Adaptive Safety
 

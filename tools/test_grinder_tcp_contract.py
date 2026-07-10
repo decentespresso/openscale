@@ -93,7 +93,8 @@ def test_low_latency_cutoff_source_contracts():
     assert "GRINDER_CONFIRM_MIN_RISE_GRAMS 2.0f" in low_latency
     assert "GRINDER_CONFIRM_MIN_POSITIVE_SAMPLES 4" in low_latency
     assert "grinderRuntime.tarePending" in low_latency
-    assert "setupMassBlocked" not in low_latency
+    assert "grinderRuntime.setupMassBlocked" in low_latency
+    assert 'grinderSetStatus("tare cup")' in low_latency
     assert "GRINDER_ADAPTIVE_MAX_AVERAGE_RATE_GPS" not in low_latency
     assert "grinderRuntime.grindConfirmed = true" in low_latency
     assert "grinderWeightInPositiveDoseRange(weight)" in low_latency
@@ -207,7 +208,9 @@ def test_firmware_contracts():
     assert_contains(RUNTIME_HEADER, "grinderRuntime.userTareComplete = false")
     assert_contains(RUNTIME_HEADER, "grinderRuntime.tareRearmRequested = response.relayOn")
     assert_not_contains(RUNTIME_HEADER, "grind timeout")
-    assert_not_contains(RUNTIME_HEADER, "setupMassBlocked")
+    assert_contains(RUNTIME_HEADER, "bool setupMassBlocked = false")
+    assert_contains(PROTOCOL_HEADER, "GRINDER_MAX_GRIND_RATE_GPS 6.0f")
+    assert_contains(PROTOCOL_HEADER, "GRINDER_MIN_CUTOFF_GRAMS 5.0f")
     assert_contains(RUNTIME_HEADER, 'preferences.getFloat("safety", 2.0f)')
     assert_contains(RUNTIME_HEADER, "previousWifiOnBoot")
     assert_contains(RUNTIME_HEADER, 'preferences.getBool("wifi_prev", false)')

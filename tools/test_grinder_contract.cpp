@@ -18,20 +18,25 @@ int main() {
 
   assert(grinderNormalizeTargetGrams(9.9f) == GRINDER_TARGET_MIN_GRAMS);
   assert(grinderNormalizeTargetGrams(200.1f) == GRINDER_TARGET_MAX_GRAMS);
-  assert(grinderNormalizeSafetyGrams(12.0f, 10.0f) == 9.0f);
+  assert(grinderNormalizeSafetyGrams(12.0f, 10.0f) == 5.0f);
   assert(grinderNormalizeSafetyGrams(-1.0f, 15.0f) == 0.0f);
   assert(grinderCutoffGrams(15.0f, 2.0f) == 13.0f);
 
   bool guardActive = false;
   uint32_t zeroExitAt = 0;
-  assert(!grinderCutoffShouldStop(15.0f, 1.0f, 15.0f, 2.0f, false, 100, &guardActive, &zeroExitAt));
-  assert(!grinderCutoffShouldStop(15.0f, 1.0f, 15.0f, 2.0f, false, 1599, &guardActive, &zeroExitAt));
-  assert(grinderCutoffShouldStop(15.0f, 1.0f, 15.0f, 2.0f, false, 1600, &guardActive, &zeroExitAt));
-  assert(!grinderCutoffShouldStop(0.0f, 1.0f, 15.0f, 2.0f, false, 1700, &guardActive, &zeroExitAt));
-  assert(!guardActive && zeroExitAt == 0);
-  assert(!grinderCutoffShouldStop(15.0f, 1.0f, 15.0f, 2.0f, false, 2000, &guardActive, &zeroExitAt));
-  assert(!grinderCutoffShouldStop(15.0f, 1.0f, 15.0f, 2.0f, true, 3500, &guardActive, &zeroExitAt));
-  assert(grinderCutoffShouldStop(15.0f, 1.0f, 15.0f, 2.0f, false, 3500, &guardActive, &zeroExitAt));
+  bool setupMassBlocked = false;
+  assert(!grinderCutoffShouldStop(2.0f, 1.0f, 15.0f, 2.0f, false, 100, &guardActive, &zeroExitAt, &setupMassBlocked));
+  assert(!grinderCutoffShouldStop(8.0f, 1.0f, 15.0f, 2.0f, false, 1100, &guardActive, &zeroExitAt, &setupMassBlocked));
+  assert(grinderCutoffShouldStop(13.0f, 1.0f, 15.0f, 2.0f, false, 2100, &guardActive, &zeroExitAt, &setupMassBlocked));
+  assert(!grinderCutoffShouldStop(0.0f, 1.0f, 15.0f, 2.0f, false, 2200, &guardActive, &zeroExitAt, &setupMassBlocked));
+  assert(!guardActive && !setupMassBlocked && zeroExitAt == 0);
+  assert(!grinderCutoffShouldStop(2.0f, 1.0f, 15.0f, 2.0f, false, 3000, &guardActive, &zeroExitAt, &setupMassBlocked));
+  assert(!grinderCutoffShouldStop(13.0f, 1.0f, 15.0f, 2.0f, false, 4500, &guardActive, &zeroExitAt, &setupMassBlocked));
+  assert(setupMassBlocked);
+  assert(!grinderCutoffShouldStop(13.0f, 1.0f, 15.0f, 2.0f, false, 7000, &guardActive, &zeroExitAt, &setupMassBlocked));
+  assert(!grinderCutoffShouldStop(0.0f, 1.0f, 15.0f, 2.0f, false, 7100, &guardActive, &zeroExitAt, &setupMassBlocked));
+  assert(!grinderCutoffShouldStop(13.0f, 1.0f, 15.0f, 2.0f, false, 8000, &guardActive, &zeroExitAt, &setupMassBlocked));
+  assert(setupMassBlocked);
   assert(grinderCanArmAfterTare(true, true));
   assert(!grinderCanArmAfterTare(false, true));
   GrinderAdaptiveShot shot;
