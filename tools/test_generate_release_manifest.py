@@ -1,5 +1,8 @@
 import importlib.util
 import json
+import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -310,6 +313,46 @@ class GenerateReleaseManifestTest(unittest.TestCase):
                     manifest_path,
                 )
             self.assertFalse(manifest_path.exists())
+
+    def test_manifest_signature_rejects_mismatched_key(self):
+        openssl = os.environ.get("OPENSSL") or shutil.which("openssl")
+        if openssl is None:
+            self.skipTest("openssl is not installed")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest_path = root / "manifest.json"
+            signature_path = root / "manifest.sig"
+            signing_key = root / "signing.pem"
+            wrong_key = root / "wrong.pem"
+            wrong_public_key = root / "wrong-public.pem"
+            manifest_path.write_text('{"version":"3.1.13"}\n', encoding="utf-8")
+            subprocess.run(
+                [openssl, "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out", signing_key],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [openssl, "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out", wrong_key],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [openssl, "pkey", "-in", wrong_key, "-pubout", "-out", wrong_public_key],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [openssl, "dgst", "-sha256", "-sign", signing_key, "-out", signature_path, manifest_path],
+                check=True,
+                capture_output=True,
+            )
+
+            result = subprocess.run(
+                [openssl, "dgst", "-sha256", "-verify", wrong_public_key, "-signature", signature_path, manifest_path],
+                capture_output=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
 
 
 if __name__ == "__main__":

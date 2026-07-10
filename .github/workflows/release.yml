@@ -116,6 +116,8 @@ jobs:
             echo "Error: manifest.sig not generated"
             exit 1
           fi
+          printf '%s\n' "$HDS_OTA_MANIFEST_PUBLIC_KEY_PEM" > release-files/ota_public.pem
+          openssl dgst -sha256 -verify release-files/ota_public.pem -signature release-files/manifest.sig release-files/manifest.json
           cd legacy-files
           zip "../HDS_FW_${TAG}.zip" ./* || exit 1
           cd ..
