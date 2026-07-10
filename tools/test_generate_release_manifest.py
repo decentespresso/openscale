@@ -271,6 +271,46 @@ class GenerateReleaseManifestTest(unittest.TestCase):
 
             self.assertEqual([release["version"] for release in catalog["releases"]], ["3.1.14", "3.1.13"])
 
+    def test_release_catalog_caps_entries_and_serialized_size(self):
+        module = load_module()
+        latest = {
+            "model": "hds",
+            "version": "3.1.60",
+            "chip": "esp32s3",
+            "environment": "esp32s3",
+        }
+        previous = {
+            "releases": [
+                {
+                    "model": "hds",
+                    "version": f"3.1.{version}",
+                    "chip": "esp32s3",
+                    "environment": "esp32s3",
+                }
+                for version in range(13, 60)
+            ]
+        }
+
+        catalog = module.build_catalog_manifest(latest, [previous], min_version="v3.1.13")
+
+        self.assertEqual(len(catalog["releases"]), module.MAX_CATALOG_RELEASES)
+        self.assertEqual(catalog["releases"][0]["version"], "3.1.60")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manifest_path = Path(temp_dir) / "manifest.json"
+            module.write_manifest(catalog, manifest_path)
+            self.assertLessEqual(manifest_path.stat().st_size, module.MAX_MANIFEST_BYTES)
+
+    def test_release_manifest_rejects_oversized_output(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manifest_path = Path(temp_dir) / "manifest.json"
+            with self.assertRaisesRegex(ValueError, "manifest exceeds 32768 bytes"):
+                module.write_manifest(
+                    {"release_notes_url": "x" * module.MAX_MANIFEST_BYTES},
+                    manifest_path,
+                )
+            self.assertFalse(manifest_path.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

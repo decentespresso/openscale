@@ -21,6 +21,8 @@ DEFAULT_FS_PARTITION_LABEL = "spiffs"
 DEFAULT_FS_PARTITION_SIZE = 1572864
 DEFAULT_FS_SCHEMA = 1
 DEFAULT_CATALOG_MIN_VERSION = "v3.1.13"
+MAX_CATALOG_RELEASES = 16
+MAX_MANIFEST_BYTES = 32768
 STABLE_VERSION_RE = re.compile(r"^v?([0-9]+)\.([0-9]+)\.([0-9]+)$")
 
 
@@ -143,8 +145,11 @@ def build_manifest(
 
 
 def write_manifest(manifest, path):
+    manifest_bytes = (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
+    if len(manifest_bytes) > MAX_MANIFEST_BYTES:
+        raise ValueError(f"manifest exceeds {MAX_MANIFEST_BYTES} bytes")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    path.write_bytes(manifest_bytes)
 
 
 def release_entries_from_manifest(manifest):
@@ -184,7 +189,7 @@ def build_catalog_manifest(latest_manifest, previous_manifests, min_version=None
             releases.append(release)
             seen.add(key)
     releases.sort(key=lambda release: version_key(release["version"]), reverse=True)
-    catalog["releases"] = releases
+    catalog["releases"] = releases[:MAX_CATALOG_RELEASES]
     return catalog
 
 
