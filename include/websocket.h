@@ -522,9 +522,14 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
     }
     if (action == "off" || action == "wake") {
       Serial.println("Websocket soft sleep off detected.");
+      bool wasSoftSleep = b_softSleep;
       b_softSleep = false;
       b_u8g2Sleep = false;
-      wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);
+      if (wasSoftSleep) {
+        wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);
+      } else {
+        wsReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
+      }
       sendWebsocketStatus(client, "ok");
       return true;
     }
