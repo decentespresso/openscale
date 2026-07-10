@@ -2,9 +2,11 @@
 #define PARAMETER_H
 //declaration
 #include <Arduino.h>
-#include <EEPROM.h>
+#include <Preferences.h>
 #include <math.h>
 #include "calibration_validation.h"
+
+Preferences settingsPreferences;
 
 //ble
 // volatile: read by the AsyncTCP task in the WS status frame, written by the
@@ -81,7 +83,7 @@ int i_onWrite_counter = 0;
 volatile unsigned long t_heartBeat = 0;
 volatile unsigned long t_firstConnect = 0;
 // volatile: read by the AsyncTCP task in the WS status frame, written by the
-// main-loop menu/EEPROM restore paths.
+// main-loop menu/NVS restore paths.
 volatile bool b_requireHeartBeat = true;
 volatile bool b_screenFlipped = false;
 volatile bool b_timeOnTop = false;
@@ -99,7 +101,7 @@ int bufferIndex = 0;
 const int i_margin_top = 8;
 const int i_margin_bottom = 8;
 
-int b_beep = 1;  //although it should be bool, change it from int to bool will affect eeprom address, because sizeof(b_beep) was used.
+int b_beep = 1;
 bool b_about = false;
 bool b_debug = false;
 
@@ -124,10 +126,6 @@ float INPUTCOFFEEPOUROVER = 20.0;
 float INPUTCOFFEEESPRESSO = 20.0;
 float f_batteryCalibrationFactor = 0.66;
 String str_welcome = "welcome";
-const size_t WELCOME_EEPROM_BYTES = 128;
-const size_t WELCOME_EEPROM_MAGIC_BYTES = 4;
-const size_t WELCOME_EEPROM_TEXT_BYTES = WELCOME_EEPROM_BYTES - WELCOME_EEPROM_MAGIC_BYTES;
-const char WELCOME_EEPROM_MAGIC[WELCOME_EEPROM_MAGIC_BYTES] = {'H', 'D', 'S', 'W'};
 float f_calibration_value = CALIBRATION_VALUE_DEFAULT;   //称重单元校准值
 bool b_calibrationInvalid = false;
 char c_calibrationStatus[32] = "ok";
@@ -385,96 +383,5 @@ float f_divider_factor = f_true_battery_reading / f_adc_battery_reading * 4.07 /
 #endif
 
 int i_display_rotation = 0;  //rotation 0 1 2 3 : 0 90 180 270
-
-//EEPROM Address
-int i_addr_calibration_value = 0;  //EEPROM start from 0, the calibration is shown as float calibrationValue;
-//int i_addr_sample = i_addr_calibration_value + sizeof(f_calibration_value);                              //int sample
-int i_addr_container = i_addr_calibration_value + sizeof(f_calibration_value);  //sample number float f_weight_container
-int i_addr_mode = i_addr_container + sizeof(f_weight_container);                //mode int b_mode
-int INPUTCOFFEEPOUROVER_ADDRESS = i_addr_mode + sizeof(b_mode);
-int INPUTCOFFEEESPRESSO_ADDRESS = INPUTCOFFEEPOUROVER_ADDRESS + sizeof(INPUTCOFFEEPOUROVER);
-int i_addr_beep = INPUTCOFFEEESPRESSO_ADDRESS + sizeof(INPUTCOFFEEESPRESSO);
-int i_addr_welcome = i_addr_beep + sizeof(b_beep);                                                   //str_welcome text slot
-int i_addr_batteryCalibrationFactor = i_addr_welcome + WELCOME_EEPROM_BYTES;                         //f_batteryCalibrationFactor
-int i_addr_requireHeartBeat = i_addr_batteryCalibrationFactor + sizeof(f_batteryCalibrationFactor);  //b_requireHeartBeat
-int i_addr_screenFlipped = i_addr_requireHeartBeat + sizeof(b_requireHeartBeat);                     //b_screenFlipped
-int i_addr_timeOnTop = i_addr_screenFlipped + sizeof(b_screenFlipped);                               //b_timeOnTop
-int i_addr_btnFuncWhileConnected = i_addr_timeOnTop + sizeof(b_timeOnTop);                           //b_btnFuncWhileConnected
-int i_addr_enableWifiOnBoot = i_addr_btnFuncWhileConnected + sizeof(b_btnFuncWhileConnected);        //b_wifiOnBoot
-int i_addr_autoSleep = i_addr_enableWifiOnBoot + sizeof(b_wifiOnBoot);
-int i_addr_quickBoot = i_addr_autoSleep + sizeof(b_autoSleep);//b_quickBoot
-int i_addr_driftCompensation = i_addr_quickBoot + sizeof(b_quickBoot);//f_maxDriftCompensation
-
-//int i_addr_enableWifiOnBoot = i_addr_btnFuncWhileConnected + sizeof(b_wifiOnBoot);
-
-
-//int i_addr_debug = i_addr_batteryCalibrationFactor + sizeof(f_batteryCalibrationFactor);  //str_welcome
-
-static inline const char *defaultWelcomeText() {
-#ifdef WELCOME1
-  return WELCOME1;
-#else
-  return "welcome";
-#endif
-}
-
-static inline bool isWelcomeTextByte(uint8_t value) {
-  return value >= 0x20 && value <= 0x7e;
-}
-
-static inline bool welcomeMagicMatches() {
-  for (size_t i = 0; i < WELCOME_EEPROM_MAGIC_BYTES; ++i) {
-    if (EEPROM.read(i_addr_welcome + i) != (uint8_t)WELCOME_EEPROM_MAGIC[i]) {
-      return false;
-    }
-  }
-  return true;
-}
-
-static inline void loadWelcomeFromEEPROM() {
-  char welcomeBuffer[WELCOME_EEPROM_TEXT_BYTES];
-  size_t textLen = 0;
-  bool valid = welcomeMagicMatches();
-
-  if (valid) {
-    for (size_t i = 0; i < WELCOME_EEPROM_TEXT_BYTES - 1; ++i) {
-      uint8_t value = EEPROM.read(i_addr_welcome + WELCOME_EEPROM_MAGIC_BYTES + i);
-      if (value == '\0') {
-        break;
-      }
-      if (!isWelcomeTextByte(value)) {
-        valid = false;
-        break;
-      }
-      welcomeBuffer[textLen++] = (char)value;
-    }
-  }
-
-  welcomeBuffer[textLen] = '\0';
-  if (valid && textLen > 0) {
-    str_welcome = String(welcomeBuffer);
-  } else {
-    str_welcome = defaultWelcomeText();
-  }
-  str_welcome.trim();
-}
-
-static inline void saveWelcomeToEEPROM(const String &welcome) {
-  String normalized = welcome;
-  normalized.trim();
-  const char *text = normalized.c_str();
-  size_t textLen = normalized.length();
-  if (textLen >= WELCOME_EEPROM_TEXT_BYTES) {
-    textLen = WELCOME_EEPROM_TEXT_BYTES - 1;
-  }
-
-  for (size_t i = 0; i < WELCOME_EEPROM_MAGIC_BYTES; ++i) {
-    EEPROM.write(i_addr_welcome + i, WELCOME_EEPROM_MAGIC[i]);
-  }
-  for (size_t i = 0; i < WELCOME_EEPROM_TEXT_BYTES; ++i) {
-    EEPROM.write(i_addr_welcome + WELCOME_EEPROM_MAGIC_BYTES + i, i < textLen ? text[i] : 0);
-  }
-  EEPROM.commit();
-}
 
 #endif

@@ -304,7 +304,7 @@ public:
     inputString.trim(); // Remove leading/trailing whitespace
     Serial.printf("handling %s\n", inputString.c_str());
     if (inputString.startsWith("welcome ")) {
-      saveWelcomeToEEPROM(inputString.substring(8));
+      storagePutWelcome(inputString.substring(8));
     }
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
     if (inputString.startsWith("gyro")) {
@@ -316,8 +316,7 @@ public:
 
     if (inputString.startsWith("cp ")) {  //手冲粉量
       INPUTCOFFEEPOUROVER = inputString.substring(3).toFloat();
-      EEPROM.put(INPUTCOFFEEPOUROVER_ADDRESS, INPUTCOFFEEPOUROVER);
-      EEPROM.commit();
+      storagePutFloat(KEY_POUROVER, INPUTCOFFEEPOUROVER);
     }
 
     if (inputString.startsWith("v")) {  //电压
@@ -342,11 +341,7 @@ public:
       float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;                // Calculate the voltage at the ADC pin
       float batteryVoltage = voltageAtPin * dividerRatio;                                // Calculate the actual battery voltage using the voltage divider ratio
       f_batteryCalibrationFactor = inputString.substring(3).toFloat() / batteryVoltage;  // Calculate the calibration factor from user input
-      EEPROM.put(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);           // Store the calibration factor in EEPROM
-
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
-      EEPROM.commit();  // Commit changes to EEPROM to save the calibration factor
-#endif
+      storagePutFloat(KEY_BAT_CAL, f_batteryCalibrationFactor);
 
       Serial.print("Battery Voltage Factor set to: ");  // Output the new calibration factor to the Serial Monitor
       Serial.println(f_batteryCalibrationFactor);
@@ -357,8 +352,7 @@ public:
       if (isValidCalibrationValue(newCalibrationValue)) {
         f_calibration_value = newCalibrationValue;
         scale.setCalFactor(f_calibration_value);
-        EEPROM.put(i_addr_calibration_value, f_calibration_value);
-        EEPROM.commit();
+        storagePutFloat(KEY_CAL1, f_calibration_value);
         b_calibrationInvalid = false;
         snprintf(c_calibrationStatus, sizeof(c_calibrationStatus), "%s",
                  calibrationRejectReasonText(CAL_REJECT_NONE));
@@ -453,8 +447,6 @@ public:
         Serial.print("On ");
       else
         Serial.print("Off ");
-      //EEPROM.put(i_addr_debug, b_debug);
-      //EEPROM.commit();
     }
     
     if (inputString.startsWith("adsd ")) {
@@ -498,8 +490,7 @@ public:
 #ifdef BUZZER
     if (inputString.startsWith("beep")) {  //蜂鸣器
       b_beep = !b_beep;
-      EEPROM.put(i_addr_beep, b_beep);
-      EEPROM.commit();
+      storagePutInt(KEY_BEEP, b_beep);
     }
     // Send the updated values via USB serial
     Serial.print("\tBuzzer:");

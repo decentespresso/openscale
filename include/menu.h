@@ -245,9 +245,8 @@ void buzzerOn() {
   actionMessage = "Buzzer on";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_beep, b_beep);
-  EEPROM.commit();
-  Serial.println("Buzzer On stored in EEPROM.");
+  storagePutInt(KEY_BEEP, b_beep);
+  Serial.println("Buzzer On stored in NVS.");
 }
 
 void buzzerOff() {
@@ -255,9 +254,8 @@ void buzzerOff() {
   actionMessage = "Buzzer off";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_beep, b_beep);
-  EEPROM.commit();
-  Serial.println("Buzzer off stored in EEPROM.");
+  storagePutInt(KEY_BEEP, b_beep);
+  Serial.println("Buzzer off stored in NVS.");
 }
 #endif
 
@@ -267,8 +265,7 @@ void toggleWifiOn() {
   actionMessage2 = "Restart scale";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_enableWifiOnBoot, true);
-  EEPROM.commit();
+  storagePutBool(KEY_WIFI_BOOT, true);
   Serial.printf("%s\n", actionMessage);
 }
 
@@ -278,8 +275,7 @@ void toggleWifiOff() {
   actionMessage2 = "Restart scale";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_enableWifiOnBoot, false);
-  EEPROM.commit();
+  storagePutBool(KEY_WIFI_BOOT, false);
   Serial.printf("%s\n", actionMessage);
 }
 
@@ -377,8 +373,7 @@ void heartbeatOn() {
   actionMessage = "Heartbeat On";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_requireHeartBeat, (bool)b_requireHeartBeat);
-  EEPROM.commit();
+  storagePutBool(KEY_HEARTBEAT, b_requireHeartBeat);
   Serial.println("Heartbeat detection...On");
 }
 
@@ -387,8 +382,7 @@ void heartbeatOff() {
   actionMessage = "Heartbeat Off";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_requireHeartBeat, (bool)b_requireHeartBeat);
-  EEPROM.commit();
+  storagePutBool(KEY_HEARTBEAT, b_requireHeartBeat);
   Serial.println("Heartbeat detection...Off");
 }
 
@@ -397,8 +391,7 @@ void flipScreenOn() {
   actionMessage = "Flip On";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_screenFlipped, (bool)b_screenFlipped);
-  EEPROM.commit();
+  storagePutBool(KEY_SCREEN_FLIP, b_screenFlipped);
   u8g2.setDisplayRotation(U8G2_R0);
   Serial.println("Screen flipped...On");
 }
@@ -408,8 +401,7 @@ void flipScreenOff() {
   actionMessage = "Flip Off";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_screenFlipped, (bool)b_screenFlipped);
-  EEPROM.commit();
+  storagePutBool(KEY_SCREEN_FLIP, b_screenFlipped);
   u8g2.setDisplayRotation(U8G2_R2);
   Serial.println("Screen flipped...Off");
 }
@@ -419,8 +411,7 @@ void timeOnTopOn() {
   actionMessage = "Time On Top";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_timeOnTop, (bool)b_timeOnTop);
-  EEPROM.commit();
+  storagePutBool(KEY_TIME_ON_TOP, b_timeOnTop);
   Serial.println("Time On Top");
 }
 
@@ -429,8 +420,7 @@ void timeOnTopOff() {
   actionMessage = "Weight On Top";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_timeOnTop, (bool)b_timeOnTop);
-  EEPROM.commit();
+  storagePutBool(KEY_TIME_ON_TOP, b_timeOnTop);
   Serial.println("Weight On Top");
 }
 
@@ -439,8 +429,7 @@ void btnFuncWhileConnectedOn() {
   actionMessage = "BLE Btns On";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_btnFuncWhileConnected, (bool)b_btnFuncWhileConnected);
-  EEPROM.commit();
+  storagePutBool(KEY_BTN_CONN, b_btnFuncWhileConnected);
   Serial.println("BLE Btns On");
 }
 
@@ -449,8 +438,7 @@ void btnFuncWhileConnectedOff() {
   actionMessage = "BLE Btns Off";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_btnFuncWhileConnected, (bool)b_btnFuncWhileConnected);
-  EEPROM.commit();
+  storagePutBool(KEY_BTN_CONN, b_btnFuncWhileConnected);
   Serial.println("BLE Btns Off");
 }
 
@@ -459,9 +447,8 @@ void autoSleepOn() {
   actionMessage = "Autosleep On";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_autoSleep, (bool)b_autoSleep);
-  EEPROM.commit();
-  Serial.println("Autosleep on stored in EEPROM.");
+  storagePutBool(KEY_AUTO_SLEEP, b_autoSleep);
+  Serial.println("Autosleep on stored in NVS.");
 }
 
 void autoSleepOff() {
@@ -469,9 +456,8 @@ void autoSleepOff() {
   actionMessage = "Autosleep Off";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_autoSleep, (bool)b_autoSleep);
-  EEPROM.commit();
-  Serial.println("Autosleep off stored in EEPROM.");
+  storagePutBool(KEY_AUTO_SLEEP, b_autoSleep);
+  Serial.println("Autosleep off stored in NVS.");
 }
 
 void quickBootOn() {
@@ -479,9 +465,8 @@ void quickBootOn() {
   actionMessage = "Quick Boot On";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_quickBoot, (bool)b_quickBoot);
-  EEPROM.commit();
-  Serial.println("Quick boot on stored in EEPROM.");
+  storagePutBool(KEY_QUICK_BOOT, b_quickBoot);
+  Serial.println("Quick boot on stored in NVS.");
 }
 
 void quickBootOff() {
@@ -489,9 +474,8 @@ void quickBootOff() {
   actionMessage = "Quick Boot Off";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_quickBoot, (bool)b_quickBoot);
-  EEPROM.commit();
-  Serial.println("Quick boot off stored in EEPROM.");
+  storagePutBool(KEY_QUICK_BOOT, b_quickBoot);
+  Serial.println("Quick boot off stored in NVS.");
 }
 
 void driftCompOff() {
@@ -499,9 +483,8 @@ void driftCompOff() {
   actionMessage = "Drift Comp Off";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_driftCompensation, f_maxDriftCompensation);
-  EEPROM.commit();
-  Serial.println("Drift Comp Off stored in EEPROM.");
+  storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
+  Serial.println("Drift Comp Off stored in NVS.");
 }
 
 void driftComp0050() {
@@ -509,9 +492,8 @@ void driftComp0050() {
   actionMessage = "Drift Comp 0.05g";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_driftCompensation, f_maxDriftCompensation);
-  EEPROM.commit();
-  Serial.println("Drift Comp 0.05g stored in EEPROM.");
+  storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
+  Serial.println("Drift Comp 0.05g stored in NVS.");
 }
 
 void driftComp0075() {
@@ -519,9 +501,8 @@ void driftComp0075() {
   actionMessage = "Drift Comp 0.075g";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_driftCompensation, f_maxDriftCompensation);
-  EEPROM.commit();
-  Serial.println("Drift Comp 0.075g stored in EEPROM.");
+  storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
+  Serial.println("Drift Comp 0.075g stored in NVS.");
 }
 
 void driftComp0100() {
@@ -529,9 +510,8 @@ void driftComp0100() {
   actionMessage = "Drift Comp 0.1g";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_driftCompensation, f_maxDriftCompensation);
-  EEPROM.commit();
-  Serial.println("Drift Comp 0.1g stored in EEPROM.");
+  storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
+  Serial.println("Drift Comp 0.1g stored in NVS.");
 }
 
 void driftComp0200() {
@@ -539,9 +519,8 @@ void driftComp0200() {
   actionMessage = "Drift Comp 0.2g";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  EEPROM.put(i_addr_driftCompensation, f_maxDriftCompensation);
-  EEPROM.commit();
-  Serial.println("Drift Comp 0.2g stored in EEPROM.");
+  storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
+  Serial.println("Drift Comp 0.2g stored in NVS.");
 }
 
 void calibrate() {
@@ -820,10 +799,7 @@ void calibrationSave(float previousCalibrationValue,
                      float verifiedWeight) {
   f_calibration_value = newCalibrationValue;
   scale.setCalFactor(f_calibration_value);
-  EEPROM.put(i_addr_calibration_value, f_calibration_value);
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
-  EEPROM.commit();
-#endif
+  storagePutFloat(KEY_CAL1, f_calibration_value);
   calibrationRecordDiagnostics(CAL_REJECT_NONE, f_calibration_value,
                                &zeroCapture, &loadCapture, verifiedWeight);
   calibrationPrintDiagnostics(CAL_REJECT_NONE, previousCalibrationValue,
@@ -1284,29 +1260,6 @@ void enableDebug() {
   // Optionally reset or perform an exit action
 }
 
-// void calibrateVoltage() {
-//   actionMessage = "Calibrate 4.2v";
-//   t_actionMessage = millis();
-//   int adcValue = analogRead(BATTERY_PIN); // Read the ADC value from the
-//   battery pin float voltageAtPin = (adcValue / adcResolution) *
-//   referenceVoltage;       // Calculate the voltage at the ADC pin float
-//   batteryVoltage = voltageAtPin * dividerRatio;                       //
-//   Calculate the actual battery voltage using the voltage divider ratio
-//   f_batteryCalibrationFactor = 4.2 / batteryVoltage; // Calculate the
-//   calibration factor from user input
-//   EEPROM.put(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor); //
-//   Store the calibration factor in EEPROM
-
-// #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) ||
-// defined(ARDUINO_ARCH_MBED_RP2040)
-//   EEPROM.commit();  // Commit changes to EEPROM to save the calibration
-//   factor
-// #endif
-//   Serial.print("Battery Voltage Factor set to: ");  // Output the new
-//   calibration factor to the Serial Monitor
-//   Serial.println(f_batteryCalibrationFactor);
-// }
-
 void calibrateVoltage() {
   actionMessage = "Calibrate 4.2v";
   t_actionMessage = millis();
@@ -1330,12 +1283,7 @@ void calibrateVoltage() {
   // Calculate the calibration factor
   f_batteryCalibrationFactor = 4.2 / batteryVoltage;
 
-  // Store the calibration factor in EEPROM
-  EEPROM.put(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);
-
-#if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
-  EEPROM.commit();  // Commit changes to EEPROM
-#endif
+  storagePutFloat(KEY_BAT_CAL, f_batteryCalibrationFactor);
 
   // Output the new calibration factor to the Serial Monitor
   Serial.print("Battery Voltage Factor set to: ");

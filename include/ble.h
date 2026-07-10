@@ -71,7 +71,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
     deviceConnected = false;
     bleState = DISCONNECTED;
 #ifdef BUZZER
-    EEPROM.get(i_addr_beep, b_beep);  //read buzzer state after disconnect
+    b_beep = storageGetInt(KEY_BEEP, 1);
 #endif
     b_u8g2Sleep = false;
     remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
@@ -102,7 +102,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
     deviceConnected = false;
     bleState = DISCONNECTED;
 #ifdef BUZZER
-    EEPROM.get(i_addr_beep, b_beep);
+    b_beep = storageGetInt(KEY_BEEP, 1);
 #endif
     b_u8g2Sleep = false;
     remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
