@@ -6,6 +6,7 @@
 #include "config.h"
 #include "display.h"
 #include "parameter.h"
+#include "pull_ota_catalog.h"
 #include "pull_ota_version.h"
 #include "webserver.h"
 #include "wifi_ota.h"
@@ -370,26 +371,15 @@ bool pullOtaSameRelease(const PullOtaManifest &left, const PullOtaManifest &righ
 }
 
 void pullOtaAddRelease(PullOtaReleaseList &list, const PullOtaManifest &candidate) {
-  for (uint8_t i = 0; i < list.count; i++) {
-    if (pullOtaSameRelease(list.releases[i], candidate)) {
-      return;
-    }
-  }
-  uint8_t insertAt = 0;
-  while (insertAt < list.count &&
-         pullOtaCompareVersions(list.releases[insertAt].version, candidate.version) > 0) {
-    insertAt++;
-  }
-  if (list.count == HDS_OTA_MAX_RELEASE_CHOICES && insertAt >= HDS_OTA_MAX_RELEASE_CHOICES) {
-    return;
-  }
-  if (list.count < HDS_OTA_MAX_RELEASE_CHOICES) {
-    list.count++;
-  }
-  for (int i = (int)list.count - 1; i > (int)insertAt; i--) {
-    list.releases[i] = list.releases[i - 1];
-  }
-  list.releases[insertAt] = candidate;
+  pullOtaCatalogAdd(
+      list.releases,
+      list.count,
+      HDS_OTA_MAX_RELEASE_CHOICES,
+      candidate,
+      pullOtaSameRelease,
+      [](const PullOtaManifest &left, const PullOtaManifest &right) {
+        return pullOtaCompareVersions(left.version, right.version);
+      });
 }
 
 bool pullOtaAddParsedRelease(JsonObject releaseObject, PullOtaReleaseList &list) {
