@@ -11,7 +11,7 @@ This is a trusted-local-WLAN feature. The plug MAC is used as an identity label,
 ## What It Does
 
 - Lets the scale switch the grinder plug on and off automatically
-- Starts only after you tare the empty cup and it becomes stable
+- After a new plug connection, starts only after you tare the empty cup and it becomes stable
 - Stops the grinder when the dose reaches the target
 - Waits for cup removal before preparing the next dose
 - Learns a better safety value from normal shots over time
@@ -38,6 +38,19 @@ Install the linked plug firmware on the Tasmota plug, then connect the plug to t
 
 The selected MAC is the saved identity. Hostname and IP are cached only to find the plug faster later.
 
+## First Safe Test
+
+Keep the grinder's physical switch off for the first test so the plug can switch without starting the motor.
+
+1. Complete `Scale Setup` and leave the menu.
+2. Confirm that the display reaches `Tare to arm`.
+3. Put the empty dosing cup in its normal position and tare the scale.
+4. Wait for `Ready` and confirm that the plug relay switches on.
+5. Add weight gradually until the cutoff is reached and confirm that the plug switches off.
+6. Remove the weight and return the empty cup. After stable zero, the display should return to `Ready`.
+
+Only enable the grinder's physical switch after this dry test works reliably.
+
 ## Settings
 
 From the normal weight view, hold both buttons for 500 ms to open the `Grinder Plug` menu when grinder mode is on. Use `Target g` there for quick target changes.
@@ -55,6 +68,8 @@ Target tolerance: 0.5 g
 
 `Grinder On` forces WiFi on boot.
 
+Entering the grinder menu while the plug is armed sends OFF first. The TCP connection is kept alive where possible, and leaving the menu rearms only after stable zero.
+
 The cutoff threshold is:
 
 ```text
@@ -62,6 +77,16 @@ target grams - safety grams
 ```
 
 Latency compensation is not used. Adaptive safety is the only early-stop compensation.
+
+Example with the defaults:
+
+```text
+target: 15.0 g
+safety: 2.0 g
+cutoff: 13.0 g
+```
+
+The earlier cutoff allows for grounds that continue falling after power is removed. Adaptive learning adjusts safety from valid completed doses; it does not change the target.
 
 ## Normal Use
 
@@ -79,6 +104,27 @@ Latency compensation is not used. Adaptive safety is the only early-stop compens
 12. The scale rearms after stable zero hold without requiring another tare.
 
 After a reconnect, tare the empty cup once again when `Tare to arm` appears. Automatic startup, charging-wake, and ADC-recovery tares do not arm the grinder.
+
+After `Ready` appears, only ground coffee should add weight. Slowly placing another object can look like a valid grind because the scale only sees weight changes. If the cup or setup changes, tare again before grinding.
+
+## Display Status
+
+| Display | Meaning | What to do |
+| --- | --- | --- |
+| `WiFi wait` | Scale is waiting for WiFi | Wait for WiFi or check the saved network |
+| `Plug wait` | Selected plug is not reachable | Power the plug or use `Select Plug` |
+| `Tare to arm` | Plug is connected but safely OFF | Put down the empty cup and tare |
+| `Zero wait` | Waiting for a stable zero reading | Leave the empty cup untouched |
+| `Ready` | Plug relay is ON and dosing can begin | Start the grinder physically |
+| `Grinding` | A plausible rising dose was detected | Let the dose run |
+| `Stopping` | OFF was sent and acknowledgement is pending | Wait briefly |
+| `Remove cup` | Dose ended | Remove the filled cup |
+| `Await zero` | Waiting for the empty cup to return | Return the empty cup and leave it stable |
+| `Tare cup` | Weight rose too quickly to be a plausible grind | Return to zero or tare the changed setup |
+| `Busy` | Another scale/client owns the plug connection | Disconnect the other client or restart the plug |
+| `Grinder error` | Fail-safe stopped grinder control | Check the plug and reconnect grinder mode |
+
+`Grinding` is a display indication, not the cutoff authority. It appears after at least 750 ms, 1.0 g rise, three positive steps, and an average rise no faster than 6 g/s.
 
 ## Cutoff Protection
 
