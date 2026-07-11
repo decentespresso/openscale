@@ -1,9 +1,9 @@
 #ifndef GRINDER_RUNTIME_LOW_LATENCY_H
 #define GRINDER_RUNTIME_LOW_LATENCY_H
 
-#define GRINDER_CONFIRM_MIN_DURATION_MS 1500
-#define GRINDER_CONFIRM_MIN_RISE_GRAMS 2.0f
-#define GRINDER_CONFIRM_MIN_POSITIVE_SAMPLES 4
+#define GRINDER_CONFIRM_MIN_DURATION_MS 750
+#define GRINDER_CONFIRM_MIN_RISE_GRAMS 1.0f
+#define GRINDER_CONFIRM_MIN_POSITIVE_SAMPLES 3
 #define GRINDER_CONFIRM_MIN_STEP_GRAMS 0.03f
 
 static inline bool grinderActivePlugValidated() {
@@ -128,6 +128,10 @@ static inline bool grinderTrackGrindConfirmation(float weight, uint32_t now) {
   if (duration < GRINDER_CONFIRM_MIN_DURATION_MS ||
       rise < GRINDER_CONFIRM_MIN_RISE_GRAMS ||
       grinderRuntime.grindCandidatePositiveSamples < GRINDER_CONFIRM_MIN_POSITIVE_SAMPLES) {
+    return false;
+  }
+  const float averageRate = rise / ((float)duration / 1000.0f);
+  if (averageRate > GRINDER_MAX_GRIND_RATE_GPS) {
     return false;
   }
   grinderRuntime.grindConfirmed = true;

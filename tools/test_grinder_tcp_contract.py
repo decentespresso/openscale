@@ -89,13 +89,13 @@ def test_low_latency_cutoff_source_contracts():
     assert low_latency.index("grinderSendOff()", cutoff_start) < low_latency.index("[grinder] cutoff", cutoff_start)
     assert low_latency.index("grinderPlugConnectionStale(millis())", fresh_start) < low_latency.index("grinderTickGrindingCutoff(weight);", fresh_start)
     assert_contains(PROTOCOL_HEADER, "GRINDER_CUTOFF_ZERO_EXIT_PROTECTION_MS 1500")
-    assert "GRINDER_CONFIRM_MIN_DURATION_MS 1500" in low_latency
-    assert "GRINDER_CONFIRM_MIN_RISE_GRAMS 2.0f" in low_latency
-    assert "GRINDER_CONFIRM_MIN_POSITIVE_SAMPLES 4" in low_latency
+    assert "GRINDER_CONFIRM_MIN_DURATION_MS 750" in low_latency
+    assert "GRINDER_CONFIRM_MIN_RISE_GRAMS 1.0f" in low_latency
+    assert "GRINDER_CONFIRM_MIN_POSITIVE_SAMPLES 3" in low_latency
     assert "grinderRuntime.tarePending" in low_latency
     assert "grinderRuntime.setupMassBlocked" in low_latency
     assert 'grinderSetStatus("tare cup")' in low_latency
-    assert "GRINDER_ADAPTIVE_MAX_AVERAGE_RATE_GPS" not in low_latency
+    assert "averageRate > GRINDER_MAX_GRIND_RATE_GPS" in low_latency
     assert "grinderRuntime.grindConfirmed = true" in low_latency
     assert "grinderWeightInPositiveDoseRange(weight)" in low_latency
     assert "grinderCutoffShouldStop" in low_latency
