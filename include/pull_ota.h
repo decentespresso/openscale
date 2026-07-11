@@ -6,6 +6,7 @@
 #include "config.h"
 #include "display.h"
 #include "parameter.h"
+#include "pull_ota_version.h"
 #include "webserver.h"
 #include "wifi_ota.h"
 #include "wifi_setup.h"
@@ -198,59 +199,26 @@ String pullOtaCurrentVersion() {
 
 bool pullOtaParseVersionTriplet(String version, uint16_t parts[3]) {
   version.trim();
-  if (version.startsWith("v") || version.startsWith("V")) {
-    version = version.substring(1);
+  PullOtaVersionTriplet parsed;
+  if (!pullOtaParseVersionPrefix(version.c_str(), parsed) || *parsed.suffix != '\0') {
+    return false;
   }
-  int index = 0;
-  for (uint8_t partIndex = 0; partIndex < 3; partIndex++) {
-    if (index >= version.length()) {
-      return false;
-    }
-    uint32_t value = 0;
-    bool hasDigit = false;
-    while (index < version.length()) {
-      char c = version.charAt(index);
-      if (c < '0' || c > '9') {
-        break;
-      }
-      hasDigit = true;
-      value = value * 10 + (c - '0');
-      if (value > 65535) {
-        return false;
-      }
-      index++;
-    }
-    if (!hasDigit) {
-      return false;
-    }
-    parts[partIndex] = (uint16_t)value;
-    if (partIndex < 2) {
-      if (index >= version.length() || version.charAt(index) != '.') {
-        return false;
-      }
-      index++;
-    }
-  }
-  return index == version.length();
+  for (uint8_t part = 0; part < 3; part++) parts[part] = parsed.parts[part];
+  return true;
 }
 
 bool pullOtaVersionLooksStable(const String &version) {
-  uint16_t parts[3];
-  return pullOtaParseVersionTriplet(version, parts);
+  String trimmed = version;
+  trimmed.trim();
+  return pullOtaVersionIsStable(trimmed.c_str());
 }
 
 int pullOtaCompareVersions(const String &left, const String &right) {
-  uint16_t leftParts[3];
-  uint16_t rightParts[3];
-  if (!pullOtaParseVersionTriplet(left, leftParts) ||
-      !pullOtaParseVersionTriplet(right, rightParts)) {
-    return 0;
-  }
-  for (uint8_t i = 0; i < 3; i++) {
-    if (leftParts[i] < rightParts[i]) return -1;
-    if (leftParts[i] > rightParts[i]) return 1;
-  }
-  return 0;
+  String leftTrimmed = left;
+  String rightTrimmed = right;
+  leftTrimmed.trim();
+  rightTrimmed.trim();
+  return pullOtaCompareVersionPrefixes(leftTrimmed.c_str(), rightTrimmed.c_str());
 }
 
 bool pullOtaUrlAllowed(const String &url) {
@@ -463,7 +431,7 @@ bool pullOtaFindCurrentRelease(
     PullOtaManifest &current) {
   String currentVersion = pullOtaCurrentVersion();
   for (uint8_t i = 0; i < catalog.count; i++) {
-    if (catalog.releases[i].version == currentVersion &&
+    if (pullOtaCompareVersions(catalog.releases[i].version, currentVersion) == 0 &&
         catalog.releases[i].littlefs.present &&
         catalog.releases[i].littlefs.required) {
       current = catalog.releases[i];
