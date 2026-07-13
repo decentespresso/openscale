@@ -40,6 +40,20 @@ jobs:
           pio run -e ${{ matrix.board }} 
           pio run -e ${{ matrix.board }} -t buildfs
 
+      - name: Assert vendored partition table matches framework
+        run: |
+          VENDORED=partitions/default_8MB.csv
+          UPSTREAM=~/.platformio/packages/framework-arduinoespressif32/tools/partitions/default_8MB.csv
+          if ! diff "$VENDORED" "$UPSTREAM" > /dev/null 2>&1; then
+            echo "::warning::Vendored $VENDORED differs from the framework-owned default_8MB.csv."
+            echo "This may be intentional (we pinned to an older layout) or the framework"
+            echo "has changed its partition table. Review the diff and decide whether to"
+            echo "update the vendored copy:"
+            diff "$VENDORED" "$UPSTREAM" || true
+          else
+            echo "Vendored partition table matches framework default_8MB.csv."
+          fi
+
       - name: "Run slugify"
         id: slugify
         uses: eltimn/slugify-action@v2.0.2
