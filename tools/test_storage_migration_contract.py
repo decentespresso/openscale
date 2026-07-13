@@ -55,6 +55,13 @@ for relative_path in (
     "include/menu.h",
     "include/usbcomm.h",
     "include/ble.h",
+    "include/grinder_adaptive_safety.h",
+    "include/grinder_discovery.h",
+    "include/grinder_protocol.h",
+    "include/grinder_runtime.h",
+    "include/grinder_runtime_adaptive.h",
+    "include/grinder_runtime_low_latency.h",
+    "include/grinder_settings_persistence.h",
 ):
     source = (ROOT / relative_path).read_text(encoding="utf-8")
     assert "EEPROM" not in source, f"runtime EEPROM access in {relative_path}"

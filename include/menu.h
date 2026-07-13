@@ -583,8 +583,7 @@ void grinderOn() {
   }
   grinderSetEnabled(true);
   b_wifiOnBoot = true;
-  EEPROM.put(i_addr_enableWifiOnBoot, true);
-  EEPROM.commit();
+  storagePutBool(KEY_WIFI_BOOT, true);
   if (!b_wifiEnabled) {
     wifi_init();
   }
@@ -600,8 +599,7 @@ void grinderOff() {
   grinderSetEnabled(false);
   if (restoreWifiOnBootSaved) {
     b_wifiOnBoot = restoreWifiOnBoot;
-    EEPROM.put(i_addr_enableWifiOnBoot, restoreWifiOnBoot);
-    EEPROM.commit();
+    storagePutBool(KEY_WIFI_BOOT, restoreWifiOnBoot);
     grinderSettings.previousWifiOnBoot = false;
     grinderSettings.previousWifiOnBootSaved = false;
     grinderSaveSettings();
