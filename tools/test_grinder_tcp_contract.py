@@ -81,6 +81,11 @@ def test_adaptive_safety_source_contracts():
 def test_low_latency_cutoff_source_contracts():
     low_latency = source(LOW_LATENCY_HEADER)
     runtime = source(RUNTIME_HEADER)
+    tare_requested_start = low_latency.index("static inline void grinderRuntimeNotifyTareRequested")
+    tare_complete_start = low_latency.index("static inline void grinderRuntimeNotifyTareComplete")
+    tare_complete_end = low_latency.index("static inline void grinderStartGrindCandidate")
+    tare_requested = low_latency[tare_requested_start:tare_complete_start]
+    tare_complete = low_latency[tare_complete_start:tare_complete_end]
     cutoff_start = low_latency.index("static inline void grinderTickGrindingCutoff")
     fresh_start = low_latency.index("static inline void grinderRuntimeFreshWeightTick")
     assert "const uint8_t command[] = { '!', '\\n' };" in low_latency
@@ -94,7 +99,15 @@ def test_low_latency_cutoff_source_contracts():
     assert "GRINDER_CONFIRM_MIN_POSITIVE_SAMPLES 3" in low_latency
     assert "grinderRuntime.tarePending" in low_latency
     assert "grinderRuntime.setupMassBlocked" in low_latency
-    assert 'grinderSetStatus("tare cup")' in low_latency
+    cutoff = low_latency[cutoff_start:fresh_start]
+    blocked_start = cutoff.index("if (grinderRuntime.setupMassBlocked)")
+    blocked_end = cutoff.index("const uint32_t now")
+    blocked = cutoff[blocked_start:blocked_end]
+    assert 'grinderSetStatus("tare cup")' not in cutoff
+    assert "grinderZeroStable(weight)" in blocked
+    assert "grinderResetCutoffGuard()" in blocked
+    assert 'grinderSetStatus("ready")' in blocked
+    assert "grinderSendOff()" not in blocked
     assert "averageRate > GRINDER_MAX_GRIND_RATE_GPS" in low_latency
     assert "grinderRuntime.grindConfirmed = true" in low_latency
     assert "grinderWeightInPositiveDoseRange(weight)" in low_latency
@@ -105,6 +118,9 @@ def test_low_latency_cutoff_source_contracts():
     assert "grinderCutoffGrams(grinderSettings.targetGrams, grinderSettings.safetyMarginGrams)" in low_latency
     assert "now - grinderRuntime.lastCommandAt >= 150" in runtime
     assert "grinderEnterError(\"lost plug\")" in runtime
+    assert "grinderRuntime.state == GRINDER_STATE_ERROR" in tare_requested
+    assert 'grinderSetStatus("armed");' in tare_complete
+    assert 'grinderSetStatus("plug wait");' in tare_complete
 
 
 def test_pending_command_timeouts_source_contracts():
@@ -206,6 +222,7 @@ def test_firmware_contracts():
     assert_contains(RUNTIME_HEADER, 'grinderSetStatus("tare to arm")')
     assert_contains(RUNTIME_HEADER, "bool userTareComplete = false")
     assert_contains(RUNTIME_HEADER, "grinderRuntime.userTareComplete = false")
+    assert source(RUNTIME_HEADER).count("grinderRuntime.userTareComplete = false;") == 1
     assert_contains(RUNTIME_HEADER, "grinderRuntime.tareRearmRequested = response.relayOn")
     assert_not_contains(RUNTIME_HEADER, "grind timeout")
     assert_contains(RUNTIME_HEADER, "bool setupMassBlocked = false")

@@ -58,7 +58,9 @@ static inline void grinderResetGrindConfirmation() {
 }
 
 static inline void grinderRuntimeNotifyTareRequested(bool userRequested) {
-  if (!grinderSettings.enabled || grinderRuntime.state == GRINDER_STATE_DISABLED) {
+  if (!grinderSettings.enabled ||
+      grinderRuntime.state == GRINDER_STATE_DISABLED ||
+      grinderRuntime.state == GRINDER_STATE_ERROR) {
     return;
   }
   grinderRuntime.tarePending = true;
@@ -96,6 +98,10 @@ static inline void grinderRuntimeNotifyTareComplete() {
     grinderSetState(GRINDER_STATE_CONNECTED);
   } else if (grinderRuntime.state == GRINDER_STATE_CONNECTED) {
     grinderSetStatus(grinderRuntime.userTareComplete ? "zero wait" : "tare to arm");
+  } else if (grinderRuntime.state == GRINDER_STATE_ARMED) {
+    grinderSetStatus("armed");
+  } else if (grinderRuntime.state == GRINDER_STATE_FINDING_PLUG) {
+    grinderSetStatus("plug wait");
   }
 }
 
@@ -143,6 +149,16 @@ static inline void grinderTickGrindingCutoff(float weight) {
   if (grinderRuntime.state != GRINDER_STATE_GRINDING) {
     return;
   }
+  if (grinderRuntime.setupMassBlocked) {
+    if (grinderZeroStable(weight)) {
+      grinderResetCutoffGuard();
+      grinderResetGrindConfirmation();
+      grinderSetStatus("ready");
+    } else {
+      grinderSetStatus("zero wait");
+    }
+    return;
+  }
   const uint32_t now = millis();
   grinderUpdateRate(weight);
   const float rate = grinderRuntime.rateSamples > 0 ? grinderRuntime.grindRateGps : 0.0f;
@@ -152,7 +168,6 @@ static inline void grinderTickGrindingCutoff(float weight) {
   } else {
     grinderTrackGrindConfirmation(weight, now);
   }
-  const bool setupMassWasBlocked = grinderRuntime.setupMassBlocked;
   if (!grinderCutoffShouldStop(weight,
                                grinderSettings.zeroMaxGrams,
                                grinderSettings.targetGrams,
@@ -163,9 +178,7 @@ static inline void grinderTickGrindingCutoff(float weight) {
                                &grinderRuntime.cutoffGuardZeroExitAt,
                                &grinderRuntime.setupMassBlocked)) {
     if (grinderRuntime.setupMassBlocked) {
-      grinderSetStatus("tare cup");
-    } else if (setupMassWasBlocked) {
-      grinderSetStatus("ready");
+      grinderSetStatus("zero wait");
     }
     return;
   }
