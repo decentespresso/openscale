@@ -58,7 +58,7 @@ The load-cell driver is the external `decentespresso/ADS1232_ADC` dependency pin
 
 Stay in polling mode. Do not call `scale.beginTask()`. The library task can run on the same core as AsyncTCP and starve `/snapshot`; this firmware calls `scale.update()` synchronously from `loop()` and calibration paths.
 
-`setSamplesInUse()` clears the ring buffer and resets valid samples. After a sensitivity or sample-window change, `getData()` can briefly return `0.0` and then ramp. One-shot measurements must wait until readings plateau for consecutive reads.
+`setSamplesInUse()` clears the ring buffer and resets valid samples. After a sensitivity or sample-window change, `getData()` can briefly return `0.0` and then ramp. A physical load step also restarts the smoothing ramp. One-shot measurements after either event must wait until readings plateau for consecutive reads.
 
 Tare averages the current buffer, often one sample in fast mode, so it is noisier than a fixed full-window tare.
 
@@ -77,6 +77,24 @@ The USB ADS debug packet keeps its 41-byte framing and checksum. Byte 24 is the 
 
 `printfAll` allocates per client. Arduino-ESP32 builds without exceptions, so `std::bad_alloc` aborts and reboots the device. Connection churn and half-open clients can exhaust heap. Low-heap behavior should skip broadcasts, not allocate.
 
+### WebSocket Heap Deep Reference
+
+Verify the named source constants before changing these values:
+
+- `WS_BROADCAST_HEAP_FLOOR = 32000` in `include/websocket.h`.
+- `HEAP_CRITICAL = 15000` in `src/wifi_setup.cpp`.
+- `WS_MAX_QUEUED_MESSAGES=8` in `platformio.ini`.
+- WebSocket client ACK timeout is 30000 ms in `setupWebsocketEvents()`.
+
+Relevant serial patterns:
+
+- `[ws] low heap ... -> skip broadcast`
+- `[ws] low heap ... -> skip client reply`
+- `[heap] CRITICAL low free=...`
+- `[health] uptime=... heap=...`
+
+Connection churn and half-open clients consume heap through queued per-client messages. The broadcast floor prevents new allocations before the critical heap watchdog must reboot the device.
+
 Only act on complete unfragmented text frames:
 
 ```c
@@ -94,7 +112,7 @@ if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TE
 | Device is unreachable after flash but USB enumerates | WiFi association failed on this boot; reset and retry. |
 | Boot logs show `LittleFS mount failed` | Upload the filesystem image; firmware-only flashing does not update LittleFS. |
 | Flashing becomes much slower than usual | Firmware may be interfering with bootloader handshake. Treat as a serious firmware bug. |
-| Panic or abort under multi-client WiFi load | Look for WebSocket broadcast OOM and missing heap gates. |
+| Panic or abort under multi-client WiFi load | Check the WebSocket heap constants and serial patterns above for connection churn, skipped broadcasts, and critical heap. |
 
 ## Keeping Notes Fresh
 

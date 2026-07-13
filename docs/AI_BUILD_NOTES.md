@@ -29,6 +29,16 @@ Firmware-only flashing does not update `web_apps/`. Flash LittleFS when the on-d
 python tools/serial_tap.py <port> --baud 115200
 ```
 
+`serial_tap.py` uses POSIX `termios` and is not available on Windows.
+
+Cross-platform fallback with pySerial:
+
+```sh
+python -m serial.tools.miniterm <port> 115200
+```
+
+Opening a serial terminal may toggle DTR or RTS and reset the device.
+
 ## Device Discovery
 
 The scale advertises `hds.local` and `_decentscale._tcp` with `path=/snapshot`, `proto=ws`, `model=hds`, and firmware metadata.

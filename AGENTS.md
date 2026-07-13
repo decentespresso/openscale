@@ -22,11 +22,11 @@ Use `docs/AI_REPO_MAP.md` first for orientation. Read broader docs only when the
 
 ## Code Style
 
-- No comments in code; use clear names and small functions.
+- Do not add explanatory comments to new or substantially rewritten code; use clear names and small functions. Preserve existing comments and required notices.
+- Put rationale, hardware constraints, and debugging history in the matching `docs/AI_*_NOTES.md` file.
 - No emojis in comments or documentation.
 - Prefer immutability when practical.
-- Prefer many small files over a few large files.
-- Keep files around 200-400 lines when practical; 800 lines is the ceiling.
+- Within the unity-style firmware architecture, prefer new handwritten implementation files around 200-400 lines and justify files over 800 lines. Do not split legacy files solely to meet this target.
 - Functions and locals are camelCase. Do not churn legacy snake_case.
 - Timer deltas use `unsigned long` and `millis() - lastUpdate`.
 
