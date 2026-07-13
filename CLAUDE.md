@@ -116,6 +116,10 @@ if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TE
 }
 ```
 
+## Persistent settings
+
+Scale settings use the HDS-specific `hds` NVS namespace and SensorBasket-style named keys from `include/storage.h`. WiFi and OTA keep separate namespaces. The legacy EEPROM blob is read only while schema migration is incomplete and is retained for firmware rollback.
+
 ## Style conventions
 
 | Prefix | Meaning |

@@ -1,8 +1,8 @@
 #include <Arduino.h>
-#include <EEPROM.h>
 #include "config.h"
 
 #include "parameter.h"
+#include "storage.h"
 #include "power.h"
 #include "gyro.h"
 #include "display.h"
@@ -46,23 +46,6 @@ void adsDebugCallback(const ADS1232DebugInfo& info) {
     lastDebugPrint = now;
   }
 }
-
-// Reads a boolean value from EEPROM with validation.
-// If the stored value is not 0 or 1 (i.e., invalid or uninitialized data),
-// it will be replaced with the provided default value.
-bool readBoolEEPROMWithValidation(int addr, bool defaultVal) {
-  uint8_t val;
-  EEPROM.get(addr, val);  // Read raw byte from EEPROM
-  if (val == 0 || val == 1) {
-    // Valid boolean value found
-    return val;
-  }
-  // Invalid value, overwrite with default
-  EEPROM.put(addr, (uint8_t)defaultVal);
-  EEPROM.commit();
-  return defaultVal;
-}
-
 
 //buttons
 
@@ -233,7 +216,7 @@ void buttonSquare_Pressed() {
 void setButtonPressConfig(int button, float min_peak, float max_net, 
                          float min_recovery, unsigned long max_press_time,
                          unsigned long min_total_time) {
-  // Can add code here to save configurations via EEPROM or other methods
+  // Can add code here to save configurations via NVS or other methods
   // Currently using predefined macros, can be changed to variables later
   Serial.print("Button config updated for ");
   Serial.print(button == BUTTON_CIRCLE ? "Circle" : "Square");
@@ -410,17 +393,17 @@ void setup() {
     g_resetReasonCode = (uint8_t)r;
     Serial.printf("[boot] reset_reason=%s (%u)\n", resetReasonStr(r), (unsigned)g_resetReasonCode);
   }
-  if (!EEPROM.begin(512)) {
-    Serial.println("EEPROM init failed!");
+  if (!storageInit()) {
+    Serial.println("NVS settings init failed!");
     while (1) {
       delay(1000);
     }
   }
 
-  b_quickBoot = readBoolEEPROMWithValidation(i_addr_quickBoot, false);
+  b_quickBoot = storageGetBool(KEY_QUICK_BOOT, false);
   i_buttonBootDelay = b_quickBoot ? 0 : 500;
 
-  Serial.println("EEPROM init success");
+  Serial.println("NVS settings init success");
   
   // Initialize USB callback function pointers
   usbCallbacks.setStableOutputThreshold = setStableOutputThreshold;
@@ -573,7 +556,7 @@ void setup() {
   analogReadResolution(ADC_BIT);
 #ifdef BUZZER
   pinMode(BUZZER, OUTPUT);
-  EEPROM.get(i_addr_beep, b_beep);
+  b_beep = storageGetInt(KEY_BEEP, 1);
 
   if (GPIO_power_on_with != BATTERY_CHARGING) {
     buzzer.beep(1, BUZZER_DURATION);
@@ -585,9 +568,10 @@ void setup() {
   u8g2.setFont(FONT_M);
   power_off(15);
 #ifdef WELCOME
-  loadWelcomeFromEEPROM();
+  str_welcome = storageGetString(KEY_WELCOME, String(WELCOME1));
+  str_welcome.trim();
 #endif
-  b_screenFlipped = readBoolEEPROMWithValidation(i_addr_screenFlipped, false);
+  b_screenFlipped = storageGetBool(KEY_SCREEN_FLIP, false);
   if (b_screenFlipped)
     u8g2.setDisplayRotation(U8G2_R0);
   else
@@ -622,75 +606,59 @@ void setup() {
   stopWatch.setResolution(StopWatch::SECONDS);
   stopWatch.start();
   stopWatch.reset();
-  EEPROM.get(INPUTCOFFEEPOUROVER_ADDRESS, INPUTCOFFEEPOUROVER);
-  EEPROM.get(INPUTCOFFEEESPRESSO_ADDRESS, INPUTCOFFEEESPRESSO);
-  EEPROM.get(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);
-  EEPROM.get(i_addr_mode, b_mode);
-  EEPROM.get(i_addr_driftCompensation, f_maxDriftCompensation);
-
-
-  //EEPROM.get(i_addr_debug, b_debug);
+  INPUTCOFFEEPOUROVER = storageGetFloat(KEY_POUROVER, 16.0f);
+  INPUTCOFFEEESPRESSO = storageGetFloat(KEY_ESPRESSO, 18.0f);
+  f_batteryCalibrationFactor = storageGetFloat(KEY_BAT_CAL, storageBatteryCalibrationDefault());
+  b_mode = storageGetInt(KEY_MODE, 0);
+  f_maxDriftCompensation = storageGetFloat(KEY_DRIFT_MAX, 0.05f);
 
   if (isnan(INPUTCOFFEEPOUROVER)) {
     INPUTCOFFEEPOUROVER = 16.0;
-    EEPROM.put(INPUTCOFFEEPOUROVER_ADDRESS, INPUTCOFFEEPOUROVER);
-    EEPROM.commit();
+    storagePutFloat(KEY_POUROVER, INPUTCOFFEEPOUROVER);
   }
   if (isnan(INPUTCOFFEEESPRESSO)) {
     INPUTCOFFEEESPRESSO = 18.0;
-    EEPROM.put(INPUTCOFFEEESPRESSO_ADDRESS, INPUTCOFFEEESPRESSO);
-    EEPROM.commit();
+    storagePutFloat(KEY_ESPRESSO, INPUTCOFFEEESPRESSO);
   }
   if (isnan(f_maxDriftCompensation)) {
     f_maxDriftCompensation = 0.05;
-    EEPROM.put(i_addr_driftCompensation, f_maxDriftCompensation);
-    EEPROM.commit();
+    storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
   }
 #ifdef V7_2
   if (isnan(f_batteryCalibrationFactor) || f_batteryCalibrationFactor < 1.4 || f_batteryCalibrationFactor > 1.8) {
     f_batteryCalibrationFactor = 1.66;
     //33k and 100k divider resistor
-    EEPROM.put(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);
-    EEPROM.commit();
+    storagePutFloat(KEY_BAT_CAL, f_batteryCalibrationFactor);
   }
 #else
   if (isnan(f_batteryCalibrationFactor) || f_batteryCalibrationFactor < 0.9 || f_batteryCalibrationFactor > 1.3) {
     f_batteryCalibrationFactor = 1.06;
     //33k and 100k divider resistor
-    EEPROM.put(i_addr_batteryCalibrationFactor, f_batteryCalibrationFactor);
-    EEPROM.commit();
+    storagePutFloat(KEY_BAT_CAL, f_batteryCalibrationFactor);
   }
 #endif
 #ifdef BUZZER
   if (b_beep != 0 && b_beep != 1) {
     b_beep = 1;
-    EEPROM.put(i_addr_beep, b_beep);
-    EEPROM.commit();
+    storagePutInt(KEY_BEEP, b_beep);
   }
 #endif
 
-  b_requireHeartBeat = readBoolEEPROMWithValidation(i_addr_requireHeartBeat, true);
-  b_timeOnTop = readBoolEEPROMWithValidation(i_addr_timeOnTop, false);
-  b_btnFuncWhileConnected = readBoolEEPROMWithValidation(i_addr_btnFuncWhileConnected, false);
-  b_autoSleep = readBoolEEPROMWithValidation(i_addr_autoSleep, true);
-  // if (b_debug != 0 && b_debug != 1) {
-  //   b_debug = false;
-  //   EEPROM.put(i_addr_debug, b_debug);
-  //   EEPROM.commit();
-  // }
+  b_requireHeartBeat = storageGetBool(KEY_HEARTBEAT, true);
+  b_timeOnTop = storageGetBool(KEY_TIME_ON_TOP, false);
+  b_btnFuncWhileConnected = storageGetBool(KEY_BTN_CONN, false);
+  b_autoSleep = storageGetBool(KEY_AUTO_SLEEP, true);
   if (b_mode > 1) {
     b_mode = 0;
-    EEPROM.put(i_addr_mode, b_mode);
-    EEPROM.commit();
+    storagePutInt(KEY_MODE, b_mode);
   }
   if (b_mode < 0) {
     b_mode = 0;
-    EEPROM.put(i_addr_mode, b_mode);
-    EEPROM.commit();
+    storagePutInt(KEY_MODE, b_mode);
   }
 
   //loadcell calibration value check
-  EEPROM.get(i_addr_calibration_value, f_calibration_value);
+  f_calibration_value = storageGetFloat(KEY_CAL1, CALIBRATION_VALUE_DEFAULT);
   if (!isValidCalibrationValue(f_calibration_value)) {
     float storedCalibrationValue = f_calibration_value;
     CalibrationRejectReason bootCalibrationReason = CAL_REJECT_FACTOR_SIGN;
@@ -708,7 +676,7 @@ void setup() {
     Serial.print(F(" reason="));
     Serial.println(c_calibrationStatus);
     f_calibration_value = CALIBRATION_VALUE_DEFAULT;
-    Serial.println(F("Using temporary default calibration; EEPROM not overwritten."));
+    Serial.println(F("Using temporary default calibration; NVS not overwritten."));
   } else {
     b_calibrationInvalid = false;
     snprintf(c_calibrationStatus, sizeof(c_calibrationStatus), "%s",
@@ -734,7 +702,7 @@ void setup() {
     //calibration value is not valid, go to calibration procedure.
   }
 #endif
-  b_wifiOnBoot = readBoolEEPROMWithValidation(i_addr_enableWifiOnBoot, false);
+  b_wifiOnBoot = storageGetBool(KEY_WIFI_BOOT, false);
   if (b_wifiOnBoot && GPIO_power_on_with != BATTERY_CHARGING) {
     wifi_init();
   }
