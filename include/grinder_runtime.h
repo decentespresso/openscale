@@ -304,7 +304,6 @@ static inline void grinderDisconnectToFinding() {
   grinderResetGrindConfirmation();
   grinderRuntime.tarePending = false;
   grinderRuntime.tareRequestArmsGrinder = false;
-  grinderRuntime.userTareComplete = false;
   grinderRuntime.tareRearmRequested = false;
   grinderAdaptiveShotReset(&grinderRuntime.adaptiveShot);
   grinderSetState(grinderSettings.enabled ? GRINDER_STATE_FINDING_PLUG : GRINDER_STATE_DISABLED);
@@ -460,9 +459,8 @@ static inline void grinderHandleOkResponse(const GrinderTcpResponse &response, f
     case GRINDER_COMMAND_HELLO:
       grinderRuntime.pendingCommand = GRINDER_COMMAND_NONE;
       grinderRuntime.tareRequestArmsGrinder = false;
-      grinderRuntime.userTareComplete = false;
       grinderRuntime.tareRearmRequested = response.relayOn;
-      grinderSetStatus("tare to arm");
+      grinderSetStatus(grinderRuntime.userTareComplete ? "zero wait" : "tare to arm");
       if (response.relayOn) {
         if (!grinderSendOff()) {
           grinderEnterError("off send failed");
