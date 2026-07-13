@@ -31,7 +31,7 @@ python tools/serial_tap.py <port> --baud 115200
 
 `serial_tap.py` uses POSIX `termios` and is not available on Windows.
 
-Cross-platform fallback with pySerial:
+If PlatformIO monitoring is unavailable, pySerial provides a fallback:
 
 ```sh
 python -m serial.tools.miniterm <port> 115200
@@ -43,32 +43,4 @@ Opening a serial terminal may toggle DTR or RTS and reset the device.
 
 The scale advertises `hds.local` and `_decentscale._tcp` with `path=/snapshot`, `proto=ws`, `model=hds`, and firmware metadata.
 
-If no WiFi credentials are stored, the device starts AP setup mode:
-
-- SSID: `DecentScale`
-- password: `12345678`
-- IP: `192.168.1.1`
-
-## Focused Checks
-
-Use the smallest relevant check:
-
-```sh
-pio run -e esp32s3
-python tools/test_calibration_validation.py
-python tools/test_soft_sleep_ads_wake.py
-python tools/test_generate_release_manifest.py
-python tools/test_pull_ota_contract.py
-python tools/test_release_workflow_contract.py
-python tools/test_ota_rollback_contract.py
-python tools/test_ota_public_key_header.py
-python tools/test_ads_debug_protocol.py
-python tools/test_decode_ads_debug.py
-```
-
-Device-required checks:
-
-```sh
-python tools/ws_feature_test.py
-python tools/ws_command_test.py
-```
+If no WiFi credentials are stored, `setupAP()` in `src/wifi_setup.cpp` starts provisioning mode. `README.md` contains the user-facing connection details.

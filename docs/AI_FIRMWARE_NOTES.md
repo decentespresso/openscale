@@ -35,12 +35,14 @@ Unsafe from AsyncTCP callbacks:
 - `stopWatch.*`
 - I2C, SPI, OLED, sensor, or blocking hardware work
 
-Safe from AsyncTCP callbacks:
+Allowed from AsyncTCP callbacks:
 
-- visible single-word flags shared with `loop()`, when declared `volatile`
+- state changes protected by the affected subsystem's existing critical section, queue, or other synchronization
 - `Serial.print*`
 - `client->printf`
 - `websocket.printfAll`, when heap-gated for broadcasts
+
+`volatile` can be appropriate for hardware registers, ISR-visible flags, or an existing API contract, but it does not provide atomicity, memory ordering, or task synchronization.
 
 The WebSocket callback updates visible state and queues hardware work. `loop()` drains pending work at the top via `processWsPendingCmds()`, before the soft-sleep guard, so queued wake and shutdown work can still run.
 
@@ -113,6 +115,18 @@ if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TE
 | Boot logs show `LittleFS mount failed` | Upload the filesystem image; firmware-only flashing does not update LittleFS. |
 | Flashing becomes much slower than usual | Firmware may be interfering with bootloader handshake. Treat as a serious firmware bug. |
 | Panic or abort under multi-client WiFi load | Check the WebSocket heap constants and serial patterns above for connection churn, skipped broadcasts, and critical heap. |
+
+## Focused Checks
+
+Run only the checks matching the change:
+
+```sh
+python tools/test_calibration_validation.py
+python tools/test_soft_sleep_ads_wake.py
+pio run -e esp32s3
+```
+
+`tools/ws_feature_test.py` and `tools/ws_command_test.py` require a WiFi-enabled scale.
 
 ## Keeping Notes Fresh
 
