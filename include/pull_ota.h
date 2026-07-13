@@ -1310,17 +1310,17 @@ void pullOtaRunUpdate() {
     pullOtaFail("Manifest invalid");
     return;
   }
-  PullOtaManifest rollbackManifest;
-  if (!pullOtaFindCurrentRelease(catalog, rollbackManifest)) {
-    pullOtaFail("Rollback missing");
-    return;
-  }
   PullOtaReleaseList releases;
   pullOtaBuildSelectableReleases(catalog, releases);
   if (releases.count == 0) {
     pullOtaDraw("Newest stable", pullOtaCurrentVersion().c_str());
     delay(2000);
     b_ota = false;
+    return;
+  }
+  PullOtaManifest rollbackManifest;
+  if (!pullOtaFindCurrentRelease(catalog, rollbackManifest)) {
+    pullOtaFail("Rollback missing");
     return;
   }
   if (!pullOtaHasNewerRelease(releases)) {

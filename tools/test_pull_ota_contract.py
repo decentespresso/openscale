@@ -20,6 +20,12 @@ def assert_not_contains(path, text):
         raise AssertionError(f"{path.name} contains {text}")
 
 
+def assert_before(path, first, second):
+    contents = path.read_text(encoding="utf-8")
+    if contents.find(first) >= contents.find(second):
+        raise AssertionError(f"{path.name} must place {first} before {second}")
+
+
 def main():
     assert_contains(HDS_SOURCE, '#include "pull_ota.h"')
     assert_contains(MENU_HEADER, "menuWiFiPullUpdateOption")
@@ -49,6 +55,11 @@ def main():
     assert_contains(PULL_OTA_HEADER, "pullOtaParseManifest(body, catalog)")
     assert_contains(PULL_OTA_HEADER, "pullOtaBuildSelectableReleases(catalog, releases)")
     assert_contains(PULL_OTA_HEADER, "pullOtaFindCurrentRelease(catalog, rollbackManifest)")
+    assert_before(
+        PULL_OTA_HEADER,
+        "if (releases.count == 0)",
+        "pullOtaFindCurrentRelease(catalog, rollbackManifest)",
+    )
     assert_contains(PULL_OTA_HEADER, "wifi_init();")
     assert_contains(PULL_OTA_HEADER, "pullOtaStorePendingLittleFs")
     assert_contains(PULL_OTA_HEADER, "pullOtaLoadPendingLittleFs")
