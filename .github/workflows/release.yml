@@ -14,49 +14,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # Needed for all commits/tags
-          ref: ${{ github.event.inputs.tag }}
+          fetch-depth: 0
+          ref: main
 
-      - name: Verify tag is on main
+      - name: Verify tag and checkout release commit
+        env:
+          TAG: ${{ github.event.inputs.tag }}
         run: |
-          if ! git rev-parse ${{ github.event.inputs.tag }} >/dev/null 2>&1; then
-            echo "Error: Tag ${{ github.event.inputs.tag }} does not exist"
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: tag must match vX.Y.Z or X.Y.Z"
             exit 1
           fi
-          if ! git merge-base --is-ancestor ${{ github.event.inputs.tag }} origin/main; then
-            echo "Error: Tag ${{ github.event.inputs.tag }} is not reachable from main"
+          git fetch --force --tags origin
+          git fetch --force origin main:refs/remotes/origin/main
+          if ! TAG_COMMIT="$(git rev-parse --verify --end-of-options "refs/tags/$TAG^{commit}")"; then
+            echo "Error: tag $TAG does not exist"
             exit 1
           fi
-
-      # - name: Fetch all tags
-      #   run: git fetch --tags
-
-      # - name: Determine previous tag
-      #   id: prevtag
-      #   run: |
-      #     # Get all tags sorted by version
-      #     ALL_TAGS=$(git tag --sort=-v:refname)
-      #     CURRENT_TAG=${{ github.event.inputs.tag }}
-      #
-      #     # Find the tag before the current one
-      #     PREV_TAG=""
-      #     found=0
-      #     for tag in $ALL_TAGS; do
-      #       if [ "$found" -eq 1 ]; then
-      #         PREV_TAG=$tag
-      #         break
-      #       fi
-      #       if [ "$tag" = "$CURRENT_TAG" ]; then
-      #         found=1
-      #       fi
-      #     done
-      #
-      #     if [ -z "$PREV_TAG" ]; then
-      #       echo "No previous tag found, this appears to be the first release"
-      #       PREV_TAG=$(git rev-list --max-parents=0 HEAD)  # Get initial commit
-      #     fi
-      #
-      #     echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+          if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/main; then
+            echo "Error: tag $TAG is not reachable from main"
+            exit 1
+          fi
+          git checkout --detach "$TAG_COMMIT"
 
       - uses: actions/cache@v3
         with:
@@ -75,55 +55,90 @@ jobs:
       - name: Install PlatformIO Core
         run: pip install --upgrade platformio
 
+      - name: Configure OTA manifest public key
+        env:
+          HDS_OTA_MANIFEST_PUBLIC_KEY_PEM: ${{ vars.HDS_OTA_MANIFEST_PUBLIC_KEY_PEM }}
+        run: python tools/write_ota_public_key_header.py
+
       - name: Build PlatformIO Project
         run: |
+          set -euo pipefail
           pio run -e esp32s3 || exit 1
           pio run -e esp32s3 -t buildfs || exit 1
 
-      # - name: Generate release notes
-      #   id: notes
-      #   run: |
-      #     NOTES=$(git log ${{ steps.prevtag.outputs.previous_tag }}..${{ github.event.inputs.tag }} --pretty=format:"- %s" || echo "- Initial release")
-      #     if [ -z "$NOTES" ]; then
-      #       NOTES="- No significant changes"
-      #     fi
-      #     echo "notes<<EOF" >> $GITHUB_OUTPUT
-      #     echo "$NOTES" >> $GITHUB_OUTPUT
-      #     echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Create firmware ZIP
+      - name: Prepare release assets
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+          HDS_RELEASE_TAG: ${{ github.event.inputs.tag }}
+          HDS_RELEASE_REPOSITORY: ${{ github.repository }}
+          HDS_RELEASE_MIN_FROM: ${{ vars.HDS_RELEASE_MIN_FROM || '3.0.0' }}
+          HDS_OTA_SIGNING_KEY_PEM: ${{ secrets.HDS_OTA_SIGNING_KEY_PEM }}
+          HDS_OTA_MANIFEST_PUBLIC_KEY_PEM: ${{ vars.HDS_OTA_MANIFEST_PUBLIC_KEY_PEM }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Remove leading 'v' from tag if present
-          # CLEAN_TAG=${GITHUB_EVENT_INPUTS_TAG/#v/}
-          # echo "CLEAN_TAG"="${CLEAN_TAG}" >> $GITHUB_ENV
-          mkdir -p release-files
-          # Check files exist before copying
+          set -euo pipefail
+          if [ -z "${HDS_OTA_SIGNING_KEY_PEM:-}" ]; then
+            echo "Error: HDS_OTA_SIGNING_KEY_PEM secret is required"
+            exit 1
+          fi
+          if [ -z "${HDS_OTA_MANIFEST_PUBLIC_KEY_PEM:-}" ]; then
+            echo "Error: HDS_OTA_MANIFEST_PUBLIC_KEY_PEM variable is required"
+            exit 1
+          fi
+          mkdir -p release-files legacy-files
+          cp ".pio.nosync/build/esp32s3/firmware.bin" release-files/
+          cp ".pio.nosync/build/esp32s3/littlefs.bin" release-files/
           for file in firmware.bin bootloader.bin partitions.bin littlefs.bin; do
             if [ ! -f ".pio.nosync/build/esp32s3/$file" ]; then
               echo "Error: File .pio.nosync/build/esp32s3/$file not found"
               exit 1
             fi
-            cp ".pio.nosync/build/esp32s3/$file" release-files/
+            cp ".pio.nosync/build/esp32s3/$file" legacy-files/
           done
-          cd release-files
-          zip "../HDS_FW_${{ github.event.inputs.tag }}.zip" ./* || exit 1
+          PREVIOUS_MANIFEST_ARGS=()
+          PREVIOUS_TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // ""')"
+          if [ -n "$PREVIOUS_TAG" ]; then
+            mkdir -p previous-release
+            gh release download "$PREVIOUS_TAG" --repo "$GITHUB_REPOSITORY" --pattern manifest.json --dir previous-release || true
+            gh release download "$PREVIOUS_TAG" --repo "$GITHUB_REPOSITORY" --pattern manifest.sig --dir previous-release || true
+            if [ -f previous-release/manifest.json ] || [ -f previous-release/manifest.sig ]; then
+              if [ ! -f previous-release/manifest.json ] || [ ! -f previous-release/manifest.sig ]; then
+                echo "Error: previous OTA catalog is incomplete"
+                exit 1
+              fi
+              printf '%s\n' "$HDS_OTA_MANIFEST_PUBLIC_KEY_PEM" > previous-release/ota_public.pem
+              openssl dgst -sha256 -verify previous-release/ota_public.pem -signature previous-release/manifest.sig previous-release/manifest.json
+              PREVIOUS_MANIFEST_ARGS=(--previous-manifest previous-release/manifest.json)
+            fi
+          fi
+          python tools/generate_release_manifest.py --tag "$TAG" --output-dir release-files --catalog --catalog-min-version v3.1.13 "${PREVIOUS_MANIFEST_ARGS[@]}"
+          if [ ! -f release-files/manifest.sig ]; then
+            echo "Error: manifest.sig not generated"
+            exit 1
+          fi
+          printf '%s\n' "$HDS_OTA_MANIFEST_PUBLIC_KEY_PEM" > release-files/ota_public.pem
+          openssl dgst -sha256 -verify release-files/ota_public.pem -signature release-files/manifest.sig release-files/manifest.json
+          cd legacy-files
+          zip "../HDS_FW_${TAG}.zip" ./* || exit 1
           cd ..
-      - name: Create release
+      - name: Create draft release
         env:
+          TAG: ${{ github.event.inputs.tag }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create ${{ github.event.inputs.tag }} \
-            --title="${{ github.event.inputs.tag }}" \
+          set -euo pipefail
+          gh release create "$TAG" \
+            --draft \
+            --title="$TAG" \
             --generate-notes \
-            *.zip
-      # - name: Create GitHub Release
-      #   uses: softprops/action-gh-release@v1
-      #   with:
-      #     tag_name: ${{ github.event.inputs.tag }}
-      #     name: HDS-${{ github.event.inputs.tag }}
-      #     body: ${{ steps.notes.outputs.notes }}
-      #     files: HDS_FW_${{ env.CLEAN_TAG }}.zip
-      #     draft: false
-      #     prerelease: false
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            "HDS_FW_${TAG}.zip" \
+            release-files/firmware.bin \
+            release-files/littlefs.bin
+          gh release upload "$TAG" release-files/manifest.sig
+          gh release upload "$TAG" release-files/manifest.json
+          gh release view "$TAG" --json assets --jq '.assets[].name' > release-assets.txt
+          grep -Fx firmware.bin release-assets.txt
+          grep -Fx littlefs.bin release-assets.txt
+          grep -Fx manifest.json release-assets.txt
+          grep -Fx manifest.sig release-assets.txt
+          gh release edit "$TAG" --draft=false

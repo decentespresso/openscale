@@ -116,6 +116,7 @@ Menu menuWiFiUpdateBack = { "Back", NULL, NULL, &menuWifi };
 Menu menuWiFiOnOption = { "WiFi On", toggleWifiOn, NULL, &menuWifi };
 Menu menuWiFiOffOption = { "WiFi Off", toggleWifiOff, NULL, &menuWifi };
 Menu menuWiFiStatusOption = { "WiFi Status", showWifiStatus, NULL, &menuWifi };
+Menu menuWiFiPullUpdateOption = { "WiFi Update", wifiUpdate, NULL, &menuWifi };
 Menu menuWiFiResetOption = { "Reset WiFi", resetWifi, NULL, &menuWifi };
 
 Menu *wifiUpdateMenu[] = {
@@ -123,6 +124,7 @@ Menu *wifiUpdateMenu[] = {
   &menuWiFiOnOption,
   &menuWiFiOffOption,
   &menuWiFiStatusOption,
+  &menuWiFiPullUpdateOption,
   &menuWiFiResetOption,
 };
 
@@ -1438,16 +1440,10 @@ void calibration(int input) {
 }
 
 void wifiUpdate() {
-  u8g2.setFont(FONT_M);
-  u8g2.firstPage();
-  do {
-    u8g2.drawStr(AC((char *)"WiFi Update"), AM(), (char *)"WiFi Update");
-  } while (u8g2.nextPage());
 #ifdef BUZZER
   buzzer.off();
 #endif
-  delay(1000);
-  wifiOta();
+  pullOtaUpdate();
   b_menu = false;
 }
 

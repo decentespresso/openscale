@@ -259,7 +259,18 @@ Simply run `pio run -t buildfs -t uploadfs` with the Esp32s3 connected to your c
 
 Trunk-based: `main` is the single long-lived branch and is always releasable. Do work on short-lived feature branches and merge into `main` once CI passes.
 
-Releases: tag a known-good commit on `main` with the version (`vX.Y.Z`), then run the "Release firmware" workflow with that tag.
+Releases: tag a known-good commit on `main` with the version (`vX.Y.Z`), then run the "Release firmware" workflow with that tag. The workflow publishes the legacy ZIP plus machine-readable OTA assets:
+
+- `firmware.bin`: raw OTA firmware image.
+- `littlefs.bin`: raw filesystem image. WiFi OTA releases always publish and require it so skipped versions and test builds with unknown filesystem state are brought back to the production filesystem.
+- `manifest.json`: release metadata downloaded by the scale before installing.
+- `manifest.sig`: detached SHA-256 signature. The workflow requires `HDS_OTA_SIGNING_KEY_PEM` as a repository secret and `HDS_OTA_MANIFEST_PUBLIC_KEY_PEM` as a repository variable.
+
+The scale checks `https://github.com/decentespresso/openscale/releases/latest/download/manifest.json`, downloads `manifest.sig`, verifies the detached signature with the public key compiled into the firmware, then verifies `model`, optional `pcb`, `min_from`, chip, environment, flash size, partition schema, filesystem partition size/schema, HTTPS certificate chain, asset URL prefix, asset size, and SHA-256 before writing firmware. Manifest `version` and `min_from` must be stable numeric `major.minor.patch` values. The workflow builds a signed catalog from `v3.1.13` upward by merging the previous latest stable signed manifest with the new release, deduping compatible entries, and sorting newest to oldest. The WiFi updater lists compatible stable releases except the firmware version already running.
+
+When `littlefs.required` is true, OTA is staged. The current firmware stores both the target and rollback LittleFS metadata in NVS, writes `firmware.bin` to the inactive app OTA slot, and reboots. The new firmware attempts the target LittleFS twice before it is marked valid. If both attempts fail before a filesystem write starts, the application rolls back. If a filesystem write started, the old application restores its matching LittleFS once from the signed catalog. A failed restore stops at `UPDATE ERROR` and directs the user to the HDS updater. Successful target or rollback recovery clears the pending state and reboots. Set `HDS_RELEASE_MIN_FROM` as a repository variable to raise the oldest version that can self-update.
+
+The single LittleFS partition has no independent rollback slot, so recovery requires the signed rollback asset to remain available. The firmware records attempt and write state before changing the partition so power loss resumes the same bounded recovery transaction instead of entering normal weighing with a partial installation.
 
 # Automated builds
 
