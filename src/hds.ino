@@ -11,6 +11,7 @@
 #include "webserver.h"
 #include "websocket.h"
 #include "wifi_ota.h"
+#include "grinder_runtime.h"
 
 
 #include "menu.h"
@@ -18,6 +19,24 @@
 #include "usbcomm.h"
 #include "finger_detection.h"
 //#include "wificomm.h"
+
+#ifndef GRINDER_MENU_CHORD_HOLD_MS
+#define GRINDER_MENU_CHORD_HOLD_MS 500
+#endif
+
+bool anyScaleButtonPressed() {
+  return digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW;
+}
+
+bool buttonChecksSuppressedUntilRelease() {
+  if (!b_buttonChordSuppressUntilRelease) {
+    return false;
+  }
+  if (!anyScaleButtonPressed()) {
+    b_buttonChordSuppressUntilRelease = false;
+  }
+  return true;
+}
 
 // ADS1232 Debug Callback - called every time a new conversion is ready
 void adsDebugCallback(const ADS1232DebugInfo& info) {
@@ -328,6 +347,42 @@ void buttonSquare_LongPressed() {
   }
 }
 
+bool handleGrinderMenuChord() {
+  static bool handled = false;
+  static uint32_t pressedAt = 0;
+  const bool bothPressed = digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW;
+  if (!bothPressed) {
+    handled = false;
+    pressedAt = 0;
+    return false;
+  }
+  if (handled) {
+    return true;
+  }
+  if (!grinderSettings.enabled || b_menu || b_calibration || GPIO_power_on_with == BATTERY_CHARGING) {
+    return false;
+  }
+  const uint32_t now = millis();
+  if (pressedAt == 0) {
+    pressedAt = now;
+    return true;
+  }
+  if (now - pressedAt < GRINDER_MENU_CHORD_HOLD_MS) {
+    return true;
+  }
+  b_menu = true;
+  b_grinderMenuDirectEntry = true;
+  b_buttonChordSuppressUntilRelease = true;
+  currentMenu = grinderMenu;
+  currentMenuSize = getMenuSize(grinderMenu);
+  currentIndex = 0;
+  currentSelection = currentMenu[currentIndex];
+  grinderPauseForMenu();
+  handled = true;
+  Serial.println("[grinder] menu chord");
+  return true;
+}
+
 
 void button_init() {
   pinMode(BUTTON_CIRCLE, INPUT_PULLUP);
@@ -384,6 +439,10 @@ const char *resetReasonStr(esp_reset_reason_t r) {
   }
 }
 
+void beforeDeepSleepFlush() {
+  grinderFlushSettingsIfDirty();
+}
+
 void setup() {
   Serial.begin(115200);
   while (!Serial)  // Wait for the Serial port to initialize (typically used in Arduino to ensure the Serial monitor is ready)
@@ -399,6 +458,7 @@ void setup() {
       delay(1000);
     }
   }
+  grinderLoadSettings();
 
   b_quickBoot = storageGetBool(KEY_QUICK_BOOT, false);
   i_buttonBootDelay = b_quickBoot ? 0 : 500;
@@ -703,12 +763,19 @@ void setup() {
   }
 #endif
   b_wifiOnBoot = storageGetBool(KEY_WIFI_BOOT, false);
+  if (grinderSettings.enabled && !b_wifiOnBoot) {
+    b_wifiOnBoot = true;
+  }
+  grinderRuntimeBegin();
   if (b_wifiOnBoot && GPIO_power_on_with != BATTERY_CHARGING) {
     wifi_init();
   }
   // Enter Menu
   if (digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW) {
     b_menu = true;
+    b_buttonChordSuppressUntilRelease = true;
+    b_grinderMenuDirectEntry = false;
+    grinderPauseForMenu();
     refreshOLED((char *)"HDS Setup", FONT_EXTRACTION);
     delay(1000);
   }
@@ -1030,6 +1097,12 @@ void pureScale() {
     
     // 4. Original processing pipeline
     float tracking_compensated = applyTrackingCompensation(temperature_compensated);
+    f_grinder_fast_weight = tracking_compensated;
+    grinderFastWeightSequence++;
+    if (grinderFastWeightSequence == 0) {
+      grinderFastWeightSequence = 1;
+    }
+    grinderRuntimeFreshWeightTick(f_grinder_fast_weight, grinderFastWeightSequence);
     float stable_output = applyStableOutput(tracking_compensated);
     
     if (stable_output >= -0.14 && stable_output <= 0.14) {
@@ -1094,6 +1167,8 @@ void pureScale() {
     resetStableOutput();
     f_driftCompensation = 0.0;
     f_displayedValue = 0.0;
+    f_grinder_fast_weight = 0.0f;
+    grinderRuntimeNotifyTareComplete();
     if (b_weight_in_serial) {
       Serial.println("TARE: Temperature drift compensation reset");
     }
@@ -1104,6 +1179,7 @@ void pureScale() {
     resetTracking();
     resetStableOutput();
     f_driftCompensation = 0.0;
+    f_grinder_fast_weight = 0.0f;
   }
 
   
@@ -1194,6 +1270,7 @@ void resetScaleOutputAfterAdcDiscontinuity() {
   resetStableOutput();
   f_driftCompensation = 0.0;
   f_displayedValue = 0.0;
+  f_grinder_fast_weight = 0.0f;
   formatFloatSafe(c_weight, sizeof(c_weight), f_displayedValue,
                   i_decimal_precision);
 }
@@ -1291,13 +1368,14 @@ bool processBootFreshTare() {
   return false;
 }
 
-bool tareScaleWhenAdcReady(const char *context) {
+bool tareScaleWhenAdcReady(const char *context, bool userRequested) {
   ADS1232DebugInfo info = scale.getDebugInfo();
   if (info.samplesInUse > 0 && info.validSamples < info.samplesInUse) {
     if (!refreshScaleDatasetAfterDiscontinuity(context)) {
       return false;
     }
   }
+  grinderRuntimeNotifyTareRequested(userRequested);
   scale.tareNoDelay();
   return true;
 }
@@ -1321,6 +1399,11 @@ void clearPendingAutomaticTareState() {
 }
 
 bool setScaleSamplesInUseWhenReady(uint8_t samplesInUse, const char *context) {
+  if (grinderRuntimeLocksScaleSampling()) {
+    Serial.print("Samples in use locked by grinder: ");
+    Serial.println(context);
+    return false;
+  }
   scale.setSamplesInUse(samplesInUse);
   if (!refreshScaleDatasetAfterDiscontinuity(context)) {
     return false;
@@ -1481,7 +1564,7 @@ void loop() {
   // connected WS client streaming weight resets the auto-off timer just like a
   // BLE central does -- otherwise a WiFi-only client on battery loses the scale
   // to the 15-min auto-off mid-stream (WiFi activity didn't reset t_power_off).
-  if (deviceConnected || (b_wifiEnabled && websocket.count() > 0)) {
+  if (deviceConnected || (b_wifiEnabled && websocket.count() > 0) || grinderRuntimeKeepsAwake()) {
     power_off(-1);  //reset power off timer
   } else {
     //if (!b_tempDisablePowerOff)
@@ -1498,8 +1581,10 @@ void loop() {
   }
   usbCallbacks.poll();
 
-  buttonCircle.check();
-  buttonSquare.check();
+  if (!buttonChecksSuppressedUntilRelease() && !handleGrinderMenuChord()) {
+    buttonCircle.check();
+    buttonSquare.check();
+  }
 #ifdef BUZZER
   buzzer.check();
 #endif
@@ -1527,6 +1612,10 @@ void loop() {
     }
     checkBattery();
     if (b_menu) {
+      if (b_wifiEnabled) {
+        wifiSupervise();
+      }
+      grinderRuntimeTick(f_displayedValue);
       showMenu();
     } else if (GPIO_power_on_with == BATTERY_CHARGING) {
       if (b_chargingOLED) {
@@ -1643,14 +1732,14 @@ void loop() {
         } else if (b_tareByButton) {
           // Tare by button, ensure 500ms delay to avoid touch interference
           if (millis() - t_tareByButton > i_tareDelay) {
-            bool tareDone = tareScaleWhenAdcReady("button tare");
+            bool tareDone = tareScaleWhenAdcReady("button tare", true);
             b_tareByButton = false;  // reset status
             Serial.println(tareDone ? "Tare by button" : "Tare by button failed");
           }
         } else if (hasRemoteTareRequest()) {
           // Tare by BLE, performed instantly without delay
           uint8_t remoteTareRequests = consumeRemoteTareRequests();
-          bool tareDone = tareScaleWhenAdcReady("remote tare");
+          bool tareDone = tareScaleWhenAdcReady("remote tare", true);
           if (tareDone) {
             Serial.print("Tare by remote command");
             if (remoteTareRequests > 1) {
@@ -1665,6 +1754,7 @@ void loop() {
         }
         pureScale();
         updateOled();
+        grinderRuntimeTick(f_displayedValue);
       }
     }
   }
@@ -1765,6 +1855,7 @@ void updateOled() {
       drawButton();
       drawBle();
       drawHeartBeat();
+      drawGrinder();
       drawTare();
       drawShutdownFail();
       drawAbout();
@@ -1946,6 +2037,16 @@ void drawBle() {
 void drawHeartBeat(){
   if (b_heartBeatIcon)
     u8g2.drawXBM(30, 51, 13, 13, image_heart_13x13);
+}
+
+void drawGrinder() {
+  if (!grinderSettings.enabled) {
+    return;
+  }
+  char text[28];
+  grinderShortStatus(text, sizeof(text));
+  u8g2.setFont(u8g2_font_5x8_tr);
+  u8g2.drawStr(46, 64, text);
 }
 
 void drawBattery() {

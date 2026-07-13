@@ -355,8 +355,8 @@ def main():
 
     loop_body = method_body(HDS_SOURCE, "loop")
     assert "processBootFreshTare();" in loop_body
-    assert 'tareScaleWhenAdcReady("button tare")' in loop_body
-    assert 'tareScaleWhenAdcReady("remote tare")' in loop_body
+    assert 'tareScaleWhenAdcReady("button tare", true)' in loop_body
+    assert 'tareScaleWhenAdcReady("remote tare", true)' in loop_body
 
     boot_gate = method_body(HDS_SOURCE, "isBootFreshTareInputSettled")
     for expected in (

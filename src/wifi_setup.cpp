@@ -13,6 +13,7 @@ volatile bool b_wifiEnabled = false;
 // Set by the GOT_IP WiFi event; the main loop (wifiSupervise) consumes it and
 // (re)advertises mDNS, keeping all mDNS work off the WiFi-event task.
 static volatile bool g_mdnsAdvertisePending = false;
+static bool g_mdnsReady = false;
 // BLE link state (defined in declare.h). Used by the heap watchdog to avoid
 // rebooting mid-shot while a BLE client is connected. volatile: written from
 // the BLE task, read here on the main loop.
@@ -129,8 +130,16 @@ static volatile bool g_wifiInitDone = false;
 // the responder came up; callers may log/branch on failure (MDNS.begin can
 // transiently fail under heap pressure at reconnect time).
 bool setupMdns() {
+  if (WiFi.getMode() != WIFI_AP && WiFi.status() != WL_CONNECTED) {
+    Serial.printf("[wifi] MDNS deferred wifi=%d ip=%s\n",
+                  (int)WiFi.status(),
+                  WiFi.localIP().toString().c_str());
+    g_mdnsReady = false;
+    return false;
+  }
   if (!MDNS.begin("hds")) {
     Serial.println("could not set up MDNS responder");
+    g_mdnsReady = false;
     return false;
   }
   // Friendly instance name + DNS-SD service so apps (incl. Android NsdManager)
@@ -142,7 +151,24 @@ bool setupMdns() {
   MDNS.addServiceTxt("decentscale", "tcp", "proto", "ws");
   MDNS.addServiceTxt("decentscale", "tcp", "path", "/snapshot");
   Serial.println("DNS-SD: advertised _decentscale._tcp on port 80");
+  g_mdnsReady = true;
   return true;
+}
+
+bool wifiEnsureMdnsReadyForSta() {
+  if (WiFi.status() != WL_CONNECTED || (uint32_t)WiFi.localIP() == 0) {
+    Serial.printf("[wifi] MDNS not ready wifi=%d ip=%s\n",
+                  (int)WiFi.status(),
+                  WiFi.localIP().toString().c_str());
+    g_mdnsReady = false;
+    return false;
+  }
+  if (g_mdnsReady) {
+    return true;
+  }
+  MDNS.end();
+  g_mdnsReady = false;
+  return setupMdns();
 }
 
 void onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) {
@@ -163,6 +189,7 @@ void onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) {
       g_mdnsAdvertisePending = true;
       break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+      g_mdnsReady = false;
       g_wifiDisconnects++;
       Serial.printf("[wifi] *** STA DISCONNECTED #%lu reason=%u heap=%lu minheap=%lu uptime=%lu\n",
                     (unsigned long)g_wifiDisconnects,
@@ -243,6 +270,7 @@ void wifiSupervise() {
   if (g_mdnsAdvertisePending) {
     g_mdnsAdvertisePending = false;
     MDNS.end();
+    g_mdnsReady = false;
     setupMdns();
   }
 

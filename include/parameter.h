@@ -120,6 +120,8 @@ int GPIO_power_on_with = -1;
 
 unsigned long t_power_on_button = 0;  // Variable to store the timestamp when the button is pressed
 bool b_button_pressed = false;        // Boolean flag to indicate whether the button is currently pressed
+bool b_buttonChordSuppressUntilRelease = false;
+bool b_grinderMenuDirectEntry = false;
 
 
 float INPUTCOFFEEPOUROVER = 20.0;
@@ -214,6 +216,10 @@ volatile bool b_autoSleep = true;
 volatile bool b_quickBoot = false;
 unsigned int i_buttonBootDelay = 500;
 bool b_showChargingUI = false;
+struct GrinderSettings;
+struct GrinderRuntime;
+extern GrinderSettings grinderSettings;
+extern GrinderRuntime grinderRuntime;
 
 //电子秤参数和计时点
 // Enhanced tracking system global variables
@@ -269,7 +275,7 @@ static inline void resetAdcRecoveryState() {
 }
 bool refreshScaleDatasetAfterDiscontinuity(const char *context);
 void resetScaleOutputAfterAdcDiscontinuity();
-bool tareScaleWhenAdcReady(const char *context);
+bool tareScaleWhenAdcReady(const char *context, bool userRequested = false);
 bool setScaleSamplesInUseWhenReady(uint8_t samplesInUse, const char *context);
 bool wakeScaleFromSoftSleep(const char *context);
 void consumeScaleTareStatus();
@@ -293,7 +299,9 @@ float asWeightDiff = 0.1;  //下液停止波动值（g）
 float f_weight_adc = 0.0;  //原始读出值（g）
 float f_weight_smooth;
 float f_displayedValue;
+float f_grinder_fast_weight = 0.0f;
 float f_flow_rate;
+uint32_t grinderFastWeightSequence = 0;
 
 unsigned long t_auto_tare = 0;        //自动归零打点
 unsigned long t_auto_stop = 0;        //下液停止打点
