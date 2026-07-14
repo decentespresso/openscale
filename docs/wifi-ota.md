@@ -19,7 +19,7 @@ Skip this section if the scale already connects to your WiFi network.
 
 1. Open `WiFi Settings` on the scale and select `WiFi On`.
 2. Restart the scale.
-3. Connect a phone or computer to the `Decent Scale` access point with password `12345678`.
+3. Connect a phone or computer to the `DecentScale` access point with password `12345678`.
 4. Open [http://hds.local](http://hds.local) or `http://192.168.1.1`.
 5. Enter the home WiFi credentials and wait for the scale to restart.
 
