@@ -39,8 +39,16 @@ void hdsOtaRollbackMarkValid();
 #define HDS_OTA_ASSET_URL_PREFIX "https://github.com/decentespresso/openscale/releases/download/"
 #endif
 
-#ifndef HDS_OTA_MANIFEST_PUBLIC_KEY_PEM
-#define HDS_OTA_MANIFEST_PUBLIC_KEY_PEM ""
+#ifndef HDS_OTA_MANIFEST_PUBLIC_KEY_1_PEM
+#define HDS_OTA_MANIFEST_PUBLIC_KEY_1_PEM ""
+#endif
+
+#ifndef HDS_OTA_MANIFEST_PUBLIC_KEY_2_PEM
+#define HDS_OTA_MANIFEST_PUBLIC_KEY_2_PEM ""
+#endif
+
+#ifndef HDS_OTA_MANIFEST_PUBLIC_KEY_3_PEM
+#define HDS_OTA_MANIFEST_PUBLIC_KEY_3_PEM ""
 #endif
 
 static const char HDS_OTA_CA_CERTS[] PROGMEM = R"PEM(
@@ -538,8 +546,10 @@ bool sha256Matches(const uint8_t digest[32], const String &expected) {
   return pullOtaHexDigest(digest) == expected;
 }
 
-bool pullOtaPublicKeyConfigured() {
-  return strlen(HDS_OTA_MANIFEST_PUBLIC_KEY_PEM) > 0;
+bool pullOtaPublicKeysConfigured() {
+  return strlen(HDS_OTA_MANIFEST_PUBLIC_KEY_1_PEM) > 0 &&
+         strlen(HDS_OTA_MANIFEST_PUBLIC_KEY_2_PEM) > 0 &&
+         strlen(HDS_OTA_MANIFEST_PUBLIC_KEY_3_PEM) > 0;
 }
 
 bool pullOtaSha256String(const String &body, uint8_t digest[32]) {
@@ -555,26 +565,35 @@ bool pullOtaVerifyManifestSignature(
     const String &body,
     const uint8_t *signature,
     size_t signatureLen) {
-  if (!pullOtaPublicKeyConfigured() || signature == nullptr || signatureLen == 0) {
+  if (!pullOtaPublicKeysConfigured() ||
+      signature == nullptr || signatureLen == 0) {
     return false;
   }
   uint8_t digest[32];
   if (!pullOtaSha256String(body, digest)) {
     return false;
   }
-  mbedtls_pk_context publicKey;
-  mbedtls_pk_init(&publicKey);
-  const unsigned char *key = (const unsigned char *)HDS_OTA_MANIFEST_PUBLIC_KEY_PEM;
-  int parsed = mbedtls_pk_parse_public_key(
-      &publicKey, key, strlen(HDS_OTA_MANIFEST_PUBLIC_KEY_PEM) + 1);
-  if (parsed != 0) {
+  const char *const publicKeys[] = {
+      HDS_OTA_MANIFEST_PUBLIC_KEY_1_PEM,
+      HDS_OTA_MANIFEST_PUBLIC_KEY_2_PEM,
+      HDS_OTA_MANIFEST_PUBLIC_KEY_3_PEM,
+  };
+  for (const char *key : publicKeys) {
+    mbedtls_pk_context publicKey;
+    mbedtls_pk_init(&publicKey);
+    int parsed = mbedtls_pk_parse_public_key(
+        &publicKey, (const unsigned char *)key, strlen(key) + 1);
+    int verified = parsed == 0
+                       ? mbedtls_pk_verify(
+                             &publicKey, MBEDTLS_MD_SHA256, digest, sizeof(digest),
+                             signature, signatureLen)
+                       : -1;
     mbedtls_pk_free(&publicKey);
-    return false;
+    if (verified == 0) {
+      return true;
+    }
   }
-  int verified = mbedtls_pk_verify(
-      &publicKey, MBEDTLS_MD_SHA256, digest, sizeof(digest), signature, signatureLen);
-  mbedtls_pk_free(&publicKey);
-  return verified == 0;
+  return false;
 }
 
 bool pullOtaPartitionShaMatches(const PullOtaAsset &asset) {

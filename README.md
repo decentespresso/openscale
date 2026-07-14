@@ -264,7 +264,7 @@ Releases: tag a known-good commit on `main` with the version (`vX.Y.Z`), then ru
 - `firmware.bin`: raw OTA firmware image.
 - `littlefs.bin`: raw filesystem image. WiFi OTA releases always publish and require it so skipped versions and test builds with unknown filesystem state are brought back to the production filesystem.
 - `manifest.json`: release metadata downloaded by the scale before installing.
-- `manifest.sig`: detached SHA-256 signature. The workflow requires `HDS_OTA_SIGNING_KEY_PEM` as a repository secret and `HDS_OTA_MANIFEST_PUBLIC_KEY_PEM` as a repository variable.
+- `manifest.sig`: detached SHA-256 signature. The workflow requires `HDS_OTA_SIGNING_KEY_PEM` as a protected `release` environment secret. Firmware trusts the three public keys tracked under `keys/ota/`.
 
 The scale checks `https://github.com/decentespresso/openscale/releases/latest/download/manifest.json`, downloads `manifest.sig`, verifies the detached signature with the public key compiled into the firmware, then verifies `model`, optional `pcb`, `min_from`, chip, environment, flash size, partition schema, filesystem partition size/schema, HTTPS certificate chain, asset URL prefix, asset size, and SHA-256 before writing firmware. Manifest `version` and `min_from` must be stable numeric `major.minor.patch` values. The workflow builds a signed catalog from `v3.1.13` upward by merging the previous latest stable signed manifest with the new release, deduping compatible entries, and sorting newest to oldest. The WiFi updater lists compatible stable releases except the firmware version already running.
 

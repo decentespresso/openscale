@@ -1,37 +1,42 @@
 #!/usr/bin/env python3
 import json
-import os
 import sys
 from pathlib import Path
 
 
 OUTPUT = Path(".pio.nosync") / "generated" / "include" / "ota_public_key.h"
+KEY_FILES = tuple(
+    Path("keys") / "ota" / f"hds_ota_manifest_public_key_{index}.pem"
+    for index in range(1, 4)
+)
 
 
-def public_key_pem():
-    key_file = os.environ.get("HDS_OTA_MANIFEST_PUBLIC_KEY_FILE")
-    if key_file:
-        return Path(key_file).read_text(encoding="utf-8").strip()
-    return os.environ.get("HDS_OTA_MANIFEST_PUBLIC_KEY_PEM", "").strip()
+def public_key_pems():
+    pems = []
+    for path in KEY_FILES:
+        if not path.is_file():
+            raise SystemExit(f"missing OTA public key file: {path}")
+        pem = path.read_text(encoding="utf-8").strip()
+        public_key_labels = ("PUBLIC KEY", "RSA PUBLIC KEY", "EC PUBLIC KEY")
+        if not any(
+            f"-----BEGIN {label}-----" in pem and f"-----END {label}-----" in pem
+            for label in public_key_labels
+        ):
+            raise SystemExit(f"invalid OTA public key file: {path}")
+        pems.append(pem)
+    if len(set(pems)) != len(pems):
+        raise SystemExit("OTA public keys must be distinct")
+    return pems
 
 
 def main():
-    pem = public_key_pem()
-    if not pem:
-        raise SystemExit("missing HDS_OTA_MANIFEST_PUBLIC_KEY_PEM")
-    public_key_labels = ("PUBLIC KEY", "RSA PUBLIC KEY", "EC PUBLIC KEY")
-    has_label = any(
-        f"-----BEGIN {label}-----" in pem and f"-----END {label}-----" in pem
-        for label in public_key_labels
+    defines = "".join(
+        f"#define HDS_OTA_MANIFEST_PUBLIC_KEY_{index}_PEM "
+        f"{json.dumps(pem + chr(10))}\n"
+        for index, pem in enumerate(public_key_pems(), 1)
     )
-    if not has_label:
-        raise SystemExit("HDS_OTA_MANIFEST_PUBLIC_KEY_PEM must be a PEM public key")
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(
-        "#pragma once\n"
-        f"#define HDS_OTA_MANIFEST_PUBLIC_KEY_PEM {json.dumps(pem + chr(10))}\n",
-        encoding="utf-8",
-    )
+    OUTPUT.write_text("#pragma once\n" + defines, encoding="utf-8")
     sys.stdout.write(f"wrote {OUTPUT}\n")
 
 
