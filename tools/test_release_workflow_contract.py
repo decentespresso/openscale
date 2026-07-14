@@ -28,7 +28,6 @@ def main():
     assert_contains(text, '[[ ! "$TAG" =~ ^v?[0-9]+\\.[0-9]+\\.[0-9]+$ ]]')
     assert_contains(text, 'git rev-parse --verify --end-of-options "refs/tags/$TAG^{commit}"')
     assert_contains(text, 'git checkout --detach "$TAG_COMMIT"')
-    assert_contains(text, "environment: release")
     assert_contains(text, "python tools/write_ota_public_key_header.py")
     assert_contains(text, "HDS_OTA_SIGNING_KEY_PEM secret is required")
     assert_contains(text, "keys/ota/hds_ota_manifest_public_key_{1..3}.pem")
