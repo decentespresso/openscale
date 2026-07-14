@@ -28,6 +28,8 @@ Decent Scale uses WiFi for web apps, WebSocket data streaming, and OTA updates.
 
 To enable WiFi mode, go to HDS setup menu and find "Wifi settings" entry. From there you can enable/disable WiFi as well as see current WiFi details. If you toggle WiFi on/off, a restart of the scale is required for the new settings to take effect.
 
+WiFi firmware updates are documented in [docs/wifi-ota.md](docs/wifi-ota.md).
+
 **First-time setup:** if no WiFi credentials are stored, the scale opens its own access point — SSID `Decent Scale`, password `12345678`, IP `192.168.1.1`. Connect to it and navigate to [hds.local](http://hds.local) to enter your home WiFi credentials. The scale will restart and connect to your network.
 
 **Reconnect:** once configured, the scale stays in STA mode and reconnects automatically after signal loss with exponential backoff (5 s → 10 → 20 → 40 → 60 s cap). It no longer falls back to the AP — a configured scale keeps retrying your home network.
