@@ -5,9 +5,23 @@ on:
   push:
     branches:
       - main
+  pull_request:
 
 jobs:
+  ai-documentation:
+    name: AI documentation contract
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - run: python tools/test_ai_docs_contract.py
+
   build:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     strategy:
       matrix:
