@@ -38,4 +38,5 @@ For a narrow task with known files, start there and open only the matching `docs
 - Decent binary, BLE, USB, and WebSocket compatibility: `docs/AI_PROTOCOL_NOTES.md`.
 - GPIO, board pins, wake pins, and sleep holds: `docs/AI_GPIO_NOTES.md`.
 - Build, flash, serial, and local tooling notes: `docs/AI_BUILD_NOTES.md`.
-- OTA and release policy: `docs/AI_OTA_NOTES.md`.
+- OTA, manifests, signing, picker, and rollback: `docs/AI_OTA_NOTES.md`.
+- Release preparation and AI-documentation audit: `docs/AI_RELEASE_NOTES.md`.

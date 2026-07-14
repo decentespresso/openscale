@@ -1,6 +1,8 @@
 # AI OTA Notes
 
-Read this for WiFi OTA, signed manifests, release workflows, rollback, and release picker behavior.
+Read this for WiFi OTA, signed manifests, release-asset policy, rollback, and
+release-picker behavior. For end-to-end release preparation and the
+AI-documentation audit, read `docs/AI_RELEASE_NOTES.md`.
 
 ## Policy
 
