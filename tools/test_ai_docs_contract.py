@@ -9,9 +9,19 @@ def read(path):
     return (ROOT / path).read_text(encoding="utf-8")
 
 
+def find_call(source, name, start=0):
+    match = re.search(rf"\b{re.escape(name)}\s*\(", source[start:])
+    if match is None:
+        raise AssertionError(f"missing function call: {name}")
+    return start + match.start()
+
+
 def main():
     wifi_source = read("src/wifi_setup.cpp")
-    access_point = re.search(r'WiFi\.softAP\("([^"]+)", "([^"]+)"\)', wifi_source)
+    access_point = re.search(
+        r'WiFi\s*\.\s*softAP\s*\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)',
+        wifi_source,
+    )
     if access_point is None:
         raise AssertionError("src/wifi_setup.cpp missing literal WiFi.softAP credentials")
 
@@ -31,32 +41,51 @@ def main():
         "pullOtaLoadPendingLittleFs": pull_ota,
     }
     for name, source in functions.items():
-        if f"`{name}()`" not in ota_notes or f"{name}(" not in source:
+        if f"`{name}()`" not in ota_notes or not re.search(rf"\b{re.escape(name)}\s*\(", source):
             raise AssertionError(f"AI_OTA_NOTES.md function reference is stale: {name}")
 
     for key in ("target_try", "fs_dirty", "restore", "restore_try"):
         if f"`{key}`" not in ota_notes or f'"{key}"' not in pull_ota:
             raise AssertionError(f"AI_OTA_NOTES.md NVS key is stale: {key}")
 
-    pending_start = hds_source.index("if (b_pendingOtaLittleFs)")
-    pending_resume = hds_source.index("pullOtaResumePendingLittleFs()", pending_start)
-    normal_mark_valid = hds_source.index("hdsOtaRollbackMarkValid();", pending_start)
+    pending_match = re.search(r"\bif\s*\(\s*b_pendingOtaLittleFs\s*\)", hds_source)
+    if pending_match is None:
+        raise AssertionError("src/hds.ino missing pending LittleFS recovery branch")
+    pending_start = pending_match.start()
+    pending_resume = find_call(hds_source, "pullOtaResumePendingLittleFs", pending_start)
+    normal_mark_valid = find_call(hds_source, "hdsOtaRollbackMarkValid", pending_start)
     if pending_resume >= normal_mark_valid:
         raise AssertionError("pending LittleFS recovery must precede normal validity marking")
 
-    resume_start = pull_ota.index("bool pullOtaResumePendingLittleFs()")
-    resume_end = pull_ota.index("void pullOtaRunUpdate()", resume_start)
+    resume_start = find_call(pull_ota, "pullOtaResumePendingLittleFs")
+    resume_end = find_call(pull_ota, "pullOtaRunUpdate", resume_start)
     resume_body = pull_ota[resume_start:resume_end]
-    if resume_body.index("pullOtaClearPendingLittleFs()") >= resume_body.index("hdsOtaRollbackMarkValid();"):
+    if find_call(resume_body, "pullOtaClearPendingLittleFs") >= find_call(
+        resume_body, "hdsOtaRollbackMarkValid"
+    ):
         raise AssertionError("successful LittleFS recovery must clear pending state before validity marking")
-    if "maxAttempts = pending.restore ? 1 : 2" not in resume_body:
+    if not re.search(
+        r"maxAttempts\s*=\s*pending\.restore\s*\?\s*1\s*:\s*2",
+        resume_body,
+    ):
         raise AssertionError("LittleFS recovery attempt limits changed")
-    if "at most two attempts" not in ota_notes or "one recorded restore attempt" not in ota_notes:
+    if not re.search(r"\btwo attempts\b", ota_notes) or not re.search(
+        r"\bone (?:recorded )?restore attempt\b", ota_notes
+    ):
         raise AssertionError("AI_OTA_NOTES.md attempt limits are stale")
 
     repo_map = read("docs/AI_REPO_MAP.md")
     references = set(re.findall(r"`([^`]+)`", repo_map))
-    path_prefixes = ("include/", "src/", "docs/", ".github/", "Hardware/", "Scale Case/")
+    path_prefixes = (
+        "include/",
+        "src/",
+        "docs/",
+        "tools/",
+        "web_apps/",
+        ".github/",
+        "Hardware/",
+        "Scale Case/",
+    )
     paths = {
         reference
         for reference in references

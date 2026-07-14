@@ -25,3 +25,5 @@ Local build, flash, OTA, editor, cache, and CAD files are omitted unless they ar
 | Hardware and mechanics | `Hardware/README.md`, `Scale Case/README.md` | matching STEP file only when required |
 
 Run the focused checks listed in the matching `docs/AI_*_NOTES.md` file. Widen to `README.md` only when task-local code and notes are insufficient.
+
+Validate this map and its source-derived facts with `python tools/test_ai_docs_contract.py`.
