@@ -116,7 +116,10 @@ static inline IPAddress grinderResolveRawMdnsIpv4(const mdns_result_t *result) {
 static inline bool grinderProbeDiscoveryIp(IPAddress ip, const char *hostname);
 
 static inline bool grinderAddDiscoveryFromRawMdnsResult(const mdns_result_t *result) {
-  if (result == nullptr || result->port != GRINDER_TCP_PORT) {
+  if (result == nullptr) {
+    return false;
+  }
+  if (result->port != 0 && result->port != GRINDER_TCP_PORT) {
     return false;
   }
   const char *mac = grinderRawMdnsTxt(result, "mac");
@@ -130,7 +133,7 @@ static inline bool grinderAddDiscoveryFromRawMdnsResult(const mdns_result_t *res
   if (!grinderIpValid(ip)) {
     return false;
   }
-  if (grinderIsMac(mac)) {
+  if (result->port == GRINDER_TCP_PORT && grinderIsMac(mac)) {
     return grinderAddDiscovery(mac, hostname, ip);
   }
   return grinderProbeDiscoveryIp(ip, hostname);
