@@ -18,10 +18,6 @@
 #define GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS 250
 #endif
 
-#ifndef GRINDER_RUNTIME_PING_TIMEOUT_MS
-#define GRINDER_RUNTIME_PING_TIMEOUT_MS 1200
-#endif
-
 enum GrinderDosingState {
   GRINDER_STATE_DISABLED,
   GRINDER_STATE_FINDING_PLUG,
@@ -111,6 +107,7 @@ struct GrinderRuntime {
   uint32_t cutoffGuardZeroExitAt = 0;
   uint32_t grindCandidateStartAt = 0;
   uint8_t grindCandidatePositiveSamples = 0;
+  uint8_t missedPingResponses = 0;
 };
 
 GrinderSettings grinderSettings;
@@ -305,6 +302,7 @@ static inline void grinderDisconnectToFinding() {
   grinderRuntime.tarePending = false;
   grinderRuntime.tareRequestArmsGrinder = false;
   grinderRuntime.tareRearmRequested = false;
+  grinderRuntime.userTareComplete = false;
   grinderAdaptiveShotReset(&grinderRuntime.adaptiveShot);
   grinderSetState(grinderSettings.enabled ? GRINDER_STATE_FINDING_PLUG : GRINDER_STATE_DISABLED);
 }
@@ -416,8 +414,7 @@ static inline bool grinderPlugConnectionStale(uint32_t now) {
   if (!grinderRuntime.client.connected()) {
     return true;
   }
-  return grinderRuntime.pendingCommand == GRINDER_COMMAND_PING &&
-         now - grinderRuntime.lastCommandAt > GRINDER_RUNTIME_PING_TIMEOUT_MS;
+  return grinderHeartbeatLost(grinderRuntime.missedPingResponses, grinderRuntime.lastRxAt, now);
 }
 
 #include "grinder_runtime_low_latency.h"
@@ -519,11 +516,12 @@ static inline void grinderHandleResponseLine(float weight) {
     grinderEnterError("bad response");
     return;
   }
-  grinderRuntime.lastRxAt = millis();
   if (!grinderResponseMatchesSelection(response)) {
     grinderEnterError("wrong mac");
     return;
   }
+  grinderRuntime.lastRxAt = millis();
+  grinderRuntime.missedPingResponses = 0;
   if (response.kind == GRINDER_TCP_RESPONSE_BUSY) {
     grinderEnterError("busy");
     return;
@@ -577,6 +575,7 @@ static inline bool grinderAttemptConnect(IPAddress ip) {
   grinderRuntime.client.setNoDelay(true);
   grinderRuntime.lastRxAt = millis();
   grinderRuntime.lastPingAt = 0;
+  grinderRuntime.missedPingResponses = 0;
   grinderResetLineReader();
   if (!grinderSendHello()) {
     Serial.println("[grinder] HELLO send failed");
@@ -636,7 +635,7 @@ static inline void grinderSendPingIfDue() {
   if (grinderRuntime.pendingCommand != GRINDER_COMMAND_NONE) {
     return;
   }
-  if (millis() - grinderRuntime.lastPingAt >= 500) {
+  if (millis() - grinderRuntime.lastPingAt >= GRINDER_HEARTBEAT_INTERVAL_MS) {
     grinderSendSimpleCommand("PING", GRINDER_COMMAND_PING);
   }
 }
@@ -647,7 +646,16 @@ static inline void grinderCheckConnectionLoss() {
       grinderRuntime.state == GRINDER_STATE_ERROR) {
     return;
   }
-  if (grinderPlugConnectionStale(millis())) {
+  const uint32_t now = millis();
+  if (grinderRuntime.pendingCommand == GRINDER_COMMAND_PING &&
+      now - grinderRuntime.lastCommandAt >= GRINDER_HEARTBEAT_RESPONSE_TIMEOUT_MS) {
+    grinderRuntime.pendingCommand = GRINDER_COMMAND_NONE;
+    if (grinderRuntime.missedPingResponses < UINT8_MAX) {
+      grinderRuntime.missedPingResponses++;
+    }
+    Serial.printf("[grinder] heartbeat miss=%u\n", grinderRuntime.missedPingResponses);
+  }
+  if (grinderPlugConnectionStale(now)) {
     if (grinderRuntime.state == GRINDER_STATE_GRINDING || grinderRuntime.state == GRINDER_STATE_STOPPING) {
       grinderEnterError("lost plug");
     } else {
@@ -757,6 +765,7 @@ static inline void grinderRuntimeReset() {
   grinderRuntime.rateSamples = 0;
   grinderRuntime.removalSeen = false;
   grinderRuntime.lastFastWeightSequence = 0;
+  grinderRuntime.missedPingResponses = 0;
   grinderResetCutoffGuard();
   grinderResetGrindConfirmation();
   grinderRuntime.tarePending = false;

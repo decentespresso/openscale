@@ -23,6 +23,15 @@
 #define GRINDER_MIN_CUTOFF_GRAMS 5.0f
 #define GRINDER_CUTOFF_ZERO_EXIT_PROTECTION_MS 1500
 #define GRINDER_MAX_GRIND_RATE_GPS 6.0f
+#define GRINDER_HEARTBEAT_INTERVAL_MS 500
+#define GRINDER_HEARTBEAT_RESPONSE_TIMEOUT_MS 500
+#define GRINDER_HEARTBEAT_MAX_MISSES 3
+#define GRINDER_HEARTBEAT_MAX_SILENCE_MS 1750
+
+static inline bool grinderHeartbeatLost(uint8_t missedResponses, uint32_t lastValidResponseAt, uint32_t now) {
+  return missedResponses >= GRINDER_HEARTBEAT_MAX_MISSES ||
+         now - lastValidResponseAt >= GRINDER_HEARTBEAT_MAX_SILENCE_MS;
+}
 
 enum GrinderTcpResponseKind {
   GRINDER_TCP_RESPONSE_INVALID,

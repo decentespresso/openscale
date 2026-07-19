@@ -39,6 +39,9 @@ int main() {
   assert(setupMassBlocked);
   assert(grinderCanArmAfterTare(true, true));
   assert(!grinderCanArmAfterTare(false, true));
+  assert(!grinderHeartbeatLost(2, 1000, 2500));
+  assert(grinderHeartbeatLost(3, 1000, 2500));
+  assert(grinderHeartbeatLost(0, 1000, 2750));
   GrinderAdaptiveShot shot;
   grinderAdaptiveShotReset(&shot);
   grinderAdaptiveShotTrack(&shot, 2.0f, 1.0f, 15.0f, 1);
