@@ -32,11 +32,11 @@ private:
   bool writeCredentialsToNvs(const String &ssid, const String &pass);
 
 public:
-  String getSSID() { return ssid; }
-  String getPass() { return pass; }
-  bool hasCredentials() { return ssid != ""; };
-  void saveCredentials(String ssid, String pass);
-  bool saveCredentialsForRestart(String ssid, String pass);
+  const String &getSSID() const { return ssid; }
+  const String &getPass() const { return pass; }
+  bool hasCredentials() const { return ssid != ""; };
+  void saveCredentials(const String &ssid, const String &pass);
+  bool saveCredentialsForRestart(const String &ssid, const String &pass);
   void init();
   void reset();
 };
@@ -237,7 +237,7 @@ void setupWifi() {
   WiFi.persistent(false);
 
   if (params.hasCredentials()) {
-    Serial.printf("trying to connect to wifi: %s\n", params.getSSID());
+    Serial.printf("trying to connect to wifi: %s\n", params.getSSID().c_str());
     connectToWifi();
     // STA advertises mDNS via the GOT_IP path (deferred to wifiSupervise), so
     // don't also register it here -- that would double-register the service.
@@ -361,11 +361,11 @@ void wifiSupervise() {
   }
 }
 
-void saveCredentials(String ssid, String pass) {
+void saveCredentials(const String &ssid, const String &pass) {
   params.saveCredentials(ssid, pass);
 }
 
-bool saveCredentialsForRestart(String ssid, String pass) {
+bool saveCredentialsForRestart(const String &ssid, const String &pass) {
   return params.saveCredentialsForRestart(ssid, pass);
 }
 
@@ -378,7 +378,7 @@ bool wifiCredentialsSaved() {
 // ------------------ WiFiParams ----------------------
 // ----------------------------------------------------
 
-void WiFiParams::saveCredentials(String ssid, String pass) {
+void WiFiParams::saveCredentials(const String &ssid, const String &pass) {
   if (!initialized) {
     init();
   }
@@ -395,7 +395,7 @@ void WiFiParams::saveCredentials(String ssid, String pass) {
   writeCredentialsToNvs(ssid, pass);
 }
 
-bool WiFiParams::saveCredentialsForRestart(String ssid, String pass) {
+bool WiFiParams::saveCredentialsForRestart(const String &ssid, const String &pass) {
   if (!initialized) {
     init();
   }

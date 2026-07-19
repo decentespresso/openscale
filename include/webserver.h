@@ -123,7 +123,7 @@ void startWebServer() {
     //     bucket is clamped at HTTP_STREAMING_BURST, so accumulated idle time
     //     never pre-fills it beyond the burst depth.
     server.addMiddleware([](AsyncWebServerRequest *request, ArMiddlewareNext next) {
-      String url = request->url();
+      const String &url = request->url();
       if (url == "/snapshot") {
         next();
         return;
