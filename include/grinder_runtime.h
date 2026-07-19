@@ -417,6 +417,8 @@ static inline bool grinderPlugConnectionStale(uint32_t now) {
   return grinderHeartbeatLost(grinderRuntime.missedPingResponses, grinderRuntime.lastRxAt, now);
 }
 
+static inline void grinderCheckConnectionLoss();
+
 #include "grinder_runtime_low_latency.h"
 
 static inline bool grinderLineRead(char value) {
@@ -657,10 +659,10 @@ static inline void grinderCheckConnectionLoss() {
   }
   if (grinderPlugConnectionStale(now)) {
     if (grinderRuntime.state == GRINDER_STATE_GRINDING || grinderRuntime.state == GRINDER_STATE_STOPPING) {
-      grinderEnterError("lost plug");
-    } else {
-      grinderDisconnectToFinding();
+      grinderSendOff();
     }
+    grinderSetStatus("lost plug");
+    grinderDisconnectToFinding();
   }
 }
 

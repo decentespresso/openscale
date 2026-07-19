@@ -208,7 +208,7 @@ static inline void grinderRuntimeFreshWeightTick(float weight, uint32_t sampleSe
     return;
   }
   if (grinderPlugConnectionStale(millis())) {
-    grinderEnterError("lost plug");
+    grinderCheckConnectionLoss();
     return;
   }
   grinderTickGrindingCutoff(weight);

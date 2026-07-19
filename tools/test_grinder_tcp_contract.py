@@ -84,6 +84,9 @@ def test_low_latency_cutoff_source_contracts():
     connection_loss_start = runtime.index("static inline void grinderCheckConnectionLoss")
     connection_loss_end = runtime.index("static inline void grinderTickConnected")
     connection_loss = runtime[connection_loss_start:connection_loss_end]
+    disconnect_start = runtime.index("static inline void grinderDisconnectToFinding")
+    disconnect_end = runtime.index("static inline bool grinderSendOff")
+    disconnect = runtime[disconnect_start:disconnect_end]
     tare_requested_start = low_latency.index("static inline void grinderRuntimeNotifyTareRequested")
     tare_complete_start = low_latency.index("static inline void grinderRuntimeNotifyTareComplete")
     tare_complete_end = low_latency.index("static inline void grinderStartGrindCandidate")
@@ -120,7 +123,13 @@ def test_low_latency_cutoff_source_contracts():
     assert low_latency.index('grinderSetStatus("grinding");') > low_latency.index("grinderRuntime.grindConfirmed = true")
     assert "grinderCutoffGrams(grinderSettings.targetGrams, grinderSettings.safetyMarginGrams)" in low_latency
     assert "now - grinderRuntime.lastCommandAt >= 150" in runtime
-    assert "grinderEnterError(\"lost plug\")" in runtime
+    assert 'grinderSetStatus("lost plug")' in connection_loss
+    assert "grinderSendOff();" in connection_loss
+    assert "grinderDisconnectToFinding();" in connection_loss
+    assert "grinderRuntime.userTareComplete = false;" in disconnect
+    assert 'grinderEnterError("lost plug")' not in runtime
+    assert 'grinderEnterError("lost plug")' not in low_latency
+    assert "grinderCheckConnectionLoss();" in low_latency[fresh_start:]
     assert "GRINDER_HEARTBEAT_INTERVAL_MS 500" in source(PROTOCOL_HEADER)
     assert "GRINDER_HEARTBEAT_RESPONSE_TIMEOUT_MS 500" in source(PROTOCOL_HEADER)
     assert "GRINDER_HEARTBEAT_MAX_MISSES 3" in source(PROTOCOL_HEADER)
