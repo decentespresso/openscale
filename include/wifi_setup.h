@@ -6,8 +6,8 @@
 // if not, start AP mode
 void setupWifi();
 void stopWifi();
-void saveCredentials(String ssid, String pass); // ssid, pass
-bool saveCredentialsForRestart(String ssid, String pass);
+void saveCredentials(const String &ssid, const String &pass); // ssid, pass
+bool saveCredentialsForRestart(const String &ssid, const String &pass);
 bool wifiCredentialsSaved();
 bool wifiEnsureMdnsReadyForSta();
 

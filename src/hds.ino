@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <cstring>
 #include "config.h"
 
 #include "parameter.h"
@@ -1987,7 +1988,7 @@ void drawWeight(float input) {
     int y = AT() - 15;  // Weight y when timer is shown.
     if (b_timeOnTop)
       y = AT() + 9;
-    if (String(sec2sec(stopWatch.elapsed())) == "0s") {
+    if (strcmp(sec2sec(stopWatch.elapsed()), "0s") == 0) {
       y = AT();  //Weight y when timer is hidden.
     }
     u8g2.drawStr(x_decimalPoint, y, ".");
@@ -2001,7 +2002,7 @@ void drawWeight(float input) {
 }
 
 void drawTime() {
-  if (String(sec2sec(stopWatch.elapsed())) != "0s") {
+  if (strcmp(sec2sec(stopWatch.elapsed()), "0s") != 0) {
     u8g2.setFont(FONT_TIMER);
     int y = LCDHeight - 8;
     if (b_timeOnTop)
