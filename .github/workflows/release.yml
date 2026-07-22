@@ -37,6 +37,12 @@ jobs:
             exit 1
           fi
           git checkout --detach "$TAG_COMMIT"
+          for publicKey in keys/ota/hds_ota_manifest_public_key_{1..3}.pem; do
+            if [ ! -f "$publicKey" ]; then
+              echo "Error: tag $TAG predates the three-key OTA migration"
+              exit 1
+            fi
+          done
 
       - uses: actions/cache@v3
         with:
@@ -55,9 +61,7 @@ jobs:
       - name: Install PlatformIO Core
         run: pip install --upgrade platformio
 
-      - name: Configure OTA manifest public key
-        env:
-          HDS_OTA_MANIFEST_PUBLIC_KEY_PEM: ${{ vars.HDS_OTA_MANIFEST_PUBLIC_KEY_PEM }}
+      - name: Configure OTA manifest public keys
         run: python tools/write_ota_public_key_header.py
 
       - name: Build PlatformIO Project
@@ -73,16 +77,19 @@ jobs:
           HDS_RELEASE_REPOSITORY: ${{ github.repository }}
           HDS_RELEASE_MIN_FROM: ${{ vars.HDS_RELEASE_MIN_FROM || '3.0.0' }}
           HDS_OTA_SIGNING_KEY_PEM: ${{ secrets.HDS_OTA_SIGNING_KEY_PEM }}
-          HDS_OTA_MANIFEST_PUBLIC_KEY_PEM: ${{ vars.HDS_OTA_MANIFEST_PUBLIC_KEY_PEM }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          verifyManifestSignature() {
+            for publicKey in keys/ota/hds_ota_manifest_public_key_{1..3}.pem; do
+              if openssl dgst -sha256 -verify "$publicKey" -signature "$2" "$1"; then
+                return 0
+              fi
+            done
+            return 1
+          }
           if [ -z "${HDS_OTA_SIGNING_KEY_PEM:-}" ]; then
             echo "Error: HDS_OTA_SIGNING_KEY_PEM secret is required"
-            exit 1
-          fi
-          if [ -z "${HDS_OTA_MANIFEST_PUBLIC_KEY_PEM:-}" ]; then
-            echo "Error: HDS_OTA_MANIFEST_PUBLIC_KEY_PEM variable is required"
             exit 1
           fi
           mkdir -p release-files legacy-files
@@ -106,8 +113,7 @@ jobs:
                 echo "Error: previous OTA catalog is incomplete"
                 exit 1
               fi
-              printf '%s\n' "$HDS_OTA_MANIFEST_PUBLIC_KEY_PEM" > previous-release/ota_public.pem
-              openssl dgst -sha256 -verify previous-release/ota_public.pem -signature previous-release/manifest.sig previous-release/manifest.json
+              verifyManifestSignature previous-release/manifest.json previous-release/manifest.sig
               PREVIOUS_MANIFEST_ARGS=(--previous-manifest previous-release/manifest.json)
             fi
           fi
@@ -116,8 +122,7 @@ jobs:
             echo "Error: manifest.sig not generated"
             exit 1
           fi
-          printf '%s\n' "$HDS_OTA_MANIFEST_PUBLIC_KEY_PEM" > release-files/ota_public.pem
-          openssl dgst -sha256 -verify release-files/ota_public.pem -signature release-files/manifest.sig release-files/manifest.json
+          verifyManifestSignature release-files/manifest.json release-files/manifest.sig
           cd legacy-files
           zip "../HDS_FW_${TAG}.zip" ./* || exit 1
           cd ..

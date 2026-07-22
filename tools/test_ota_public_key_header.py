@@ -1,8 +1,9 @@
 import importlib.util
-import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,34 +17,83 @@ def load_module():
     return module
 
 
+PUBLIC_KEYS = tuple(
+    ROOT / "keys" / "ota" / f"hds_ota_manifest_public_key_{index}.pem"
+    for index in range(1, 4)
+)
+
+
 class OtaPublicKeyHeaderTest(unittest.TestCase):
-    def test_writes_escaped_public_key_macro(self):
+    def test_writes_three_distinct_public_keys(self):
         module = load_module()
-        old_pem = os.environ.get("HDS_OTA_MANIFEST_PUBLIC_KEY_PEM")
-        pem = "-----BEGIN PUBLIC KEY-----\nabc\n-----END PUBLIC KEY-----"
         with tempfile.TemporaryDirectory() as temp_dir:
-            module.OUTPUT = Path(temp_dir) / "ota_public_key.h"
-            os.environ["HDS_OTA_MANIFEST_PUBLIC_KEY_PEM"] = pem
-            try:
-                module.main()
-            finally:
-                if old_pem is None:
-                    os.environ.pop("HDS_OTA_MANIFEST_PUBLIC_KEY_PEM", None)
-                else:
-                    os.environ["HDS_OTA_MANIFEST_PUBLIC_KEY_PEM"] = old_pem
+            directory = Path(temp_dir)
+            module.KEY_FILES = PUBLIC_KEYS
+            module.OUTPUT = directory / "ota_public_key.h"
+
+            module.main()
+
             text = module.OUTPUT.read_text(encoding="utf-8")
-            self.assertIn("#define HDS_OTA_MANIFEST_PUBLIC_KEY_PEM", text)
-            self.assertIn("\\nabc\\n", text)
+            for index in range(1, 4):
+                self.assertIn(f"#define HDS_OTA_MANIFEST_PUBLIC_KEY_{index}_PEM", text)
+            self.assertEqual(text.count("-----BEGIN PUBLIC KEY-----"), 3)
 
     def test_rejects_missing_public_key(self):
         module = load_module()
-        old_pem = os.environ.pop("HDS_OTA_MANIFEST_PUBLIC_KEY_PEM", None)
-        try:
-            with self.assertRaises(SystemExit):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            module.KEY_FILES = tuple(directory / f"key-{index}.pem" for index in range(1, 4))
+            module.KEY_FILES[0].write_bytes(PUBLIC_KEYS[0].read_bytes())
+            module.KEY_FILES[1].write_bytes(PUBLIC_KEYS[1].read_bytes())
+
+            with self.assertRaisesRegex(SystemExit, "missing OTA public key file"):
                 module.main()
-        finally:
-            if old_pem is not None:
-                os.environ["HDS_OTA_MANIFEST_PUBLIC_KEY_PEM"] = old_pem
+
+    def test_rejects_malformed_public_key(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            module.KEY_FILES = tuple(directory / f"key-{index}.pem" for index in range(1, 4))
+            module.KEY_FILES[0].write_bytes(PUBLIC_KEYS[0].read_bytes())
+            module.KEY_FILES[1].write_bytes(PUBLIC_KEYS[1].read_bytes())
+            module.KEY_FILES[2].write_text(
+                "-----BEGIN PUBLIC KEY-----\nkey-3\n-----END PUBLIC KEY-----\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(SystemExit, "invalid OTA public key file"):
+                module.main()
+
+    def test_rejects_differently_encoded_duplicate_public_keys(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            directory = Path(temp_dir)
+            duplicate = directory / "duplicate.pem"
+            subprocess.run(
+                [
+                    module.openssl_path(),
+                    "rsa",
+                    "-pubin",
+                    "-in",
+                    str(PUBLIC_KEYS[0]),
+                    "-RSAPublicKey_out",
+                    "-out",
+                    str(duplicate),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            module.KEY_FILES = (PUBLIC_KEYS[0], duplicate, PUBLIC_KEYS[1])
+
+            with self.assertRaisesRegex(SystemExit, "OTA public keys must be distinct"):
+                module.main()
+
+    def test_requires_openssl(self):
+        module = load_module()
+        module.KEY_FILES = PUBLIC_KEYS
+        with mock.patch.object(module.shutil, "which", return_value=None):
+            with self.assertRaisesRegex(SystemExit, "OpenSSL is required"):
+                module.main()
 
 
 if __name__ == "__main__":

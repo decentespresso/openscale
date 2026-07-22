@@ -12,6 +12,9 @@ AI-documentation audit, read `docs/AI_RELEASE_NOTES.md`.
 - Never use `setInsecure`.
 - Keep HTTPS CA validation, GitHub release asset URL allowlisting, exact size checks, and SHA-256 verification.
 - Do not add a production option to skip `littlefs.bin`.
+- Keep signing with Key 1 until firmware containing all three public keys has rolled out.
+- Firmware predating the three-key migration cannot recover with Key 2 or Key 3 if the Key 1 private key is lost.
+- Keep a lost private key's public key in firmware unless the key was compromised.
 
 ## Release Assets
 
