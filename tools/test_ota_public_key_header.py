@@ -8,6 +8,8 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "write_ota_public_key_header.py"
+PLATFORMIO_INI = ROOT / "platformio.ini"
+PREBUILD_SCRIPT = ROOT / "ota_public_key_header.py"
 
 
 def load_module():
@@ -91,9 +93,32 @@ class OtaPublicKeyHeaderTest(unittest.TestCase):
     def test_requires_openssl(self):
         module = load_module()
         module.KEY_FILES = PUBLIC_KEYS
-        with mock.patch.object(module.shutil, "which", return_value=None):
+        with mock.patch.object(module.shutil, "which", return_value=None), mock.patch.dict(
+            module.os.environ, {"OPENSSL": "", "ProgramFiles": ""}
+        ):
             with self.assertRaisesRegex(SystemExit, "OpenSSL is required"):
                 module.main()
+
+    def test_finds_git_for_windows_openssl(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            executable = Path(temp_dir) / "Git" / "usr" / "bin" / "openssl.exe"
+            executable.parent.mkdir(parents=True)
+            executable.touch()
+            with mock.patch.object(module.shutil, "which", return_value=None), mock.patch.dict(
+                module.os.environ, {"OPENSSL": "", "ProgramFiles": temp_dir}
+            ):
+                self.assertEqual(module.openssl_path(), str(executable))
+
+    def test_platformio_runs_public_key_generator(self):
+        self.assertIn(
+            "pre:ota_public_key_header.py",
+            PLATFORMIO_INI.read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            'runpy.run_path("tools/write_ota_public_key_header.py", run_name="__main__")',
+            PREBUILD_SCRIPT.read_text(encoding="utf-8"),
+        )
 
 
 if __name__ == "__main__":

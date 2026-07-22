@@ -7,6 +7,8 @@ on:
       - ".github/workflows/release.yml"
       - "include/*ota*.h"
       - "keys/ota/**"
+      - "ota_public_key_header.py"
+      - "platformio.ini"
       - "tools/*ota*.py"
       - "tools/*release_manifest*.py"
       - "tools/test_release_workflow_contract.py"
