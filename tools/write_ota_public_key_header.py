@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
+import hashlib
 import json
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -11,22 +15,51 @@ KEY_FILES = tuple(
 )
 
 
+def openssl_path():
+    executable = shutil.which(os.environ.get("OPENSSL", "openssl"))
+    if executable is None:
+        raise SystemExit("OpenSSL is required; set OPENSSL to its executable path")
+    return executable
+
+
+def canonical_public_key_der(executable, path):
+    result = subprocess.run(
+        [
+            executable,
+            "pkey",
+            "-pubin",
+            "-in",
+            str(path),
+            "-pubout",
+            "-outform",
+            "DER",
+        ],
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise SystemExit(f"invalid OTA public key file: {path}")
+    return result.stdout
+
+
 def public_key_pems():
-    pems = []
+    key_files = []
     for path in KEY_FILES:
         if not path.is_file():
             raise SystemExit(f"missing OTA public key file: {path}")
-        pem = path.read_text(encoding="utf-8").strip()
-        public_key_labels = ("PUBLIC KEY", "RSA PUBLIC KEY", "EC PUBLIC KEY")
-        if not any(
-            f"-----BEGIN {label}-----" in pem and f"-----END {label}-----" in pem
-            for label in public_key_labels
-        ):
+        try:
+            pem = path.read_text(encoding="utf-8").strip()
+        except UnicodeError:
             raise SystemExit(f"invalid OTA public key file: {path}")
-        pems.append(pem)
-    if len(set(pems)) != len(pems):
+        key_files.append((path, pem))
+
+    executable = openssl_path()
+    fingerprints = [
+        hashlib.sha256(canonical_public_key_der(executable, path)).digest()
+        for path, _ in key_files
+    ]
+    if len(set(fingerprints)) != len(fingerprints):
         raise SystemExit("OTA public keys must be distinct")
-    return pems
+    return [pem for _, pem in key_files]
 
 
 def main():

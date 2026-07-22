@@ -37,6 +37,12 @@ jobs:
             exit 1
           fi
           git checkout --detach "$TAG_COMMIT"
+          for publicKey in keys/ota/hds_ota_manifest_public_key_{1..3}.pem; do
+            if [ ! -f "$publicKey" ]; then
+              echo "Error: tag $TAG predates the three-key OTA migration"
+              exit 1
+            fi
+          done
 
       - uses: actions/cache@v3
         with:

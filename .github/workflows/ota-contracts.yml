@@ -1,0 +1,29 @@
+name: OTA contracts
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ota-contracts.yml"
+      - ".github/workflows/release.yml"
+      - "include/*ota*.h"
+      - "keys/ota/**"
+      - "tools/*ota*.py"
+      - "tools/*release_manifest*.py"
+      - "tools/test_release_workflow_contract.py"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - run: |
+          python tools/test_generate_release_manifest.py
+          python tools/test_pull_ota_contract.py
+          python tools/test_release_workflow_contract.py
+          python tools/test_ota_rollback_contract.py
+          python tools/test_ota_public_key_header.py
