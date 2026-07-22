@@ -1,8 +1,13 @@
+import os
 from pathlib import Path
+import subprocess
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
+CONFIG = ROOT / "include" / "config.h"
+BUILD_METADATA = ROOT / "git_rev_macro.py"
 
 
 def assert_contains(text, needle):
@@ -23,6 +28,7 @@ def assert_before(text, left, right):
 
 
 def main():
+    config = CONFIG.read_text(encoding="utf-8")
     text = WORKFLOW.read_text(encoding="utf-8")
     assert_contains(text, 'TAG: ${{ github.event.inputs.tag }}')
     assert_contains(text, '[[ ! "$TAG" =~ ^v?[0-9]+\\.[0-9]+\\.[0-9]+$ ]]')
@@ -30,6 +36,7 @@ def main():
     assert_contains(text, 'git checkout --detach "$TAG_COMMIT"')
     assert_contains(text, "tag $TAG predates the three-key OTA migration")
     assert_contains(text, "python tools/write_ota_public_key_header.py")
+    assert_contains(text, 'echo "HDS_FIRMWARE_VERSION=${TAG#v}" >> "$GITHUB_ENV"')
     assert_contains(text, "HDS_OTA_SIGNING_KEY_PEM secret is required")
     assert_contains(text, "keys/ota/hds_ota_manifest_public_key_{1..3}.pem")
     assert_contains(text, "gh release list")
@@ -39,7 +46,8 @@ def main():
     assert_contains(text, "openssl dgst -sha256 -verify")
     assert_contains(text, "--previous-manifest previous-release/manifest.json")
     assert_contains(text, "--catalog-min-version v3.1.13")
-    assert_contains(text, "python tools/generate_release_manifest.py --tag \"$TAG\" --output-dir release-files --catalog --catalog-min-version v3.1.13")
+    assert_contains(text, 'grep -aFq "FW: $HDS_FIRMWARE_VERSION" .pio.nosync/build/esp32s3/firmware.bin')
+    assert_contains(text, "python tools/generate_release_manifest.py --tag \"$HDS_FIRMWARE_VERSION\" --output-dir release-files --catalog --catalog-min-version v3.1.13")
     assert_contains(text, "gh release create")
     assert_contains(text, "--draft")
     assert_contains(text, "gh release upload")
@@ -53,6 +61,8 @@ def main():
     assert_before(text, "openssl dgst -sha256 -verify", "python tools/generate_release_manifest.py")
     assert_before(text, "tag $TAG predates the three-key OTA migration", "python tools/write_ota_public_key_header.py")
     assert_before(text, "python tools/write_ota_public_key_header.py", "verifyManifestSignature previous-release/manifest.json")
+    assert_before(text, 'echo "HDS_FIRMWARE_VERSION=${TAG#v}"', "pio run -e esp32s3")
+    assert_before(text, 'grep -aFq "FW: $HDS_FIRMWARE_VERSION"', "python tools/generate_release_manifest.py")
     assert_before(text, "python tools/generate_release_manifest.py", "verifyManifestSignature release-files/manifest.json")
     assert_before(text, "verifyManifestSignature release-files/manifest.json", "gh release create")
     assert_before(text, "release-files/manifest.sig", "release-files/manifest.json")
@@ -67,8 +77,30 @@ def main():
     assert_not_contains(text, "HDS_LITTLEFS_REQUIRED")
     assert_not_contains(text, "test_catalog_" + "min_version")
     assert_not_contains(text, "TEST_CATALOG_" + "MIN_VERSION")
-    print("release workflow contract tests passed")
 
+    assert_contains(config, '#define LINE1 (char*)"FW: " HDS_FIRMWARE_VERSION')
+    environment = {**os.environ, "HDS_FIRMWARE_VERSION": "9.8.7"}
+    result = subprocess.run(
+        [sys.executable, str(BUILD_METADATA)],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or '-DHDS_FIRMWARE_VERSION="9.8.7"' not in result.stdout:
+        raise AssertionError("build metadata did not emit the firmware version macro")
+    environment["HDS_FIRMWARE_VERSION"] = "v9.8.7"
+    result = subprocess.run(
+        [sys.executable, str(BUILD_METADATA)],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        raise AssertionError("build metadata accepted an unnormalized firmware version")
+
+    print("release workflow contract tests passed")
 
 if __name__ == "__main__":
     main()

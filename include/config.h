@@ -31,7 +31,10 @@
 //#define CHECKBATTERY
 
 //SCALE CONFIG
-#define LINE1 (char*)"FW: 3.1.13"
+#ifndef HDS_FIRMWARE_VERSION
+#define HDS_FIRMWARE_VERSION "3.1.13-dev"
+#endif
+#define LINE1 (char*)"FW: " HDS_FIRMWARE_VERSION
 #define LINE2 (char*)"Built-date "
 #define LINE3 __DATE__ //Serial number
 #define VERSION /*version*/ LINE1, /*compile date*/ LINE2, /*sn*/ LINE3

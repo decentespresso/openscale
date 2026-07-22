@@ -43,6 +43,7 @@ jobs:
               exit 1
             fi
           done
+          echo "HDS_FIRMWARE_VERSION=${TAG#v}" >> "$GITHUB_ENV"
 
       - uses: actions/cache@v3
         with:
@@ -68,6 +69,10 @@ jobs:
         run: |
           set -euo pipefail
           pio run -e esp32s3 || exit 1
+          if ! grep -aFq "FW: $HDS_FIRMWARE_VERSION" .pio.nosync/build/esp32s3/firmware.bin; then
+            echo "Error: firmware does not contain version $HDS_FIRMWARE_VERSION"
+            exit 1
+          fi
           pio run -e esp32s3 -t buildfs || exit 1
 
       - name: Prepare release assets
@@ -117,7 +122,7 @@ jobs:
               PREVIOUS_MANIFEST_ARGS=(--previous-manifest previous-release/manifest.json)
             fi
           fi
-          python tools/generate_release_manifest.py --tag "$TAG" --output-dir release-files --catalog --catalog-min-version v3.1.13 "${PREVIOUS_MANIFEST_ARGS[@]}"
+          python tools/generate_release_manifest.py --tag "$HDS_FIRMWARE_VERSION" --output-dir release-files --catalog --catalog-min-version v3.1.13 "${PREVIOUS_MANIFEST_ARGS[@]}"
           if [ ! -f release-files/manifest.sig ]; then
             echo "Error: manifest.sig not generated"
             exit 1
