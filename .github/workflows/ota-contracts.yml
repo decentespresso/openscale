@@ -5,8 +5,11 @@ on:
     paths:
       - ".github/workflows/ota-contracts.yml"
       - ".github/workflows/release.yml"
+      - ".github/workflows/nightly.yml"
       - "include/*ota*.h"
       - "keys/ota/**"
+      - "platformio.ini"
+      - "requirements-platformio.txt"
       - "tools/*ota*.py"
       - "tools/*release_manifest*.py"
       - "tools/test_release_workflow_contract.py"

@@ -1,8 +1,13 @@
+import configparser
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
+NIGHTLY_WORKFLOW = ROOT / ".github" / "workflows" / "nightly.yml"
+PLATFORMIO_CONFIG = ROOT / "platformio.ini"
+PLATFORMIO_REQUIREMENTS = ROOT / "requirements-platformio.txt"
 
 
 def assert_contains(text, needle):
@@ -25,6 +30,7 @@ def assert_before(text, left, right):
 def main():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert_contains(text, 'TAG: ${{ github.event.inputs.tag }}')
+    nightly = NIGHTLY_WORKFLOW.read_text(encoding="utf-8")
     assert_contains(text, '[[ ! "$TAG" =~ ^v?[0-9]+\\.[0-9]+\\.[0-9]+$ ]]')
     assert_contains(text, 'git rev-parse --verify --end-of-options "refs/tags/$TAG^{commit}"')
     assert_contains(text, 'git checkout --detach "$TAG_COMMIT"')
@@ -47,6 +53,7 @@ def main():
     assert_contains(text, "release-files/manifest.sig")
     assert_contains(text, "release-files/manifest.json")
     assert_contains(text, "verifyManifestSignature previous-release/manifest.json previous-release/manifest.sig")
+    assert_contains(text, "release-files/dependencies.txt")
     assert_contains(text, "verifyManifestSignature release-files/manifest.json release-files/manifest.sig")
     assert_contains(text, "gh release edit")
     assert_contains(text, "--draft=false")
@@ -67,8 +74,29 @@ def main():
     assert_not_contains(text, "HDS_LITTLEFS_REQUIRED")
     assert_not_contains(text, "test_catalog_" + "min_version")
     assert_not_contains(text, "TEST_CATALOG_" + "MIN_VERSION")
-    print("release workflow contract tests passed")
+    for workflow in (text, nightly):
+        assert_contains(workflow, "python -m pip install --requirement requirements-platformio.txt")
+        assert_contains(workflow, "hashFiles('platformio.ini', 'requirements-platformio.txt')")
+        assert_contains(workflow, "pio pkg list -e")
+        assert_not_contains(workflow, "pip install --upgrade platformio")
+    assert_contains(nightly, "dependencies.txt")
+    requirements = PLATFORMIO_REQUIREMENTS.read_text(encoding="utf-8").splitlines()
+    if requirements != ["platformio==6.1.19"]:
+        raise AssertionError("PlatformIO Core must be pinned exactly")
+    config = configparser.ConfigParser(interpolation=None)
+    config.read(PLATFORMIO_CONFIG, encoding="utf-8")
+    dependencies = tuple(
+        dependency.strip()
+        for dependency in config["env:esp32s3"]["lib_deps"].splitlines()
+        if dependency.strip()
+    )
+    registryPin = re.compile(r"[^/\s]+/.+ @ [0-9]+\.[0-9]+\.[0-9]+$")
+    gitPin = re.compile(r"https://github\.com/.+\.git#[0-9a-f]{40}$")
+    for dependency in dependencies:
+        if registryPin.fullmatch(dependency) is None and gitPin.fullmatch(dependency) is None:
+            raise AssertionError(f"dependency is not pinned exactly: {dependency}")
 
+    print("release workflow contract tests passed")
 
 if __name__ == "__main__":
     main()
