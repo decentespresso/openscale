@@ -81,6 +81,12 @@ def test_adaptive_safety_source_contracts():
 def test_low_latency_cutoff_source_contracts():
     low_latency = source(LOW_LATENCY_HEADER)
     runtime = source(RUNTIME_HEADER)
+    connection_loss_start = runtime.index("static inline void grinderCheckConnectionLoss")
+    connection_loss_end = runtime.index("static inline void grinderTickConnected")
+    connection_loss = runtime[connection_loss_start:connection_loss_end]
+    disconnect_start = runtime.index("static inline void grinderDisconnectToFinding")
+    disconnect_end = runtime.index("static inline bool grinderSendOff")
+    disconnect = runtime[disconnect_start:disconnect_end]
     tare_requested_start = low_latency.index("static inline void grinderRuntimeNotifyTareRequested")
     tare_complete_start = low_latency.index("static inline void grinderRuntimeNotifyTareComplete")
     tare_complete_end = low_latency.index("static inline void grinderStartGrindCandidate")
@@ -117,7 +123,19 @@ def test_low_latency_cutoff_source_contracts():
     assert low_latency.index('grinderSetStatus("grinding");') > low_latency.index("grinderRuntime.grindConfirmed = true")
     assert "grinderCutoffGrams(grinderSettings.targetGrams, grinderSettings.safetyMarginGrams)" in low_latency
     assert "now - grinderRuntime.lastCommandAt >= 150" in runtime
-    assert "grinderEnterError(\"lost plug\")" in runtime
+    assert 'grinderSetStatus("lost plug")' in connection_loss
+    assert "grinderSendOff();" in connection_loss
+    assert "grinderDisconnectToFinding();" in connection_loss
+    assert "grinderRuntime.userTareComplete = false;" in disconnect
+    assert 'grinderEnterError("lost plug")' not in runtime
+    assert 'grinderEnterError("lost plug")' not in low_latency
+    assert "grinderCheckConnectionLoss();" in low_latency[fresh_start:]
+    assert "GRINDER_HEARTBEAT_INTERVAL_MS 500" in source(PROTOCOL_HEADER)
+    assert "GRINDER_HEARTBEAT_RESPONSE_TIMEOUT_MS 500" in source(PROTOCOL_HEADER)
+    assert "GRINDER_HEARTBEAT_MAX_MISSES 3" in source(PROTOCOL_HEADER)
+    assert "GRINDER_HEARTBEAT_MAX_SILENCE_MS 1750" in source(PROTOCOL_HEADER)
+    assert "grinderRuntime.pendingCommand = GRINDER_COMMAND_NONE;" in connection_loss
+    assert "grinderRuntime.missedPingResponses++;" in connection_loss
     assert "grinderRuntime.state == GRINDER_STATE_ERROR" in tare_requested
     assert 'grinderSetStatus("armed");' in tare_complete
     assert 'grinderSetStatus("plug wait");' in tare_complete
@@ -225,7 +243,7 @@ def test_firmware_contracts():
     assert_contains(RUNTIME_HEADER, 'grinderSetStatus("tare to arm")')
     assert_contains(RUNTIME_HEADER, "bool userTareComplete = false")
     assert_contains(RUNTIME_HEADER, "grinderRuntime.userTareComplete = false")
-    assert source(RUNTIME_HEADER).count("grinderRuntime.userTareComplete = false;") == 1
+    assert source(RUNTIME_HEADER).count("grinderRuntime.userTareComplete = false;") == 2
     assert_contains(RUNTIME_HEADER, "grinderRuntime.tareRearmRequested = response.relayOn")
     assert_not_contains(RUNTIME_HEADER, "grind timeout")
     assert_contains(RUNTIME_HEADER, "bool setupMassBlocked = false")
