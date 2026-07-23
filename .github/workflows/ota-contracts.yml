@@ -7,6 +7,8 @@ on:
       - ".github/workflows/release.yml"
       - "include/*ota*.h"
       - "keys/ota/**"
+      - "ota_public_key_header.py"
+      - "platformio.ini"
       - "tools/*ota*.py"
       - "tools/*release_manifest*.py"
       - "tools/test_release_workflow_contract.py"
@@ -27,3 +29,19 @@ jobs:
           python tools/test_release_workflow_contract.py
           python tools/test_ota_rollback_contract.py
           python tools/test_ota_public_key_header.py
+
+  public-key-header-platforms:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - run: |
+          python tools/test_ota_public_key_header.py
+          python ota_public_key_header.py
