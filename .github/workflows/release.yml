@@ -43,6 +43,11 @@ jobs:
               exit 1
             fi
           done
+          if ! grep -Fq "HDS_FIRMWARE_VERSION" git_rev_macro.py || ! grep -Fq "HDS_FIRMWARE_VERSION" include/config.h; then
+            echo "Error: tag $TAG predates the release version injection migration"
+            exit 1
+          fi
+          echo "HDS_FIRMWARE_VERSION=${TAG#v}" >> "$GITHUB_ENV"
           if [ ! -f requirements-platformio.txt ]; then
             echo "Error: tag $TAG predates the dependency pin migration"
             exit 1
@@ -72,6 +77,10 @@ jobs:
         run: |
           set -euo pipefail
           pio run -e esp32s3 || exit 1
+          if ! grep -aFq "FW: $HDS_FIRMWARE_VERSION" .pio.nosync/build/esp32s3/firmware.bin; then
+            echo "Error: firmware does not contain version $HDS_FIRMWARE_VERSION"
+            exit 1
+          fi
           pio run -e esp32s3 -t buildfs || exit 1
 
       - name: Prepare release assets
