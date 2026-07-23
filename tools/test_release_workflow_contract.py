@@ -1,7 +1,9 @@
+import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +37,8 @@ def main():
     assert_contains(text, 'git rev-parse --verify --end-of-options "refs/tags/$TAG^{commit}"')
     assert_contains(text, 'git checkout --detach "$TAG_COMMIT"')
     assert_contains(text, "tag $TAG predates the three-key OTA migration")
+    assert_contains(text, "tag $TAG predates the release version injection migration")
+    assert_contains(text, 'grep -Fq "HDS_FIRMWARE_VERSION" git_rev_macro.py || ! grep -Fq "HDS_FIRMWARE_VERSION" include/config.h')
     assert_contains(text, "python tools/write_ota_public_key_header.py")
     assert_contains(text, 'echo "HDS_FIRMWARE_VERSION=${TAG#v}" >> "$GITHUB_ENV"')
     assert_contains(text, "HDS_OTA_SIGNING_KEY_PEM secret is required")
@@ -47,7 +51,7 @@ def main():
     assert_contains(text, "--previous-manifest previous-release/manifest.json")
     assert_contains(text, "--catalog-min-version v3.1.13")
     assert_contains(text, 'grep -aFq "FW: $HDS_FIRMWARE_VERSION" .pio.nosync/build/esp32s3/firmware.bin')
-    assert_contains(text, "python tools/generate_release_manifest.py --tag \"$HDS_FIRMWARE_VERSION\" --output-dir release-files --catalog --catalog-min-version v3.1.13")
+    assert_contains(text, "python tools/generate_release_manifest.py --tag \"$TAG\" --output-dir release-files --catalog --catalog-min-version v3.1.13")
     assert_contains(text, "gh release create")
     assert_contains(text, "--draft")
     assert_contains(text, "gh release upload")
@@ -60,6 +64,7 @@ def main():
     assert_contains(text, "--draft=false")
     assert_before(text, "openssl dgst -sha256 -verify", "python tools/generate_release_manifest.py")
     assert_before(text, "tag $TAG predates the three-key OTA migration", "python tools/write_ota_public_key_header.py")
+    assert_before(text, "tag $TAG predates the release version injection migration", "python tools/write_ota_public_key_header.py")
     assert_before(text, "python tools/write_ota_public_key_header.py", "verifyManifestSignature previous-release/manifest.json")
     assert_before(text, 'echo "HDS_FIRMWARE_VERSION=${TAG#v}"', "pio run -e esp32s3")
     assert_before(text, 'grep -aFq "FW: $HDS_FIRMWARE_VERSION"', "python tools/generate_release_manifest.py")
@@ -99,6 +104,48 @@ def main():
     )
     if result.returncode == 0:
         raise AssertionError("build metadata accepted an unnormalized firmware version")
+
+    with tempfile.TemporaryDirectory() as tempDir:
+        root = Path(tempDir)
+        buildDir = root / "build"
+        outputDir = root / "release-files"
+        buildDir.mkdir()
+        (buildDir / "firmware.bin").write_bytes(b"firmware")
+        (buildDir / "littlefs.bin").write_bytes(b"littlefs")
+        environment = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"HDS_OTA_SIGNING_KEY_FILE", "HDS_OTA_SIGNING_KEY_PEM", "HDS_RELEASE_NOTES_URL"}
+        }
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "tools" / "generate_release_manifest.py"),
+                "--tag",
+                "v9.8.7",
+                "--build-dir",
+                str(buildDir),
+                "--output-dir",
+                str(outputDir),
+                "--repository",
+                "decentespresso/openscale",
+            ],
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise AssertionError(result.stderr)
+        manifest = json.loads((outputDir / "manifest.json").read_text(encoding="utf-8"))
+        if manifest["version"] != "9.8.7":
+            raise AssertionError("release workflow did not normalize manifest version")
+        expectedReleaseUrl = "https://github.com/decentespresso/openscale/releases/tag/v9.8.7"
+        if manifest["release_notes_url"] != expectedReleaseUrl:
+            raise AssertionError("release workflow stripped v from release notes URL")
+        expectedFirmwareUrl = "https://github.com/decentespresso/openscale/releases/download/v9.8.7/firmware.bin"
+        if manifest["firmware"]["url"] != expectedFirmwareUrl:
+            raise AssertionError("release workflow stripped v from firmware URL")
 
     print("release workflow contract tests passed")
 
