@@ -4,12 +4,18 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import configparser
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 CONFIG = ROOT / "include" / "config.h"
 BUILD_METADATA = ROOT / "git_rev_macro.py"
+NIGHTLY_WORKFLOW = ROOT / ".github" / "workflows" / "nightly.yml"
+OTA_WORKFLOW = ROOT / ".github" / "workflows" / "ota-contracts.yml"
+PLATFORMIO_CONFIG = ROOT / "platformio.ini"
+PLATFORMIO_REQUIREMENTS = ROOT / "requirements-platformio.txt"
 
 
 def assert_contains(text, needle):
@@ -33,12 +39,16 @@ def main():
     config = CONFIG.read_text(encoding="utf-8")
     text = WORKFLOW.read_text(encoding="utf-8")
     assert_contains(text, 'TAG: ${{ github.event.inputs.tag }}')
+    nightly = NIGHTLY_WORKFLOW.read_text(encoding="utf-8")
+    ota = OTA_WORKFLOW.read_text(encoding="utf-8")
     assert_contains(text, '[[ ! "$TAG" =~ ^v?[0-9]+\\.[0-9]+\\.[0-9]+$ ]]')
     assert_contains(text, 'git rev-parse --verify --end-of-options "refs/tags/$TAG^{commit}"')
     assert_contains(text, 'git checkout --detach "$TAG_COMMIT"')
     assert_contains(text, "tag $TAG predates the three-key OTA migration")
     assert_contains(text, "tag $TAG predates the release version injection migration")
     assert_contains(text, 'grep -Fq "HDS_FIRMWARE_VERSION" git_rev_macro.py || ! grep -Fq "HDS_FIRMWARE_VERSION" include/config.h')
+    assert_contains(text, "tag $TAG predates the dependency pin migration")
+    assert_contains(text, '[ ! -f requirements-platformio.txt ]')
     assert_contains(text, "python tools/write_ota_public_key_header.py")
     assert_contains(text, 'echo "HDS_FIRMWARE_VERSION=${TAG#v}" >> "$GITHUB_ENV"')
     assert_contains(text, "HDS_OTA_SIGNING_KEY_PEM secret is required")
@@ -59,12 +69,14 @@ def main():
     assert_contains(text, "release-files/manifest.sig")
     assert_contains(text, "release-files/manifest.json")
     assert_contains(text, "verifyManifestSignature previous-release/manifest.json previous-release/manifest.sig")
+    assert_contains(text, "release-files/dependencies.txt")
     assert_contains(text, "verifyManifestSignature release-files/manifest.json release-files/manifest.sig")
     assert_contains(text, "gh release edit")
     assert_contains(text, "--draft=false")
     assert_before(text, "openssl dgst -sha256 -verify", "python tools/generate_release_manifest.py")
     assert_before(text, "tag $TAG predates the three-key OTA migration", "python tools/write_ota_public_key_header.py")
     assert_before(text, "tag $TAG predates the release version injection migration", "python tools/write_ota_public_key_header.py")
+    assert_before(text, "tag $TAG predates the dependency pin migration", "python -m pip install --requirement requirements-platformio.txt")
     assert_before(text, "python tools/write_ota_public_key_header.py", "verifyManifestSignature previous-release/manifest.json")
     assert_before(text, 'echo "HDS_FIRMWARE_VERSION=${TAG#v}"', "pio run -e esp32s3")
     assert_before(text, 'grep -aFq "FW: $HDS_FIRMWARE_VERSION"', "python tools/generate_release_manifest.py")
@@ -146,6 +158,37 @@ def main():
         expectedFirmwareUrl = "https://github.com/decentespresso/openscale/releases/download/v9.8.7/firmware.bin"
         if manifest["firmware"]["url"] != expectedFirmwareUrl:
             raise AssertionError("release workflow stripped v from firmware URL")
+
+    for workflow in (text, nightly):
+        assert_contains(workflow, "python -m pip install --requirement requirements-platformio.txt")
+        assert_contains(workflow, "hashFiles('platformio.ini', 'requirements-platformio.txt')")
+        assert_contains(workflow, "pio pkg list -e")
+        assert_not_contains(workflow, "pip install --upgrade platformio")
+    assert_contains(ota, '- "platformio.ini"')
+    assert_contains(ota, '- "requirements-platformio.txt"')
+    for command in (
+        "- run: python -m pip install --requirement requirements-platformio.txt",
+        "- run: pio run -e esp32s3\n",
+        "- run: pio run -e esp32s3 -t buildfs",
+        "- run: pio pkg list -e esp32s3",
+    ):
+        assert_contains(ota, command)
+    assert_contains(nightly, "dependencies.txt")
+    requirements = PLATFORMIO_REQUIREMENTS.read_text(encoding="utf-8").splitlines()
+    if requirements != ["platformio==6.1.19"]:
+        raise AssertionError("PlatformIO Core must be pinned exactly")
+    config = configparser.ConfigParser(interpolation=None)
+    config.read(PLATFORMIO_CONFIG, encoding="utf-8")
+    dependencies = tuple(
+        dependency.strip()
+        for dependency in config["env:esp32s3"]["lib_deps"].splitlines()
+        if dependency.strip()
+    )
+    registryPin = re.compile(r"[^/\s]+/.+ @ [0-9]+\.[0-9]+\.[0-9]+$")
+    gitPin = re.compile(r"https://github\.com/.+\.git#[0-9a-f]{40}$")
+    for dependency in dependencies:
+        if registryPin.fullmatch(dependency) is None and gitPin.fullmatch(dependency) is None:
+            raise AssertionError(f"dependency is not pinned exactly: {dependency}")
 
     print("release workflow contract tests passed")
 

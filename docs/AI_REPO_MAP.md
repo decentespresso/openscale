@@ -11,7 +11,7 @@ Local build, flash, OTA, editor, cache, and CAD files are omitted unless they ar
 | Build, dependencies, framework, filesystem image | `platformio.ini`, matching `.github/workflows/` file | `docs/AI_BUILD_NOTES.md` |
 | Board pins, wake, sleep holds, feature flags | `include/config.h`, `include/power.h`, `src/hds.ino` | `docs/AI_GPIO_NOTES.md` |
 | Global firmware state | `include/parameter.h`, then every reader and writer | `docs/AI_FIRMWARE_NOTES.md` |
-| Main loop, buttons, weighing, OLED | `src/hds.ino`, `include/menu.h`, `include/display.h`, `include/finger_detection.h` | `docs/AI_FIRMWARE_NOTES.md` |
+| Main loop, buttons, weighing, OLED | `docs/AI_DISPLAY_NOTES.md`, `src/hds.ino`, `include/menu.h`, `include/display.h`, `include/finger_detection.h` | `docs/AI_FIRMWARE_NOTES.md` |
 | Calibration, ADC, tare stability | `include/calibration_validation.h`, `include/menu.h`, `src/hds.ino` | `docs/AI_FIRMWARE_NOTES.md` |
 | Persistent settings, defaults, migration | `include/storage.h` | `docs/AI_STORAGE_NOTES.md` |
 | Decent binary, BLE, USB, ADS debug | `include/decent_protocol.h`, then `include/ble.h` or `include/usbcomm.h` | `docs/AI_PROTOCOL_NOTES.md` |
