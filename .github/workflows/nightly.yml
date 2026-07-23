@@ -83,4 +83,9 @@ jobs:
             .pio.nosync/build/${{ matrix.board }}/bootloader.bin
             .pio.nosync/build/${{ matrix.board }}/partitions.bin
             .pio.nosync/build/${{ matrix.board }}/littlefs.bin
-            .pio.nosync/build/${{ matrix.board }}/dependencies.txt
+
+      - name: Save dependency inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: HDS-dependencies-${{steps.slugify.outputs.sha}}
+          path: .pio.nosync/build/${{ matrix.board }}/dependencies.txt

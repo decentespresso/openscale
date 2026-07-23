@@ -173,7 +173,12 @@ def main():
         "- run: pio pkg list -e esp32s3",
     ):
         assert_contains(ota, command)
-    assert_contains(nightly, "dependencies.txt")
+    snapshotArtifact = nightly.split("name: HDS-snapshot-", 1)[1].split("- name: Save dependency inventory", 1)[0]
+    for filename in ("firmware.bin", "bootloader.bin", "partitions.bin", "littlefs.bin"):
+        assert_contains(snapshotArtifact, filename)
+    assert_not_contains(snapshotArtifact, "dependencies.txt")
+    assert_contains(nightly, "name: HDS-dependencies-")
+    assert_contains(nightly, ".pio.nosync/build/${{ matrix.board }}/dependencies.txt")
     requirements = PLATFORMIO_REQUIREMENTS.read_text(encoding="utf-8").splitlines()
     if requirements != ["platformio==6.1.19"]:
         raise AssertionError("PlatformIO Core must be pinned exactly")
