@@ -43,6 +43,10 @@ jobs:
               exit 1
             fi
           done
+          if [ ! -f requirements-platformio.txt ]; then
+            echo "Error: tag $TAG predates the dependency pin migration"
+            exit 1
+          fi
 
       - uses: actions/cache@v3
         with:
@@ -52,14 +56,14 @@ jobs:
           # Key on platformio.ini so a platform/lib pin change busts the cache.
           # A static key froze CI on a stale cached `stable` platform zip (3.3.8)
           # even after the pin should have resolved a newer framework.
-          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini') }}
+          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini', 'requirements-platformio.txt') }}
 
       - uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
       - name: Install PlatformIO Core
-        run: pip install --upgrade platformio
+        run: python -m pip install --requirement requirements-platformio.txt
 
       - name: Configure OTA manifest public keys
         run: python tools/write_ota_public_key_header.py
@@ -93,6 +97,8 @@ jobs:
             exit 1
           fi
           mkdir -p release-files legacy-files
+          pio --version > release-files/dependencies.txt
+          pio pkg list -e esp32s3 >> release-files/dependencies.txt
           cp ".pio.nosync/build/esp32s3/firmware.bin" release-files/
           cp ".pio.nosync/build/esp32s3/littlefs.bin" release-files/
           for file in firmware.bin bootloader.bin partitions.bin littlefs.bin; do
@@ -138,12 +144,14 @@ jobs:
             --generate-notes \
             "HDS_FW_${TAG}.zip" \
             release-files/firmware.bin \
-            release-files/littlefs.bin
+            release-files/littlefs.bin \
+            release-files/dependencies.txt
           gh release upload "$TAG" release-files/manifest.sig
           gh release upload "$TAG" release-files/manifest.json
           gh release view "$TAG" --json assets --jq '.assets[].name' > release-assets.txt
           grep -Fx firmware.bin release-assets.txt
           grep -Fx littlefs.bin release-assets.txt
+          grep -Fx dependencies.txt release-assets.txt
           grep -Fx manifest.json release-assets.txt
           grep -Fx manifest.sig release-assets.txt
           gh release edit "$TAG" --draft=false
