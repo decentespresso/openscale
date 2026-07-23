@@ -43,6 +43,10 @@ jobs:
               exit 1
             fi
           done
+          if [ ! -f requirements-platformio.txt ]; then
+            echo "Error: tag $TAG predates the dependency pin migration"
+            exit 1
+          fi
 
       - uses: actions/cache@v3
         with:

@@ -6,6 +6,7 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 NIGHTLY_WORKFLOW = ROOT / ".github" / "workflows" / "nightly.yml"
+OTA_WORKFLOW = ROOT / ".github" / "workflows" / "ota-contracts.yml"
 PLATFORMIO_CONFIG = ROOT / "platformio.ini"
 PLATFORMIO_REQUIREMENTS = ROOT / "requirements-platformio.txt"
 
@@ -31,10 +32,13 @@ def main():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert_contains(text, 'TAG: ${{ github.event.inputs.tag }}')
     nightly = NIGHTLY_WORKFLOW.read_text(encoding="utf-8")
+    ota = OTA_WORKFLOW.read_text(encoding="utf-8")
     assert_contains(text, '[[ ! "$TAG" =~ ^v?[0-9]+\\.[0-9]+\\.[0-9]+$ ]]')
     assert_contains(text, 'git rev-parse --verify --end-of-options "refs/tags/$TAG^{commit}"')
     assert_contains(text, 'git checkout --detach "$TAG_COMMIT"')
     assert_contains(text, "tag $TAG predates the three-key OTA migration")
+    assert_contains(text, "tag $TAG predates the dependency pin migration")
+    assert_contains(text, '[ ! -f requirements-platformio.txt ]')
     assert_contains(text, "python tools/write_ota_public_key_header.py")
     assert_contains(text, "HDS_OTA_SIGNING_KEY_PEM secret is required")
     assert_contains(text, "keys/ota/hds_ota_manifest_public_key_{1..3}.pem")
@@ -59,6 +63,7 @@ def main():
     assert_contains(text, "--draft=false")
     assert_before(text, "openssl dgst -sha256 -verify", "python tools/generate_release_manifest.py")
     assert_before(text, "tag $TAG predates the three-key OTA migration", "python tools/write_ota_public_key_header.py")
+    assert_before(text, "tag $TAG predates the dependency pin migration", "python -m pip install --requirement requirements-platformio.txt")
     assert_before(text, "python tools/write_ota_public_key_header.py", "verifyManifestSignature previous-release/manifest.json")
     assert_before(text, "python tools/generate_release_manifest.py", "verifyManifestSignature release-files/manifest.json")
     assert_before(text, "verifyManifestSignature release-files/manifest.json", "gh release create")
@@ -79,6 +84,15 @@ def main():
         assert_contains(workflow, "hashFiles('platformio.ini', 'requirements-platformio.txt')")
         assert_contains(workflow, "pio pkg list -e")
         assert_not_contains(workflow, "pip install --upgrade platformio")
+    assert_contains(ota, '- "platformio.ini"')
+    assert_contains(ota, '- "requirements-platformio.txt"')
+    for command in (
+        "- run: python -m pip install --requirement requirements-platformio.txt",
+        "- run: pio run -e esp32s3\n",
+        "- run: pio run -e esp32s3 -t buildfs",
+        "- run: pio pkg list -e esp32s3",
+    ):
+        assert_contains(ota, command)
     assert_contains(nightly, "dependencies.txt")
     requirements = PLATFORMIO_REQUIREMENTS.read_text(encoding="utf-8").splitlines()
     if requirements != ["platformio==6.1.19"]:
