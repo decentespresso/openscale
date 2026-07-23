@@ -16,7 +16,7 @@ If you only want to burn the firmware, please read How to upload HEX file.<br />
 
 Beginning with firmware version 3.0.0, OpenScale now uses [Platform.io](https://platformio.org) for development, building and flashing the firmware.  
 
-To build and flash the scale from your computer, make sure you have the `pio` command line tool installed.  
+To build and flash the scale from your computer, make sure you have the `pio` command line tool and OpenSSL installed. Set `OPENSSL` to its executable path if it is not available through `PATH`; Git for Windows is also detected when `git.exe` is on `PATH`.
 After this, one can simply use `$pio run -t upload` and platformio will build and flash the firmware to the connected Esp32s3 chip.
 
 

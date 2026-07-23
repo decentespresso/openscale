@@ -17,9 +17,20 @@ KEY_FILES = tuple(
 
 def openssl_path():
     executable = shutil.which(os.environ.get("OPENSSL", "openssl"))
-    if executable is None:
-        raise SystemExit("OpenSSL is required; set OPENSSL to its executable path")
-    return executable
+    if executable is not None:
+        return executable
+    git = shutil.which("git")
+    if git:
+        git_root = Path(git).resolve().parent.parent
+        for relative_path in (
+            "usr/bin/openssl.exe",
+            "mingw64/bin/openssl.exe",
+            "mingw32/bin/openssl.exe",
+        ):
+            executable = git_root / relative_path
+            if executable.is_file():
+                return str(executable)
+    raise SystemExit("OpenSSL is required; set OPENSSL to its executable path")
 
 
 def canonical_public_key_der(executable, path):
