@@ -18,6 +18,7 @@ Firmware-only flashing does not update `web_apps/`. Flash LittleFS when the on-d
 
 - `platformio.ini` uses `.pio.nosync` as the workspace directory.
 - Every PlatformIO build validates the repository OTA public keys and regenerates `.pio.nosync/generated/include/ota_public_key.h`.
+- Firmware builds require OpenSSL through `OPENSSL`, `PATH`, or Git for Windows with `git.exe` on `PATH`; clean targets do not.
 - `web_apps/` is the LittleFS data directory.
 - `git_rev_macro.py` injects `GIT_REV`; non-git source trees fall back to `nogit0`.
 - `CONFIG_ASYNC_TCP_RUNNING_CORE=1` pins AsyncTCP to core 1.

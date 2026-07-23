@@ -1,4 +1,5 @@
 import importlib.util
+import runpy
 import subprocess
 import tempfile
 import unittest
@@ -94,21 +95,37 @@ class OtaPublicKeyHeaderTest(unittest.TestCase):
         module = load_module()
         module.KEY_FILES = PUBLIC_KEYS
         with mock.patch.object(module.shutil, "which", return_value=None), mock.patch.dict(
-            module.os.environ, {"OPENSSL": "", "ProgramFiles": ""}
+            module.os.environ, {"OPENSSL": ""}
         ):
             with self.assertRaisesRegex(SystemExit, "OpenSSL is required"):
                 module.main()
 
-    def test_finds_git_for_windows_openssl(self):
+    def test_finds_openssl_relative_to_git_on_path(self):
         module = load_module()
         with tempfile.TemporaryDirectory() as temp_dir:
-            executable = Path(temp_dir) / "Git" / "usr" / "bin" / "openssl.exe"
+            git = Path(temp_dir) / "custom-git" / "cmd" / "git.exe"
+            git.parent.mkdir(parents=True)
+            git.touch()
+            executable = git.parent.parent / "usr" / "bin" / "openssl.exe"
             executable.parent.mkdir(parents=True)
             executable.touch()
-            with mock.patch.object(module.shutil, "which", return_value=None), mock.patch.dict(
-                module.os.environ, {"OPENSSL": "", "ProgramFiles": temp_dir}
-            ):
-                self.assertEqual(module.openssl_path(), str(executable))
+            with mock.patch.object(
+                module.shutil, "which", side_effect=lambda value: str(git) if value == "git" else None
+            ), mock.patch.dict(module.os.environ, {"OPENSSL": ""}):
+                self.assertEqual(Path(module.openssl_path()).resolve(), executable.resolve())
+
+    def test_platformio_clean_skips_public_key_generator(self):
+        class CleanEnvironment:
+            def IsCleanTarget(self):
+                return True
+
+        with mock.patch.object(runpy, "run_path") as run_path:
+            exec(
+                PREBUILD_SCRIPT.read_text(encoding="utf-8"),
+                {"Import": lambda _: None, "env": CleanEnvironment()},
+            )
+
+        run_path.assert_not_called()
 
     def test_platformio_runs_public_key_generator(self):
         self.assertIn(
@@ -116,7 +133,7 @@ class OtaPublicKeyHeaderTest(unittest.TestCase):
             PLATFORMIO_INI.read_text(encoding="utf-8"),
         )
         self.assertIn(
-            'runpy.run_path("tools/write_ota_public_key_header.py", run_name="__main__")',
+            "$PROJECT_DIR/tools/write_ota_public_key_header.py",
             PREBUILD_SCRIPT.read_text(encoding="utf-8"),
         )
 
