@@ -14,6 +14,9 @@
 #define GRINDER_RUNTIME_RECONNECT_INTERVAL_MS 3000
 #endif
 
+#define GRINDER_RUNTIME_RECOVERY_DELAY_MS 2250
+#define GRINDER_RUNTIME_BUSY_BACKOFF_MS 500
+
 #ifndef GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS
 #define GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS 250
 #endif
@@ -96,6 +99,7 @@ struct GrinderRuntime {
   float grindCandidateStartWeight = 0.0f;
   float grindCandidateLastWeight = 0.0f;
   uint32_t lastConnectAttempt = 0;
+  uint32_t reconnectDelayMs = GRINDER_RUNTIME_RECONNECT_INTERVAL_MS;
   uint32_t lastPingAt = 0;
   uint32_t lastRxAt = 0;
   uint32_t lastCommandAt = 0;
@@ -291,10 +295,11 @@ static inline void grinderCloseClient() {
 static inline void grinderResetCutoffGuard();
 static inline void grinderResetGrindConfirmation();
 
-static inline void grinderDisconnectToFinding() {
+static inline void grinderDisconnectToFinding(uint32_t reconnectFrom = 0, uint32_t reconnectDelayMs = 0) {
   grinderCloseClient();
   grinderRuntime.resolvePhase = 0;
-  grinderRuntime.lastConnectAttempt = 0;
+  grinderRuntime.lastConnectAttempt = reconnectFrom;
+  grinderRuntime.reconnectDelayMs = reconnectDelayMs;
   grinderRuntime.grindRateGps = 0.0f;
   grinderRuntime.rateSamples = 0;
   grinderResetCutoffGuard();
@@ -525,6 +530,11 @@ static inline void grinderHandleResponseLine(float weight) {
   grinderRuntime.lastRxAt = millis();
   grinderRuntime.missedPingResponses = 0;
   if (response.kind == GRINDER_TCP_RESPONSE_BUSY) {
+    if (grinderRuntime.state == GRINDER_STATE_FINDING_PLUG) {
+      grinderSetStatus("plug busy");
+      grinderDisconnectToFinding(grinderRuntime.lastRxAt, GRINDER_RUNTIME_BUSY_BACKOFF_MS);
+      return;
+    }
     grinderEnterError("busy");
     return;
   }
@@ -620,10 +630,11 @@ static inline void grinderResolveAndConnect() {
     }
     return;
   }
-  if (now - grinderRuntime.lastConnectAttempt < GRINDER_RUNTIME_RECONNECT_INTERVAL_MS) {
+  if (now - grinderRuntime.lastConnectAttempt < grinderRuntime.reconnectDelayMs) {
     return;
   }
   grinderRuntime.lastConnectAttempt = now;
+  grinderRuntime.reconnectDelayMs = GRINDER_RUNTIME_RECONNECT_INTERVAL_MS;
   if (grinderRuntime.resolvePhase == 0) {
     grinderRuntime.resolvePhase = 1;
     grinderAttemptConnect(grinderSettings.lastIp);
@@ -662,7 +673,7 @@ static inline void grinderCheckConnectionLoss() {
       grinderSendOff();
     }
     grinderSetStatus("lost plug");
-    grinderDisconnectToFinding();
+    grinderDisconnectToFinding(grinderRuntime.lastRxAt, GRINDER_RUNTIME_RECOVERY_DELAY_MS);
   }
 }
 
@@ -758,6 +769,7 @@ static inline void grinderRuntimeReset() {
   grinderCloseClient();
   grinderRuntime.resolvePhase = 0;
   grinderRuntime.lastConnectAttempt = 0;
+  grinderRuntime.reconnectDelayMs = GRINDER_RUNTIME_RECONNECT_INTERVAL_MS;
   grinderRuntime.lastPingAt = 0;
   grinderRuntime.lastRxAt = 0;
   grinderRuntime.lastCommandAt = 0;

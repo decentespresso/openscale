@@ -125,7 +125,11 @@ def test_low_latency_cutoff_source_contracts():
     assert "now - grinderRuntime.lastCommandAt >= 150" in runtime
     assert 'grinderSetStatus("lost plug")' in connection_loss
     assert "grinderSendOff();" in connection_loss
-    assert "grinderDisconnectToFinding();" in connection_loss
+    assert "grinderDisconnectToFinding(grinderRuntime.lastRxAt, GRINDER_RUNTIME_RECOVERY_DELAY_MS);" in connection_loss
+    assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_RECOVERY_DELAY_MS 2250")
+    assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_BUSY_BACKOFF_MS 500")
+    assert_contains(RUNTIME_HEADER, 'grinderSetStatus("plug busy")')
+    assert_contains(RUNTIME_HEADER, "grinderDisconnectToFinding(grinderRuntime.lastRxAt, GRINDER_RUNTIME_BUSY_BACKOFF_MS);")
     assert "grinderRuntime.userTareComplete = false;" in disconnect
     assert 'grinderEnterError("lost plug")' not in runtime
     assert 'grinderEnterError("lost plug")' not in low_latency
