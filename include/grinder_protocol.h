@@ -30,11 +30,12 @@
 #define GRINDER_RUNTIME_RECONNECT_INTERVAL_MS 3000
 #define GRINDER_RUNTIME_RECOVERY_DELAY_MS 2250
 #define GRINDER_RUNTIME_BUSY_BACKOFF_MS 500
-#define GRINDER_RUNTIME_BUSY_MAX_RETRIES 2
+#define GRINDER_RUNTIME_BUSY_FAST_RETRIES 2
+#define GRINDER_RUNTIME_BUSY_RETRY_INTERVAL_MS 10000
 
 struct GrinderRecoveryState {
   bool active;
-  uint8_t busyRetries;
+  uint8_t fastBusyRetries;
 };
 
 static inline GrinderRecoveryState grinderRecoveryStart() {
@@ -46,14 +47,18 @@ static inline GrinderRecoveryState grinderRecoveryComplete() {
 }
 
 static inline bool grinderRecoveryCanRetryBusy(GrinderRecoveryState state) {
-  return state.active && state.busyRetries < GRINDER_RUNTIME_BUSY_MAX_RETRIES;
+  return state.active && state.fastBusyRetries < GRINDER_RUNTIME_BUSY_FAST_RETRIES;
 }
 
 static inline GrinderRecoveryState grinderRecoveryRecordBusy(GrinderRecoveryState state) {
   if (grinderRecoveryCanRetryBusy(state)) {
-    state.busyRetries++;
+    state.fastBusyRetries++;
   }
   return state;
+}
+
+static inline uint32_t grinderRecoveryBusyDelay(GrinderRecoveryState state) {
+  return grinderRecoveryCanRetryBusy(state) ? GRINDER_RUNTIME_BUSY_BACKOFF_MS : GRINDER_RUNTIME_BUSY_RETRY_INTERVAL_MS;
 }
 
 static inline bool grinderReconnectDue(uint32_t lastAttemptAt, uint32_t delayMs, uint32_t now) {

@@ -539,10 +539,11 @@ static inline void grinderHandleResponseLine(float weight) {
   grinderRuntime.lastRxAt = millis();
   grinderRuntime.missedPingResponses = 0;
   if (response.kind == GRINDER_TCP_RESPONSE_BUSY) {
-    if (grinderRecoveryCanRetryBusy(grinderRuntime.recovery)) {
+    if (grinderRuntime.recovery.active) {
+      const uint32_t retryDelayMs = grinderRecoveryBusyDelay(grinderRuntime.recovery);
       grinderRuntime.recovery = grinderRecoveryRecordBusy(grinderRuntime.recovery);
       grinderSetStatus("plug busy");
-      grinderDisconnectToFinding(grinderRuntime.lastRxAt, GRINDER_RUNTIME_BUSY_BACKOFF_MS);
+      grinderDisconnectToFinding(grinderRuntime.lastRxAt, retryDelayMs);
       return;
     }
     grinderEnterError("busy");
@@ -685,7 +686,7 @@ static inline void grinderCheckConnectionLoss() {
     grinderSetStatus("lost plug");
     grinderRuntime.recovery = grinderRecoveryStart();
     grinderRuntime.resumeAfterRecovery = grinderRuntime.userTareComplete;
-    grinderDisconnectToFinding(grinderRuntime.lastRxAt, GRINDER_RUNTIME_RECOVERY_DELAY_MS);
+    grinderDisconnectToFinding(grinderRuntime.lastCommandAt, GRINDER_RUNTIME_RECOVERY_DELAY_MS);
   }
 }
 

@@ -125,16 +125,18 @@ def test_low_latency_cutoff_source_contracts():
     assert "now - grinderRuntime.lastCommandAt >= 150" in runtime
     assert 'grinderSetStatus("lost plug")' in connection_loss
     assert "grinderSendOff();" in connection_loss
-    assert "grinderDisconnectToFinding(grinderRuntime.lastRxAt, GRINDER_RUNTIME_RECOVERY_DELAY_MS);" in connection_loss
+    assert "grinderDisconnectToFinding(grinderRuntime.lastCommandAt, GRINDER_RUNTIME_RECOVERY_DELAY_MS);" in connection_loss
     assert_contains(PROTOCOL_HEADER, "GRINDER_RUNTIME_RECOVERY_DELAY_MS 2250")
     assert_contains(PROTOCOL_HEADER, "GRINDER_RUNTIME_BUSY_BACKOFF_MS 500")
-    assert_contains(PROTOCOL_HEADER, "GRINDER_RUNTIME_BUSY_MAX_RETRIES 2")
+    assert_contains(PROTOCOL_HEADER, "GRINDER_RUNTIME_BUSY_FAST_RETRIES 2")
+    assert_contains(PROTOCOL_HEADER, "GRINDER_RUNTIME_BUSY_RETRY_INTERVAL_MS 10000")
     assert_contains(RUNTIME_HEADER, 'grinderSetStatus("plug busy")')
-    assert_contains(RUNTIME_HEADER, "grinderDisconnectToFinding(grinderRuntime.lastRxAt, GRINDER_RUNTIME_BUSY_BACKOFF_MS);")
+    assert_contains(RUNTIME_HEADER, "grinderDisconnectToFinding(grinderRuntime.lastRxAt, retryDelayMs);")
     assert "grinderRuntime.userTareComplete = false;" not in disconnect
     assert "grinderRuntime.recovery = grinderRecoveryStart();" in connection_loss
     assert "grinderRuntime.resumeAfterRecovery = grinderRuntime.userTareComplete;" in connection_loss
-    assert_contains(RUNTIME_HEADER, "if (grinderRecoveryCanRetryBusy(grinderRuntime.recovery))")
+    assert_contains(RUNTIME_HEADER, "if (grinderRuntime.recovery.active)")
+    assert_contains(RUNTIME_HEADER, "grinderRecoveryBusyDelay(grinderRuntime.recovery)")
     assert_contains(RUNTIME_HEADER, "grinderRuntime.recovery = grinderRecoveryComplete();")
     assert_contains(RUNTIME_HEADER, "grinderRuntime.resumeAfterRecovery = false;")
     assert_contains(RUNTIME_HEADER, "static inline void grinderWaitAfterRecovery()")
