@@ -91,6 +91,7 @@ struct GrinderRuntime {
   bool grindCandidateActive = false;
   bool setupMassBlocked = false;
   bool menuPaused = false;
+  bool recoveryPending = false;
   GrinderAdaptiveShot adaptiveShot;
   float zeroTrackWeight = 0.0f;
   float lastWeight = 0.0f;
@@ -307,7 +308,6 @@ static inline void grinderDisconnectToFinding(uint32_t reconnectFrom = 0, uint32
   grinderRuntime.tarePending = false;
   grinderRuntime.tareRequestArmsGrinder = false;
   grinderRuntime.tareRearmRequested = false;
-  grinderRuntime.userTareComplete = false;
   grinderAdaptiveShotReset(&grinderRuntime.adaptiveShot);
   grinderSetState(grinderSettings.enabled ? GRINDER_STATE_FINDING_PLUG : GRINDER_STATE_DISABLED);
 }
@@ -449,6 +449,13 @@ static inline bool grinderLineRead(char value) {
   return false;
 }
 
+static inline void grinderWaitAfterRecovery() {
+  grinderRuntime.recoveryPending = false;
+  grinderRuntime.tareRearmRequested = false;
+  grinderSetStatus(grinderRuntime.removalSeen ? "await zero" : "remove cup");
+  grinderSetState(grinderRuntime.removalSeen ? GRINDER_STATE_AWAIT_ZERO : GRINDER_STATE_AWAIT_REMOVAL);
+}
+
 static inline void grinderHandleOkResponse(const GrinderTcpResponse &response, float weight) {
   grinderRuntime.relayOn = response.relayOn;
   grinderCopyCString(grinderRuntime.activePlugMac, sizeof(grinderRuntime.activePlugMac), response.plugMac);
@@ -464,13 +471,16 @@ static inline void grinderHandleOkResponse(const GrinderTcpResponse &response, f
       grinderRuntime.pendingCommand = GRINDER_COMMAND_NONE;
       grinderRuntime.tareRequestArmsGrinder = false;
       grinderRuntime.tareRearmRequested = response.relayOn;
-      grinderSetStatus(grinderRuntime.userTareComplete ? "zero wait" : "tare to arm");
+      grinderSetStatus(grinderRuntime.recoveryPending ? "relay off" :
+                       grinderRuntime.userTareComplete ? "zero wait" : "tare to arm");
       if (response.relayOn) {
         if (!grinderSendOff()) {
           grinderEnterError("off send failed");
           break;
         }
         grinderSetState(GRINDER_STATE_STOPPING);
+      } else if (grinderRuntime.recoveryPending) {
+        grinderWaitAfterRecovery();
       } else {
         grinderSetState(GRINDER_STATE_CONNECTED);
       }
@@ -491,7 +501,9 @@ static inline void grinderHandleOkResponse(const GrinderTcpResponse &response, f
         grinderMarkAdaptiveShotOff(weight);
         grinderRuntime.stopWeight = weight;
         grinderRuntime.removalSeen = false;
-        if (grinderRuntime.tareRearmRequested) {
+        if (grinderRuntime.recoveryPending) {
+          grinderWaitAfterRecovery();
+        } else if (grinderRuntime.tareRearmRequested) {
           grinderRuntime.tareRearmRequested = false;
           grinderSetStatus("zero wait");
           grinderSetState(GRINDER_STATE_CONNECTED);
@@ -673,6 +685,7 @@ static inline void grinderCheckConnectionLoss() {
       grinderSendOff();
     }
     grinderSetStatus("lost plug");
+    grinderRuntime.recoveryPending = grinderRuntime.userTareComplete;
     grinderDisconnectToFinding(grinderRuntime.lastRxAt, GRINDER_RUNTIME_RECOVERY_DELAY_MS);
   }
 }
@@ -786,6 +799,7 @@ static inline void grinderRuntimeReset() {
   grinderRuntime.tareRequestArmsGrinder = false;
   grinderRuntime.userTareComplete = false;
   grinderRuntime.tareRearmRequested = false;
+  grinderRuntime.recoveryPending = false;
   grinderAdaptiveShotReset(&grinderRuntime.adaptiveShot);
   grinderSetStatus(grinderSettings.enabled ? "idle" : "off");
   grinderSetState(grinderSettings.enabled ? GRINDER_STATE_FINDING_PLUG : GRINDER_STATE_DISABLED);

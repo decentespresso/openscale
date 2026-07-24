@@ -92,7 +92,7 @@ The earlier cutoff allows for grounds that continue falling after power is remov
 
 1. Turn grinder mode on and select a plug.
 2. Put the empty dosing cup on the scale.
-3. On a new plug connection, the display shows `Tare to arm`.
+3. On the first plug connection after grinder mode starts, the display shows `Tare to arm`.
 4. Tare the scale.
 5. Wait until the cup is stable inside the zero range.
 6. The display shows `Ready` and the scale sends `ON` to the plug.
@@ -103,7 +103,7 @@ The earlier cutoff allows for grounds that continue falling after power is remov
 11. Put the empty cup back.
 12. The scale rearms after stable zero hold without requiring another tare.
 
-After a reconnect, tare the empty cup once again when `Tare to arm` appears. Automatic startup, charging-wake, and ADC-recovery tares do not arm the grinder.
+After a reconnect, the existing tare baseline remains valid. The relay stays off; remove and return the cup to resume without another tare. Automatic startup, charging-wake, and ADC-recovery tares do not arm the grinder.
 
 After `Ready` appears, only ground coffee should add weight. Slowly placing another object can look like a valid grind because the scale only sees weight changes. If the cup or setup changes, tare again before grinding.
 
@@ -131,7 +131,7 @@ After `Ready` appears, only ground coffee should add weight. Slowly placing anot
 OFF is blocked until all of these are true:
 
 - tare is not pending
-- one user-requested tare completed after the current plug connection
+- one user-requested tare completed during the current grinder session
 - weight has left zero range
 - 1500 ms passed since leaving zero range
 - weight is at or above `target - safety`

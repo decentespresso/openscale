@@ -130,7 +130,10 @@ def test_low_latency_cutoff_source_contracts():
     assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_BUSY_BACKOFF_MS 500")
     assert_contains(RUNTIME_HEADER, 'grinderSetStatus("plug busy")')
     assert_contains(RUNTIME_HEADER, "grinderDisconnectToFinding(grinderRuntime.lastRxAt, GRINDER_RUNTIME_BUSY_BACKOFF_MS);")
-    assert "grinderRuntime.userTareComplete = false;" in disconnect
+    assert "grinderRuntime.userTareComplete = false;" not in disconnect
+    assert "grinderRuntime.recoveryPending = grinderRuntime.userTareComplete;" in connection_loss
+    assert_contains(RUNTIME_HEADER, "static inline void grinderWaitAfterRecovery()")
+    assert_contains(RUNTIME_HEADER, "grinderRuntime.removalSeen ? GRINDER_STATE_AWAIT_ZERO : GRINDER_STATE_AWAIT_REMOVAL")
     assert 'grinderEnterError("lost plug")' not in runtime
     assert 'grinderEnterError("lost plug")' not in low_latency
     assert "grinderCheckConnectionLoss();" in low_latency[fresh_start:]
@@ -247,7 +250,7 @@ def test_firmware_contracts():
     assert_contains(RUNTIME_HEADER, 'grinderSetStatus("tare to arm")')
     assert_contains(RUNTIME_HEADER, "bool userTareComplete = false")
     assert_contains(RUNTIME_HEADER, "grinderRuntime.userTareComplete = false")
-    assert source(RUNTIME_HEADER).count("grinderRuntime.userTareComplete = false;") == 2
+    assert source(RUNTIME_HEADER).count("grinderRuntime.userTareComplete = false;") == 1
     assert_contains(RUNTIME_HEADER, "grinderRuntime.tareRearmRequested = response.relayOn")
     assert_not_contains(RUNTIME_HEADER, "grind timeout")
     assert_contains(RUNTIME_HEADER, "bool setupMassBlocked = false")
