@@ -42,6 +42,18 @@ int main() {
   assert(!grinderHeartbeatLost(2, 1000, 2500));
   assert(grinderHeartbeatLost(3, 1000, 2500));
   assert(grinderHeartbeatLost(0, 1000, 2750));
+  assert(!grinderReconnectDue(1000, GRINDER_RUNTIME_RECOVERY_DELAY_MS, 3249));
+  assert(grinderReconnectDue(1000, GRINDER_RUNTIME_RECOVERY_DELAY_MS, 3250));
+  GrinderRecoveryState recovery = grinderRecoveryStart();
+  assert(grinderRecoveryCanRetryBusy(recovery));
+  recovery = grinderRecoveryRecordBusy(recovery);
+  assert(recovery.active && recovery.busyRetries == 1);
+  recovery = grinderRecoveryRecordBusy(recovery);
+  assert(recovery.active && recovery.busyRetries == GRINDER_RUNTIME_BUSY_MAX_RETRIES);
+  assert(!grinderRecoveryCanRetryBusy(recovery));
+  recovery = grinderRecoveryComplete();
+  assert(!recovery.active && recovery.busyRetries == 0);
+  assert(!grinderRecoveryCanRetryBusy(recovery));
   GrinderAdaptiveShot shot;
   grinderAdaptiveShotReset(&shot);
   grinderAdaptiveShotTrack(&shot, 2.0f, 1.0f, 15.0f, 1);

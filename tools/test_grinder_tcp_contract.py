@@ -126,12 +126,17 @@ def test_low_latency_cutoff_source_contracts():
     assert 'grinderSetStatus("lost plug")' in connection_loss
     assert "grinderSendOff();" in connection_loss
     assert "grinderDisconnectToFinding(grinderRuntime.lastRxAt, GRINDER_RUNTIME_RECOVERY_DELAY_MS);" in connection_loss
-    assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_RECOVERY_DELAY_MS 2250")
-    assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_BUSY_BACKOFF_MS 500")
+    assert_contains(PROTOCOL_HEADER, "GRINDER_RUNTIME_RECOVERY_DELAY_MS 2250")
+    assert_contains(PROTOCOL_HEADER, "GRINDER_RUNTIME_BUSY_BACKOFF_MS 500")
+    assert_contains(PROTOCOL_HEADER, "GRINDER_RUNTIME_BUSY_MAX_RETRIES 2")
     assert_contains(RUNTIME_HEADER, 'grinderSetStatus("plug busy")')
     assert_contains(RUNTIME_HEADER, "grinderDisconnectToFinding(grinderRuntime.lastRxAt, GRINDER_RUNTIME_BUSY_BACKOFF_MS);")
     assert "grinderRuntime.userTareComplete = false;" not in disconnect
-    assert "grinderRuntime.recoveryPending = grinderRuntime.userTareComplete;" in connection_loss
+    assert "grinderRuntime.recovery = grinderRecoveryStart();" in connection_loss
+    assert "grinderRuntime.resumeAfterRecovery = grinderRuntime.userTareComplete;" in connection_loss
+    assert_contains(RUNTIME_HEADER, "if (grinderRecoveryCanRetryBusy(grinderRuntime.recovery))")
+    assert_contains(RUNTIME_HEADER, "grinderRuntime.recovery = grinderRecoveryComplete();")
+    assert_contains(RUNTIME_HEADER, "grinderRuntime.resumeAfterRecovery = false;")
     assert_contains(RUNTIME_HEADER, "static inline void grinderWaitAfterRecovery()")
     assert_contains(RUNTIME_HEADER, "grinderRuntime.removalSeen ? GRINDER_STATE_AWAIT_ZERO : GRINDER_STATE_AWAIT_REMOVAL")
     assert 'grinderEnterError("lost plug")' not in runtime
@@ -260,7 +265,7 @@ def test_firmware_contracts():
     assert_contains(RUNTIME_HEADER, "previousWifiOnBoot")
     assert_contains(RUNTIME_HEADER, 'preferences.getBool("wifi_prev", false)')
     assert_contains(RUNTIME_HEADER, 'preferences.putBool("wifi_saved", grinderSettings.previousWifiOnBootSaved)')
-    assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_RECONNECT_INTERVAL_MS 3000")
+    assert_contains(PROTOCOL_HEADER, "GRINDER_RUNTIME_RECONNECT_INTERVAL_MS 3000")
     assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS 250")
     assert_not_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_BACKGROUND_MDNS_INTERVAL_MS")
     assert_not_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_BACKGROUND_MDNS_TIMEOUT_MS")
