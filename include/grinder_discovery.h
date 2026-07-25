@@ -354,10 +354,8 @@ static inline bool grinderAddResolvedMdnsCandidate(GrinderMdnsCandidate &candida
   return valid && grinderAddDiscovery(candidate.mac, candidate.hostname, ip);
 }
 
-static inline uint8_t grinderDiscoverPlugsByMdnsBrowse(bool debug,
-                                                        uint8_t requestedRounds = 3) {
+static inline uint8_t grinderDiscoverPlugsByMdnsBrowse(bool debug) {
   GrinderMdnsCandidate candidates[GRINDER_MDNS_MAX_CANDIDATES];
-  grinderMdnsStartCollection(candidates);
 
 #ifdef ESP_MDNS_VERSION_NUMBER
   if (debug) {
@@ -365,23 +363,17 @@ static inline uint8_t grinderDiscoverPlugsByMdnsBrowse(bool debug,
   }
 #endif
 
-  const uint32_t windows[] = { 1200, 1800, 2500 };
-  uint8_t rounds = requestedRounds == 0 ? 1 : requestedRounds;
-  if (rounds > 3) {
-    rounds = 3;
-  }
-
-  for (uint8_t round = 0; round < rounds; round++) {
-    if (!grinderMdnsBrowseRound(windows[round], debug)) {
-      break;
+  for (uint8_t attempt = 0;
+       attempt < 2 && grinderRuntime.discoveredCount == 0;
+       attempt++) {
+    grinderMdnsStartCollection(candidates);
+    grinderMdnsBrowseRound(2500, debug);
+    grinderMdnsStopCollection();
+    for (uint8_t i = 0;
+         i < GRINDER_MDNS_MAX_CANDIDATES && grinderRuntime.discoveredCount < 8;
+         i++) {
+      grinderAddResolvedMdnsCandidate(candidates[i], debug);
     }
-  }
-
-  grinderMdnsStopCollection();
-  for (uint8_t i = 0;
-       i < GRINDER_MDNS_MAX_CANDIDATES && grinderRuntime.discoveredCount < 8;
-       i++) {
-    grinderAddResolvedMdnsCandidate(candidates[i], debug);
   }
 
   if (debug) {
@@ -390,8 +382,7 @@ static inline uint8_t grinderDiscoverPlugsByMdnsBrowse(bool debug,
   return grinderRuntime.discoveredCount;
 }
 
-static inline uint8_t grinderDiscoverPlugs(bool debugMdns = true,
-                                           uint8_t browseRounds = 3) {
+static inline uint8_t grinderDiscoverPlugs(bool debugMdns = true) {
   grinderClearDiscoveries();
 
   if (!b_wifiEnabled || WiFi.status() != WL_CONNECTED) {
@@ -404,7 +395,7 @@ static inline uint8_t grinderDiscoverPlugs(bool debugMdns = true,
   }
 
   grinderSetStatus("finding");
-  grinderDiscoverPlugsByMdnsBrowse(debugMdns, browseRounds);
+  grinderDiscoverPlugsByMdnsBrowse(debugMdns);
   grinderSetStatus(grinderRuntime.discoveredCount == 0 ? "none found" : "found");
   return grinderRuntime.discoveredCount;
 }

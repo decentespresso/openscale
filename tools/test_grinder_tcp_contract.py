@@ -215,8 +215,11 @@ def test_discovery_contracts():
     assert_contains(DISCOVERY_HEADER, 'strcmp(candidate.proto, "1") == 0')
     assert_contains(DISCOVERY_HEADER, "grinderIsMac(candidate.mac)")
     assert_contains(DISCOVERY_HEADER, "grinderAddDiscovery")
-    assert_contains(DISCOVERY_HEADER, "grinderMdnsBrowseRound(windows[round], debug)")
-    assert_not_contains(DISCOVERY_HEADER, "round < rounds && grinderRuntime.discoveredCount")
+    assert_contains(DISCOVERY_HEADER, "grinderMdnsBrowseRound(2500, debug)")
+    assert source(DISCOVERY_HEADER).count("grinderMdnsBrowseRound(2500, debug)") == 1
+    assert_contains(DISCOVERY_HEADER, "attempt < 2 && grinderRuntime.discoveredCount == 0")
+    assert_not_contains(DISCOVERY_HEADER, "requestedRounds")
+    assert_not_contains(DISCOVERY_HEADER, "windows[]")
     assert_contains(DISCOVERY_HEADER, "wifiEnsureMdnsReadyForSta")
     assert_not_contains(DISCOVERY_HEADER, "WiFi.setSleep")
     assert_not_contains(DISCOVERY_HEADER, "esp_wifi_set_ps")
