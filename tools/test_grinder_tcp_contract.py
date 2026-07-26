@@ -125,8 +125,22 @@ def test_low_latency_cutoff_source_contracts():
     assert "now - grinderRuntime.lastCommandAt >= 150" in runtime
     assert 'grinderSetStatus("lost plug")' in connection_loss
     assert "grinderSendOff();" in connection_loss
-    assert "grinderDisconnectToFinding();" in connection_loss
-    assert "grinderRuntime.userTareComplete = false;" in disconnect
+    assert "grinderDisconnectToFinding(grinderRuntime.lastCommandAt, GRINDER_RUNTIME_RECOVERY_DELAY_MS);" in connection_loss
+    assert_contains(PROTOCOL_HEADER, "GRINDER_RUNTIME_RECOVERY_DELAY_MS 2250")
+    assert_contains(PROTOCOL_HEADER, "GRINDER_RUNTIME_BUSY_BACKOFF_MS 500")
+    assert_contains(PROTOCOL_HEADER, "GRINDER_RUNTIME_BUSY_FAST_RETRIES 2")
+    assert_contains(PROTOCOL_HEADER, "GRINDER_RUNTIME_BUSY_RETRY_INTERVAL_MS 10000")
+    assert_contains(RUNTIME_HEADER, 'grinderSetStatus("plug busy")')
+    assert_contains(RUNTIME_HEADER, "grinderDisconnectToFinding(grinderRuntime.lastRxAt, retryDelayMs);")
+    assert "grinderRuntime.userTareComplete = false;" not in disconnect
+    assert "grinderRuntime.recovery = grinderRecoveryStart();" in connection_loss
+    assert "grinderRuntime.resumeAfterRecovery = grinderRuntime.userTareComplete;" in connection_loss
+    assert_contains(RUNTIME_HEADER, "if (grinderRuntime.recovery.active)")
+    assert_contains(RUNTIME_HEADER, "grinderRecoveryBusyDelay(grinderRuntime.recovery)")
+    assert_contains(RUNTIME_HEADER, "grinderRuntime.recovery = grinderRecoveryComplete();")
+    assert_contains(RUNTIME_HEADER, "grinderRuntime.resumeAfterRecovery = false;")
+    assert_contains(RUNTIME_HEADER, "static inline void grinderWaitAfterRecovery()")
+    assert_contains(RUNTIME_HEADER, "grinderRuntime.removalSeen ? GRINDER_STATE_AWAIT_ZERO : GRINDER_STATE_AWAIT_REMOVAL")
     assert 'grinderEnterError("lost plug")' not in runtime
     assert 'grinderEnterError("lost plug")' not in low_latency
     assert "grinderCheckConnectionLoss();" in low_latency[fresh_start:]
@@ -181,46 +195,41 @@ def test_sampling_changes_blocked_during_grinder_cutoff_states():
 
 def test_discovery_contracts():
     assert_not_contains(DISCOVERY_HEADER, "MDNS.queryService")
-    assert_not_contains(DISCOVERY_HEADER, "grinderDiscoverPlugsByMdns")
-    assert_contains(DISCOVERY_HEADER, "grinderDiscoverPlugs(bool debugRaw = true, uint8_t attempts = 3)")
-    assert_contains(DISCOVERY_HEADER, "grinderDiscoverPlugsByRawMdns")
-    assert_contains(DISCOVERY_HEADER, "grinderAddDiscoveryFromRawMdnsResult")
-    assert_contains(DISCOVERY_HEADER, "result->port != 0 && result->port != GRINDER_TCP_PORT")
-    assert_contains(DISCOVERY_HEADER, "result->port == GRINDER_TCP_PORT && grinderIsMac(mac)")
-    assert_not_contains(DISCOVERY_HEADER, "result == nullptr || result->port != GRINDER_TCP_PORT")
-    assert_contains(DISCOVERY_HEADER, "grinderResolveRawMdnsIpv4")
-    assert_contains(DISCOVERY_HEADER, "grinderStripLocalSuffix(host)")
-    assert_contains(DISCOVERY_HEADER, "mdns_query_a(host, 2000, &address)")
-    assert_contains(DISCOVERY_HEADER, "return grinderProbeDiscoveryIp(ip, hostname);")
-    assert_contains(DISCOVERY_HEADER, "const uint32_t timeouts[] = { 1500, 2500, 3500 }")
+    assert_contains(DISCOVERY_HEADER, "mdns_browse_new")
+    assert_contains(
+        DISCOVERY_HEADER,
+        'mdns_browse_new("_grinderplug", "_tcp", grinderMdnsBrowseNotify)',
+    )
+    assert_contains(
+        DISCOVERY_HEADER,
+        'mdns_browse_delete("_grinderplug", "_tcp")',
+    )
+    assert_contains(DISCOVERY_HEADER, "mdns_query_srv")
+    assert_contains(DISCOVERY_HEADER, "mdns_query_txt")
+    assert_contains(DISCOVERY_HEADER, "mdns_query_a")
+    assert_contains(DISCOVERY_HEADER, "GRINDER_MDNS_MAX_CANDIDATES")
+    assert_contains(DISCOVERY_HEADER, "grinderMdnsStartCollection")
+    assert_contains(DISCOVERY_HEADER, "grinderMdnsStopCollection")
+    assert_contains(PARAMETER_HEADER, "GrinderMdnsCandidate * volatile grinderMdnsCandidateBuffer")
+    assert_contains(DISCOVERY_HEADER, "candidate.port == GRINDER_TCP_PORT")
+    assert_contains(DISCOVERY_HEADER, 'strcmp(candidate.proto, "1") == 0')
+    assert_contains(DISCOVERY_HEADER, "grinderIsMac(candidate.mac)")
+    assert_contains(DISCOVERY_HEADER, "grinderAddDiscovery")
+    assert_contains(DISCOVERY_HEADER, "grinderMdnsBrowseRound(2500, debug)")
+    assert source(DISCOVERY_HEADER).count("grinderMdnsBrowseRound(2500, debug)") == 1
+    assert_contains(DISCOVERY_HEADER, "attempt < 2 && grinderRuntime.discoveredCount == 0")
+    assert_not_contains(DISCOVERY_HEADER, "requestedRounds")
+    assert_not_contains(DISCOVERY_HEADER, "windows[]")
     assert_contains(DISCOVERY_HEADER, "wifiEnsureMdnsReadyForSta")
     assert_not_contains(DISCOVERY_HEADER, "WiFi.setSleep")
     assert_not_contains(DISCOVERY_HEADER, "esp_wifi_set_ps")
     assert_not_contains(DISCOVERY_HEADER, "WIFI_PS_NONE")
-    assert_contains(DISCOVERY_HEADER, 'mdns_query_ptr("_grinderplug", "_tcp"')
-    assert_contains(DISCOVERY_HEADER, "raw mdns ptr err=")
-    assert_contains(DISCOVERY_HEADER, "timeout=%lu")
-    assert_contains(DISCOVERY_HEADER, "WiFi.RSSI()")
-    assert_contains(DISCOVERY_HEADER, "ESP.getFreeHeap()")
-    assert_contains(DISCOVERY_HEADER, "grinderDebugRawMdnsQuery")
-    assert_not_contains(DISCOVERY_HEADER, 'model != "NOUS_A6T"')
+    assert_not_contains(DISCOVERY_HEADER, "mdns_query_ptr")
+    assert_not_contains(DISCOVERY_HEADER, "grinderProbeDiscoveryIp")
+    assert_not_contains(DISCOVERY_HEADER, "grinderDiscoverPlugsByTcpScan")
+    assert_not_contains(DISCOVERY_HEADER, 'grinderSetStatus("scan tcp")')
     assert_not_contains(DISCOVERY_HEADER, 'strcmp(model, "NOUS_A6T")')
-    assert_contains(DISCOVERY_HEADER, "GRINDER_DISCOVERY_CONNECT_TIMEOUT_MS")
-    assert_contains(DISCOVERY_HEADER, "#define GRINDER_DISCOVERY_CONNECT_TIMEOUT_MS 250")
-    assert_contains(DISCOVERY_HEADER, "#define GRINDER_DISCOVERY_READ_TIMEOUT_MS 350")
-    assert_contains(DISCOVERY_HEADER, "grinderDiscoverPlugsByTcpScan")
-    assert_contains(DISCOVERY_HEADER, "grinderProbeDiscoveryIp")
-    assert_contains(DISCOVERY_HEADER, "grinderDiscoveryReadLine")
-    assert_contains(DISCOVERY_HEADER, "grinderSetStatus(\"scan tcp\")")
-    assert_contains(DISCOVERY_HEADER, "grinderProbeDiscoveryIp(grinderSettings.lastIp, grinderSettings.hostname);")
-    assert_contains(DISCOVERY_HEADER, "attempt < 3 && grinderRuntime.discoveredCount == 0")
-    assert_contains(DISCOVERY_HEADER, "ip != grinderSettings.lastIp")
-    assert_contains(DISCOVERY_HEADER, "radius < 255 && grinderRuntime.discoveredCount < 8")
-    assert source(DISCOVERY_HEADER).index("grinderDiscoverPlugsByRawMdns(timeouts[timeoutIndex], debugRaw);") < source(DISCOVERY_HEADER).index("grinderDiscoverPlugsByTcpScan();")
-    assert source(DISCOVERY_HEADER).index("grinderDiscoverPlugsByTcpScan();") < source(DISCOVERY_HEADER).index("grinderDebugRawMdnsQuery();")
-    assert_not_contains(DISCOVERY_HEADER, "grinderDiscoverPlugsLightweight")
-    assert_not_contains(DISCOVERY_HEADER, "grinderFindSelectedByMdns")
-    assert_not_contains(DISCOVERY_HEADER, "GRINDER_DISCOVERY_ENABLE_TCP_FALLBACK")
+    assert_not_contains(DISCOVERY_HEADER, "192, 168")
 
 
 def test_firmware_contracts():
@@ -243,7 +252,7 @@ def test_firmware_contracts():
     assert_contains(RUNTIME_HEADER, 'grinderSetStatus("tare to arm")')
     assert_contains(RUNTIME_HEADER, "bool userTareComplete = false")
     assert_contains(RUNTIME_HEADER, "grinderRuntime.userTareComplete = false")
-    assert source(RUNTIME_HEADER).count("grinderRuntime.userTareComplete = false;") == 2
+    assert source(RUNTIME_HEADER).count("grinderRuntime.userTareComplete = false;") == 1
     assert_contains(RUNTIME_HEADER, "grinderRuntime.tareRearmRequested = response.relayOn")
     assert_not_contains(RUNTIME_HEADER, "grind timeout")
     assert_contains(RUNTIME_HEADER, "bool setupMassBlocked = false")
@@ -253,7 +262,7 @@ def test_firmware_contracts():
     assert_contains(RUNTIME_HEADER, "previousWifiOnBoot")
     assert_contains(RUNTIME_HEADER, 'preferences.getBool("wifi_prev", false)')
     assert_contains(RUNTIME_HEADER, 'preferences.putBool("wifi_saved", grinderSettings.previousWifiOnBootSaved)')
-    assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_RECONNECT_INTERVAL_MS 3000")
+    assert_contains(PROTOCOL_HEADER, "GRINDER_RUNTIME_RECONNECT_INTERVAL_MS 3000")
     assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS 250")
     assert_not_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_BACKGROUND_MDNS_INTERVAL_MS")
     assert_not_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_BACKGROUND_MDNS_TIMEOUT_MS")

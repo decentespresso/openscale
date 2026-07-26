@@ -27,6 +27,43 @@
 #define GRINDER_HEARTBEAT_RESPONSE_TIMEOUT_MS 500
 #define GRINDER_HEARTBEAT_MAX_MISSES 3
 #define GRINDER_HEARTBEAT_MAX_SILENCE_MS 1750
+#define GRINDER_RUNTIME_RECONNECT_INTERVAL_MS 3000
+#define GRINDER_RUNTIME_RECOVERY_DELAY_MS 2250
+#define GRINDER_RUNTIME_BUSY_BACKOFF_MS 500
+#define GRINDER_RUNTIME_BUSY_FAST_RETRIES 2
+#define GRINDER_RUNTIME_BUSY_RETRY_INTERVAL_MS 10000
+
+struct GrinderRecoveryState {
+  bool active;
+  uint8_t fastBusyRetries;
+};
+
+static inline GrinderRecoveryState grinderRecoveryStart() {
+  return { true, 0 };
+}
+
+static inline GrinderRecoveryState grinderRecoveryComplete() {
+  return { false, 0 };
+}
+
+static inline bool grinderRecoveryCanRetryBusy(GrinderRecoveryState state) {
+  return state.active && state.fastBusyRetries < GRINDER_RUNTIME_BUSY_FAST_RETRIES;
+}
+
+static inline GrinderRecoveryState grinderRecoveryRecordBusy(GrinderRecoveryState state) {
+  if (grinderRecoveryCanRetryBusy(state)) {
+    state.fastBusyRetries++;
+  }
+  return state;
+}
+
+static inline uint32_t grinderRecoveryBusyDelay(GrinderRecoveryState state) {
+  return grinderRecoveryCanRetryBusy(state) ? GRINDER_RUNTIME_BUSY_BACKOFF_MS : GRINDER_RUNTIME_BUSY_RETRY_INTERVAL_MS;
+}
+
+static inline bool grinderReconnectDue(uint32_t lastAttemptAt, uint32_t delayMs, uint32_t now) {
+  return now - lastAttemptAt >= delayMs;
+}
 
 static inline bool grinderHeartbeatLost(uint8_t missedResponses, uint32_t lastValidResponseAt, uint32_t now) {
   return missedResponses >= GRINDER_HEARTBEAT_MAX_MISSES ||

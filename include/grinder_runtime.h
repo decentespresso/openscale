@@ -10,10 +10,6 @@
 #include "grinder_protocol.h"
 #include "grinder_adaptive_safety.h"
 
-#ifndef GRINDER_RUNTIME_RECONNECT_INTERVAL_MS
-#define GRINDER_RUNTIME_RECONNECT_INTERVAL_MS 3000
-#endif
-
 #ifndef GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS
 #define GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS 250
 #endif
@@ -88,6 +84,8 @@ struct GrinderRuntime {
   bool grindCandidateActive = false;
   bool setupMassBlocked = false;
   bool menuPaused = false;
+  bool resumeAfterRecovery = false;
+  GrinderRecoveryState recovery = { false, 0 };
   GrinderAdaptiveShot adaptiveShot;
   float zeroTrackWeight = 0.0f;
   float lastWeight = 0.0f;
@@ -96,6 +94,7 @@ struct GrinderRuntime {
   float grindCandidateStartWeight = 0.0f;
   float grindCandidateLastWeight = 0.0f;
   uint32_t lastConnectAttempt = 0;
+  uint32_t reconnectDelayMs = GRINDER_RUNTIME_RECONNECT_INTERVAL_MS;
   uint32_t lastPingAt = 0;
   uint32_t lastRxAt = 0;
   uint32_t lastCommandAt = 0;
@@ -291,10 +290,11 @@ static inline void grinderCloseClient() {
 static inline void grinderResetCutoffGuard();
 static inline void grinderResetGrindConfirmation();
 
-static inline void grinderDisconnectToFinding() {
+static inline void grinderDisconnectToFinding(uint32_t reconnectFrom = 0, uint32_t reconnectDelayMs = 0) {
   grinderCloseClient();
   grinderRuntime.resolvePhase = 0;
-  grinderRuntime.lastConnectAttempt = 0;
+  grinderRuntime.lastConnectAttempt = reconnectFrom;
+  grinderRuntime.reconnectDelayMs = reconnectDelayMs;
   grinderRuntime.grindRateGps = 0.0f;
   grinderRuntime.rateSamples = 0;
   grinderResetCutoffGuard();
@@ -302,7 +302,6 @@ static inline void grinderDisconnectToFinding() {
   grinderRuntime.tarePending = false;
   grinderRuntime.tareRequestArmsGrinder = false;
   grinderRuntime.tareRearmRequested = false;
-  grinderRuntime.userTareComplete = false;
   grinderAdaptiveShotReset(&grinderRuntime.adaptiveShot);
   grinderSetState(grinderSettings.enabled ? GRINDER_STATE_FINDING_PLUG : GRINDER_STATE_DISABLED);
 }
@@ -313,6 +312,8 @@ static inline void grinderEnterError(const char *status) {
   if (grinderRuntime.client.connected()) {
     grinderSendOff();
   }
+  grinderRuntime.recovery = grinderRecoveryComplete();
+  grinderRuntime.resumeAfterRecovery = false;
   Serial.printf("[grinder] error %s\n", status);
   grinderSetStatus(status);
   grinderCloseClient();
@@ -444,6 +445,13 @@ static inline bool grinderLineRead(char value) {
   return false;
 }
 
+static inline void grinderWaitAfterRecovery() {
+  grinderRuntime.resumeAfterRecovery = false;
+  grinderRuntime.tareRearmRequested = false;
+  grinderSetStatus(grinderRuntime.removalSeen ? "await zero" : "remove cup");
+  grinderSetState(grinderRuntime.removalSeen ? GRINDER_STATE_AWAIT_ZERO : GRINDER_STATE_AWAIT_REMOVAL);
+}
+
 static inline void grinderHandleOkResponse(const GrinderTcpResponse &response, float weight) {
   grinderRuntime.relayOn = response.relayOn;
   grinderCopyCString(grinderRuntime.activePlugMac, sizeof(grinderRuntime.activePlugMac), response.plugMac);
@@ -457,15 +465,19 @@ static inline void grinderHandleOkResponse(const GrinderTcpResponse &response, f
   switch (grinderRuntime.pendingCommand) {
     case GRINDER_COMMAND_HELLO:
       grinderRuntime.pendingCommand = GRINDER_COMMAND_NONE;
+      grinderRuntime.recovery = grinderRecoveryComplete();
       grinderRuntime.tareRequestArmsGrinder = false;
       grinderRuntime.tareRearmRequested = response.relayOn;
-      grinderSetStatus(grinderRuntime.userTareComplete ? "zero wait" : "tare to arm");
+      grinderSetStatus(grinderRuntime.resumeAfterRecovery ? "relay off" :
+                       grinderRuntime.userTareComplete ? "zero wait" : "tare to arm");
       if (response.relayOn) {
         if (!grinderSendOff()) {
           grinderEnterError("off send failed");
           break;
         }
         grinderSetState(GRINDER_STATE_STOPPING);
+      } else if (grinderRuntime.resumeAfterRecovery) {
+        grinderWaitAfterRecovery();
       } else {
         grinderSetState(GRINDER_STATE_CONNECTED);
       }
@@ -486,7 +498,9 @@ static inline void grinderHandleOkResponse(const GrinderTcpResponse &response, f
         grinderMarkAdaptiveShotOff(weight);
         grinderRuntime.stopWeight = weight;
         grinderRuntime.removalSeen = false;
-        if (grinderRuntime.tareRearmRequested) {
+        if (grinderRuntime.resumeAfterRecovery) {
+          grinderWaitAfterRecovery();
+        } else if (grinderRuntime.tareRearmRequested) {
           grinderRuntime.tareRearmRequested = false;
           grinderSetStatus("zero wait");
           grinderSetState(GRINDER_STATE_CONNECTED);
@@ -525,6 +539,13 @@ static inline void grinderHandleResponseLine(float weight) {
   grinderRuntime.lastRxAt = millis();
   grinderRuntime.missedPingResponses = 0;
   if (response.kind == GRINDER_TCP_RESPONSE_BUSY) {
+    if (grinderRuntime.recovery.active) {
+      const uint32_t retryDelayMs = grinderRecoveryBusyDelay(grinderRuntime.recovery);
+      grinderRuntime.recovery = grinderRecoveryRecordBusy(grinderRuntime.recovery);
+      grinderSetStatus("plug busy");
+      grinderDisconnectToFinding(grinderRuntime.lastRxAt, retryDelayMs);
+      return;
+    }
     grinderEnterError("busy");
     return;
   }
@@ -620,10 +641,11 @@ static inline void grinderResolveAndConnect() {
     }
     return;
   }
-  if (now - grinderRuntime.lastConnectAttempt < GRINDER_RUNTIME_RECONNECT_INTERVAL_MS) {
+  if (!grinderReconnectDue(grinderRuntime.lastConnectAttempt, grinderRuntime.reconnectDelayMs, now)) {
     return;
   }
   grinderRuntime.lastConnectAttempt = now;
+  grinderRuntime.reconnectDelayMs = GRINDER_RUNTIME_RECONNECT_INTERVAL_MS;
   if (grinderRuntime.resolvePhase == 0) {
     grinderRuntime.resolvePhase = 1;
     grinderAttemptConnect(grinderSettings.lastIp);
@@ -662,7 +684,9 @@ static inline void grinderCheckConnectionLoss() {
       grinderSendOff();
     }
     grinderSetStatus("lost plug");
-    grinderDisconnectToFinding();
+    grinderRuntime.recovery = grinderRecoveryStart();
+    grinderRuntime.resumeAfterRecovery = grinderRuntime.userTareComplete;
+    grinderDisconnectToFinding(grinderRuntime.lastCommandAt, GRINDER_RUNTIME_RECOVERY_DELAY_MS);
   }
 }
 
@@ -758,6 +782,7 @@ static inline void grinderRuntimeReset() {
   grinderCloseClient();
   grinderRuntime.resolvePhase = 0;
   grinderRuntime.lastConnectAttempt = 0;
+  grinderRuntime.reconnectDelayMs = GRINDER_RUNTIME_RECONNECT_INTERVAL_MS;
   grinderRuntime.lastPingAt = 0;
   grinderRuntime.lastRxAt = 0;
   grinderRuntime.lastCommandAt = 0;
@@ -774,6 +799,8 @@ static inline void grinderRuntimeReset() {
   grinderRuntime.tareRequestArmsGrinder = false;
   grinderRuntime.userTareComplete = false;
   grinderRuntime.tareRearmRequested = false;
+  grinderRuntime.resumeAfterRecovery = false;
+  grinderRuntime.recovery = grinderRecoveryComplete();
   grinderAdaptiveShotReset(&grinderRuntime.adaptiveShot);
   grinderSetStatus(grinderSettings.enabled ? "idle" : "off");
   grinderSetState(grinderSettings.enabled ? GRINDER_STATE_FINDING_PLUG : GRINDER_STATE_DISABLED);

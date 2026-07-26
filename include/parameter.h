@@ -218,8 +218,11 @@ unsigned int i_buttonBootDelay = 500;
 bool b_showChargingUI = false;
 struct GrinderSettings;
 struct GrinderRuntime;
+struct GrinderMdnsCandidate;
 extern GrinderSettings grinderSettings;
 extern GrinderRuntime grinderRuntime;
+portMUX_TYPE grinderMdnsMux = portMUX_INITIALIZER_UNLOCKED;
+GrinderMdnsCandidate * volatile grinderMdnsCandidateBuffer = nullptr;
 
 //电子秤参数和计时点
 // Enhanced tracking system global variables
