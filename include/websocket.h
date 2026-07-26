@@ -340,7 +340,7 @@ void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
                  f_maxDriftCompensation);
 }
 
-// Broadcast via printfAll(): it holds the library's client-list mutex and
+// Broadcast via textAll(): it holds the library's client-list mutex and
 // queues to each client independently. We deliberately do NOT gate on
 // availableForWriteAll() (it returns the minimum across clients, coupling every
 // client to the slowest), and we deliberately do NOT hand-iterate getClients()
@@ -351,7 +351,12 @@ void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
 void sendWebsocketWeightAll(float grams, unsigned long ms) {
   if (!b_wifiEnabled || websocket.count() == 0) return;
   if (!wsBroadcastHeapOk()) return;
-  websocket.printfAll("{\"grams\":%.2f,\"ms\":%lu}", grams, ms);
+  char message[96];
+  int messageLength = snprintf(message, sizeof(message),
+                               "{\"grams\":%.2f,\"ms\":%lu}", grams, ms);
+  if (messageLength <= 0 ||
+      static_cast<size_t>(messageLength) >= sizeof(message)) return;
+  websocket.textAll(message, static_cast<size_t>(messageLength));
 }
 
 void sendWebsocketError(AsyncWebSocketClient *client, const char *code, const char *message) {
