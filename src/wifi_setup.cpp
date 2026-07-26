@@ -4,10 +4,13 @@
 #include "config.h"  // FIRMWARE_VER for the DNS-SD TXT record
 #include "esp32-hal.h"
 #include "esp_system.h"  // esp_restart() for the heap watchdog
+#include "esp_heap_caps.h"
 #include <Arduino.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 volatile bool b_wifiEnabled = false;
 // Set by the GOT_IP WiFi event; the main loop (wifiSupervise) consumes it and
@@ -18,6 +21,11 @@ static bool g_mdnsReady = false;
 // rebooting mid-shot while a BLE client is connected. volatile: written from
 // the BLE task, read here on the main loop.
 extern volatile bool deviceConnected;
+
+static UBaseType_t asyncTcpStackHighWaterMark() {
+  TaskHandle_t task = xTaskGetHandle("async_tcp");
+  return task == nullptr ? 0 : uxTaskGetStackHighWaterMark(task);
+}
 
 const char *wifiPrefsKey = "wifi";
 const char *wifiSSIDKey = "ssid";
@@ -324,9 +332,11 @@ void wifiSupervise() {
 
   if (now - lastLog >= 5000) {
     lastLog = now;
-    Serial.printf("[health] uptime=%lu wifi_status=%d rssi=%d heap=%lu minheap=%lu disc=%lu rec=%lu\n",
+    Serial.printf("[health] uptime=%lu wifi_status=%d rssi=%d heap=%lu minheap=%lu largest=%lu async_stack_min_free=%lu disc=%lu rec=%lu\n",
                   now, (int)WiFi.status(), up ? (int)WiFi.RSSI() : 0,
                   (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMinFreeHeap(),
+                  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                  (unsigned long)asyncTcpStackHighWaterMark(),
                   (unsigned long)g_wifiDisconnects, (unsigned long)g_wifiReconnects);
   }
 
