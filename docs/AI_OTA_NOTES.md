@@ -27,7 +27,7 @@ Release builds publish WiFi OTA assets at the GitHub Release root:
 
 The release workflow creates draft releases, uploads binary assets first, uploads `manifest.sig` and `manifest.json` last, then publishes the release.
 
-Catalog manifests merge the previous latest stable signed manifest, dedupe by model, PCB, version, chip, and environment, sort newest to oldest, and keep production entries at `v3.1.13+`.
+Catalog manifests merge the previous latest stable signed manifest, dedupe by model, PCB, version, chip, and environment, sort newest to oldest, and keep the latest 10 production entries at `v3.1.13+`. Generated JSON is compact and limited to 16 KiB.
 
 ## Picker Rules
 

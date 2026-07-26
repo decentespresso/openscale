@@ -46,6 +46,8 @@ def main():
     assert_contains(PULL_OTA_HEADER, "pullOtaManifestCompatible")
     assert_contains(PULL_OTA_HEADER, "pullOtaSelectRelease")
     assert_contains(PULL_OTA_HEADER, "PullOtaReleaseList")
+    assert_contains(PULL_OTA_HEADER, "HDS_OTA_MANIFEST_MAX_BYTES = 16384")
+    assert_contains(PULL_OTA_HEADER, "HDS_OTA_MAX_RELEASE_CHOICES = 10")
     assert_contains(PULL_OTA_HEADER, "pullOtaReleaseCanRunFromCurrent")
     assert_contains(PULL_OTA_HEADER, 'HDS_OTA_MIN_INSTALL_VERSION = "3.1.13"')
     assert_contains(PULL_OTA_HEADER, "pullOtaCompareVersions(manifest.version, HDS_OTA_MIN_INSTALL_VERSION) < 0")
