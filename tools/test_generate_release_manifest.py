@@ -296,18 +296,21 @@ class GenerateReleaseManifestTest(unittest.TestCase):
 
         catalog = module.build_catalog_manifest(latest, [previous], min_version="v3.1.13")
 
-        self.assertEqual(len(catalog["releases"]), module.MAX_CATALOG_RELEASES)
+        self.assertEqual(module.MAX_CATALOG_RELEASES, 10)
+        self.assertEqual(module.MAX_MANIFEST_BYTES, 16384)
+        self.assertEqual(len(catalog["releases"]), 10)
         self.assertEqual(catalog["releases"][0]["version"], "3.1.60")
         with tempfile.TemporaryDirectory() as temp_dir:
             manifest_path = Path(temp_dir) / "manifest.json"
             module.write_manifest(catalog, manifest_path)
             self.assertLessEqual(manifest_path.stat().st_size, module.MAX_MANIFEST_BYTES)
+            self.assertNotIn("\n  ", manifest_path.read_text(encoding="utf-8"))
 
     def test_release_manifest_rejects_oversized_output(self):
         module = load_module()
         with tempfile.TemporaryDirectory() as temp_dir:
             manifest_path = Path(temp_dir) / "manifest.json"
-            with self.assertRaisesRegex(ValueError, "manifest exceeds 32768 bytes"):
+            with self.assertRaisesRegex(ValueError, "manifest exceeds 16384 bytes"):
                 module.write_manifest(
                     {"release_notes_url": "x" * module.MAX_MANIFEST_BYTES},
                     manifest_path,

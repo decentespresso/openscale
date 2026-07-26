@@ -94,7 +94,7 @@ m+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 -----END CERTIFICATE-----
 )PEM";
 
-static const size_t HDS_OTA_MANIFEST_MAX_BYTES = 32768;
+static const size_t HDS_OTA_MANIFEST_MAX_BYTES = 16384;
 static const size_t HDS_OTA_MANIFEST_SIGNATURE_MAX_BYTES = 1024;
 static const size_t HDS_OTA_BUFFER_BYTES = 1024;
 static const unsigned long HDS_OTA_WIFI_TIMEOUT_MS = 45000;
@@ -105,7 +105,7 @@ static const unsigned long HDS_OTA_CONFIRM_TIMEOUT_MS = 15000;
 static const unsigned long HDS_OTA_CONFIRM_HOLD_MS = 1200;
 static const unsigned long HDS_OTA_PICK_TIMEOUT_MS = 30000;
 static const uint32_t HDS_OTA_TASK_STACK_BYTES = 24576;
-static const uint8_t HDS_OTA_MAX_RELEASE_CHOICES = 16;
+static const uint8_t HDS_OTA_MAX_RELEASE_CHOICES = 10;
 static const char *HDS_OTA_CHIP = "esp32s3";
 static const char *HDS_OTA_ENVIRONMENT = "esp32s3";
 static const char *HDS_OTA_PARTITION_SCHEMA = "esp32s3-default-8mb-ota-spiffs-1536k";
@@ -1319,15 +1319,17 @@ void pullOtaRunUpdate() {
     pullOtaFail("Clock failed", "TLS blocked");
     return;
   }
-  String body;
-  if (!pullOtaFetchSignedManifest(body)) {
-    pullOtaFail("Signature failed");
-    return;
-  }
   PullOtaReleaseList catalog;
-  if (!pullOtaParseManifest(body, catalog)) {
-    pullOtaFail("Manifest invalid");
-    return;
+  {
+    String body;
+    if (!pullOtaFetchSignedManifest(body)) {
+      pullOtaFail("Signature failed");
+      return;
+    }
+    if (!pullOtaParseManifest(body, catalog)) {
+      pullOtaFail("Manifest invalid");
+      return;
+    }
   }
   PullOtaReleaseList releases;
   pullOtaBuildSelectableReleases(catalog, releases);

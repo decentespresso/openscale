@@ -21,8 +21,8 @@ DEFAULT_FS_PARTITION_LABEL = "spiffs"
 DEFAULT_FS_PARTITION_SIZE = 1572864
 DEFAULT_FS_SCHEMA = 1
 DEFAULT_CATALOG_MIN_VERSION = "v3.1.13"
-MAX_CATALOG_RELEASES = 16
-MAX_MANIFEST_BYTES = 32768
+MAX_CATALOG_RELEASES = 10
+MAX_MANIFEST_BYTES = 16384
 STABLE_VERSION_RE = re.compile(r"^v?([0-9]+)\.([0-9]+)\.([0-9]+)$")
 
 
@@ -145,7 +145,7 @@ def build_manifest(
 
 
 def write_manifest(manifest, path):
-    manifest_bytes = (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
+    manifest_bytes = (json.dumps(manifest, separators=(",", ":")) + "\n").encode("utf-8")
     if len(manifest_bytes) > MAX_MANIFEST_BYTES:
         raise ValueError(f"manifest exceeds {MAX_MANIFEST_BYTES} bytes")
     path.parent.mkdir(parents=True, exist_ok=True)
