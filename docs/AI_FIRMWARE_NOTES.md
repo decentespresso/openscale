@@ -74,10 +74,10 @@ The USB ADS debug packet keeps its 41-byte framing and checksum. Byte 24 is the 
 - `LittleFS.begin()` is idempotent.
 - Multiple WebSocket clients are supported.
 - Shared WebSocket session state resets only when the last client disconnects.
-- Broadcast with `websocket.printfAll(...)`, not a manual `getClients()` loop.
+- Broadcast with `websocket.printfAll(...)` or `websocket.textAll(...)`, not a manual `getClients()` loop.
 - Gate every broadcast-to-all helper with `wsBroadcastHeapOk()`.
 
-`printfAll` allocates per client. Arduino-ESP32 builds without exceptions, so `std::bad_alloc` aborts and reboots the device. Connection churn and half-open clients can exhaust heap. Low-heap behavior should skip broadcasts, not allocate.
+Broadcasts allocate a shared payload and per-client queue entries. `printfAll` also allocates a transient formatting buffer. Arduino-ESP32 builds without exceptions, so `std::bad_alloc` aborts and reboots the device. Connection churn and half-open clients can exhaust heap. Low-heap behavior should skip broadcasts, not allocate.
 
 ### WebSocket Heap Deep Reference
 
