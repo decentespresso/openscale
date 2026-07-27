@@ -418,7 +418,7 @@ void sendBleGyro() {
 // BLE). This just emits one notification when called; the active-state check
 // stays so we never touch the characteristic without a live connection.
 void sendBleWeight() {
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (!(b_ble_enabled && pServer && pServer->getConnectedCount() > 0 && pReadCharacteristic)) return;
   byte data[7];
   buildWeightPacket(data);
   pReadCharacteristic->setValue(data, 7);
