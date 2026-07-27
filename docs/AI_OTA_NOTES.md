@@ -29,6 +29,8 @@ The release workflow creates draft releases, uploads binary assets first, upload
 
 Catalog manifests merge the previous latest stable signed manifest, dedupe by model, PCB, version, chip, and environment, sort newest to oldest, and keep the latest 10 production entries at `v3.1.13+`. Generated JSON is compact and limited to 16 KiB.
 
+When the installed release has aged out of the latest catalog, firmware fetches that release's own signed manifest using both supported tag forms. It accepts only the compatible top-level release entry with the exact installed version and required LittleFS metadata. Firmware rollback remains local in the other app slot; this fallback supplies the signed asset metadata needed to restore the single shared LittleFS partition.
+
 ## Picker Rules
 
 The on-device WiFi Update menu accepts stable numeric `vX.Y.Z` or `X.Y.Z` entries only.
