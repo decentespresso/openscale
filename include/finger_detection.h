@@ -207,15 +207,16 @@ bool isFingerPress(int button) {
     if (b_fingerDetectionSerialOutput) Serial.println("✅ FINGER PRESS");
     
     // Real button fuction if finger detected
-    if (!deviceConnected || b_btnFuncWhileConnected) {
+    const bool bleClientLive = bleHasLiveClient();
+    if (!bleClientLive || b_btnFuncWhileConnected) {
       if (button == BUTTON_CIRCLE) {
         // Circle Button：Tare
         sendUsbButton(1, 1);
         sendWebsocketButton(1, 1);
-        if (bleHasLiveClient()) {
+        if (bleClientLive) {
           sendBleButton(1, 1);
         }
-        if (!deviceConnected || b_btnFuncWhileConnected) {
+        if (!bleClientLive || b_btnFuncWhileConnected) {
           b_weight_quick_zero = true;
           t_quickZeroStart = millis();
           t_tareByButton = millis();
@@ -225,10 +226,10 @@ bool isFingerPress(int button) {
         // Square Button：Timer control
         sendUsbButton(2, 1);
         sendWebsocketButton(2, 1);
-        if (bleHasLiveClient()) {
+        if (bleClientLive) {
           sendBleButton(2, 1);
         }
-        if (!b_menu && !b_calibration && (!deviceConnected || b_btnFuncWhileConnected)) {
+        if (!b_menu && !b_calibration && (!bleClientLive || b_btnFuncWhileConnected)) {
           if (millis() - t_menuExitTime > 1000)
             // Check if enough time has passed since menu exit (500ms protection period)
             scaleTimer();
