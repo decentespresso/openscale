@@ -274,34 +274,46 @@ class GenerateReleaseManifestTest(unittest.TestCase):
 
             self.assertEqual([release["version"] for release in catalog["releases"]], ["3.1.14", "3.1.13"])
 
-    def test_release_catalog_caps_entries_and_serialized_size(self):
+    def test_release_catalog_cap_keeps_per_release_rollback_manifest(self):
         module = load_module()
-        latest = {
-            "model": "hds",
-            "version": "3.1.60",
-            "chip": "esp32s3",
-            "environment": "esp32s3",
-        }
-        previous = {
-            "releases": [
-                {
-                    "model": "hds",
-                    "version": f"3.1.{version}",
-                    "chip": "esp32s3",
-                    "environment": "esp32s3",
-                }
-                for version in range(13, 60)
-            ]
-        }
-
-        catalog = module.build_catalog_manifest(latest, [previous], min_version="v3.1.13")
-
-        self.assertEqual(module.MAX_CATALOG_RELEASES, 10)
-        self.assertEqual(module.MAX_MANIFEST_BYTES, 16384)
-        self.assertEqual(len(catalog["releases"]), 10)
-        self.assertEqual(catalog["releases"][0]["version"], "3.1.60")
         with tempfile.TemporaryDirectory() as temp_dir:
-            manifest_path = Path(temp_dir) / "manifest.json"
+            build_dir = Path(temp_dir)
+            (build_dir / "firmware.bin").write_bytes(b"firmware")
+            (build_dir / "littlefs.bin").write_bytes(b"littlefs")
+            oldest = module.build_manifest(
+                build_dir=build_dir,
+                tag="v3.1.13",
+                repository="decentespresso/openscale",
+                model="hds",
+                min_from="3.1.13",
+            )
+            latest = module.build_manifest(
+                build_dir=build_dir,
+                tag="v3.1.23",
+                repository="decentespresso/openscale",
+                model="hds",
+                min_from="3.1.13",
+            )
+            previous = {
+                "releases": [
+                    {**oldest, "version": f"3.1.{version}"}
+                    for version in range(13, 23)
+                ]
+            }
+            catalog = module.build_catalog_manifest(
+                latest, [previous], min_version="v3.1.13"
+            )
+
+            self.assertEqual(module.MAX_CATALOG_RELEASES, 10)
+            self.assertEqual(module.MAX_MANIFEST_BYTES, 16384)
+            self.assertEqual(
+                [release["version"] for release in catalog["releases"]],
+                [f"3.1.{version}" for version in range(23, 13, -1)],
+            )
+            self.assertNotIn("3.1.13", [release["version"] for release in catalog["releases"]])
+            self.assertEqual(oldest["version"], "3.1.13")
+            self.assertTrue(oldest["littlefs"]["required"])
+            manifest_path = build_dir / "manifest.json"
             module.write_manifest(catalog, manifest_path)
             self.assertLessEqual(manifest_path.stat().st_size, module.MAX_MANIFEST_BYTES)
             self.assertNotIn("\n  ", manifest_path.read_text(encoding="utf-8"))
@@ -317,7 +329,7 @@ class GenerateReleaseManifestTest(unittest.TestCase):
                 )
             self.assertFalse(manifest_path.exists())
 
-    def test_manifest_signature_rejects_mismatched_key(self):
+    def test_manifest_signature_accepts_matching_and_rejects_mismatched_key(self):
         openssl = os.environ.get("OPENSSL") or shutil.which("openssl")
         if openssl is None:
             self.skipTest("openssl is not installed")
@@ -326,6 +338,7 @@ class GenerateReleaseManifestTest(unittest.TestCase):
             manifest_path = root / "manifest.json"
             signature_path = root / "manifest.sig"
             signing_key = root / "signing.pem"
+            signing_public_key = root / "signing-public.pem"
             wrong_key = root / "wrong.pem"
             wrong_public_key = root / "wrong-public.pem"
             manifest_path.write_text('{"version":"3.1.13"}\n', encoding="utf-8")
@@ -340,6 +353,11 @@ class GenerateReleaseManifestTest(unittest.TestCase):
                 capture_output=True,
             )
             subprocess.run(
+                [openssl, "pkey", "-in", signing_key, "-pubout", "-out", signing_public_key],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
                 [openssl, "pkey", "-in", wrong_key, "-pubout", "-out", wrong_public_key],
                 check=True,
                 capture_output=True,
@@ -350,11 +368,16 @@ class GenerateReleaseManifestTest(unittest.TestCase):
                 capture_output=True,
             )
 
+            matching_result = subprocess.run(
+                [openssl, "dgst", "-sha256", "-verify", signing_public_key, "-signature", signature_path, manifest_path],
+                capture_output=True,
+            )
             result = subprocess.run(
                 [openssl, "dgst", "-sha256", "-verify", wrong_public_key, "-signature", signature_path, manifest_path],
                 capture_output=True,
             )
 
+            self.assertEqual(matching_result.returncode, 0)
             self.assertNotEqual(result.returncode, 0)
 
 
