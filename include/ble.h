@@ -385,9 +385,17 @@ void bleShutdown() {
   BLEDevice::deinit(true);
 }
 
+static bool bleHasLiveClient() {
+#if defined(CONFIG_NIMBLE_ENABLED)
+  return pServer != nullptr && pServer->getConnectedCount() > 0;
+#else
+  return deviceConnected;
+#endif
+}
+
 // Send voltage via BLE
 void sendBleVoltage() {
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (!(b_ble_enabled && bleHasLiveClient() && pReadCharacteristic)) return;
   byte data[7];
   buildVoltagePacket(data);
   pReadCharacteristic->setValue(data, 7);
@@ -396,7 +404,7 @@ void sendBleVoltage() {
 
 // Send heartbeat via BLE
 void sendBleHeartBeat() {
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (!(b_ble_enabled && bleHasLiveClient() && pReadCharacteristic)) return;
   byte data[7];
   buildHeartBeatPacket(data);
   pReadCharacteristic->setValue(data, 7);
@@ -405,7 +413,7 @@ void sendBleHeartBeat() {
 
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendBleGyro() {
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (!(b_ble_enabled && bleHasLiveClient() && pReadCharacteristic)) return;
   byte data[7];
   buildGyroPacket(data);
   pReadCharacteristic->setValue(data, 7);
@@ -418,7 +426,7 @@ void sendBleGyro() {
 // BLE). This just emits one notification when called; the active-state check
 // stays so we never touch the characteristic without a live connection.
 void sendBleWeight() {
-  if (!(b_ble_enabled && pServer && pServer->getConnectedCount() > 0 && pReadCharacteristic)) return;
+  if (!(b_ble_enabled && bleHasLiveClient() && pReadCharacteristic)) return;
   byte data[7];
   buildWeightPacket(data);
   pReadCharacteristic->setValue(data, 7);
@@ -426,7 +434,7 @@ void sendBleWeight() {
 }
 
 void sendBleButton(int buttonNumber, int buttonShortPress) {
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (!(b_ble_enabled && bleHasLiveClient() && pReadCharacteristic)) return;
   byte data[7];
   buildButtonPacket(data, buttonNumber, buttonShortPress);
   pReadCharacteristic->setValue(data, 7);
@@ -435,7 +443,7 @@ void sendBleButton(int buttonNumber, int buttonShortPress) {
 
 void sendBlePowerOff(int i_reason) {
   // Check BLE enabled, device connected, characteristic exists
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (!(b_ble_enabled && bleHasLiveClient() && pReadCharacteristic)) return;
 
   byte data[7];
   buildPowerOffPacket(data, i_reason);
@@ -448,7 +456,7 @@ void sendBlePowerOff(int i_reason) {
 
 void sendBleLedResponse() {
   // Check BLE enabled, device connected, characteristic exists
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (!(b_ble_enabled && bleHasLiveClient() && pReadCharacteristic)) return;
 
   byte data[7];
   buildLedResponsePacket(data);
@@ -459,7 +467,7 @@ void sendBleLedResponse() {
 // Send 41-byte ADS1232 debug packet via BLE notify on fff4.
 // In SINGLE mode, auto-clears bleDebugMode to OFF after sending.
 void sendAdsDebugInfoBLE() {
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (!(b_ble_enabled && bleHasLiveClient() && pReadCharacteristic)) return;
   if (bleDebugMode == DEBUG_OFF) return;
 
   byte data[41];

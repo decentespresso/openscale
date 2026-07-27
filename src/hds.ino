@@ -1746,7 +1746,7 @@ void loop() {
         }
 
         // ADS debug BLE stream -- separate debug channel, keeps its own gate.
-        if (b_ble_enabled && deviceConnected && bleDebugMode != DEBUG_OFF) {
+        if (b_ble_enabled && bleHasLiveClient() && bleDebugMode != DEBUG_OFF) {
           // SINGLE fires once; CONTINUOUS rate-limited to ~10 Hz
           if (bleDebugMode == DEBUG_SINGLE ||
               millis() - t_lastBleDebugNotify >= BLE_DEBUG_MIN_INTERVAL) {

@@ -212,7 +212,7 @@ bool isFingerPress(int button) {
         // Circle Button：Tare
         sendUsbButton(1, 1);
         sendWebsocketButton(1, 1);
-        if (deviceConnected) {
+        if (bleHasLiveClient()) {
           sendBleButton(1, 1);
         }
         if (!deviceConnected || b_btnFuncWhileConnected) {
@@ -225,7 +225,7 @@ bool isFingerPress(int button) {
         // Square Button：Timer control
         sendUsbButton(2, 1);
         sendWebsocketButton(2, 1);
-        if (deviceConnected) {
+        if (bleHasLiveClient()) {
           sendBleButton(2, 1);
         }
         if (!b_menu && !b_calibration && (!deviceConnected || b_btnFuncWhileConnected)) {
