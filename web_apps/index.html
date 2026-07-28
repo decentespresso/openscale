@@ -322,6 +322,21 @@
       color: var(--ink-soft);
     }
 
+    #name-form {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) 128px;
+      gap: 12px;
+      align-items: center;
+      max-width: 460px;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+      max-width: 680px;
+    }
+
     @media (max-width: 820px) {
       .panel-grid {
         grid-template-columns: 1fr;
@@ -347,7 +362,8 @@
         grid-auto-rows: 64px;
       }
 
-      #wifi-form {
+      #wifi-form,
+      #name-form {
         grid-template-columns: 1fr;
         max-width: none;
       }
@@ -391,6 +407,10 @@
       <h2>Current Settings</h2>
       <p id="connection-status" class="connection-state">Connecting</p>
       <div class="settings-list">
+        <div class="settings-row">
+          <span>Scale Name</span>
+          <strong id="setting-name">--</strong>
+        </div>
         <div class="settings-row">
           <span>WiFi</span>
           <strong id="setting-wifi">--</strong>
@@ -444,6 +464,13 @@
           </form>
           <button id="reset-wifi-button">Reset WiFi settings</button>
     <p id="wifi-status"></p>
+    <h2>Scale Name</h2>
+    <p class="hint">Sets the address the scale answers at. Default <code>hds</code> gives <code>hds.local</code>. Use a different name for each scale on your network. 1-24 characters: letters, digits, hyphens. Saving restarts the scale.</p>
+          <form id="name-form">
+            <input type="text" id="device-name" placeholder="hds" maxlength="24" style="margin-right: 1rem;" />
+            <button type="submit">Rename</button>
+          </form>
+    <p id="name-status"></p>
   </div>
 
   <section class="section" aria-labelledby="links-title">
@@ -487,11 +514,55 @@
       }
     });
 
+    // Scale rename. The device normalizes the value (trim + lowercase) and
+    // answers with what it stored, then restarts to apply the new hostname.
+    const deviceNameInput = document.getElementById('device-name');
+    // Prefilled from the first status frame only. Later polls must not stomp
+    // what the user is typing, and after a rename the device still reports the
+    // old name until it restarts -- refilling from either would show a value
+    // that contradicts the page.
+    let deviceNamePrefilled = false;
+
+    document.getElementById('name-form').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      const status = document.getElementById('name-status');
+      status.textContent = 'Saving...';
+      status.style.color = 'green';
+
+      try {
+        const response = await fetch(`http://${window.location.host}/setup/name`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ name: deviceNameInput.value })
+        });
+
+        if (response.ok) {
+          const body = await response.json();
+          deviceNameInput.value = body.name;
+          status.textContent = body.restarting === false
+            ? `Already named ${body.name}; nothing changed.`
+            : `Saved as ${body.name}. Restarting; reconnect at http://${body.name}.local`;
+        } else if (response.status === 400) {
+          status.textContent = 'Invalid name. Use 1-24 characters: letters, digits, or hyphens (not at the start or end).';
+          status.style.color = 'red';
+        } else {
+          status.textContent = 'Failed to save the name.';
+          status.style.color = 'red';
+        }
+      } catch (err) {
+        status.textContent = 'Error connecting to server.';
+        status.style.color = 'red';
+      }
+    });
+
     // WebSocket for live weight
     const ws = new WebSocket(`ws://${window.location.host}/snapshot`);
     const weightValue = document.getElementById('weight-value');
     const tareButton = document.getElementById('tare-button');
     const connectionStatus = document.getElementById('connection-status');
+    const settingName = document.getElementById('setting-name');
     const settingWifi = document.getElementById('setting-wifi');
     const settingBleButtons = document.getElementById('setting-ble-buttons');
     const settingBleHeartbeat = document.getElementById('setting-ble-heartbeat');
@@ -519,6 +590,13 @@
     }
 
     function renderStatus(status) {
+      const deviceName = status.mdns_name || 'hds';
+      settingName.textContent = `${deviceName} (${deviceName}.local)`;
+      if (!deviceNamePrefilled) {
+        deviceNamePrefilled = true;
+        deviceNameInput.value = deviceName;
+      }
+
       const wifiParts = [formatEnabled(status.wifi_on_boot)];
       wifiParts.push(status.wifi_credentials_saved ? 'SSID saved' : 'no SSID saved');
       if (status.wifi_active) {

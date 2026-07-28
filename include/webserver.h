@@ -2,6 +2,7 @@
 #define SCALE_WEBSERVER_H
 
 #include "esp_system.h"
+#include "mdns_name.h"
 #include "parameter.h"
 #include "wifi_setup.h"
 #include <ArduinoJson.h>
@@ -10,6 +11,7 @@
 #include <ESPAsyncWebServer.h>
 #include <LittleFS.h>
 #include <WiFi.h>
+#include <string.h>
 
 static AsyncWebServer server(80);
 static AsyncWebSocket websocket("/snapshot");
@@ -30,6 +32,7 @@ static const unsigned long HTTP_PAGELOAD_BURST_RESET_MS = 1500;
 static const size_t WIFI_SETUP_MAX_JSON_BYTES = 256;
 static const size_t WIFI_SETUP_MAX_SSID_BYTES = 32;
 static const size_t WIFI_SETUP_MAX_PASS_BYTES = 64;
+static const size_t NAME_SETUP_MAX_JSON_BYTES = 128;
 static const unsigned long WIFI_SETUP_RESTART_DELAY_MS = 500;
 static const char *LITTLEFS_CACHE_CONTROL =
     "no-cache, must-revalidate, max-age=0";
@@ -54,6 +57,14 @@ static bool parseWifiSetupCredentials(JsonVariant &json, String &ssid, String &p
   pass = jsonObj["pass"].is<const char *>() ? jsonObj["pass"].as<String>() : "";
   return ssid.length() <= WIFI_SETUP_MAX_SSID_BYTES &&
          pass.length() <= WIFI_SETUP_MAX_PASS_BYTES;
+}
+
+static const char *parseDeviceNameRequest(JsonVariant &json) {
+  JsonObject jsonObj = json.as<JsonObject>();
+  if (jsonObj.isNull() || !jsonObj["name"].is<const char *>()) {
+    return nullptr;
+  }
+  return jsonObj["name"].as<const char *>();
 }
 
 void startWebServer() {
@@ -81,6 +92,53 @@ void startWebServer() {
         });
     wifiHandler->setMaxContentLength(WIFI_SETUP_MAX_JSON_BYTES);
     server.addHandler(wifiHandler);
+
+    // Rename the scale. Runs on the AsyncTCP task, so it must not touch mDNS or
+    // publish state the main loop reads: it writes NVS only and queues the
+    // restart that reloads the name (the DHCP hostname can only change before
+    // association anyway).
+    AsyncCallbackJsonWebHandler *nameHandler = new AsyncCallbackJsonWebHandler(
+        "/setup/name", [](AsyncWebServerRequest *request, JsonVariant &json) {
+          const char *requested = parseDeviceNameRequest(json);
+          if (requested == nullptr) {
+            request->send(400, "application/json",
+                          "{\"error\":\"device_name_invalid\"}");
+            return;
+          }
+
+          char normalized[MDNS_NAME_BUFFER_BYTES] = {0};
+          if (!mdnsNameNormalize(requested, normalized, sizeof(normalized))) {
+            request->send(400, "application/json",
+                          "{\"error\":\"device_name_invalid\"}");
+            return;
+          }
+
+          // Already this name: answer without writing NVS and without queuing a
+          // restart. The web UI prefills the field, so a stray submit would
+          // otherwise reboot the scale mid-shot -- and a repeated POST of the
+          // current name would hold it in a reboot loop.
+          char body[MDNS_NAME_BUFFER_BYTES + 40];
+          if (strcmp(normalized, wifiDeviceName()) == 0) {
+            snprintf(body, sizeof(body),
+                     "{\"name\":\"%s\",\"restarting\":false}", normalized);
+            request->send(200, "application/json", body);
+            return;
+          }
+
+          char stored[MDNS_NAME_BUFFER_BYTES] = {0};
+          if (!saveDeviceNameForRestart(normalized, stored, sizeof(stored))) {
+            request->send(500, "application/json",
+                          "{\"error\":\"device_name_save_failed\"}");
+            return;
+          }
+
+          Serial.printf("device name saved: %s\n", stored);
+          snprintf(body, sizeof(body), "{\"name\":\"%s\",\"restarting\":true}", stored);
+          request->send(200, "application/json", body);
+          remoteQueueResetAt(millis() + WIFI_SETUP_RESTART_DELAY_MS);
+        });
+    nameHandler->setMaxContentLength(NAME_SETUP_MAX_JSON_BYTES);
+    server.addHandler(nameHandler);
 
     // Allow multiple concurrent WebSocket clients (e.g. the on-device web UI
     // and a separate desktop/phone app at the same time). Per-loop the count

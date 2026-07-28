@@ -345,6 +345,9 @@ void showWifiStatus() {
     u8g2.drawStr(0, 44, "IP:");
     u8g2.drawStr(40, 44, ip.c_str());
 
+    u8g2.drawStr(0, 60, "Name:");
+    u8g2.drawStr(40, 60, wifiDeviceName());
+
   } while (u8g2.nextPage());
   delay(1000);
   while (b_showWifiData) {

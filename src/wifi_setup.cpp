@@ -4,6 +4,7 @@
 #include "config.h"  // FIRMWARE_VER for the DNS-SD TXT record
 #include "esp32-hal.h"
 #include "esp_system.h"  // esp_restart() for the heap watchdog
+#include "mdns_name.h"
 #include <Arduino.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
@@ -14,6 +15,7 @@ volatile bool b_wifiEnabled = false;
 // (re)advertises mDNS, keeping all mDNS work off the WiFi-event task.
 static volatile bool g_mdnsAdvertisePending = false;
 static bool g_mdnsReady = false;
+static const unsigned long MDNS_GOODBYE_DRAIN_MS = 60;
 // BLE link state (defined in declare.h). Used by the heap watchdog to avoid
 // rebooting mid-shot while a BLE client is connected. volatile: written from
 // the BLE task, read here on the main loop.
@@ -22,11 +24,16 @@ extern volatile bool deviceConnected;
 const char *wifiPrefsKey = "wifi";
 const char *wifiSSIDKey = "ssid";
 const char *wifiPassKey = "pass";
+const char *wifiMdnsNameKey = "mdns_name";
 
 class WiFiParams {
 private:
   String ssid = "";
   String pass = "";
+  // Loaded once on the boot path and never mutated afterwards: the main loop
+  // reads it when advertising mDNS, so the HTTP rename handler writes NVS only
+  // and lets the restart pick the new value up.
+  char mdnsName[MDNS_NAME_BUFFER_BYTES] = {0};
   Preferences preferences;
   bool initialized = false;
   bool writeCredentialsToNvs(const String &ssid, const String &pass);
@@ -34,9 +41,13 @@ private:
 public:
   const String &getSSID() const { return ssid; }
   const String &getPass() const { return pass; }
+  const char *getMdnsName() const {
+    return mdnsName[0] != 0 ? mdnsName : mdnsNameDefault();
+  }
   bool hasCredentials() const { return ssid != ""; };
   void saveCredentials(const String &ssid, const String &pass);
   bool saveCredentialsForRestart(const String &ssid, const String &pass);
+  bool saveMdnsNameForRestart(const char *name, char *stored, size_t storedSize);
   void init();
   void reset();
 };
@@ -94,13 +105,35 @@ void connectToWifi() {
   }
 }
 
+// Withdraw the DNS-SD registration. MDNS.end() -> mdns_free() is what emits the
+// goodbye packet that clears the instance from resolver caches; without it the
+// PTR record lingers for its full TTL (75 min by DNS-SD convention, versus 2 min
+// for SRV/A) and browsers keep offering an instance that no longer resolves.
+// Every deliberate teardown -- remote/USB reset, rename and wifi-setup reboots,
+// deep sleep -- reaches this through stopWifi(), so the withdrawal belongs here
+// rather than at each call site. Best-effort by nature: the goodbye is a single
+// unacknowledged multicast, and a crash, flat battery, or unplug sends nothing.
+static void mdnsWithdraw() {
+  if (!g_mdnsReady) {
+    return;
+  }
+  MDNS.end();
+  g_mdnsReady = false;
+  g_mdnsAdvertisePending = false;
+  // Give the goodbye a chance to leave before the radio goes down; mdns_free()
+  // hands the packet to the mDNS task and does not wait for transmission.
+  delay(MDNS_GOODBYE_DRAIN_MS);
+}
+
 void stopWifi() {
   const wifi_mode_t mode = WiFi.getMode();
   if (mode == WIFI_MODE_NULL) {
+    mdnsWithdraw();
     b_wifiEnabled = false;
     return;
   }
 
+  mdnsWithdraw();
   if ((mode & WIFI_MODE_STA) && WiFi.status() == WL_CONNECTED) {
     WiFi.disconnect(false);
   }
@@ -126,9 +159,11 @@ static volatile uint32_t g_wifiReconnects = 0;
 // race each other into a WL_STOPPED state.
 static volatile bool g_wifiInitDone = false;
 
-// Advertise hds.local + the _decentscale._tcp DNS-SD service. Returns true if
-// the responder came up; callers may log/branch on failure (MDNS.begin can
-// transiently fail under heap pressure at reconnect time).
+// Advertise <name>.local + the _decentscale._tcp DNS-SD service, where <name>
+// is the stored device name (default "hds", so an unrenamed scale still answers
+// at hds.local). Returns true if the responder came up; callers may log/branch
+// on failure (MDNS.begin can transiently fail under heap pressure at reconnect
+// time).
 bool setupMdns() {
   if (WiFi.getMode() != WIFI_AP && WiFi.status() != WL_CONNECTED) {
     Serial.printf("[wifi] MDNS deferred wifi=%d ip=%s\n",
@@ -137,20 +172,30 @@ bool setupMdns() {
     g_mdnsReady = false;
     return false;
   }
-  if (!MDNS.begin("hds")) {
+  const char *name = params.getMdnsName();
+  if (!MDNS.begin(name)) {
     Serial.println("could not set up MDNS responder");
     g_mdnsReady = false;
     return false;
   }
   // Friendly instance name + DNS-SD service so apps (incl. Android NsdManager)
-  // can discover the scale; a bare hds.local A record isn't browsable there.
-  MDNS.setInstanceName("Half Decent Scale");
+  // can discover the scale; a bare <name>.local A record isn't browsable there.
+  // A renamed scale keeps the recognizable product prefix so several scales on
+  // one LAN stay tellable apart in a browser list.
+  if (mdnsNameIsDefault(name)) {
+    MDNS.setInstanceName("Half Decent Scale");
+  } else {
+    char instance[MDNS_NAME_BUFFER_BYTES + 24];
+    snprintf(instance, sizeof(instance), "Half Decent Scale (%s)", name);
+    MDNS.setInstanceName(instance);
+  }
   MDNS.addService("decentscale", "tcp", 80);
   MDNS.addServiceTxt("decentscale", "tcp", "fw", (const char *)FIRMWARE_VER);
   MDNS.addServiceTxt("decentscale", "tcp", "model", "hds");
+  MDNS.addServiceTxt("decentscale", "tcp", "name", name);
   MDNS.addServiceTxt("decentscale", "tcp", "proto", "ws");
   MDNS.addServiceTxt("decentscale", "tcp", "path", "/snapshot");
-  Serial.println("DNS-SD: advertised _decentscale._tcp on port 80");
+  Serial.printf("DNS-SD: advertised %s.local _decentscale._tcp on port 80\n", name);
   g_mdnsReady = true;
   return true;
 }
@@ -206,9 +251,11 @@ void onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) {
 void setupWifi() {
   params.init();
 
-  const char *hostname = "hds.local";
+  // Bare DHCP label, no ".local" suffix: that belongs to mDNS, not to the DHCP
+  // hostname option. setHostname() only takes effect before association, which
+  // is why a rename restarts the scale.
   WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
-  WiFi.setHostname(hostname);
+  WiFi.setHostname(params.getMdnsName());
 
   // Register the handler BEFORE connecting so connect/disconnect/GOT_IP are all
   // logged. Disable the core's fixed ~4 s auto-reconnect: when an AP is
@@ -374,6 +421,15 @@ bool wifiCredentialsSaved() {
   return params.hasCredentials();
 }
 
+const char *wifiDeviceName() {
+  params.init();
+  return params.getMdnsName();
+}
+
+bool saveDeviceNameForRestart(const char *name, char *stored, size_t storedSize) {
+  return params.saveMdnsNameForRestart(name, stored, storedSize);
+}
+
 // ----------------------------------------------------
 // ------------------ WiFiParams ----------------------
 // ----------------------------------------------------
@@ -426,6 +482,25 @@ bool WiFiParams::writeCredentialsToNvs(const String &ssid, const String &pass) {
   return saved;
 }
 
+bool WiFiParams::saveMdnsNameForRestart(const char *name, char *stored, size_t storedSize) {
+  if (!initialized) {
+    init();
+  }
+  if (!initialized) {
+    Serial.println("[prefs] could not save device name -- NVS namespace unavailable");
+    return false;
+  }
+  if (!mdnsNameNormalize(name, stored, storedSize)) {
+    return false;
+  }
+
+  // Like the credential path: NVS only. The running mDNS/hostname state is not
+  // touched here because this runs on the AsyncTCP task; the queued restart
+  // reloads the name in init().
+  preferences.putString(wifiMdnsNameKey, stored);
+  return preferences.getString(wifiMdnsNameKey, "\x01") == stored;
+}
+
 void WiFiParams::init() {
   if (initialized) {
     return;
@@ -439,6 +514,15 @@ void WiFiParams::init() {
     this->ssid = preferences.getString(wifiSSIDKey, "");
     this->pass = preferences.getString(wifiPassKey, "");
   }
+  if (mdnsName[0] == 0) {
+    char storedName[MDNS_NAME_BUFFER_BYTES] = {0};
+    size_t length = preferences.getString(wifiMdnsNameKey, storedName, sizeof(storedName));
+    // A stored value that no longer validates (older firmware, truncated read)
+    // falls back to the default instead of advertising an illegal label.
+    if (length == 0 || !mdnsNameNormalize(storedName, mdnsName, sizeof(mdnsName))) {
+      mdnsNameCopyDefault(mdnsName, sizeof(mdnsName));
+    }
+  }
 }
 
 void WiFiParams::reset() {
@@ -448,6 +532,9 @@ void WiFiParams::reset() {
     init();
   }
   if (initialized) {
+    // clear() drops the whole 'wifi' namespace, including the device name: a
+    // full network reset restores the factory identity too.
     preferences.clear();
   }
+  mdnsNameCopyDefault(mdnsName, sizeof(mdnsName));
 }
