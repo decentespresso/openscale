@@ -15,7 +15,7 @@ Local build, flash, OTA, editor, cache, and CAD files are omitted unless they ar
 | Calibration, ADC, tare stability | `include/calibration_validation.h`, `include/menu.h`, `src/hds.ino` | `docs/AI_FIRMWARE_NOTES.md` |
 | Persistent settings, defaults, migration | `include/storage.h` | `docs/AI_STORAGE_NOTES.md` |
 | Decent binary, BLE, USB, ADS debug | `include/decent_protocol.h`, then `include/ble.h` or `include/usbcomm.h` | `docs/AI_PROTOCOL_NOTES.md` |
-| WiFi, AP setup, credentials, mDNS | `src/wifi_setup.cpp`, `include/wifi_setup.h` | `docs/AI_BUILD_NOTES.md` |
+| WiFi, AP setup, credentials, mDNS | `src/wifi_setup.cpp`, `include/wifi_setup.h`, `include/mdns_name.h` | `docs/AI_BUILD_NOTES.md` |
 | HTTP and LittleFS serving | `include/webserver.h`, matching `web_apps/` file | `docs/AI_FIRMWARE_NOTES.md` |
 | `/snapshot` WebSocket behavior | `include/websocket.h` | `docs/AI_FIRMWARE_NOTES.md`, `docs/AI_PROTOCOL_NOTES.md` |
 | Power, soft sleep, wake, shutdown | `include/power.h`, `include/websocket.h`, `src/hds.ino` | `docs/AI_GPIO_NOTES.md`, `docs/AI_FIRMWARE_NOTES.md` |

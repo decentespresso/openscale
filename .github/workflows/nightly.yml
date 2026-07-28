@@ -20,6 +20,22 @@ jobs:
           python-version: "3.11"
       - run: python tools/test_ai_docs_contract.py
       - run: python tools/test_ble_subscription_contract.py
+      - run: python tools/test_mdns_name_contract.py
+
+  native-tests:
+    name: Native unit tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - name: Install PlatformIO Core
+        run: python -m pip install --requirement requirements-platformio.txt
+      - name: Run host-side tests
+        run: pio test -e native
 
   gzip-assets:
     name: Gzip asset generation contract

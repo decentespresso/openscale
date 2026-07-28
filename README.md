@@ -28,11 +28,15 @@ Decent Scale uses WiFi for web apps, WebSocket data streaming, and OTA updates.
 
 To enable WiFi mode, go to HDS setup menu and find "Wifi settings" entry. From there you can enable/disable WiFi as well as see current WiFi details. If you toggle WiFi on/off, a restart of the scale is required for the new settings to take effect.
 
-**First-time setup:** if no WiFi credentials are stored, the scale opens its own access point — SSID `DecentScale`, password `12345678`, IP `192.168.1.1`. Connect to it and navigate to [hds.local](http://hds.local) to enter your home WiFi credentials. The scale will restart and connect to your network.
+**First-time setup:** if no WiFi credentials are stored, the scale opens its own access point — SSID `DecentScale`, password `12345678`, IP `192.168.1.1`. Connect to it and navigate to [hds.local](http://hds.local) to enter your home WiFi credentials. The same page can rename the scale (see **Scale name** below). The scale will restart and connect to your network.
 
 **Reconnect:** once configured, the scale stays in STA mode and reconnects automatically after signal loss with exponential backoff (5 s → 10 → 20 → 40 → 60 s cap). It no longer falls back to the AP — a configured scale keeps retrying your home network.
 
-**Discovery:** the scale advertises itself via mDNS (`hds.local`) and DNS-SD (`_decentscale._tcp`) so apps can discover it on the LAN without knowing the IP.
+**Discovery:** the scale advertises itself via mDNS (`hds.local` by default) and DNS-SD (`_decentscale._tcp`) so apps can discover it on the LAN without knowing the IP.
+
+**Scale name:** the mDNS name defaults to `hds`, so a scale you never rename answers at [hds.local](http://hds.local). When two scales share a network they both ask for that name and the mDNS stack pushes the loser to `hds-2.local` — which works, but which scale gets which address depends on boot order. Name them instead: on the scale's web page, use the "Scale Name" field in the WiFi setup area. Names are 1-24 characters of letters, digits, and hyphens (lowercased automatically); leaving the field empty restores `hds`, and re-submitting the name a scale already has changes nothing and does not restart it. Otherwise saving restarts the scale, after which it answers at `<name>.local`, advertises the DNS-SD instance `Half Decent Scale (<name>)`, and reports the name in the `/snapshot` status frame as `mdns_name`. The name is also shown on the scale's WiFi status screen (setup menu, "Wifi settings"). Names are not checked for uniqueness — pick a different one per scale.
+
+If you rename during first-time setup, before entering WiFi credentials, the scale restarts back into access-point mode under the new name — reach it at `192.168.1.1` or `<name>.local`, not `hds.local`.
 
 WiFi firmware updates are documented in [docs/wifi-ota.md](docs/wifi-ota.md).
 

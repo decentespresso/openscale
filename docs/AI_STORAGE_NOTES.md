@@ -13,13 +13,15 @@ Do not reconstruct the active settings layout from the old address declarations 
 | Store | Owner | Purpose |
 | --- | --- | --- |
 | NVS `hds` | `include/storage.h` | Scale settings and their schema version. |
-| NVS `wifi` | `src/wifi_setup.cpp` | WiFi SSID and password. |
+| NVS `wifi` | `src/wifi_setup.cpp` | WiFi SSID and password, plus the `mdns_name` device name (default `hds`). |
 | NVS `ota_fs` | `include/pull_ota.h` | Pending staged LittleFS metadata. |
 | NVS `ota_verify` | `include/ota_rollback.h` | OTA boot-verification attempt count. |
 | LittleFS | `include/webserver.h`, OTA code | On-device web application files. |
 | Browser `localStorage` | Files under `web_apps/` | Per-browser application data; unrelated to device NVS. |
 
 Keep these namespaces independent. A settings reset or migration must not clear WiFi credentials or OTA recovery state unless that behavior is explicitly requested.
+
+The device name lives in `wifi`, not `hds`, so renaming a scale never touches the settings schema or its migration. No shipped path clears it: `WiFiParams::reset()` would (it drops the whole `wifi` namespace) but has no callers, and the web UI's "Reset WiFi settings" button posts `{"ssid":""}`, which clears credentials only and leaves the name in place. Values are normalized and validated by `include/mdns_name.h` before they reach NVS, and a stored value that fails validation falls back to the default at boot.
 
 ## HDS Schema Version 1
 
