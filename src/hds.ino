@@ -593,6 +593,7 @@ void setup() {
   ADS_init();
 #endif
   delay(50);
+  b_requireHeartBeat = storageGetBool(KEY_HEARTBEAT, true);
   if (b_ble_enabled) {
     ble_init();
   }
@@ -708,7 +709,6 @@ void setup() {
   }
 #endif
 
-  b_requireHeartBeat = storageGetBool(KEY_HEARTBEAT, true);
   b_timeOnTop = storageGetBool(KEY_TIME_ON_TOP, false);
   b_btnFuncWhileConnected = storageGetBool(KEY_BTN_CONN, false);
   b_autoSleep = storageGetBool(KEY_AUTO_SLEEP, true);
