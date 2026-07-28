@@ -1591,7 +1591,7 @@ void loop() {
   // connected WS client streaming weight resets the auto-off timer just like a
   // BLE central does -- otherwise a WiFi-only client on battery loses the scale
   // to the 15-min auto-off mid-stream (WiFi activity didn't reset t_power_off).
-  if (deviceConnected || (b_wifiEnabled && websocket.count() > 0) || grinderRuntimeKeepsAwake()) {
+  if (bleHasLiveClient() || (b_wifiEnabled && websocket.count() > 0) || grinderRuntimeKeepsAwake()) {
     power_off(-1);  //reset power off timer
   } else {
     //if (!b_tempDisablePowerOff)
