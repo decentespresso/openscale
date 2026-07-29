@@ -23,27 +23,27 @@ class Mailbox:
     def __init__(self):
         self.connection = 7
         self.subscription = 0xFFFF
-        self.pending = False
+        self.pending = 0
         self.requested_at = 0
         self.generation = 1
         self.retiring_generation = 0
 
     def queue(self, now):
         self.requested_at = now
-        self.pending = True
+        self.pending += 1
 
     def subscribe(self):
         self.subscription = self.connection
 
     def begin_process(self, now):
-        if not self.pending:
+        if self.pending == 0:
             return "wait"
         if self.subscription == self.connection:
-            self.pending = False
+            self.pending -= 1
             return "send"
         if now - self.requested_at < 2000:
             return "wait"
-        self.pending = False
+        self.pending = 0
         self.retiring_generation = self.generation
         return "retire"
 
@@ -87,7 +87,7 @@ def main():
     assert_contains(
         parameter,
         "volatile uint16_t bleFff4SubscriptionHandle = 0xFFFF;",
-        "volatile bool bleStatusResponsePending = false;",
+        "volatile uint16_t bleStatusResponsesPending = 0;",
         "volatile unsigned long bleStatusRequestAt = 0;",
         "volatile bool bleNotifyFailureLogged = false;",
         "volatile uint32_t bleFff4ConnectionGeneration = 0;",
@@ -115,13 +115,13 @@ def main():
     pending = function_body(ble, "processBleStatusResponse")
     assert_contains(
         pending,
-        "if (bleStatusResponsePending)",
+        "if (bleStatusResponsesPending > 0)",
         "portENTER_CRITICAL(&bleFff4Mux)",
         "portEXIT_CRITICAL(&bleFff4Mux)",
         "sendBleLedResponse();",
         "now - bleStatusRequestAt >= BLE_STATUS_RESPONSE_TIMEOUT",
         "bleFff4ConnectionGeneration != connectionGeneration",
-        "bleStatusResponsePending",
+        "bleStatusResponsesPending",
         "pServer->disconnect(currentConnId, 0x13);",
     )
     if pending.index("portEXIT_CRITICAL(&bleFff4Mux)") > pending.index("sendBleLedResponse();"):
@@ -129,12 +129,31 @@ def main():
     if pending.rindex("portEXIT_CRITICAL(&bleFff4Mux)") > pending.index("pServer->disconnect(currentConnId, 0x13);"):
         raise AssertionError("BLE disconnect runs while holding the FFF4 mailbox lock")
     assert_contains(function_body(hds, "loop"), "processBleStatusResponse();")
+    assert_contains(function_body(hds, "loop"), "if (bleHasLiveClient() && b_requireHeartBeat")
+
+    heartbeat_disconnect = function_body(ble, "disconnectBLE")
+    assert_contains(heartbeat_disconnect, "if (!bleHasLiveClient()")
+
+    for name in ("buttonCircle_DoubleClicked", "buttonSquare_DoubleClicked"):
+        body = function_body(hds, name)
+        assert_contains(body, "const bool bleClientLive = bleHasLiveClient();")
+        if "deviceConnected" in body:
+            raise AssertionError(f"{name} uses stale BLE callback state")
 
     disconnect = function_body(ble, "onDisconnect")
     assert_contains(disconnect, "clearBleFff4Connection(desc->conn_handle)")
 
     status = function_body(ble, "onStatus")
     assert_contains(status, "bleNotifyFailureLogged", "bleNotifyFailureLogged = true;")
+
+    mailbox = Mailbox()
+    mailbox.queue(0)
+    mailbox.queue(1)
+    mailbox.subscribe()
+    if mailbox.begin_process(1) != "send" or mailbox.pending != 1:
+        raise AssertionError("queued status responses were coalesced")
+    if mailbox.begin_process(1) != "send" or mailbox.pending != 0:
+        raise AssertionError("queued status response was not drained")
 
     mailbox = Mailbox()
     mailbox.queue(0)

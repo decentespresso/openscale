@@ -32,6 +32,7 @@ void sendBleVoltage();
 void sendBleLedResponse();
 void sendAdsDebugInfoBLE();
 void queueBleStatusResponse();
+static bool bleHasLiveClient();
 // Defined in usbcomm.h, included after ble.h in hds.ino
 void buildAdsDebugPacket(byte data[41]);
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
@@ -41,7 +42,7 @@ volatile uint16_t connId = 0xFFFF; // not set to 0 because 0 could be a valid cl
 
 void resetBleFff4StateLocked(uint16_t subscriptionHandle) {
   bleFff4SubscriptionHandle = subscriptionHandle;
-  bleStatusResponsePending = false;
+  bleStatusResponsesPending = 0;
   bleStatusRequestAt = 0;
   bleNotifyFailureLogged = false;
 }
@@ -411,19 +412,18 @@ void ble_init() {
 }
 
 void disconnectBLE() {
-  if (deviceConnected) {
-    Serial.println("***No heartbeat for 5 seconds. Disconnecting BLE...***");
-    // Only try disconnecting every 5 seconds.
-    if (millis() - t_lastDisconnectAttempt < 5000) {
-      if (millis() - t_lastDisconnectAttemptNotice > 1000){
-        Serial.println("Disconnect attempt too frequent, skipping...");
-        t_lastDisconnectAttemptNotice = millis();
-      }
-      return;
+  if (!bleHasLiveClient() || pServer == nullptr || connId == 0xFFFF) return;
+  Serial.println("***No heartbeat for 5 seconds. Disconnecting BLE...***");
+  // Only try disconnecting every 5 seconds.
+  if (millis() - t_lastDisconnectAttempt < 5000) {
+    if (millis() - t_lastDisconnectAttemptNotice > 1000){
+      Serial.println("Disconnect attempt too frequent, skipping...");
+      t_lastDisconnectAttemptNotice = millis();
     }
-    t_lastDisconnectAttempt = millis();
-    pServer->disconnect(connId, 0x13); // must prove connID for proper disconnecting. 0x13 for disconnect from remote device ESP_GAP_BLE_UPDATE_CONN_PARAMS_ERR_REMOTE_DEVICE_DISCONN.
+    return;
   }
+  t_lastDisconnectAttempt = millis();
+  pServer->disconnect(connId, 0x13); // must prove connID for proper disconnecting. 0x13 for disconnect from remote device ESP_GAP_BLE_UPDATE_CONN_PARAMS_ERR_REMOTE_DEVICE_DISCONN.
 }
 
 // Gracefully tear down BLE before power-off or restart. Sends an LL
@@ -433,7 +433,7 @@ void disconnectBLE() {
 // connected. No-ops if BLE was never initialized.
 void bleShutdown() {
   if (pServer == nullptr) return;
-  if (deviceConnected && connId != 0xFFFF) {
+  if (bleHasLiveClient() && connId != 0xFFFF) {
     pServer->disconnect(connId, 0x13);
     delay(300);  // let the LL terminate transmit and onDisconnect run
   }
@@ -465,7 +465,7 @@ void queueBleStatusResponse() {
   const unsigned long now = millis();
   portENTER_CRITICAL(&bleFff4Mux);
   bleStatusRequestAt = now;
-  bleStatusResponsePending = true;
+  if (bleStatusResponsesPending != UINT16_MAX) bleStatusResponsesPending = bleStatusResponsesPending + 1;
   portEXIT_CRITICAL(&bleFff4Mux);
 }
 
@@ -476,14 +476,14 @@ void processBleStatusResponse() {
   uint16_t currentConnId = 0xFFFF;
   uint32_t connectionGeneration = 0;
   portENTER_CRITICAL(&bleFff4Mux);
-  if (bleStatusResponsePending) {
+  if (bleStatusResponsesPending > 0) {
     currentConnId = connId;
     connectionGeneration = bleFff4ConnectionGeneration;
     if (currentConnId != 0xFFFF && bleFff4SubscriptionHandle == currentConnId) {
-      bleStatusResponsePending = false;
+      bleStatusResponsesPending = bleStatusResponsesPending - 1;
       sendStatus = true;
     } else if (now - bleStatusRequestAt >= BLE_STATUS_RESPONSE_TIMEOUT) {
-      bleStatusResponsePending = false;
+      bleStatusResponsesPending = 0;
       disconnectCurrent = currentConnId != 0xFFFF;
     }
   }
@@ -494,7 +494,7 @@ void processBleStatusResponse() {
   }
   if (!disconnectCurrent || pServer == nullptr || !bleHasLiveClient()) return;
   portENTER_CRITICAL(&bleFff4Mux);
-  if (connId != currentConnId || bleFff4ConnectionGeneration != connectionGeneration || bleStatusResponsePending) {
+  if (connId != currentConnId || bleFff4ConnectionGeneration != connectionGeneration || bleStatusResponsesPending > 0) {
     disconnectCurrent = false;
   } else if (bleFff4SubscriptionHandle == currentConnId) {
     disconnectCurrent = false;

@@ -13,7 +13,7 @@ Preferences settingsPreferences;
 // main loop during boot/charging-mode transitions.
 volatile bool b_ble_enabled = false;
 volatile uint16_t bleFff4SubscriptionHandle = 0xFFFF;
-volatile bool bleStatusResponsePending = false;
+volatile uint16_t bleStatusResponsesPending = 0;
 volatile unsigned long bleStatusRequestAt = 0;
 volatile bool bleNotifyFailureLogged = false;
 volatile uint32_t bleFff4ConnectionGeneration = 0;
