@@ -20,6 +20,18 @@ jobs:
           python-version: "3.11"
       - run: python tools/test_ai_docs_contract.py
 
+  gzip-assets:
+    name: Gzip asset generation contract
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - run: python tools/test_gzip_web_assets.py
+
   build:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
