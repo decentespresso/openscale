@@ -19,9 +19,9 @@ jobs:
         with:
           python-version: "3.11"
       - run: python tools/test_ai_docs_contract.py
+      - run: python tools/test_ble_subscription_contract.py
 
   build:
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     strategy:
       matrix:
