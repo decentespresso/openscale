@@ -1569,6 +1569,7 @@ void loop() {
   // so a SLEEP_OFF / POWER_OFF queued from the AsyncTCP task takes effect
   // here on the loop task rather than racing peripheral drivers.
   processWsPendingCmds();
+  processBleStatusResponse();
 
   if (b_powerOff){
     shut_down_now_nobeep();
