@@ -26,6 +26,18 @@ void testComparisonHandlesVersionBounds() {
   TEST_ASSERT_FALSE(pullOtaVersionIsStable("65536.0.0"));
 }
 
+void testVersionPrefixNormalization() {
+  char normalized[18];
+  TEST_ASSERT_TRUE(pullOtaNormalizeVersionPrefix("v3.1.13", normalized, sizeof(normalized)));
+  TEST_ASSERT_EQUAL_STRING("3.1.13", normalized);
+  TEST_ASSERT_TRUE(pullOtaNormalizeVersionPrefix("3.1.13", normalized, sizeof(normalized)));
+  TEST_ASSERT_EQUAL_STRING("3.1.13", normalized);
+  TEST_ASSERT_TRUE(pullOtaNormalizeVersionPrefix("3.1.13-dev", normalized, sizeof(normalized)));
+  TEST_ASSERT_EQUAL_STRING("3.1.13", normalized);
+  TEST_ASSERT_FALSE(pullOtaNormalizeVersionPrefix("3.1", normalized, sizeof(normalized)));
+  TEST_ASSERT_FALSE(pullOtaNormalizeVersionPrefix("3.1.13garbage", normalized, sizeof(normalized)));
+}
+
 struct TestRelease {
   const char *key;
   const char *version;
@@ -58,6 +70,7 @@ int main() {
   RUN_TEST(testStableVersionsStayStrict);
   RUN_TEST(testDevBuildUsesNumericPrefix);
   RUN_TEST(testComparisonHandlesVersionBounds);
+  RUN_TEST(testVersionPrefixNormalization);
   RUN_TEST(testCatalogSortsDeduplicatesAndCaps);
   return UNITY_END();
 }

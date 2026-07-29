@@ -23,6 +23,7 @@ def main():
     assert_contains(PULL_OTA_HEADER, "pullOtaEnsureWifi(HDS_OTA_PENDING_WIFI_TIMEOUT_MS)")
     assert_contains(PULL_OTA_HEADER, "hdsOtaRollbackMarkValid();")
     assert_contains(PULL_OTA_HEADER, "pullOtaFindCurrentRelease(catalog, rollbackManifest)")
+    assert_contains(PULL_OTA_HEADER, "pullOtaFetchCurrentReleaseManifest(rollbackManifest)")
     assert_contains(PULL_OTA_HEADER, "pullOtaBeginRollbackLittleFsAttempt()")
     assert_contains(PULL_OTA_HEADER, "maxAttempts = pending.restore ? 1 : 2")
     assert_contains(PULL_OTA_HEADER, "loaded.filesystemDirty")

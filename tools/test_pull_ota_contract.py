@@ -37,11 +37,13 @@ def main():
     assert_contains(PULL_OTA_HEADER, "pullOtaPublicKeysConfigured")
     assert_contains(PULL_OTA_HEADER, "for (const char *key : publicKeys)")
     assert_contains(PULL_OTA_HEADER, "pullOtaFetchSignedManifest")
+    assert_contains(PULL_OTA_HEADER, "pullOtaManifestUrlAllowed")
     assert_contains(PULL_OTA_HEADER, "pullOtaVerifyManifestSignature")
     assert_contains(PULL_OTA_HEADER, "pullOtaFetchManifestSignature")
     assert_contains(PULL_OTA_HEADER, "mbedtls_pk_verify")
     assert_contains(PULL_OTA_HEADER, "sha256Matches")
     assert_contains(PULL_OTA_HEADER, "pullOtaParseVersionTriplet")
+    assert_contains(PULL_OTA_HEADER, "pullOtaNormalizeVersionPrefix")
     assert_contains(PULL_OTA_HEADER, "Update.begin(asset.size, command)")
     assert_contains(PULL_OTA_HEADER, "pullOtaManifestCompatible")
     assert_contains(PULL_OTA_HEADER, "pullOtaSelectRelease")
@@ -61,10 +63,23 @@ def main():
     assert_contains(PULL_OTA_HEADER, "pullOtaParseManifest(body, catalog)")
     assert_contains(PULL_OTA_HEADER, "pullOtaBuildSelectableReleases(catalog, releases)")
     assert_contains(PULL_OTA_HEADER, "pullOtaFindCurrentRelease(catalog, rollbackManifest)")
+    assert_contains(PULL_OTA_HEADER, "pullOtaFetchCurrentReleaseManifest(rollbackManifest)")
+    assert_contains(PULL_OTA_HEADER, "pullOtaReleaseManifestUrl(currentVersion, prefixedTag)")
+    assert_contains(PULL_OTA_HEADER, "const bool prefixedTags[] = {true, false}")
+    assert_contains(PULL_OTA_HEADER, "pullOtaFetchSignedManifest(")
+    assert_contains(PULL_OTA_HEADER, "pullOtaParseRollbackManifest(body, currentVersion, manifest)")
+    assert_contains(PULL_OTA_HEADER, "pullOtaParseManifestObject(root, candidate)")
+    assert_contains(PULL_OTA_HEADER, "pullOtaCompareVersions(candidate.version, currentVersion) != 0")
+    assert_contains(PULL_OTA_HEADER, "!candidate.littlefs.present || !candidate.littlefs.required")
     assert_before(
         PULL_OTA_HEADER,
         "if (releases.count == 0)",
         "pullOtaFindCurrentRelease(catalog, rollbackManifest)",
+    )
+    assert_before(
+        PULL_OTA_HEADER,
+        "rollbackFound = pullOtaFindCurrentRelease(catalog, rollbackManifest)",
+        "!rollbackFound && !pullOtaFetchCurrentReleaseManifest(rollbackManifest)",
     )
     assert_contains(PULL_OTA_HEADER, "wifi_init();")
     assert_contains(PULL_OTA_HEADER, "pullOtaStorePendingLittleFs")

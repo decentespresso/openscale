@@ -206,6 +206,16 @@ String pullOtaCurrentVersion() {
   return version;
 }
 
+bool pullOtaCurrentReleaseVersion(String &version) {
+  version = pullOtaCurrentVersion();
+  char normalized[18];
+  if (!pullOtaNormalizeVersionPrefix(version.c_str(), normalized, sizeof(normalized))) {
+    return false;
+  }
+  version = normalized;
+  return true;
+}
+
 bool pullOtaParseVersionTriplet(String version, uint16_t parts[3]) {
   version.trim();
   PullOtaVersionTriplet parsed;
@@ -232,6 +242,11 @@ int pullOtaCompareVersions(const String &left, const String &right) {
 
 bool pullOtaUrlAllowed(const String &url) {
   return url.startsWith(HDS_OTA_ASSET_URL_PREFIX);
+}
+
+bool pullOtaManifestUrlAllowed(const String &url) {
+  return url == HDS_OTA_MANIFEST_URL ||
+         (pullOtaUrlAllowed(url) && url.endsWith("/manifest.json"));
 }
 
 bool pullOtaShaLooksValid(String value) {
@@ -427,7 +442,10 @@ bool pullOtaHasNewerRelease(const PullOtaReleaseList &list) {
 bool pullOtaFindCurrentRelease(
     const PullOtaReleaseList &catalog,
     PullOtaManifest &current) {
-  String currentVersion = pullOtaCurrentVersion();
+  String currentVersion;
+  if (!pullOtaCurrentReleaseVersion(currentVersion)) {
+    return false;
+  }
   for (uint8_t i = 0; i < catalog.count; i++) {
     if (pullOtaCompareVersions(catalog.releases[i].version, currentVersion) == 0 &&
         catalog.releases[i].littlefs.present &&
@@ -498,6 +516,25 @@ bool pullOtaParseManifest(const String &body, PullOtaManifest &manifest) {
     return false;
   }
   manifest = list.releases[0];
+  return true;
+}
+
+bool pullOtaParseRollbackManifest(
+    const String &body,
+    const String &currentVersion,
+    PullOtaManifest &manifest) {
+  JsonDocument doc;
+  if (deserializeJson(doc, body)) {
+    return false;
+  }
+  JsonObject root = doc.as<JsonObject>();
+  PullOtaManifest candidate;
+  if (root.isNull() || !pullOtaParseManifestObject(root, candidate) ||
+      pullOtaCompareVersions(candidate.version, currentVersion) != 0 ||
+      !candidate.littlefs.present || !candidate.littlefs.required) {
+    return false;
+  }
+  manifest = candidate;
   return true;
 }
 
@@ -750,10 +787,14 @@ bool pullOtaReadHttpBytes(
   return length > 0 && (contentLength <= 0 || length == (size_t)contentLength);
 }
 
-bool pullOtaFetchManifest(String &body) {
+bool pullOtaFetchManifest(const String &manifestUrl, String &body) {
+  body = "";
+  if (!pullOtaManifestUrlAllowed(manifestUrl)) {
+    return false;
+  }
   HTTPClient http;
   WiFiClientSecure client;
-  if (!pullOtaBeginHttp(http, client, HDS_OTA_MANIFEST_URL)) {
+  if (!pullOtaBeginHttp(http, client, manifestUrl)) {
     return false;
   }
   int code = http.GET();
@@ -766,18 +807,20 @@ bool pullOtaFetchManifest(String &body) {
   return ok;
 }
 
-String pullOtaManifestSignatureUrl() {
-  String manifestUrl = HDS_OTA_MANIFEST_URL;
+String pullOtaManifestSignatureUrl(const String &manifestUrl) {
   String manifestName = "manifest.json";
-  if (!manifestUrl.endsWith(manifestName)) {
+  if (!pullOtaManifestUrlAllowed(manifestUrl) || !manifestUrl.endsWith(manifestName)) {
     return "";
   }
   return manifestUrl.substring(0, manifestUrl.length() - manifestName.length()) +
          "manifest.sig";
 }
 
-bool pullOtaFetchManifestSignature(uint8_t *signature, size_t &signatureLen) {
-  String signatureUrl = pullOtaManifestSignatureUrl();
+bool pullOtaFetchManifestSignature(
+    const String &manifestUrl,
+    uint8_t *signature,
+    size_t &signatureLen) {
+  String signatureUrl = pullOtaManifestSignatureUrl(manifestUrl);
   if (signatureUrl.length() == 0) {
     return false;
   }
@@ -797,16 +840,42 @@ bool pullOtaFetchManifestSignature(uint8_t *signature, size_t &signatureLen) {
   return ok;
 }
 
-bool pullOtaFetchSignedManifest(String &body) {
-  if (!pullOtaFetchManifest(body)) {
+bool pullOtaFetchSignedManifest(const String &manifestUrl, String &body) {
+  if (!pullOtaFetchManifest(manifestUrl, body)) {
     return false;
   }
   uint8_t signature[HDS_OTA_MANIFEST_SIGNATURE_MAX_BYTES];
   size_t signatureLen = 0;
-  if (!pullOtaFetchManifestSignature(signature, signatureLen)) {
+  if (!pullOtaFetchManifestSignature(manifestUrl, signature, signatureLen)) {
     return false;
   }
   return pullOtaVerifyManifestSignature(body, signature, signatureLen);
+}
+
+bool pullOtaFetchSignedManifest(String &body) {
+  return pullOtaFetchSignedManifest(HDS_OTA_MANIFEST_URL, body);
+}
+
+String pullOtaReleaseManifestUrl(const String &version, bool prefixedTag) {
+  return String(HDS_OTA_ASSET_URL_PREFIX) + (prefixedTag ? "v" : "") +
+         version + "/manifest.json";
+}
+
+bool pullOtaFetchCurrentReleaseManifest(PullOtaManifest &manifest) {
+  String currentVersion;
+  if (!pullOtaCurrentReleaseVersion(currentVersion)) {
+    return false;
+  }
+  const bool prefixedTags[] = {true, false};
+  for (bool prefixedTag : prefixedTags) {
+    String body;
+    if (pullOtaFetchSignedManifest(
+            pullOtaReleaseManifestUrl(currentVersion, prefixedTag), body) &&
+        pullOtaParseRollbackManifest(body, currentVersion, manifest)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool pullOtaEnsureWifi(unsigned long timeoutMs = HDS_OTA_WIFI_TIMEOUT_MS) {
@@ -1319,28 +1388,32 @@ void pullOtaRunUpdate() {
     pullOtaFail("Clock failed", "TLS blocked");
     return;
   }
-  PullOtaReleaseList catalog;
-  {
-    String body;
-    if (!pullOtaFetchSignedManifest(body)) {
-      pullOtaFail("Signature failed");
-      return;
-    }
-    if (!pullOtaParseManifest(body, catalog)) {
-      pullOtaFail("Manifest invalid");
-      return;
-    }
-  }
   PullOtaReleaseList releases;
-  pullOtaBuildSelectableReleases(catalog, releases);
-  if (releases.count == 0) {
-    pullOtaDraw("Newest stable", pullOtaCurrentVersion().c_str());
-    delay(2000);
-    b_ota = false;
-    return;
-  }
   PullOtaManifest rollbackManifest;
-  if (!pullOtaFindCurrentRelease(catalog, rollbackManifest)) {
+  bool rollbackFound = false;
+  {
+    PullOtaReleaseList catalog;
+    {
+      String body;
+      if (!pullOtaFetchSignedManifest(body)) {
+        pullOtaFail("Signature failed");
+        return;
+      }
+      if (!pullOtaParseManifest(body, catalog)) {
+        pullOtaFail("Manifest invalid");
+        return;
+      }
+    }
+    pullOtaBuildSelectableReleases(catalog, releases);
+    if (releases.count == 0) {
+      pullOtaDraw("Newest stable", pullOtaCurrentVersion().c_str());
+      delay(2000);
+      b_ota = false;
+      return;
+    }
+    rollbackFound = pullOtaFindCurrentRelease(catalog, rollbackManifest);
+  }
+  if (!rollbackFound && !pullOtaFetchCurrentReleaseManifest(rollbackManifest)) {
     pullOtaFail("Rollback missing");
     return;
   }
