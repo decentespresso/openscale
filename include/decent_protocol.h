@@ -147,7 +147,7 @@ static inline void encodeWeight(float weight, byte &byte1, byte &byte2) {
   } else if (scaled < -32768.0f) {
     scaled = -32768.0f;
   }
-  int16_t weightInt = (int16_t)scaled;
+  int16_t weightInt = (int16_t)roundf(scaled);
   uint16_t encoded = (uint16_t)weightInt;
   byte1 = (byte)((encoded >> 8) & 0xFF);
   byte2 = (byte)(encoded & 0xFF);
