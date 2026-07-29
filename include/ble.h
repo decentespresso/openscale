@@ -39,11 +39,31 @@ void sendBleGyro();
 #endif
 volatile uint16_t connId = 0xFFFF; // not set to 0 because 0 could be a valid client id.
 
-void resetBleFff4State(uint16_t subscriptionHandle) {
+void resetBleFff4StateLocked(uint16_t subscriptionHandle) {
   bleFff4SubscriptionHandle = subscriptionHandle;
   bleStatusResponsePending = false;
   bleStatusRequestAt = 0;
   bleNotifyFailureLogged = false;
+}
+
+void setBleFff4Connection(uint16_t connectionHandle, uint16_t subscriptionHandle) {
+  portENTER_CRITICAL(&bleFff4Mux);
+  bleFff4ConnectionGeneration = bleFff4ConnectionGeneration + 1;
+  connId = connectionHandle;
+  resetBleFff4StateLocked(subscriptionHandle);
+  portEXIT_CRITICAL(&bleFff4Mux);
+}
+
+bool clearBleFff4Connection(uint16_t connectionHandle) {
+  portENTER_CRITICAL(&bleFff4Mux);
+  const bool isCurrent = connectionHandle == connId;
+  if (isCurrent) {
+    bleFff4ConnectionGeneration = bleFff4ConnectionGeneration + 1;
+    connId = 0xFFFF;
+    resetBleFff4StateLocked(0xFFFF);
+  }
+  portEXIT_CRITICAL(&bleFff4Mux);
+  return isCurrent;
 }
 
 
@@ -56,8 +76,7 @@ void resetBleFff4State(uint16_t subscriptionHandle) {
 class MyServerCallbacks : public BLEServerCallbacks {
 #if defined(CONFIG_NIMBLE_ENABLED)
   void onConnect(BLEServer *pServer, ble_gap_conn_desc *desc) {
-    connId = desc->conn_handle;
-    resetBleFff4State(0xFFFF);
+    setBleFff4Connection(desc->conn_handle, 0xFFFF);
     t_firstConnect = millis();
     t_heartBeat = millis();
     bleState = CONNECTED;
@@ -71,14 +90,12 @@ class MyServerCallbacks : public BLEServerCallbacks {
   }
 
   void onDisconnect(BLEServer *pServer, ble_gap_conn_desc *desc) {
-    if (desc->conn_handle != connId) {
+    if (!clearBleFff4Connection(desc->conn_handle)) {
       //stale disconnect for an old handle — a newer connection is still live
       Serial.print("Ignoring stale BLE disconnect for conn_handle: ");
       Serial.println(desc->conn_handle);
       return;
     }
-    connId = 0xFFFF;  //not set to 0 because 0 could be a valid client id
-    resetBleFff4State(0xFFFF);
     deviceConnected = false;
     bleState = DISCONNECTED;
 #ifdef BUZZER
@@ -95,8 +112,8 @@ class MyServerCallbacks : public BLEServerCallbacks {
 #else
   // Bluedroid fallback (classic ESP32). Not used for esp32s3 builds.
   void onConnect(BLEServer *pServer) {
-    connId = pServer->getConnId();
-    resetBleFff4State(connId);
+    const uint16_t connectionHandle = pServer->getConnId();
+    setBleFff4Connection(connectionHandle, connectionHandle);
     t_firstConnect = millis();
     t_heartBeat = millis();
     bleState = CONNECTED;
@@ -110,8 +127,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
   }
 
   void onDisconnect(BLEServer *pServer) {
-    connId = 0xFFFF;
-    resetBleFff4State(0xFFFF);
+    setBleFff4Connection(0xFFFF, 0xFFFF);
     deviceConnected = false;
     bleState = DISCONNECTED;
 #ifdef BUZZER
@@ -342,10 +358,13 @@ class MyCallbacks : public BLECharacteristicCallbacks {
 class Fff4Callbacks : public BLECharacteristicCallbacks {
 #if defined(CONFIG_NIMBLE_ENABLED)
   void onSubscribe(BLECharacteristic *pCharacteristic, ble_gap_conn_desc *desc, uint16_t subValue) {
-    if (desc == nullptr || desc->conn_handle != connId) return;
+    if (desc == nullptr) return;
     const uint16_t nextHandle = subValue == 0 ? 0xFFFF : desc->conn_handle;
-    if (bleFff4SubscriptionHandle == nextHandle) return;
-    bleFff4SubscriptionHandle = nextHandle;
+    portENTER_CRITICAL(&bleFff4Mux);
+    const bool changed = desc->conn_handle == connId && bleFff4SubscriptionHandle != nextHandle;
+    if (changed) bleFff4SubscriptionHandle = nextHandle;
+    portEXIT_CRITICAL(&bleFff4Mux);
+    if (!changed) return;
     Serial.printf("FFF4 notifications %s for connId: %u\n", subValue == 0 ? "disabled" : "enabled",
                   static_cast<unsigned int>(desc->conn_handle));
   }
@@ -353,10 +372,14 @@ class Fff4Callbacks : public BLECharacteristicCallbacks {
 
   void onStatus(BLECharacteristic *pCharacteristic, BLECharacteristicCallbacks::Status status, uint32_t code) {
     if (status == SUCCESS_NOTIFY || status == SUCCESS_INDICATE) return;
-    if (bleNotifyFailureLogged || bleFff4SubscriptionHandle != connId) return;
-    bleNotifyFailureLogged = true;
+    portENTER_CRITICAL(&bleFff4Mux);
+    const bool shouldLog = !bleNotifyFailureLogged && connId != 0xFFFF && bleFff4SubscriptionHandle == connId;
+    const uint16_t currentConnId = connId;
+    if (shouldLog) bleNotifyFailureLogged = true;
+    portEXIT_CRITICAL(&bleFff4Mux);
+    if (!shouldLog) return;
     Serial.printf("FFF4 notification failure for connId: %u, status: %u, code: %lu\n",
-                  static_cast<unsigned int>(connId), static_cast<unsigned int>(status), static_cast<unsigned long>(code));
+                  static_cast<unsigned int>(currentConnId), static_cast<unsigned int>(status), static_cast<unsigned long>(code));
   }
 };
 
@@ -429,29 +452,60 @@ static bool bleHasLiveClient() {
 }
 
 static bool bleCanNotifyCurrent() {
+  portENTER_CRITICAL(&bleFff4Mux);
+  const bool subscribed = connId != 0xFFFF && bleFff4SubscriptionHandle == connId;
+  portEXIT_CRITICAL(&bleFff4Mux);
   return b_ble_enabled
     && pReadCharacteristic != nullptr
     && bleHasLiveClient()
-    && connId != 0xFFFF
-    && bleFff4SubscriptionHandle == connId;
+    && subscribed;
 }
 
 void queueBleStatusResponse() {
-  bleStatusRequestAt = millis();
+  const unsigned long now = millis();
+  portENTER_CRITICAL(&bleFff4Mux);
+  bleStatusRequestAt = now;
   bleStatusResponsePending = true;
+  portEXIT_CRITICAL(&bleFff4Mux);
 }
 
 void processBleStatusResponse() {
-  if (!bleStatusResponsePending) return;
-  if (bleCanNotifyCurrent()) {
-    bleStatusResponsePending = false;
+  const unsigned long now = millis();
+  bool sendStatus = false;
+  bool disconnectCurrent = false;
+  uint16_t currentConnId = 0xFFFF;
+  uint32_t connectionGeneration = 0;
+  portENTER_CRITICAL(&bleFff4Mux);
+  if (bleStatusResponsePending) {
+    currentConnId = connId;
+    connectionGeneration = bleFff4ConnectionGeneration;
+    if (currentConnId != 0xFFFF && bleFff4SubscriptionHandle == currentConnId) {
+      bleStatusResponsePending = false;
+      sendStatus = true;
+    } else if (now - bleStatusRequestAt >= BLE_STATUS_RESPONSE_TIMEOUT) {
+      bleStatusResponsePending = false;
+      disconnectCurrent = currentConnId != 0xFFFF;
+    }
+  }
+  portEXIT_CRITICAL(&bleFff4Mux);
+  if (sendStatus) {
     sendBleLedResponse();
     return;
   }
-  if (millis() - bleStatusRequestAt < BLE_STATUS_RESPONSE_TIMEOUT) return;
-  const uint16_t currentConnId = connId;
-  bleStatusResponsePending = false;
-  if (pServer == nullptr || currentConnId == 0xFFFF || !bleHasLiveClient()) return;
+  if (!disconnectCurrent || pServer == nullptr || !bleHasLiveClient()) return;
+  portENTER_CRITICAL(&bleFff4Mux);
+  if (connId != currentConnId || bleFff4ConnectionGeneration != connectionGeneration || bleStatusResponsePending) {
+    disconnectCurrent = false;
+  } else if (bleFff4SubscriptionHandle == currentConnId) {
+    disconnectCurrent = false;
+    sendStatus = true;
+  }
+  portEXIT_CRITICAL(&bleFff4Mux);
+  if (sendStatus) {
+    sendBleLedResponse();
+    return;
+  }
+  if (!disconnectCurrent) return;
   Serial.print("FFF4 subscription timeout, disconnecting connId: ");
   Serial.println(currentConnId);
   pServer->disconnect(currentConnId, 0x13);

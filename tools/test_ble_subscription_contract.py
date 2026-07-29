@@ -19,6 +19,44 @@ OUTBOUND_FUNCTIONS = (
 )
 
 
+class Mailbox:
+    def __init__(self):
+        self.connection = 7
+        self.subscription = 0xFFFF
+        self.pending = False
+        self.requested_at = 0
+        self.generation = 1
+        self.retiring_generation = 0
+
+    def queue(self, now):
+        self.requested_at = now
+        self.pending = True
+
+    def subscribe(self):
+        self.subscription = self.connection
+
+    def begin_process(self, now):
+        if not self.pending:
+            return "wait"
+        if self.subscription == self.connection:
+            self.pending = False
+            return "send"
+        if now - self.requested_at < 2000:
+            return "wait"
+        self.pending = False
+        self.retiring_generation = self.generation
+        return "retire"
+
+    def finish_retire(self):
+        if self.generation != self.retiring_generation:
+            return "wait"
+        if self.pending:
+            return "wait"
+        if self.subscription == self.connection:
+            return "send"
+        return "disconnect"
+
+
 def function_body(text, name):
     match = re.search(rf"\b\w+\s+{re.escape(name)}\([^;{{}}]*\)\s*{{", text)
     if match is None:
@@ -52,10 +90,12 @@ def main():
         "volatile bool bleStatusResponsePending = false;",
         "volatile unsigned long bleStatusRequestAt = 0;",
         "volatile bool bleNotifyFailureLogged = false;",
+        "volatile uint32_t bleFff4ConnectionGeneration = 0;",
+        "portMUX_TYPE bleFff4Mux = portMUX_INITIALIZER_UNLOCKED;",
     )
 
     gate = function_body(ble, "bleCanNotifyCurrent")
-    assert_contains(gate, "bleHasLiveClient()", "bleFff4SubscriptionHandle == connId")
+    assert_contains(gate, "bleHasLiveClient()", "portENTER_CRITICAL(&bleFff4Mux)")
     for name in OUTBOUND_FUNCTIONS:
         body = function_body(ble, name)
         assert_contains(body, "if (!bleCanNotifyCurrent()) return;", "pReadCharacteristic->notify();")
@@ -63,7 +103,7 @@ def main():
         raise AssertionError("outbound FFF4 notification bypasses the shared gate")
 
     subscribe = function_body(ble, "onSubscribe")
-    assert_contains(subscribe, "desc->conn_handle != connId", "bleFff4SubscriptionHandle = nextHandle;")
+    assert_contains(subscribe, "portENTER_CRITICAL(&bleFff4Mux)", "bleFff4SubscriptionHandle = nextHandle;")
     assert_contains(ble, "pReadCharacteristic->setCallbacks(new Fff4Callbacks());")
 
     for name in ("displayOff", "displayOn"):
@@ -75,20 +115,50 @@ def main():
     pending = function_body(ble, "processBleStatusResponse")
     assert_contains(
         pending,
-        "if (!bleStatusResponsePending) return;",
-        "if (bleCanNotifyCurrent())",
+        "if (bleStatusResponsePending)",
+        "portENTER_CRITICAL(&bleFff4Mux)",
+        "portEXIT_CRITICAL(&bleFff4Mux)",
         "sendBleLedResponse();",
-        "millis() - bleStatusRequestAt < BLE_STATUS_RESPONSE_TIMEOUT",
+        "now - bleStatusRequestAt >= BLE_STATUS_RESPONSE_TIMEOUT",
+        "bleFff4ConnectionGeneration != connectionGeneration",
+        "bleStatusResponsePending",
         "pServer->disconnect(currentConnId, 0x13);",
     )
+    if pending.index("portEXIT_CRITICAL(&bleFff4Mux)") > pending.index("sendBleLedResponse();"):
+        raise AssertionError("status notify runs while holding the FFF4 mailbox lock")
+    if pending.rindex("portEXIT_CRITICAL(&bleFff4Mux)") > pending.index("pServer->disconnect(currentConnId, 0x13);"):
+        raise AssertionError("BLE disconnect runs while holding the FFF4 mailbox lock")
     assert_contains(function_body(hds, "loop"), "processBleStatusResponse();")
 
     disconnect = function_body(ble, "onDisconnect")
-    if disconnect.index("desc->conn_handle != connId") > disconnect.index("resetBleFff4State(0xFFFF)"):
-        raise AssertionError("stale disconnect can clear the current FFF4 subscription")
+    assert_contains(disconnect, "clearBleFff4Connection(desc->conn_handle)")
 
     status = function_body(ble, "onStatus")
     assert_contains(status, "bleNotifyFailureLogged", "bleNotifyFailureLogged = true;")
+
+    mailbox = Mailbox()
+    mailbox.queue(0)
+    if mailbox.begin_process(2000) != "retire":
+        raise AssertionError("status timeout did not enter retirement")
+    mailbox.subscribe()
+    if mailbox.finish_retire() != "send":
+        raise AssertionError("subscription at the timeout boundary requested a disconnect")
+
+    mailbox = Mailbox()
+    mailbox.queue(0)
+    if mailbox.begin_process(2000) != "retire":
+        raise AssertionError("status timeout did not enter retirement")
+    mailbox.queue(2000)
+    if mailbox.finish_retire() != "wait" or not mailbox.pending:
+        raise AssertionError("a newer status request was retired with the older timeout")
+
+    mailbox = Mailbox()
+    mailbox.queue(0)
+    if mailbox.begin_process(2000) != "retire":
+        raise AssertionError("status timeout did not enter retirement")
+    mailbox.generation += 1
+    if mailbox.finish_retire() != "wait":
+        raise AssertionError("a reused connection handle inherited an older timeout")
     print("BLE subscription contract tests passed")
 
 
