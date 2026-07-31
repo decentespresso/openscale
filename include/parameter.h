@@ -12,6 +12,12 @@ Preferences settingsPreferences;
 // volatile: read by the AsyncTCP task in the WS status frame, written by the
 // main loop during boot/charging-mode transitions.
 volatile bool b_ble_enabled = false;
+volatile uint16_t bleFff4SubscriptionHandle = 0xFFFF;
+volatile uint16_t bleStatusResponsesPending = 0;
+volatile unsigned long bleStatusRequestAt = 0;
+volatile bool bleNotifyFailureLogged = false;
+volatile uint32_t bleFff4ConnectionGeneration = 0;
+portMUX_TYPE bleFff4Mux = portMUX_INITIALIZER_UNLOCKED;
 volatile bool b_usbweight_enabled = false;
 unsigned long weightBleNotifyInterval = 100;  // BLE notify interval (ms). Fixed at 100ms (10Hz); not runtime-configurable over BLE.
 volatile unsigned long weightUsbNotifyInterval = 100;  // USB binary notify interval (ms)

@@ -13,6 +13,7 @@ enum BleState {
 };
 volatile BleState bleState = DISCONNECTED;
 const unsigned long HEARTBEAT_TIMEOUT = 5000;  // 5 seconds
+const unsigned long BLE_STATUS_RESPONSE_TIMEOUT = 2000;
 unsigned long t_lastDisconnectAttempt = 0;
 unsigned long t_lastDisconnectAttemptNotice = 0;
 
@@ -30,12 +31,41 @@ const unsigned long BLE_DEBUG_MIN_INTERVAL = 100;  // ~10 Hz cap for continuous 
 void sendBleVoltage();
 void sendBleLedResponse();
 void sendAdsDebugInfoBLE();
+void queueBleStatusResponse();
+static bool bleHasLiveClient();
 // Defined in usbcomm.h, included after ble.h in hds.ino
 void buildAdsDebugPacket(byte data[41]);
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendBleGyro();
 #endif
 volatile uint16_t connId = 0xFFFF; // not set to 0 because 0 could be a valid client id.
+
+void resetBleFff4StateLocked(uint16_t subscriptionHandle) {
+  bleFff4SubscriptionHandle = subscriptionHandle;
+  bleStatusResponsesPending = 0;
+  bleStatusRequestAt = 0;
+  bleNotifyFailureLogged = false;
+}
+
+void setBleFff4Connection(uint16_t connectionHandle, uint16_t subscriptionHandle) {
+  portENTER_CRITICAL(&bleFff4Mux);
+  bleFff4ConnectionGeneration = bleFff4ConnectionGeneration + 1;
+  connId = connectionHandle;
+  resetBleFff4StateLocked(subscriptionHandle);
+  portEXIT_CRITICAL(&bleFff4Mux);
+}
+
+bool clearBleFff4Connection(uint16_t connectionHandle) {
+  portENTER_CRITICAL(&bleFff4Mux);
+  const bool isCurrent = connectionHandle == connId;
+  if (isCurrent) {
+    bleFff4ConnectionGeneration = bleFff4ConnectionGeneration + 1;
+    connId = 0xFFFF;
+    resetBleFff4StateLocked(0xFFFF);
+  }
+  portEXIT_CRITICAL(&bleFff4Mux);
+  return isCurrent;
+}
 
 
 // This callback will be invoked when a device connects or disconnects.
@@ -47,7 +77,7 @@ volatile uint16_t connId = 0xFFFF; // not set to 0 because 0 could be a valid cl
 class MyServerCallbacks : public BLEServerCallbacks {
 #if defined(CONFIG_NIMBLE_ENABLED)
   void onConnect(BLEServer *pServer, ble_gap_conn_desc *desc) {
-    connId = desc->conn_handle;
+    setBleFff4Connection(desc->conn_handle, 0xFFFF);
     t_firstConnect = millis();
     t_heartBeat = millis();
     bleState = CONNECTED;
@@ -61,13 +91,12 @@ class MyServerCallbacks : public BLEServerCallbacks {
   }
 
   void onDisconnect(BLEServer *pServer, ble_gap_conn_desc *desc) {
-    if (desc->conn_handle != connId) {
+    if (!clearBleFff4Connection(desc->conn_handle)) {
       //stale disconnect for an old handle — a newer connection is still live
       Serial.print("Ignoring stale BLE disconnect for conn_handle: ");
       Serial.println(desc->conn_handle);
       return;
     }
-    connId = 0xFFFF;  //not set to 0 because 0 could be a valid client id
     deviceConnected = false;
     bleState = DISCONNECTED;
 #ifdef BUZZER
@@ -84,7 +113,8 @@ class MyServerCallbacks : public BLEServerCallbacks {
 #else
   // Bluedroid fallback (classic ESP32). Not used for esp32s3 builds.
   void onConnect(BLEServer *pServer) {
-    connId = pServer->getConnId();
+    const uint16_t connectionHandle = pServer->getConnId();
+    setBleFff4Connection(connectionHandle, connectionHandle);
     t_firstConnect = millis();
     t_heartBeat = millis();
     bleState = CONNECTED;
@@ -98,7 +128,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
   }
 
   void onDisconnect(BLEServer *pServer) {
-    connId = 0xFFFF;
+    setBleFff4Connection(0xFFFF, 0xFFFF);
     deviceConnected = false;
     bleState = DISCONNECTED;
 #ifdef BUZZER
@@ -171,13 +201,13 @@ struct BleDecentCommandSink {
   void displayOff() {
     b_u8g2Sleep = true;
     remoteReplacePending(WSP_DISPLAY_OFF, WSP_DISPLAY_ON);
-    sendBleLedResponse();
+    queueBleStatusResponse();
   }
 
   void displayOn() {
     b_u8g2Sleep = false;
     remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
-    sendBleLedResponse();
+    queueBleStatusResponse();
   }
 
   void powerOff() {
@@ -326,6 +356,34 @@ class MyCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
+class Fff4Callbacks : public BLECharacteristicCallbacks {
+#if defined(CONFIG_NIMBLE_ENABLED)
+  void onSubscribe(BLECharacteristic *pCharacteristic, ble_gap_conn_desc *desc, uint16_t subValue) {
+    if (desc == nullptr) return;
+    const uint16_t nextHandle = subValue == 0 ? 0xFFFF : desc->conn_handle;
+    portENTER_CRITICAL(&bleFff4Mux);
+    const bool changed = desc->conn_handle == connId && bleFff4SubscriptionHandle != nextHandle;
+    if (changed) bleFff4SubscriptionHandle = nextHandle;
+    portEXIT_CRITICAL(&bleFff4Mux);
+    if (!changed) return;
+    Serial.printf("FFF4 notifications %s for connId: %u\n", subValue == 0 ? "disabled" : "enabled",
+                  static_cast<unsigned int>(desc->conn_handle));
+  }
+#endif
+
+  void onStatus(BLECharacteristic *pCharacteristic, BLECharacteristicCallbacks::Status status, uint32_t code) {
+    if (status == SUCCESS_NOTIFY || status == SUCCESS_INDICATE) return;
+    portENTER_CRITICAL(&bleFff4Mux);
+    const bool shouldLog = !bleNotifyFailureLogged && connId != 0xFFFF && bleFff4SubscriptionHandle == connId;
+    const uint16_t currentConnId = connId;
+    if (shouldLog) bleNotifyFailureLogged = true;
+    portEXIT_CRITICAL(&bleFff4Mux);
+    if (!shouldLog) return;
+    Serial.printf("FFF4 notification failure for connId: %u, status: %u, code: %lu\n",
+                  static_cast<unsigned int>(currentConnId), static_cast<unsigned int>(status), static_cast<unsigned long>(code));
+  }
+};
+
 
 void ble_init() {
   //turn on ble
@@ -343,6 +401,7 @@ void ble_init() {
     CUUID_DECENTSCALE_READ,
     BLECharacteristic::PROPERTY_READ
       | BLECharacteristic::PROPERTY_NOTIFY);
+  pReadCharacteristic->setCallbacks(new Fff4Callbacks());
   pService->start();
   // Start advertising
   pAdvertising = BLEDevice::getAdvertising();
@@ -353,19 +412,18 @@ void ble_init() {
 }
 
 void disconnectBLE() {
-  if (deviceConnected) {
-    Serial.println("***No heartbeat for 5 seconds. Disconnecting BLE...***");
-    // Only try disconnecting every 5 seconds.
-    if (millis() - t_lastDisconnectAttempt < 5000) {
-      if (millis() - t_lastDisconnectAttemptNotice > 1000){
-        Serial.println("Disconnect attempt too frequent, skipping...");
-        t_lastDisconnectAttemptNotice = millis();
-      }
-      return;
+  if (!bleHasLiveClient() || pServer == nullptr || connId == 0xFFFF) return;
+  Serial.println("***No heartbeat for 5 seconds. Disconnecting BLE...***");
+  // Only try disconnecting every 5 seconds.
+  if (millis() - t_lastDisconnectAttempt < 5000) {
+    if (millis() - t_lastDisconnectAttemptNotice > 1000){
+      Serial.println("Disconnect attempt too frequent, skipping...");
+      t_lastDisconnectAttemptNotice = millis();
     }
-    t_lastDisconnectAttempt = millis();
-    pServer->disconnect(connId, 0x13); // must prove connID for proper disconnecting. 0x13 for disconnect from remote device ESP_GAP_BLE_UPDATE_CONN_PARAMS_ERR_REMOTE_DEVICE_DISCONN.
+    return;
   }
+  t_lastDisconnectAttempt = millis();
+  pServer->disconnect(connId, 0x13); // must prove connID for proper disconnecting. 0x13 for disconnect from remote device ESP_GAP_BLE_UPDATE_CONN_PARAMS_ERR_REMOTE_DEVICE_DISCONN.
 }
 
 // Gracefully tear down BLE before power-off or restart. Sends an LL
@@ -375,7 +433,7 @@ void disconnectBLE() {
 // connected. No-ops if BLE was never initialized.
 void bleShutdown() {
   if (pServer == nullptr) return;
-  if (deviceConnected && connId != 0xFFFF) {
+  if (bleHasLiveClient() && connId != 0xFFFF) {
     pServer->disconnect(connId, 0x13);
     delay(300);  // let the LL terminate transmit and onDisconnect run
   }
@@ -385,9 +443,77 @@ void bleShutdown() {
   BLEDevice::deinit(true);
 }
 
+static bool bleHasLiveClient() {
+#if defined(CONFIG_NIMBLE_ENABLED)
+  return pServer != nullptr && pServer->getConnectedCount() > 0;
+#else
+  return deviceConnected;
+#endif
+}
+
+static bool bleCanNotifyCurrent() {
+  portENTER_CRITICAL(&bleFff4Mux);
+  const bool subscribed = connId != 0xFFFF && bleFff4SubscriptionHandle == connId;
+  portEXIT_CRITICAL(&bleFff4Mux);
+  return b_ble_enabled
+    && pReadCharacteristic != nullptr
+    && bleHasLiveClient()
+    && subscribed;
+}
+
+void queueBleStatusResponse() {
+  const unsigned long now = millis();
+  portENTER_CRITICAL(&bleFff4Mux);
+  bleStatusRequestAt = now;
+  if (bleStatusResponsesPending != UINT16_MAX) bleStatusResponsesPending = bleStatusResponsesPending + 1;
+  portEXIT_CRITICAL(&bleFff4Mux);
+}
+
+void processBleStatusResponse() {
+  const unsigned long now = millis();
+  bool sendStatus = false;
+  bool disconnectCurrent = false;
+  uint16_t currentConnId = 0xFFFF;
+  uint32_t connectionGeneration = 0;
+  portENTER_CRITICAL(&bleFff4Mux);
+  if (bleStatusResponsesPending > 0) {
+    currentConnId = connId;
+    connectionGeneration = bleFff4ConnectionGeneration;
+    if (currentConnId != 0xFFFF && bleFff4SubscriptionHandle == currentConnId) {
+      bleStatusResponsesPending = bleStatusResponsesPending - 1;
+      sendStatus = true;
+    } else if (now - bleStatusRequestAt >= BLE_STATUS_RESPONSE_TIMEOUT) {
+      bleStatusResponsesPending = 0;
+      disconnectCurrent = currentConnId != 0xFFFF;
+    }
+  }
+  portEXIT_CRITICAL(&bleFff4Mux);
+  if (sendStatus) {
+    sendBleLedResponse();
+    return;
+  }
+  if (!disconnectCurrent || pServer == nullptr || !bleHasLiveClient()) return;
+  portENTER_CRITICAL(&bleFff4Mux);
+  if (connId != currentConnId || bleFff4ConnectionGeneration != connectionGeneration || bleStatusResponsesPending > 0) {
+    disconnectCurrent = false;
+  } else if (bleFff4SubscriptionHandle == currentConnId) {
+    disconnectCurrent = false;
+    sendStatus = true;
+  }
+  portEXIT_CRITICAL(&bleFff4Mux);
+  if (sendStatus) {
+    sendBleLedResponse();
+    return;
+  }
+  if (!disconnectCurrent) return;
+  Serial.print("FFF4 subscription timeout, disconnecting connId: ");
+  Serial.println(currentConnId);
+  pServer->disconnect(currentConnId, 0x13);
+}
+
 // Send voltage via BLE
 void sendBleVoltage() {
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (!bleCanNotifyCurrent()) return;
   byte data[7];
   buildVoltagePacket(data);
   pReadCharacteristic->setValue(data, 7);
@@ -396,7 +522,7 @@ void sendBleVoltage() {
 
 // Send heartbeat via BLE
 void sendBleHeartBeat() {
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (!bleCanNotifyCurrent()) return;
   byte data[7];
   buildHeartBeatPacket(data);
   pReadCharacteristic->setValue(data, 7);
@@ -405,7 +531,7 @@ void sendBleHeartBeat() {
 
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendBleGyro() {
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (!bleCanNotifyCurrent()) return;
   byte data[7];
   buildGyroPacket(data);
   pReadCharacteristic->setValue(data, 7);
@@ -418,7 +544,7 @@ void sendBleGyro() {
 // BLE). This just emits one notification when called; the active-state check
 // stays so we never touch the characteristic without a live connection.
 void sendBleWeight() {
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (!bleCanNotifyCurrent()) return;
   byte data[7];
   buildWeightPacket(data);
   pReadCharacteristic->setValue(data, 7);
@@ -426,7 +552,7 @@ void sendBleWeight() {
 }
 
 void sendBleButton(int buttonNumber, int buttonShortPress) {
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (!bleCanNotifyCurrent()) return;
   byte data[7];
   buildButtonPacket(data, buttonNumber, buttonShortPress);
   pReadCharacteristic->setValue(data, 7);
@@ -435,7 +561,7 @@ void sendBleButton(int buttonNumber, int buttonShortPress) {
 
 void sendBlePowerOff(int i_reason) {
   // Check BLE enabled, device connected, characteristic exists
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (!bleCanNotifyCurrent()) return;
 
   byte data[7];
   buildPowerOffPacket(data, i_reason);
@@ -448,7 +574,7 @@ void sendBlePowerOff(int i_reason) {
 
 void sendBleLedResponse() {
   // Check BLE enabled, device connected, characteristic exists
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (!bleCanNotifyCurrent()) return;
 
   byte data[7];
   buildLedResponsePacket(data);
@@ -459,7 +585,7 @@ void sendBleLedResponse() {
 // Send 41-byte ADS1232 debug packet via BLE notify on fff4.
 // In SINGLE mode, auto-clears bleDebugMode to OFF after sending.
 void sendAdsDebugInfoBLE() {
-  if (!(b_ble_enabled && deviceConnected && pReadCharacteristic)) return;
+  if (!bleCanNotifyCurrent()) return;
   if (bleDebugMode == DEBUG_OFF) return;
 
   byte data[41];

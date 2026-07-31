@@ -226,7 +226,7 @@ void buttonSquare_Pressed() {
     Serial.print("i_button_cal_status:");
     Serial.println(i_button_cal_status);
   }
-  if (deviceConnected && millis() - t_shutdownFailBle < 3000 && !b_menu && millis() - t_menuExitTime > 1000) {
+  if (bleHasLiveClient() && millis() - t_shutdownFailBle < 3000 && !b_menu && millis() - t_menuExitTime > 1000) {
     //millis() - t_menuExitTime > 1000 is to avoid instant Off when exiting menu.
     Serial.println("Going to sleep now by SquarePress");
     b_powerOff = true;
@@ -273,13 +273,14 @@ void setButtonPressConfig(int button, float min_peak, float max_net,
 
 void buttonCircle_DoubleClicked() {
   Serial.println("O button double clicked");
-  if (!deviceConnected && !b_menu && !b_calibration) {
+  const bool bleClientLive = bleHasLiveClient();
+  if (!bleClientLive && !b_menu && !b_calibration) {
     Serial.println("Going to sleep now by CircleDoubleClick");
     sendBlePowerOff(1);
     sendWebsocketPowerOff(1);
     b_powerOff = true;
   } else {
-    if (deviceConnected) {
+    if (bleClientLive) {
       t_shutdownFailBle = millis();
       b_shutdownFailBle = true;
       Serial.println("BLE connected, not going to sleep.");
@@ -295,13 +296,14 @@ void buttonCircle_DoubleClicked() {
 
 void buttonSquare_DoubleClicked() {
   Serial.println("[] button double clicked");
-  if (!deviceConnected && !b_menu && !b_calibration) {
+  const bool bleClientLive = bleHasLiveClient();
+  if (!bleClientLive && !b_menu && !b_calibration) {
     Serial.println("Going to sleep now by SquareDoubleClick");
     sendBlePowerOff(2);
     sendWebsocketPowerOff(2);
     b_powerOff = true;
   } else {
-    if (deviceConnected) {
+    if (bleClientLive) {
       t_shutdownFailBle = millis();
       b_shutdownFailBle = true;
       Serial.println("BLE connected, not going to sleep.");
@@ -593,6 +595,7 @@ void setup() {
   ADS_init();
 #endif
   delay(50);
+  b_requireHeartBeat = storageGetBool(KEY_HEARTBEAT, true);
   if (b_ble_enabled) {
     ble_init();
   }
@@ -708,7 +711,6 @@ void setup() {
   }
 #endif
 
-  b_requireHeartBeat = storageGetBool(KEY_HEARTBEAT, true);
   b_timeOnTop = storageGetBool(KEY_TIME_ON_TOP, false);
   b_btnFuncWhileConnected = storageGetBool(KEY_BTN_CONN, false);
   b_autoSleep = storageGetBool(KEY_AUTO_SLEEP, true);
@@ -1569,13 +1571,14 @@ void loop() {
   // so a SLEEP_OFF / POWER_OFF queued from the AsyncTCP task takes effect
   // here on the loop task rather than racing peripheral drivers.
   processWsPendingCmds();
+  processBleStatusResponse();
 
   if (b_powerOff){
     shut_down_now_nobeep();
     return;
   }
 
-  if (bleState == CONNECTED && b_requireHeartBeat && millis() - t_firstConnect > HEARTBEAT_TIMEOUT) {
+  if (bleHasLiveClient() && b_requireHeartBeat && millis() - t_firstConnect > HEARTBEAT_TIMEOUT) {
     if (millis() - t_heartBeat > HEARTBEAT_TIMEOUT) {
       disconnectBLE();
       t_heartBeat = millis() + 10000; //only disconnect after 10 seconds, avoid frequent disconnecting.
@@ -1591,7 +1594,7 @@ void loop() {
   // connected WS client streaming weight resets the auto-off timer just like a
   // BLE central does -- otherwise a WiFi-only client on battery loses the scale
   // to the 15-min auto-off mid-stream (WiFi activity didn't reset t_power_off).
-  if (deviceConnected || (b_wifiEnabled && websocket.count() > 0) || grinderRuntimeKeepsAwake()) {
+  if (bleHasLiveClient() || (b_wifiEnabled && websocket.count() > 0) || grinderRuntimeKeepsAwake()) {
     power_off(-1);  //reset power off timer
   } else {
     //if (!b_tempDisablePowerOff)
@@ -1746,7 +1749,7 @@ void loop() {
         }
 
         // ADS debug BLE stream -- separate debug channel, keeps its own gate.
-        if (b_ble_enabled && deviceConnected && bleDebugMode != DEBUG_OFF) {
+        if (b_ble_enabled && bleHasLiveClient() && bleDebugMode != DEBUG_OFF) {
           // SINGLE fires once; CONTINUOUS rate-limited to ~10 Hz
           if (bleDebugMode == DEBUG_SINGLE ||
               millis() - t_lastBleDebugNotify >= BLE_DEBUG_MIN_INTERVAL) {
@@ -2046,7 +2049,7 @@ bool b_drawBle = false;
 //fake draw ble indicator box(bottom part)
 void drawBle() {
   if (b_ble_enabled) {
-    if (deviceConnected) {
+    if (bleHasLiveClient()) {
       u8g2.drawXBM(3, 51, 5, 13, image_ble_enabled);
     } else {
       if (millis() - t_ble_box > 1000) {
@@ -2139,7 +2142,7 @@ void drawDebug() {
   if (b_debug) {
     char bleText[20];
     if (b_ble_enabled) {
-      if (deviceConnected) {
+      if (bleHasLiveClient()) {
         snprintf(bleText, sizeof(bleText), "BLE connected");
       } else {
         snprintf(bleText, sizeof(bleText), "BLE enabled");

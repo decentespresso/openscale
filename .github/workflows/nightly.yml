@@ -19,6 +19,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: python tools/test_ai_docs_contract.py
+      - run: python tools/test_ble_subscription_contract.py
 
   gzip-assets:
     name: Gzip asset generation contract
@@ -33,7 +34,6 @@ jobs:
       - run: python tools/test_gzip_web_assets.py
 
   build:
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     strategy:
       matrix:
