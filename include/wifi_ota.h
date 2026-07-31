@@ -29,6 +29,10 @@ const char *ssid = "DecentScale";
 const char *password = "12345678";
 unsigned long ota_progress_millis = 0;
 unsigned long t_otaEnd = 0;
+// Give the success message time to draw and the HTTP response time to flush
+// before the reset lands. Matches the delay ElegantOTA's own auto-reboot used
+// before we routed the restart through reset() instead.
+static const unsigned long OTA_RESTART_DELAY_MS = 2000;
 
 uint8_t calculateOtaPercent(size_t current, size_t final) {
   if (final == 0) {
@@ -99,11 +103,16 @@ void onOTAProgress(size_t current, size_t final) {
 }
 
 void onOTAEnd(bool success) {
-  // Log when OTA has finished
+  // Runs on the AsyncTCP task: queue only, never touch mDNS/WiFi/hardware
+  // from here. Log when OTA has finished.
   t_otaEnd = millis();
   if (success) {
     Serial.println("OTA update finished successfully!");
     queueOtaDisplay(OTA_DISPLAY_SUCCESS);
+    // Auto-reboot is disabled below so the restart goes through reset()'s
+    // mDNS withdrawal on the main loop instead of ElegantOTA's bare
+    // ESP.restart().
+    remoteQueueResetAt(millis() + OTA_RESTART_DELAY_MS);
   } else {
     Serial.println("There was an error during OTA update!");
     queueOtaDisplay(OTA_DISPLAY_FAILURE);
@@ -118,7 +127,9 @@ void wifiOta() {
 
   ElegantOTA.begin(&server); // Start ElegantOTA
   // ElegantOTA callbacks
-  ElegantOTA.setAutoReboot(true);
+  // Auto-reboot off: onOTAEnd() queues the restart through reset() instead,
+  // so a browser-triggered update withdraws mDNS like every other reboot path.
+  ElegantOTA.setAutoReboot(false);
   ElegantOTA.onStart(onOTAStart);
   ElegantOTA.onProgress(onOTAProgress);
   ElegantOTA.onEnd(onOTAEnd);

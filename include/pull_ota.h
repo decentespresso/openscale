@@ -1280,7 +1280,10 @@ bool pullOtaInstall(
   }
   pullOtaDraw("Firmware done", "Restarting", "Web UI next");
   delay(1500);
-  ESP.restart();
+  // Runs on the Pull OTA task, not the main loop: queue the restart through
+  // reset() (mDNS withdrawal, BLE/web-server teardown) instead of a bare
+  // ESP.restart() that skips all of it.
+  remoteQueueResetAt(millis());
   return true;
 }
 
@@ -1371,7 +1374,9 @@ bool pullOtaResumePendingLittleFs() {
   hdsOtaRollbackMarkValid();
   pullOtaDraw("Update done", "Restarting");
   delay(1500);
-  ESP.restart();
+  // Called from both the Pull OTA task and, at boot, the setup() task -- queue
+  // through reset() rather than restarting directly from either.
+  remoteQueueResetAt(millis());
   return true;
 }
 

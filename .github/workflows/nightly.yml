@@ -21,6 +21,7 @@ jobs:
       - run: python tools/test_ai_docs_contract.py
       - run: python tools/test_ble_subscription_contract.py
       - run: python tools/test_mdns_name_contract.py
+      - run: python tools/test_ota_reboot_routing_contract.py
 
   native-tests:
     name: Native unit tests

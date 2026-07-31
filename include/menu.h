@@ -5,6 +5,7 @@
 #include "parameter.h"
 #include "wifi_setup.h"
 #include "grinder_runtime.h"
+#include <string.h>
 const char *weights[] = { "Exit", "50g", "100g", "200g", "500g", "1000g" };
 const float weight_values[] = { 0.0, 50.0, 100.0, 200.0, 500.0, 1000.0 };
 bool b_showAbout = false;
@@ -331,22 +332,37 @@ void showWifiStatus() {
   String ip = WiFi.isConnected() ? WiFi.localIP().toString() : "0.0.0.0";
   const char *status = WiFi.isConnected() ? "Enabled" : "Disabled";
 
+  // 6x12 leaves ~16 chars after the "Name:" label on one line; a name up to
+  // MDNS_NAME_MAX_CHARS wraps onto a second, label-free line so every
+  // accepted name stays readable here without network access.
+  const char *name = wifiDeviceName();
+  const size_t nameLine1Chars = 16;
+  size_t nameLen = strlen(name);
+  size_t line1Len = nameLen < nameLine1Chars ? nameLen : nameLine1Chars;
+  char nameLine1[nameLine1Chars + 1];
+  memcpy(nameLine1, name, line1Len);
+  nameLine1[line1Len] = 0;
+  const char *nameLine2 = name + line1Len;
+
   u8g2.firstPage();
   do {
 
     u8g2.setFont(u8g2_font_6x12_tr);  // Use readable font
 
-    u8g2.drawStr(0, 12, "WiFi Status:");
-    u8g2.drawStr(72, 12, status);
+    u8g2.drawStr(0, 10, "WiFi Status:");
+    u8g2.drawStr(72, 10, status);
 
-    u8g2.drawStr(0, 28, "SSID:");
-    u8g2.drawStr(40, 28, ssid.c_str());
+    u8g2.drawStr(0, 22, "SSID:");
+    u8g2.drawStr(40, 22, ssid.c_str());
 
-    u8g2.drawStr(0, 44, "IP:");
-    u8g2.drawStr(40, 44, ip.c_str());
+    u8g2.drawStr(0, 34, "IP:");
+    u8g2.drawStr(40, 34, ip.c_str());
 
-    u8g2.drawStr(0, 60, "Name:");
-    u8g2.drawStr(40, 60, wifiDeviceName());
+    u8g2.drawStr(0, 46, "Name:");
+    u8g2.drawStr(40, 46, nameLine1);
+    if (nameLine2[0] != 0) {
+      u8g2.drawStr(0, 58, nameLine2);
+    }
 
   } while (u8g2.nextPage());
   delay(1000);

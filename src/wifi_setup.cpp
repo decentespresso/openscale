@@ -253,9 +253,12 @@ void setupWifi() {
 
   // Bare DHCP label, no ".local" suffix: that belongs to mDNS, not to the DHCP
   // hostname option. setHostname() only takes effect before association, which
-  // is why a rename restarts the scale.
-  WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
+  // is why a rename restarts the scale. WiFi.config() starts STA and copies
+  // the then-current default hostname to the interface, so it must run after
+  // setHostname() -- reversed, DHCP keeps advertising the generated
+  // esp32s3-xxxxxx name while mDNS answers under the configured one.
   WiFi.setHostname(params.getMdnsName());
+  WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
 
   // Register the handler BEFORE connecting so connect/disconnect/GOT_IP are all
   // logged. Disable the core's fixed ~4 s auto-reconnect: when an AP is
