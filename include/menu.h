@@ -3,6 +3,7 @@
 
 #include "esp32-hal.h"
 #include "parameter.h"
+#include "mdns_name.h"
 #include "wifi_setup.h"
 #include "grinder_runtime.h"
 #include <string.h>
@@ -332,17 +333,9 @@ void showWifiStatus() {
   String ip = WiFi.isConnected() ? WiFi.localIP().toString() : "0.0.0.0";
   const char *status = WiFi.isConnected() ? "Enabled" : "Disabled";
 
-  // 6x12 leaves ~16 chars after the "Name:" label on one line; a name up to
-  // MDNS_NAME_MAX_CHARS wraps onto a second, label-free line so every
-  // accepted name stays readable here without network access.
-  const char *name = wifiDeviceName();
-  const size_t nameLine1Chars = 16;
-  size_t nameLen = strlen(name);
-  size_t line1Len = nameLen < nameLine1Chars ? nameLen : nameLine1Chars;
-  char nameLine1[nameLine1Chars + 1];
-  memcpy(nameLine1, name, line1Len);
-  nameLine1[line1Len] = 0;
-  const char *nameLine2 = name + line1Len;
+  char nameLine1[MDNS_NAME_OLED_LINE1_BYTES];
+  const char *nameLine2 =
+    mdnsNameSplitOledLine1(wifiDeviceName(), nameLine1, sizeof(nameLine1));
 
   u8g2.firstPage();
   do {

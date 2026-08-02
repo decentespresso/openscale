@@ -7,6 +7,14 @@ constexpr const char *MDNS_NAME_DEFAULT = "hds";
 constexpr size_t MDNS_NAME_MAX_CHARS = 24;
 constexpr size_t MDNS_NAME_BUFFER_BYTES = MDNS_NAME_MAX_CHARS + 1;
 
+constexpr size_t MDNS_NAME_OLED_LINE1_CHARS = 14;
+constexpr size_t MDNS_NAME_OLED_LINE2_CHARS = 21;
+constexpr size_t MDNS_NAME_OLED_LINE1_BYTES = MDNS_NAME_OLED_LINE1_CHARS + 1;
+
+static_assert(MDNS_NAME_OLED_LINE1_CHARS + MDNS_NAME_OLED_LINE2_CHARS >=
+                MDNS_NAME_MAX_CHARS,
+              "OLED name lines must hold the longest accepted name");
+
 inline const char *mdnsNameDefault() { return MDNS_NAME_DEFAULT; }
 
 inline bool mdnsNameIsWhitespace(char value) {
@@ -78,6 +86,30 @@ inline bool mdnsNameNormalize(const char *input, char *out, size_t outSize) {
     return false;
   }
   return true;
+}
+
+inline const char *mdnsNameSplitOledLine1(const char *name, char *line1,
+                                          size_t line1Size) {
+  if (line1 == nullptr || line1Size == 0) {
+    return "";
+  }
+  line1[0] = 0;
+  if (name == nullptr) {
+    return "";
+  }
+
+  size_t limit = line1Size - 1;
+  if (limit > MDNS_NAME_OLED_LINE1_CHARS) {
+    limit = MDNS_NAME_OLED_LINE1_CHARS;
+  }
+
+  size_t taken = 0;
+  while (taken < limit && name[taken] != 0) {
+    line1[taken] = name[taken];
+    taken++;
+  }
+  line1[taken] = 0;
+  return name + taken;
 }
 
 inline bool mdnsNameIsDefault(const char *name) {

@@ -85,6 +85,46 @@ void testUndersizedOutputBufferFails() {
   TEST_ASSERT_FALSE(mdnsNameNormalize("", tiny, sizeof(tiny)));
 }
 
+void testOledSplitKeepsEveryCharacter() {
+  char line1[MDNS_NAME_OLED_LINE1_BYTES];
+
+  const char *maxName = "abcdefghijklmnopqrstuvwx";
+  TEST_ASSERT_EQUAL_size_t(MDNS_NAME_MAX_CHARS, strlen(maxName));
+  const char *line2 = mdnsNameSplitOledLine1(maxName, line1, sizeof(line1));
+  TEST_ASSERT_EQUAL_STRING("abcdefghijklmn", line1);
+  TEST_ASSERT_EQUAL_STRING("opqrstuvwx", line2);
+  TEST_ASSERT_EQUAL_size_t(MDNS_NAME_OLED_LINE1_CHARS, strlen(line1));
+  TEST_ASSERT_TRUE(strlen(line2) <= MDNS_NAME_OLED_LINE2_CHARS);
+
+  char joined[MDNS_NAME_BUFFER_BYTES];
+  strcpy(joined, line1);
+  strcat(joined, line2);
+  TEST_ASSERT_EQUAL_STRING(maxName, joined);
+}
+
+void testOledSplitShortNameHasNoSecondLine() {
+  char line1[MDNS_NAME_OLED_LINE1_BYTES];
+  const char *line2 = mdnsNameSplitOledLine1("hds", line1, sizeof(line1));
+  TEST_ASSERT_EQUAL_STRING("hds", line1);
+  TEST_ASSERT_EQUAL_STRING("", line2);
+
+  line2 = mdnsNameSplitOledLine1("abcdefghijklmn", line1, sizeof(line1));
+  TEST_ASSERT_EQUAL_STRING("abcdefghijklmn", line1);
+  TEST_ASSERT_EQUAL_STRING("", line2);
+}
+
+void testOledSplitHandlesBadArguments() {
+  char line1[MDNS_NAME_OLED_LINE1_BYTES];
+  TEST_ASSERT_EQUAL_STRING("", mdnsNameSplitOledLine1(nullptr, line1, sizeof(line1)));
+  TEST_ASSERT_EQUAL_STRING("", line1);
+  TEST_ASSERT_EQUAL_STRING("", mdnsNameSplitOledLine1("hds", nullptr, 0));
+
+  char tiny[4];
+  const char *line2 = mdnsNameSplitOledLine1("abcdefghijklmnopqrstuvwx", tiny, sizeof(tiny));
+  TEST_ASSERT_EQUAL_STRING("abc", tiny);
+  TEST_ASSERT_EQUAL_STRING("defghijklmnopqrstuvwx", line2);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(testDefaultNameIsHds);
@@ -95,5 +135,8 @@ int main() {
   RUN_TEST(testLengthBoundary);
   RUN_TEST(testSingleCharacterNamesAreAllowed);
   RUN_TEST(testUndersizedOutputBufferFails);
+  RUN_TEST(testOledSplitKeepsEveryCharacter);
+  RUN_TEST(testOledSplitShortNameHasNoSecondLine);
+  RUN_TEST(testOledSplitHandlesBadArguments);
   return UNITY_END();
 }
