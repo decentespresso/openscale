@@ -22,6 +22,7 @@ jobs:
       - run: python tools/test_ble_subscription_contract.py
       - run: python tools/test_mdns_name_contract.py
       - run: python tools/test_ota_reboot_routing_contract.py
+      - run: python tools/test_grinder_feature_flag_contract.py
 
   native-tests:
     name: Native unit tests
@@ -56,6 +57,7 @@ jobs:
       matrix:
         board:
           - esp32s3
+          - esp32s3-grinder
 
     steps:
       - uses: actions/checkout@v3
@@ -106,7 +108,7 @@ jobs:
       - name: Save firmware file
         uses: actions/upload-artifact@v4
         with:
-          name: HDS-snapshot-${{steps.slugify.outputs.sha}}
+          name: HDS-snapshot-${{ matrix.board }}-${{ steps.slugify.outputs.sha }}
           path: |
             .pio.nosync/build/${{ matrix.board }}/firmware.bin
             .pio.nosync/build/${{ matrix.board }}/bootloader.bin
@@ -116,5 +118,5 @@ jobs:
       - name: Save dependency inventory
         uses: actions/upload-artifact@v4
         with:
-          name: HDS-dependencies-${{steps.slugify.outputs.sha}}
+          name: HDS-dependencies-${{ matrix.board }}-${{ steps.slugify.outputs.sha }}
           path: .pio.nosync/build/${{ matrix.board }}/dependencies.txt
