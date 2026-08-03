@@ -106,6 +106,7 @@ jobs:
         uses: eltimn/slugify-action@v2.0.2
 
       - name: Save firmware file
+        if: matrix.board == 'esp32s3'
         uses: actions/upload-artifact@v4
         with:
           name: HDS-snapshot-${{ matrix.board }}-${{ steps.slugify.outputs.sha }}
@@ -116,6 +117,7 @@ jobs:
             .pio.nosync/build/${{ matrix.board }}/littlefs.bin
 
       - name: Save dependency inventory
+        if: matrix.board == 'esp32s3'
         uses: actions/upload-artifact@v4
         with:
           name: HDS-dependencies-${{ matrix.board }}-${{ steps.slugify.outputs.sha }}
