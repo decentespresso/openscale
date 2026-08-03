@@ -15,7 +15,6 @@ AI-documentation audit, read `docs/AI_RELEASE_NOTES.md`.
 - Keep signing with Key 1 until firmware containing all three public keys has rolled out.
 - Firmware predating the three-key migration cannot recover with Key 2 or Key 3 if the Key 1 private key is lost.
 - Keep a lost private key's public key in firmware unless the key was compromised.
-- Grinder firmware uses the `esp32s3-grinder` OTA environment and its WiFi Update action reports `OTA unavailable`; the release workflow publishes only the standard `esp32s3` environment.
 
 ## Release Assets
 

@@ -107,11 +107,7 @@ static const unsigned long HDS_OTA_PICK_TIMEOUT_MS = 30000;
 static const uint32_t HDS_OTA_TASK_STACK_BYTES = 24576;
 static const uint8_t HDS_OTA_MAX_RELEASE_CHOICES = 10;
 static const char *HDS_OTA_CHIP = "esp32s3";
-#if HDS_ENABLE_GRINDER
-static const char *HDS_OTA_ENVIRONMENT = "esp32s3-grinder";
-#else
 static const char *HDS_OTA_ENVIRONMENT = "esp32s3";
-#endif
 static const char *HDS_OTA_PARTITION_SCHEMA = "esp32s3-default-8mb-ota-spiffs-1536k";
 static const char *HDS_OTA_FS_PARTITION_LABEL = "spiffs";
 static const uint32_t HDS_OTA_FLASH_SIZE = 8388608;
