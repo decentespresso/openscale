@@ -127,7 +127,9 @@ int GPIO_power_on_with = -1;
 unsigned long t_power_on_button = 0;  // Variable to store the timestamp when the button is pressed
 bool b_button_pressed = false;        // Boolean flag to indicate whether the button is currently pressed
 bool b_buttonChordSuppressUntilRelease = false;
+#if HDS_ENABLE_GRINDER
 bool b_grinderMenuDirectEntry = false;
+#endif
 
 
 float INPUTCOFFEEPOUROVER = 20.0;
@@ -222,6 +224,7 @@ volatile bool b_autoSleep = true;
 volatile bool b_quickBoot = false;
 unsigned int i_buttonBootDelay = 500;
 bool b_showChargingUI = false;
+#if HDS_ENABLE_GRINDER
 struct GrinderSettings;
 struct GrinderRuntime;
 struct GrinderMdnsCandidate;
@@ -229,6 +232,7 @@ extern GrinderSettings grinderSettings;
 extern GrinderRuntime grinderRuntime;
 portMUX_TYPE grinderMdnsMux = portMUX_INITIALIZER_UNLOCKED;
 GrinderMdnsCandidate * volatile grinderMdnsCandidateBuffer = nullptr;
+#endif
 
 //电子秤参数和计时点
 // Enhanced tracking system global variables
@@ -308,9 +312,13 @@ float asWeightDiff = 0.1;  //下液停止波动值（g）
 float f_weight_adc = 0.0;  //原始读出值（g）
 float f_weight_smooth;
 float f_displayedValue;
+#if HDS_ENABLE_GRINDER
 float f_grinder_fast_weight = 0.0f;
+#endif
 float f_flow_rate;
+#if HDS_ENABLE_GRINDER
 uint32_t grinderFastWeightSequence = 0;
+#endif
 
 unsigned long t_auto_tare = 0;        //自动归零打点
 unsigned long t_auto_stop = 0;        //下液停止打点

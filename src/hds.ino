@@ -12,7 +12,9 @@
 #include "webserver.h"
 #include "websocket.h"
 #include "wifi_ota.h"
+#if HDS_ENABLE_GRINDER
 #include "grinder_runtime.h"
+#endif
 #include "pull_ota.h"
 #include "ota_rollback.h"
 
@@ -23,8 +25,10 @@
 #include "finger_detection.h"
 //#include "wificomm.h"
 
+#if HDS_ENABLE_GRINDER
 #ifndef GRINDER_MENU_CHORD_HOLD_MS
 #define GRINDER_MENU_CHORD_HOLD_MS 500
+#endif
 #endif
 
 bool anyScaleButtonPressed() {
@@ -352,6 +356,7 @@ void buttonSquare_LongPressed() {
   }
 }
 
+#if HDS_ENABLE_GRINDER
 bool handleGrinderMenuChord() {
   static bool handled = false;
   static uint32_t pressedAt = 0;
@@ -387,6 +392,7 @@ bool handleGrinderMenuChord() {
   Serial.println("[grinder] menu chord");
   return true;
 }
+#endif
 
 
 void button_init() {
@@ -444,9 +450,11 @@ const char *resetReasonStr(esp_reset_reason_t r) {
   }
 }
 
+#if HDS_ENABLE_GRINDER
 void beforeDeepSleepFlush() {
   grinderFlushSettingsIfDirty();
 }
+#endif
 
 void setup() {
   Serial.begin(115200);
@@ -464,7 +472,9 @@ void setup() {
       delay(1000);
     }
   }
+#if HDS_ENABLE_GRINDER
   grinderLoadSettings();
+#endif
 
   b_quickBoot = storageGetBool(KEY_QUICK_BOOT, false);
   i_buttonBootDelay = b_quickBoot ? 0 : 500;
@@ -769,10 +779,12 @@ void setup() {
   }
 #endif
   b_wifiOnBoot = storageGetBool(KEY_WIFI_BOOT, false);
+#if HDS_ENABLE_GRINDER
   if (grinderSettings.enabled && !b_wifiOnBoot) {
     b_wifiOnBoot = true;
   }
   grinderRuntimeBegin();
+#endif
   bool b_pendingOtaLittleFs = pullOtaHasPendingLittleFs();
   if (b_wifiOnBoot && GPIO_power_on_with != BATTERY_CHARGING && !b_pendingOtaLittleFs) {
     wifi_init();
@@ -781,8 +793,10 @@ void setup() {
   if (digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW) {
     b_menu = true;
     b_buttonChordSuppressUntilRelease = true;
+#if HDS_ENABLE_GRINDER
     b_grinderMenuDirectEntry = false;
     grinderPauseForMenu();
+#endif
     refreshOLED((char *)"HDS Setup", FONT_EXTRACTION);
     delay(1000);
   }
@@ -1126,12 +1140,14 @@ void pureScale() {
     
     // 4. Original processing pipeline
     float tracking_compensated = applyTrackingCompensation(temperature_compensated);
+#if HDS_ENABLE_GRINDER
     f_grinder_fast_weight = tracking_compensated;
     grinderFastWeightSequence++;
     if (grinderFastWeightSequence == 0) {
       grinderFastWeightSequence = 1;
     }
     grinderRuntimeFreshWeightTick(f_grinder_fast_weight, grinderFastWeightSequence);
+#endif
     float stable_output = applyStableOutput(tracking_compensated);
     
     if (stable_output >= -0.14 && stable_output <= 0.14) {
@@ -1196,8 +1212,10 @@ void pureScale() {
     resetStableOutput();
     f_driftCompensation = 0.0;
     f_displayedValue = 0.0;
+#if HDS_ENABLE_GRINDER
     f_grinder_fast_weight = 0.0f;
     grinderRuntimeNotifyTareComplete();
+#endif
     if (b_weight_in_serial) {
       Serial.println("TARE: Temperature drift compensation reset");
     }
@@ -1208,7 +1226,9 @@ void pureScale() {
     resetTracking();
     resetStableOutput();
     f_driftCompensation = 0.0;
+#if HDS_ENABLE_GRINDER
     f_grinder_fast_weight = 0.0f;
+#endif
   }
 
   
@@ -1299,7 +1319,9 @@ void resetScaleOutputAfterAdcDiscontinuity() {
   resetStableOutput();
   f_driftCompensation = 0.0;
   f_displayedValue = 0.0;
+#if HDS_ENABLE_GRINDER
   f_grinder_fast_weight = 0.0f;
+#endif
   formatFloatSafe(c_weight, sizeof(c_weight), f_displayedValue,
                   i_decimal_precision);
 }
@@ -1404,7 +1426,9 @@ bool tareScaleWhenAdcReady(const char *context, bool userRequested) {
       return false;
     }
   }
+#if HDS_ENABLE_GRINDER
   grinderRuntimeNotifyTareRequested(userRequested);
+#endif
   scale.tareNoDelay();
   return true;
 }
@@ -1428,11 +1452,13 @@ void clearPendingAutomaticTareState() {
 }
 
 bool setScaleSamplesInUseWhenReady(uint8_t samplesInUse, const char *context) {
+#if HDS_ENABLE_GRINDER
   if (grinderRuntimeLocksScaleSampling()) {
     Serial.print("Samples in use locked by grinder: ");
     Serial.println(context);
     return false;
   }
+#endif
   scale.setSamplesInUse(samplesInUse);
   if (!refreshScaleDatasetAfterDiscontinuity(context)) {
     return false;
@@ -1594,7 +1620,11 @@ void loop() {
   // connected WS client streaming weight resets the auto-off timer just like a
   // BLE central does -- otherwise a WiFi-only client on battery loses the scale
   // to the 15-min auto-off mid-stream (WiFi activity didn't reset t_power_off).
-  if (bleHasLiveClient() || (b_wifiEnabled && websocket.count() > 0) || grinderRuntimeKeepsAwake()) {
+  if (bleHasLiveClient() || (b_wifiEnabled && websocket.count() > 0)
+#if HDS_ENABLE_GRINDER
+      || grinderRuntimeKeepsAwake()
+#endif
+  ) {
     power_off(-1);  //reset power off timer
   } else {
     //if (!b_tempDisablePowerOff)
@@ -1611,7 +1641,11 @@ void loop() {
   }
   usbCallbacks.poll();
 
-  if (!buttonChecksSuppressedUntilRelease() && !handleGrinderMenuChord()) {
+  if (!buttonChecksSuppressedUntilRelease()
+#if HDS_ENABLE_GRINDER
+      && !handleGrinderMenuChord()
+#endif
+  ) {
     buttonCircle.check();
     buttonSquare.check();
   }
@@ -1650,7 +1684,9 @@ void loop() {
       if (b_wifiEnabled) {
         wifiSupervise();
       }
+#if HDS_ENABLE_GRINDER
       grinderRuntimeTick(f_displayedValue);
+#endif
       showMenu();
     } else if (GPIO_power_on_with == BATTERY_CHARGING) {
       if (b_chargingOLED) {
@@ -1784,7 +1820,9 @@ void loop() {
         }
         pureScale();
         updateOled();
+#if HDS_ENABLE_GRINDER
         grinderRuntimeTick(f_displayedValue);
+#endif
       }
     }
   }
@@ -1885,7 +1923,9 @@ void updateOled() {
       drawButton();
       drawBle();
       drawHeartBeat();
+#if HDS_ENABLE_GRINDER
       drawGrinder();
+#endif
       drawTare();
       drawShutdownFail();
       drawAbout();
@@ -2069,6 +2109,7 @@ void drawHeartBeat(){
     u8g2.drawXBM(30, 51, 13, 13, image_heart_13x13);
 }
 
+#if HDS_ENABLE_GRINDER
 void drawGrinder() {
   if (!grinderSettings.enabled) {
     return;
@@ -2078,6 +2119,7 @@ void drawGrinder() {
   u8g2.setFont(u8g2_font_5x8_tr);
   u8g2.drawStr(46, 64, text);
 }
+#endif
 
 void drawBattery() {
   if (millis() - t_batteryIcon >= 500) {  // Toggle every 500 ms
