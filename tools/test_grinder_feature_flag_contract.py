@@ -13,13 +13,63 @@ def require(text, contents):
     assert text in contents, f"missing contract: {text}"
 
 
+DIRECTIVE = re.compile(r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)$")
+
+
+def is_grinder_condition(kind, expression):
+    normalized = re.sub(r"\s+", "", expression)
+    if kind == "ifdef":
+        return normalized == "HDS_ENABLE_GRINDER"
+    if kind in ("if", "elif"):
+        return normalized in ("HDS_ENABLE_GRINDER", "defined(HDS_ENABLE_GRINDER)")
+    return False
+
+
+def is_guarded_at(contents, offset):
+    stack = []
+    position = 0
+    for line in contents.splitlines(keepends=True):
+        if position >= offset:
+            break
+        directive = DIRECTIVE.match(line)
+        if directive:
+            kind, expression = directive.groups()
+            if kind in ("if", "ifdef", "ifndef"):
+                stack.append(is_grinder_condition(kind, expression))
+            elif kind == "elif":
+                assert stack, "unbalanced preprocessor elif"
+                stack[-1] = is_grinder_condition(kind, expression)
+            elif kind == "else":
+                assert stack, "unbalanced preprocessor else"
+                stack[-1] = False
+            elif kind == "endif":
+                assert stack, "unbalanced preprocessor endif"
+                stack.pop()
+        position += len(line)
+    return any(stack)
+
+
 def require_guarded(contents, text):
     matches = list(re.finditer(re.escape(text), contents))
     assert matches, f"missing guarded contract: {text}"
     for match in matches:
-        start = contents.rfind("#if HDS_ENABLE_GRINDER", 0, match.start())
-        end = contents.find("#endif", match.end())
-        assert start >= 0 and end >= 0, f"unguarded grinder contract: {text}"
+        assert is_guarded_at(contents, match.start()), f"unguarded grinder contract: {text}"
+
+
+def require_guarded_rejects_sibling():
+    contents = """#if HDS_ENABLE_GRINDER
+value();
+#endif
+value();
+#if OTHER_FEATURE
+other();
+#endif
+"""
+    try:
+        require_guarded(contents, "value();")
+    except AssertionError:
+        return
+    raise AssertionError("guard contract accepted a sibling occurrence")
 
 
 def main():
@@ -29,8 +79,13 @@ def main():
     menu = source("include/menu.h")
     parameter = source("include/parameter.h")
     power = source("include/power.h")
+    pull_ota = source("include/pull_ota.h")
     wifi = source("src/wifi_setup.cpp")
     wifi_header = source("include/wifi_setup.h")
+    nightly = source(".github/workflows/nightly.yml")
+    release = source(".github/workflows/release.yml")
+
+    require_guarded_rejects_sibling()
 
     require("#ifndef HDS_ENABLE_GRINDER\n#define HDS_ENABLE_GRINDER 0\n#endif", config)
     normal = platformio.split("[env:esp32s3]", 1)[1].split("[env:esp32s3-grinder]", 1)[0]
@@ -60,6 +115,26 @@ def main():
     ):
         require_guarded(parameter, text)
     require_guarded(power, "beforeDeepSleepFlush")
+
+    require(
+        '#if HDS_ENABLE_GRINDER\n'
+        'static const char *HDS_OTA_ENVIRONMENT = "esp32s3-grinder";\n'
+        '#else\n'
+        'static const char *HDS_OTA_ENVIRONMENT = "esp32s3";\n'
+        '#endif',
+        pull_ota,
+    )
+    require(
+        '#if HDS_ENABLE_GRINDER\n'
+        '  pullOtaFail("OTA unavailable", "Grinder build");\n'
+        '#else\n'
+        '  pullOtaUpdate();\n'
+        '#endif',
+        menu,
+    )
+    require("python tools/test_grinder_feature_flag_contract.py", nightly)
+    require("- esp32s3-grinder", nightly)
+    assert "esp32s3-grinder" not in release
 
     require("bool wifiEnsureMdnsReadyForSta()", wifi)
     require('MDNS.addService("decentscale", "tcp", 80)', wifi)
