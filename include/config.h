@@ -1,6 +1,10 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#ifndef HDS_ENABLE_GRINDER
+#define HDS_ENABLE_GRINDER 0
+#endif
+
 // BLE UUIDs
 
 #define CUUID_DECENTSCALE_READ "fff4"

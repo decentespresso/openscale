@@ -28,7 +28,9 @@ void sendWebsocketPowerOff(int i_reason);
 void bleShutdown();  // defined in ble.h
 void stopWifi();  // defined in wifi_setup.cpp
 void stopWebServer();  // defined in webserver.h
+#if HDS_ENABLE_GRINDER
 void beforeDeepSleepFlush();
+#endif
 
 const int windowSize = 1000;
 float batteryLevels[windowSize];
@@ -189,7 +191,9 @@ void print_wakeup_reason() {
 
 void esp32_sleep() {
   //beep(4, 50);
+#if HDS_ENABLE_GRINDER
   beforeDeepSleepFlush();
+#endif
   // Network teardown — centralized here so every shutdown path is covered.
   bleShutdown();    // graceful BLE teardown
   stopWebServer();  // close websocket clients + stop HTTP server

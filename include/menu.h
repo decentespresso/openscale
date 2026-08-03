@@ -5,7 +5,9 @@
 #include "parameter.h"
 #include "mdns_name.h"
 #include "wifi_setup.h"
+#if HDS_ENABLE_GRINDER
 #include "grinder_runtime.h"
+#endif
 #include <string.h>
 const char *weights[] = { "Exit", "50g", "100g", "200g", "500g", "1000g" };
 const float weight_values[] = { 0.0, 50.0, 100.0, 200.0, 500.0, 1000.0 };
@@ -68,12 +70,14 @@ void driftComp0050();
 void driftComp0075();
 void driftComp0100();
 void driftComp0200();
+#if HDS_ENABLE_GRINDER
 void grinderOn();
 void grinderOff();
 void grinderSelectPlugMenu();
 void grinderTargetMenu();
 void grinderSafetyMenu();
 void grinderZeroRangeMenu();
+#endif
 void wifi_init();
 
 
@@ -97,7 +101,9 @@ Menu menuBtnFuncWhileConnected = { "Button with BLE", NULL, NULL, NULL };
 Menu menuAutoSleep = { "Auto Sleep", NULL, NULL, NULL };
 Menu menuQuickBoot = { "Quick Boot", NULL, NULL, NULL };
 Menu menuDriftComp = { "Drift Comp", NULL, NULL, NULL };
+#if HDS_ENABLE_GRINDER
 Menu menuGrinder = { "Grinder Plug", NULL, NULL, NULL };
+#endif
 
 
 // 2/5 define the 2st level menu
@@ -183,6 +189,7 @@ Menu menuQuickBoot0100 = { "0.1g", driftComp0100, NULL, &menuDriftComp };
 Menu menuQuickBoot0200 = { "0.2g", driftComp0200, NULL, &menuDriftComp };
 Menu *driftCompMenu[] = { &menuDriftCompBack, &menuDriftCompOff, &menuQuickBoot0050, &menuQuickBoot0075, &menuQuickBoot0100, &menuQuickBoot0200 };
 
+#if HDS_ENABLE_GRINDER
 Menu menuGrinderBack = { "Back", NULL, NULL, &menuGrinder };
 Menu menuGrinderOn = { "Grinder On", grinderOn, NULL, &menuGrinder };
 Menu menuGrinderOff = { "Grinder Off", grinderOff, NULL, &menuGrinder };
@@ -191,6 +198,7 @@ Menu menuGrinderTarget = { "Target g", grinderTargetMenu, NULL, &menuGrinder };
 Menu menuGrinderSafety = { "Safety g", grinderSafetyMenu, NULL, &menuGrinder };
 Menu menuGrinderZero = { "Zero Range", grinderZeroRangeMenu, NULL, &menuGrinder };
 Menu *grinderMenu[] = { &menuGrinderBack, &menuGrinderOn, &menuGrinderOff, &menuGrinderSelect, &menuGrinderTarget, &menuGrinderSafety, &menuGrinderZero };
+#endif
 
 // Menu menuFactoryBack = { "Back", NULL, NULL, &menuFactory };
 // Menu menuCalibrateVoltage = { "Calibrate 4.2v", calibrateVoltage, NULL,
@@ -209,7 +217,9 @@ Menu *mainMenu[] = {
   // &menuWiFiUpdate,
   &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen, &menuTimeOnTop,
   &menuBtnFuncWhileConnected, &menuAutoSleep, &menuQuickBoot, &menuDriftComp,
+#if HDS_ENABLE_GRINDER
   &menuGrinder,
+#endif
   //, &menuFactory
 };
 //  &menuHolder1, &menuHolder2, &menuHolder3, &menuHolder4,
@@ -238,7 +248,9 @@ void linkSubmenus() {
   menuAutoSleep.subMenu = autoSleepMenu[0];
   menuQuickBoot.subMenu = quickBootMenu[0];
   menuDriftComp.subMenu = driftCompMenu[0];
+#if HDS_ENABLE_GRINDER
   menuGrinder.subMenu = grinderMenu[0];
+#endif
   // menuFactory.subMenu = factoryMenu[0];
 }
 
@@ -253,9 +265,13 @@ void exitMenu() {
   buzzer.off();
 #endif
   delay(1000);
+#if HDS_ENABLE_GRINDER
   grinderResumeAfterMenu();
+#endif
   b_menu = false;
+#if HDS_ENABLE_GRINDER
   b_grinderMenuDirectEntry = false;
+#endif
   currentMenu = mainMenu;
   currentMenuSize = getMenuSize(mainMenu);
   currentIndex = 0;
@@ -291,11 +307,13 @@ void buzzerOff() {
 
 void toggleWifiOn() {
   b_wifiOnBoot = true;
+#if HDS_ENABLE_GRINDER
   if (grinderSettings.enabled) {
     grinderSettings.previousWifiOnBoot = true;
     grinderSettings.previousWifiOnBootSaved = true;
     grinderSaveSettings();
   }
+#endif
   actionMessage = "WiFi Enabled";
   actionMessage2 = "Restart scale";
   t_actionMessage = millis();
@@ -305,6 +323,7 @@ void toggleWifiOn() {
 }
 
 void toggleWifiOff() {
+#if HDS_ENABLE_GRINDER
   if (grinderSettings.enabled) {
     grinderSettings.previousWifiOnBoot = false;
     grinderSettings.previousWifiOnBootSaved = true;
@@ -316,6 +335,7 @@ void toggleWifiOff() {
     Serial.println("WiFi Off deferred until Grinder Off.");
     return;
   }
+#endif
   b_wifiOnBoot = false;
   actionMessage = "WiFi Disabled";
   actionMessage2 = "Restart scale";
@@ -384,7 +404,9 @@ void showStatus() {
   char bleLine[32];
   char sleepLine[32];
   char driftLine[32];
+#if HDS_ENABLE_GRINDER
   char grinderLine[32];
+#endif
   snprintf(wifiLine, sizeof(wifiLine), "WiFi:%s %s %s",
            b_wifiOnBoot ? "On" : "Off",
            wifiCredentialsSaved() ? "Saved" : "NoCred",
@@ -399,9 +421,11 @@ void showStatus() {
   snprintf(driftLine, sizeof(driftLine), "T:%s Drift:%.3fg",
            b_timeOnTop ? "Top" : "Bot",
            f_maxDriftCompensation);
+#if HDS_ENABLE_GRINDER
   snprintf(grinderLine, sizeof(grinderLine), "Gr:%s %.1fg",
            grinderRuntime.status[0] ? grinderRuntime.status : grinderStateText(grinderRuntime.state),
            grinderSettings.targetGrams);
+#endif
 
   u8g2.firstPage();
   do {
@@ -410,7 +434,11 @@ void showStatus() {
     u8g2.drawStr(0, 22, wifiLine);
     u8g2.drawStr(0, 34, bleLine);
     u8g2.drawStr(0, 46, sleepLine);
+#if HDS_ENABLE_GRINDER
     u8g2.drawStr(0, 58, grinderSettings.enabled ? grinderLine : driftLine);
+#else
+    u8g2.drawStr(0, 58, driftLine);
+#endif
   } while (u8g2.nextPage());
   delay(1000);
   while (b_showStatusData) {
@@ -583,6 +611,7 @@ void driftComp0200() {
   Serial.println("Drift Comp 0.2g stored in NVS.");
 }
 
+#if HDS_ENABLE_GRINDER
 void grinderSetActionMessage(const char *line1, const char *line2 = nullptr) {
   actionMessage = line1;
   actionMessage2 = line2 == nullptr ? "Default" : line2;
@@ -837,6 +866,7 @@ void grinderZeroRangeMenu() {
     grinderSetActionMessage("Zero Saved");
   }
 }
+#endif
 
 void calibrate() {
   b_menu = false;
@@ -878,10 +908,12 @@ void calibrationResetLastDiagnostics() {
 
 void calibrationEnsureSampleWindow() {
   if (!b_calibrationSampleWindowActive) {
+#if HDS_ENABLE_GRINDER
     if (grinderRuntimeLocksScaleSampling()) {
       Serial.println("Calibration samples locked by grinder");
       return;
     }
+#endif
     scale.setSamplesInUse(16);
     b_calibrationSampleWindowActive = true;
   }
@@ -1651,10 +1683,12 @@ void selectMenu() {
     } else if (currentSelection == &menuDriftComp) {
       currentMenu = driftCompMenu;
       currentMenuSize = getMenuSize(driftCompMenu);
+#if HDS_ENABLE_GRINDER
     } else if (currentSelection == &menuGrinder) {
       b_grinderMenuDirectEntry = false;
       currentMenu = grinderMenu;
       currentMenuSize = getMenuSize(grinderMenu);
+#endif
     }
     // else if (currentSelection == &menuFactory) {
     //   currentMenu = factoryMenu;
@@ -1667,10 +1701,12 @@ void selectMenu() {
     // Execute the action if available
     currentSelection->action();
   } else if (currentSelection->parentMenu) {
+#if HDS_ENABLE_GRINDER
     if (currentSelection->parentMenu == &menuGrinder && b_grinderMenuDirectEntry) {
       exitMenu();
       return;
     }
+#endif
     // Go back to the parent menu
     currentMenu = mainMenu;
     currentMenuSize = getMenuSize(mainMenu);
