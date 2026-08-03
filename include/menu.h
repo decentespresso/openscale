@@ -1487,11 +1487,7 @@ void wifiUpdate() {
 #ifdef BUZZER
   buzzer.off();
 #endif
-#if HDS_ENABLE_GRINDER
-  pullOtaFail("OTA unavailable", "Grinder build");
-#else
   pullOtaUpdate();
-#endif
   b_menu = false;
 }
 

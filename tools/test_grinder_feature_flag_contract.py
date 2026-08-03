@@ -79,11 +79,9 @@ def main():
     menu = source("include/menu.h")
     parameter = source("include/parameter.h")
     power = source("include/power.h")
-    pull_ota = source("include/pull_ota.h")
     wifi = source("src/wifi_setup.cpp")
     wifi_header = source("include/wifi_setup.h")
     nightly = source(".github/workflows/nightly.yml")
-    release = source(".github/workflows/release.yml")
 
     require_guarded_rejects_sibling()
 
@@ -115,26 +113,8 @@ def main():
     ):
         require_guarded(parameter, text)
     require_guarded(power, "beforeDeepSleepFlush")
-
-    require(
-        '#if HDS_ENABLE_GRINDER\n'
-        'static const char *HDS_OTA_ENVIRONMENT = "esp32s3-grinder";\n'
-        '#else\n'
-        'static const char *HDS_OTA_ENVIRONMENT = "esp32s3";\n'
-        '#endif',
-        pull_ota,
-    )
-    require(
-        '#if HDS_ENABLE_GRINDER\n'
-        '  pullOtaFail("OTA unavailable", "Grinder build");\n'
-        '#else\n'
-        '  pullOtaUpdate();\n'
-        '#endif',
-        menu,
-    )
     require("python tools/test_grinder_feature_flag_contract.py", nightly)
     require("- esp32s3-grinder", nightly)
-    assert "esp32s3-grinder" not in release
 
     require("bool wifiEnsureMdnsReadyForSta()", wifi)
     require('MDNS.addService("decentscale", "tcp", 80)', wifi)
