@@ -15,7 +15,7 @@ Use `docs/AI_REPO_MAP.md` first for orientation. Read broader docs only when the
 - Do not call I2C, SPI, OLED, power-gating, or blocking hardware work from AsyncTCP callbacks.
 - Do not call `WiFi.setSleep(false)`.
 - New global firmware state belongs in `include/parameter.h`.
-- New cross-task globals shared with `loop()` must be `volatile`.
+- New cross-task globals shared with `loop()` must be `volatile` and protected by the owning queue, critical section, or other synchronization mechanism; `volatile` alone is not synchronization.
 - A full-screen U8g2 renderer owns its firstPage() / nextPage() loop. Draw helpers called from an existing frame must not start a nested page loop.
 - Do not add `printfAll` broadcasts without `wsBroadcastHeapOk()`.
 - Do not accumulate `String` byte-by-byte from a known-length buffer.

@@ -66,7 +66,6 @@ loop()
        -> drawButton()
        -> drawBle()
        -> drawHeartBeat()
-       -> drawGrinder()
        -> drawTare()
        -> drawShutdownFail()
        -> drawAbout()
@@ -147,7 +146,6 @@ Occupied regions include:
 - top corners: pressed-button icons
 - bottom left: BLE and WiFi
 - bottom right: battery
-- lower center: grinder status
 - bottom center: tare marker
 - center and upper/lower areas: weight and timer
 
@@ -204,8 +202,6 @@ t_actionMessageDelay
 ```
 
 Preserve `t_menuExitTime` protection so an exit press does not immediately trigger normal tare, timer, shutdown, or BLE-connected behavior.
-
-The grinder number editor is an interaction reference for Back, decrement, increment, Save, and hold acceleration. Extract a generic helper before using it for unrelated settings rather than coupling new display UI to grinder-named functions.
 
 ## Persistent Display Options
 
@@ -269,7 +265,7 @@ Hardware checks for layout work:
 - timer stopped and running
 - both timer positions
 - positive, negative, large, and overweight values
-- BLE, WiFi, battery, charging, grinder, tare, ADC recovery, shutdown, debug, and about states
+- BLE, WiFi, battery, charging, tare, ADC recovery, shutdown, debug, and about states
 - both rotations
 - display sleep and soft-sleep wake
 - clipping, controller offset, flicker, and partial-page artifacts
