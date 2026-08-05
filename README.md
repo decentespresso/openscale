@@ -40,12 +40,6 @@ If you rename during first-time setup, before entering WiFi credentials, the sca
 
 WiFi firmware updates are documented in [docs/wifi-ota.md](docs/wifi-ota.md).
 
-## Tasmota grinder mode
-
-HDS can optionally control a selected Tasmota grinder plug over local TCP. This feature is intended for trusted local WLANs only.
-
-Full setup, usage, FAQ, and troubleshooting are documented in [docs/hds-tasmota-grinder.md](docs/hds-tasmota-grinder.md).
-
 ## Web apps
 The same web apps that could be used with Half Decent Scale from [the web](https://decentespresso.com/docs/introducing_half_decent_scale_web_apps) have now been rewritten to run directly from the Half Decent Scale.
 
