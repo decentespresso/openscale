@@ -31,6 +31,10 @@ def main():
         raise AssertionError("README.md access-point credentials do not match setupAP()")
 
     ota_notes = read("docs/AI_OTA_NOTES.md")
+    display_notes = read("docs/AI_DISPLAY_NOTES.md")
+    protocol_notes = read("docs/AI_PROTOCOL_NOTES.md")
+    build_notes = read("docs/AI_BUILD_NOTES.md")
+    release_notes = read("docs/AI_RELEASE_NOTES.md")
     hds_source = read("src/hds.ino")
     pull_ota = read("include/pull_ota.h")
     rollback = read("include/ota_rollback.h")
@@ -73,6 +77,40 @@ def main():
         r"\bone (?:recorded )?restore attempt\b", ota_notes
     ):
         raise AssertionError("AI_OTA_NOTES.md attempt limits are stale")
+
+    display_flow = re.search(
+        r"Normal display flow:\s*```text(?P<flow>.*?)```",
+        display_notes,
+        re.DOTALL,
+    )
+    if display_flow is None:
+        raise AssertionError("AI_DISPLAY_NOTES.md missing the normal display flow")
+    if re.search(r"\bgrinder\b|drawGrinder", display_flow.group("flow"), re.IGNORECASE):
+        raise AssertionError("AI_DISPLAY_NOTES.md presents feature-gated grinder UI as default")
+
+    if "`bleCanNotifyCurrent()`" not in protocol_notes or "test_ble_subscription_contract.py" not in protocol_notes:
+        raise AssertionError("AI_PROTOCOL_NOTES.md is missing the BLE subscription contract")
+
+    if "8 KiB" not in build_notes or "CONFIG_ASYNC_TCP_STACK_SIZE=8192" not in build_notes:
+        raise AssertionError("AI_BUILD_NOTES.md is missing the 8 KiB AsyncTCP stack")
+    for snippet in ("`platformio.ini`", "`requirements-platformio.txt`", "`lib_deps`", "`dependencies.txt`"):
+        if snippet not in build_notes:
+            raise AssertionError(f"AI_BUILD_NOTES.md is missing pinned dependency input: {snippet}")
+
+    if "`remoteQueueResetAt()`" not in ota_notes or "test_ota_reboot_routing_contract.py" not in ota_notes:
+        raise AssertionError("AI_OTA_NOTES.md is missing the reboot-routing contract")
+
+    for snippet in (
+        "`docs/AI_DISPLAY_NOTES.md`",
+        "test_ble_subscription_contract.py",
+        "test_mdns_name_contract.py",
+        "test_ota_reboot_routing_contract.py",
+        "test_gzip_web_assets.py",
+        "pio test -e native",
+        "`dependencies.txt`",
+    ):
+        if snippet not in release_notes:
+            raise AssertionError(f"AI_RELEASE_NOTES.md is missing current release check or asset: {snippet}")
 
     repo_map = read("docs/AI_REPO_MAP.md")
     references = set(re.findall(r"`([^`]+)`", repo_map))

@@ -23,6 +23,14 @@ BLE and USB both route Decent commands through `handleDecentBinaryCommand()`. Th
 
 Do not duplicate command interpretation in BLE and USB. Add shared behavior to the dispatcher and only add sink methods when the transports genuinely perform the effect differently.
 
+## BLE Notification State
+
+A live BLE connection does not imply an FFF4 notification subscription. A client becomes eligible for outbound FFF4 notifications only after its current connection handle subscribes to the characteristic.
+
+All outbound FFF4 paths pass through `bleCanNotifyCurrent()`. The shared gate checks the feature state, characteristic, live connection, and current subscription before touching the characteristic.
+
+Display status responses are deferred through a mailbox. The BLE callback queues the response, and `processBleStatusResponse()` drains it from the main loop. The mailbox waits two seconds for the FFF4 subscription, then rechecks the connection handle, connection generation, pending requests, and subscription before disconnecting. A newer request or reused connection cancels stale recovery.
+
 ## Framing And Checksums
 
 Decent binary frames begin with model byte `0x03`. Checksums are XORs of the preceding bytes.
@@ -32,7 +40,7 @@ Decent binary frames begin with model byte `0x03`. Checksums are XORs of the pre
 - A short USB form is accepted after the receive timeout; a complete valid checksummed form takes precedence.
 - Shared seven-byte response builders calculate byte 6 from bytes 0 through 5.
 - The `03 0A` LED response stores weight in bytes 2-3, battery state in byte 4, firmware major in byte 5, and checksum in byte 6. The firmware byte must be assigned before calculating the checksum.
-- Weight packets use command `0xCE` and signed tenths of a gram, clamped to the `int16_t` range.
+- Weight packets use command `0xCE` and signed tenths of a gram. Decent fixed-point values are rounded to the nearest tenth rather than truncated, then clamped to the `int16_t` range.
 
 ADS debug responses are separate fixed formats: the debug packet is 41 bytes and the reset response is 5 bytes. Keep their Python helpers, decoder, and firmware builders aligned.
 
@@ -65,6 +73,7 @@ Use the smallest relevant set:
 python tools/test_ads_debug_protocol.py
 python tools/test_decode_ads_debug.py
 python tools/test_soft_sleep_ads_wake.py
+python tools/test_ble_subscription_contract.py
 pio run -e esp32s3
 ```
 

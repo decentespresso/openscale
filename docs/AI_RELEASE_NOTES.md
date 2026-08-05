@@ -57,7 +57,8 @@ documentation contract across the complete set.
 | Repository-wide agent rules | `AGENTS.md` |
 | Paths and subsystem entry points | `docs/AI_REPO_MAP.md` |
 | PlatformIO, build, flash, serial, LittleFS | `docs/AI_BUILD_NOTES.md` |
-| Runtime, callbacks, tasks, timers, weighing, display | `docs/AI_FIRMWARE_NOTES.md` |
+| Runtime, callbacks, tasks, timers, weighing | `docs/AI_FIRMWARE_NOTES.md` |
+| OLED, setup menus, layout, display options | `docs/AI_DISPLAY_NOTES.md` |
 | Pins, boards, electrical behavior, wake, sleep holds | `docs/AI_GPIO_NOTES.md` |
 | BLE, USB, WebSocket, Decent binary, integrations | `docs/AI_PROTOCOL_NOTES.md` |
 | NVS, defaults, schemas, migration, reset | `docs/AI_STORAGE_NOTES.md` |
@@ -102,6 +103,7 @@ release still:
 - checks out and builds the tagged commit;
 - builds `firmware.bin` and `littlefs.bin`;
 - produces the legacy firmware ZIP;
+- publishes `dependencies.txt` with the tagged PlatformIO version and dependency inventory;
 - requires the OTA signing key and matching public key;
 - verifies the previous signed catalog before reuse;
 - generates and verifies the new signed catalog;
@@ -120,6 +122,12 @@ At minimum, run:
 
 ```sh
 python tools/test_ai_docs_contract.py
+python tools/test_ble_subscription_contract.py
+python tools/test_mdns_name_contract.py
+python tools/test_ota_reboot_routing_contract.py
+python tools/test_grinder_feature_flag_contract.py
+python tools/test_gzip_web_assets.py
+pio test -e native
 python tools/test_release_workflow_contract.py
 python tools/test_generate_release_manifest.py
 python tools/test_pull_ota_contract.py
@@ -171,7 +179,7 @@ Only after explicit authorization:
 2. Dispatch `Release firmware` with that exact tag.
 3. Inspect the complete workflow result and raw failures.
 4. Confirm the release points to the intended commit.
-5. Confirm the legacy ZIP and required OTA assets are present.
+5. Confirm the legacy ZIP, required OTA assets, and `dependencies.txt` are present.
 6. Confirm the release is neither draft nor prerelease.
 7. Check the manifest version, hardware, environment, partitions, assets, and
    minimum supported source version.

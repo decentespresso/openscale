@@ -71,6 +71,12 @@ The single LittleFS partition has no independent rollback slot. Do not weaken si
 
 `setup()` calls `hdsOtaRollbackBegin()` after reset-reason capture. Without pending filesystem work it calls `hdsOtaRollbackMarkValid()` after setup validation. With pending work, validity is deferred until target recovery succeeds and pending state is cleared.
 
+## Reboot Routing
+
+ElegantOTA auto-reboot stays disabled with `ElegantOTA.setAutoReboot(false)`. Successful ElegantOTA and pull OTA paths call `remoteQueueResetAt()` so the main loop owns the reset and normal teardown instead of a task or callback calling `ESP.restart()` directly.
+
+The rollback path withdraws WiFi and mDNS with `stopWifi()` before `esp_ota_mark_app_invalid_rollback_and_reboot()`. Do not bypass this routing: a direct reboot can leave the service advertised until resolver caches expire.
+
 ## OTA Files And Tests
 
 Core files:
@@ -90,5 +96,6 @@ python tools/test_pull_ota_contract.py
 python tools/test_release_workflow_contract.py
 python tools/test_ota_rollback_contract.py
 python tools/test_ota_public_key_header.py
+python tools/test_ota_reboot_routing_contract.py
 pio run -e esp32s3
 ```

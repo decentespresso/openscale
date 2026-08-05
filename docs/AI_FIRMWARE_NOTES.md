@@ -77,6 +77,8 @@ The USB ADS debug packet keeps its 41-byte framing and checksum. Byte 24 is the 
 - Broadcast with `websocket.printfAll(...)` or `websocket.textAll(...)`, not a manual `getClients()` loop.
 - Gate every broadcast-to-all helper with `wsBroadcastHeapOk()`.
 
+The weight broadcast hot path in `sendWebsocketWeightAll()` must format the complete payload into a bounded stack buffer and call `textAll()`. Do not reintroduce per-frame `printfAll()` formatting allocations; keep the heap gate before the broadcast.
+
 Broadcasts allocate a shared payload and per-client queue entries. `printfAll` also allocates a transient formatting buffer. Arduino-ESP32 builds without exceptions, so `std::bad_alloc` aborts and reboots the device. Connection churn and half-open clients can exhaust heap. Low-heap behavior should skip broadcasts, not allocate.
 
 ### WebSocket Heap Deep Reference
