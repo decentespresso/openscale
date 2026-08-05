@@ -4,7 +4,7 @@
 .vscode/extensions.json
 .vscode/launch.json
 .DS_Store
-
+.codegraph/
 # Python
 __pycache__/
 *.py[cod]
