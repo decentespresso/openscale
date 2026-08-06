@@ -1,0 +1,128 @@
+name: Custom firmware build
+
+on:
+  pull_request:
+    paths:
+      - platformio.ini
+      - include/features.h
+      - include/config.h
+      - include/webserver.h
+      - include/wifi_ota.h
+      - include/pull_ota.h
+      - include/ota_rollback.h
+      - include/grinder_runtime.h
+      - include/menu.h
+      - include/power.h
+      - include/websocket.h
+      - src/hds.ino
+      - src/wifi_setup.cpp
+      - tools/configure_custom_build.py
+      - tools/test_plugin_catalog.py
+      - custom-build.json
+      - plugins/**
+      - docs/custom-build/**
+      - .github/workflows/custom-build.yml
+  workflow_dispatch:
+    inputs:
+      firmware_ref:
+        description: Approved firmware ref
+        required: true
+        default: main
+      features:
+        description: Comma-separated feature IDs
+        required: true
+        default: wifi,webserver,littlefs
+      plugins:
+        description: Comma-separated approved plugin IDs
+        required: false
+        default: hello-web
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Configure dispatch selection
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          FIRMWARE_REF: ${{ inputs.firmware_ref }}
+          FEATURES: ${{ inputs.features }}
+          PLUGINS: ${{ inputs.plugins }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+          safe = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+          firmware_ref = os.environ["FIRMWARE_REF"]
+          if firmware_ref != "main":
+              raise SystemExit("firmware_ref must be main")
+          def ids(name):
+              values = [value.strip() for value in os.environ[name].split(",") if value.strip()]
+              if len(values) != len(set(values)) or any(not safe.fullmatch(value) for value in values):
+                  raise SystemExit(f"invalid {name.lower()}")
+              return values
+          Path("custom-build.json").write_text(json.dumps({
+              "firmware_ref": firmware_ref,
+              "features": ids("FEATURES"),
+              "plugins": ids("PLUGINS"),
+          }, indent=2) + "\n", encoding="utf-8")
+          PY
+      - name: Install PlatformIO Core
+        run: python -m pip install --requirement requirements-platformio.txt
+      - name: Validate catalog
+        run: python tools/test_plugin_catalog.py
+      - name: Build normal and custom firmware
+        run: |
+          set -euo pipefail
+          pio run -e esp32s3
+          pio run -e esp32s3-custom
+          pio run -e esp32s3-custom -t buildfs
+          mkdir -p custom-artifact
+          cp .pio.nosync/build/esp32s3-custom/firmware.bin custom-artifact/
+          cp .pio.nosync/build/esp32s3-custom/bootloader.bin custom-artifact/
+          cp .pio.nosync/build/esp32s3-custom/partitions.bin custom-artifact/
+          if [ -f .pio.nosync/build/esp32s3-custom/littlefs.bin ]; then
+            cp .pio.nosync/build/esp32s3-custom/littlefs.bin custom-artifact/
+          fi
+          pio --version > custom-artifact/dependencies.txt
+          pio pkg list -e esp32s3-custom >> custom-artifact/dependencies.txt
+      - name: Create unsigned build manifest
+        env:
+          BASE_SHA: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          resolved = json.loads(Path('.pio.nosync/custom-build/resolved.json').read_text(encoding='utf-8'))
+          files = {}
+          for path in sorted(Path('custom-artifact').glob('*.bin')):
+              data = path.read_bytes()
+              files[path.name] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+          manifest = {
+              **resolved,
+              "base_commit": os.environ["BASE_SHA"],
+              "platformio_environment": "esp32s3-custom",
+              "files": files,
+              "signed": False,
+          }
+          Path('custom-artifact/build-manifest.json').write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openscale-custom-${{ github.sha }}
+          path: custom-artifact/
+          if-no-files-found: error
