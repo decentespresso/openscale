@@ -15,19 +15,18 @@
 
 #ifdef ADS1115ADC
 #include <Adafruit_ADS1X15.h>
-Adafruit_ADS1115 ads;  // Create an ADS1115 object
+Adafruit_ADS1115 ads;
 #endif
 
 #define BUTTON_PIN_BITMASK(GPIO) (1ULL << GPIO)  // 2 ^ GPIO_NUMBER in hex
 
 #define PIN_BITMASK (BUTTON_PIN_BITMASK((gpio_num_t)BUTTON_SQUARE) | BUTTON_PIN_BITMASK((gpio_num_t)BUTTON_CIRCLE) | BUTTON_PIN_BITMASK((gpio_num_t)BATTERY_CHARGING))
 
-//prototype
 void sendBlePowerOff(int i_reason);
 void sendWebsocketPowerOff(int i_reason);
-void bleShutdown();  // defined in ble.h
-void stopWifi();  // defined in wifi_setup.cpp
-void stopWebServer();  // defined in webserver.h
+void bleShutdown();
+void stopWifi();
+void stopWebServer();
 #if HDS_ENABLE_GRINDER
 void beforeDeepSleepFlush();
 #endif
@@ -35,31 +34,22 @@ void beforeDeepSleepFlush();
 const int windowSize = 1000;
 float batteryLevels[windowSize];
 int readIndex = 0;
-// ADC Characteristics
-//const float batteryMaxVoltage = 4.2;             // Maximum voltage of battery
-const float showFullBatteryAboveVoltage = 4.1;   // Maximum voltage of battery
-const float showEmptyBatteryBelowVoltage = 3.4;  // Minimum voltage of battery
+const float showFullBatteryAboveVoltage = 4.1;
+const float showEmptyBatteryBelowVoltage = 3.4;
 
-// Voltage divider configuration: Vbattery → 33kΩ resistor → ESP32 ADC → 100kΩ resistor → GND
-// Formula for calculating the battery voltage (Vbattery):
-// Vadc = Vbattery * (100 / (100 + 33)), therefore
-// Vbattery = Vadc * ((100 + 33) / 100)
 #if defined(V7_2)
 const float dividerRatio = (100.0 + 33.0) / 100.0;
 #else  //7_5 and else
 const float dividerRatio = (100.0 + 100.0) / 100.0;
 #endif
 
-// ESP32 ADC resolution for 12-bit (0-4095)
 const float adcResolution = 4095.0;
 
-// Reference voltage for the ESP32 ADC
 const float referenceVoltage = 3.3;
 
-// Low battery threshold
-const float lowBatteryThreshold = 3.2;  // Battery voltage threshold for low battery action
+const float lowBatteryThreshold = 3.2;
 
-void (*resetFunc)(void) = 0;  //AVR重启函数
+void (*resetFunc)(void) = 0;
 
 void reset() {
 #ifdef ESP32
@@ -81,13 +71,9 @@ void ADS_init() {
   if (!ads.begin()) {
     Serial.println("Failed to initialize ADS1115!");
     b_ads1115InitFail = true;
-    // while (1) {
-    //   Serial.println("Failed to initialize ADS1115!");
-    //   delay(5000);
-    // }
   } else {
     b_ads1115InitFail = false;
-    ads.setGain(GAIN_ONE);  // +/- 4_096V range
+    ads.setGain(GAIN_ONE);
     ads.setDataRate(RATE_ADS1115_860SPS);
   }
 }
@@ -120,7 +106,6 @@ void print_wakeup_reason() {
 
   wakeup_reason = esp_sleep_get_wakeup_cause();
 
-  // Print if if it was a GPIO or something else
   switch (wakeup_reason) {
     case ESP_SLEEP_WAKEUP_EXT0: Serial.println("Wakeup caused by external signal using RTC_IO"); break;
     case ESP_SLEEP_WAKEUP_EXT1: Serial.println("Wakeup caused by external signal using RTC_CNTL"); break;
@@ -130,26 +115,22 @@ void print_wakeup_reason() {
     default: Serial.printf("Wakeup was not caused by deep sleep: %d\n", wakeup_reason); break;
   }
 
-  // If it is due to the a GPIO pin find out which one/s
   if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT1) {
     GPIO_reason = esp_sleep_get_ext1_wakeup_status();
 
-    // Print the raw value returned by esp_sleep_get_ext1_wakeup_status. This is the bitmask of the pin/s that triggered wake up
     Serial.print("Raw bitmask value returned: ");
     Serial.println(GPIO_reason);
 
-    // Using log method to work out trigger pin. This is the method used by Random Nerd Tutorials
     Serial.print("GPIO that triggered the wake up calculated using log method: ");
     i_wakeupPin = log(GPIO_reason) / log(2);
     Serial.println(i_wakeupPin);
 
-    // Use defined pins bitmask to find which pin/s triggered wakeup
     Serial.print("GPIO that triggered the wake up using built in definitions: ");
     switch (GPIO_reason) {
       case BUTTON_PIN_BITMASK(BATTERY_CHARGING):
         GPIO_power_on_with = BATTERY_CHARGING;
         Serial.println("Only GPIO " + String(BATTERY_CHARGING));
-        break;  // GPIO 27
+        break;
       case BUTTON_PIN_BITMASK(BUTTON_SQUARE):
         GPIO_power_on_with = BUTTON_SQUARE;
         Serial.println("Only GPIO " + String(BUTTON_SQUARE));
@@ -157,47 +138,36 @@ void print_wakeup_reason() {
       case BUTTON_PIN_BITMASK(BUTTON_CIRCLE):
         GPIO_power_on_with = BUTTON_CIRCLE;
         Serial.println("Only GPIO " + String(BUTTON_CIRCLE));
-        break;                                                                                                                                                                                                                                           // GPIO 33
+        break;
       case BUTTON_PIN_BITMASK(BATTERY_CHARGING) | BUTTON_PIN_BITMASK(BUTTON_SQUARE):
         GPIO_power_on_with = BUTTON_SQUARE;
         Serial.println("Both GPIO " + String(BATTERY_CHARGING) + " + " + String(BUTTON_SQUARE));
-        break;  // GPIO 27 + 32
+        break;
       case BUTTON_PIN_BITMASK(BATTERY_CHARGING) | BUTTON_PIN_BITMASK(BUTTON_CIRCLE):
         GPIO_power_on_with = BUTTON_CIRCLE;
         Serial.println("Both GPIO " + String(BATTERY_CHARGING) + " + " + String(BUTTON_CIRCLE));
-        break;  // GPIO 27 + 33
+        break;
       case BUTTON_PIN_BITMASK(BUTTON_SQUARE) | BUTTON_PIN_BITMASK(BUTTON_CIRCLE):
         GPIO_power_on_with = BUTTON_SQUARE;
         Serial.println("Both GPIO " + String(BUTTON_SQUARE) + " + " + String(BUTTON_CIRCLE));
-        break;  // GPIO 32 + 33
+        break;
       case BUTTON_PIN_BITMASK(BATTERY_CHARGING) | BUTTON_PIN_BITMASK(BUTTON_SQUARE) | BUTTON_PIN_BITMASK(BUTTON_CIRCLE):
         GPIO_power_on_with = BUTTON_SQUARE;
         Serial.println("All GPIO " + String(BATTERY_CHARGING) + " + " + String(BUTTON_SQUARE) + " + " + String(BUTTON_CIRCLE));
-        break;  // GPIO 27 + 32 + 33
+        break;
       default: Serial.println("Unknown pin"); break;
     }
   }
 }
 
-// void esp32_wakeup() {
-// #ifndef ESP32C3
-//   detachInterrupt(GPIO_NUM_BUTTON_POWER);
-// #endif
-//   u8g2.setPowerSave(0);
-//   scale.powerUp();
-//   mpu.enableSleep(false);
-//   mpu.enableCycle(true);
-// }
 
 void esp32_sleep() {
-  //beep(4, 50);
 #if HDS_ENABLE_GRINDER
   beforeDeepSleepFlush();
 #endif
-  // Network teardown — centralized here so every shutdown path is covered.
-  bleShutdown();    // graceful BLE teardown
-  stopWebServer();  // close websocket clients + stop HTTP server
-  stopWifi();       // disconnect WiFi / power down radio
+  bleShutdown();
+  stopWebServer();
+  stopWifi();
   u8g2.setPowerSave(1);
 #ifdef ACC_MPU6050
   if (b_gyroEnabled) {
@@ -209,28 +179,11 @@ void esp32_sleep() {
 #ifdef ESP32C3
   esp_deep_sleep_enable_gpio_wakeup(1 << GPIO_NUM_BUTTON_POWER, ESP_GPIO_WAKEUP_GPIO_LOW);
 #else
-  //old sleep wakeup
-  // attachInterrupt(GPIO_NUM_BUTTON_POWER, esp32_wakeup, FALLING);
-  // esp_sleep_enable_ext0_wakeup(GPIO_NUM_BUTTON_POWER, LOW);
-  //new bitmap sleep wakeup pin
   configureWakePinsForDeepSleep();
   esp_sleep_enable_ext1_wakeup_io(PIN_BITMASK, ESP_EXT1_WAKEUP_ANY_LOW);
 #endif
 
-  // ---- Prevent GPIO back-feed into PWR_CTRL domain during deep sleep ----
-  // TPS22860 load switch may not fully isolate its output when off.
-  // If any ESP32 GPIO connected to a powered-down device is HIGH (even
-  // through an external pull-up), current can flow through the device's
-  // internal ESD protection diode into its VDD pin, partially powering it.
-  // A partially-powered ADS1232 / REF5025 / ADS1115 may not trigger POR
-  // on the next wake-up, causing latch-up and the "stuck at 0g" bug.
-  //
-  // Fix: drive every GPIO in the PWR_CTRL domain LOW (or INPUT for DOUT
-  // pins) and enable gpio_hold so the state persists through deep sleep.
-  // I2C is driven LOW to sink the external pull-up current safely instead
-  // of letting it flow through unpowered-device ESD diodes.
 
-  // --- OLED (SPI) ---
   pinMode(OLED_SDIN, OUTPUT);  digitalWrite(OLED_SDIN, LOW);
   pinMode(OLED_SCLK, OUTPUT);  digitalWrite(OLED_SCLK, LOW);
   pinMode(OLED_DC, OUTPUT);    digitalWrite(OLED_DC, LOW);
@@ -242,15 +195,13 @@ void esp32_sleep() {
   gpio_hold_en((gpio_num_t)OLED_RST);
   gpio_hold_en((gpio_num_t)OLED_CS);
 
-  // --- ADS1232 primary ---
   pinMode(SCALE_SCLK, OUTPUT); digitalWrite(SCALE_SCLK, LOW);
-  pinMode(SCALE_PDWN, OUTPUT); digitalWrite(SCALE_PDWN, LOW);  // power-down
-  pinMode(SCALE_DOUT, INPUT);                                    // input from ADC
+  pinMode(SCALE_PDWN, OUTPUT); digitalWrite(SCALE_PDWN, LOW);
+  pinMode(SCALE_DOUT, INPUT);
   gpio_hold_en((gpio_num_t)SCALE_SCLK);
   gpio_hold_en((gpio_num_t)SCALE_PDWN);
   gpio_hold_en((gpio_num_t)SCALE_DOUT);
 
-  // --- ADS1232 secondary (if present) ---
   pinMode(SCALE2_SCLK, OUTPUT); digitalWrite(SCALE2_SCLK, LOW);
   pinMode(SCALE2_PDWN, OUTPUT); digitalWrite(SCALE2_PDWN, LOW);
   pinMode(SCALE2_DOUT, INPUT);
@@ -258,19 +209,13 @@ void esp32_sleep() {
   gpio_hold_en((gpio_num_t)SCALE2_PDWN);
   gpio_hold_en((gpio_num_t)SCALE2_DOUT);
 
-  // --- I2C bus (ADS1115 + gyro) ---
-  // Both sides of the bus are unpowered, but external pull-ups to 3.3V
-  // remain.  Driving LOW sinks the pull-up current safely to ESP32 ground
-  // instead of letting it flow through unpowered-device ESD diodes.
   pinMode(I2C_SCL, OUTPUT); digitalWrite(I2C_SCL, LOW);
   pinMode(I2C_SDA, OUTPUT); digitalWrite(I2C_SDA, LOW);
   gpio_hold_en((gpio_num_t)I2C_SCL);
   gpio_hold_en((gpio_num_t)I2C_SDA);
 
-  //#if defined(V7_3) || defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
   digitalWrite(ACC_PWR_CTRL, LOW);
   gpio_hold_en((gpio_num_t)ACC_PWR_CTRL);
-  //#endif
   digitalWrite(PWR_CTRL, LOW);
   gpio_hold_en((gpio_num_t)PWR_CTRL);
   gpio_deep_sleep_hold_en();
@@ -358,7 +303,6 @@ void shut_down_now_accidentTouch() {
 }
 
 void updateBattery(int batteryPin){
-  //#ifdef ADS1115ADC
   if (!b_ads1115InitFail) {
     int16_t adc0;
     float volts0;
@@ -366,22 +310,19 @@ void updateBattery(int batteryPin){
     volts0 = ads.computeVolts(adc0);
     f_batteryVoltage = volts0 * 2.0;
   }
-  //#else
   else {
-    int adcValue = analogRead(batteryPin);                               // Read the value from ADC
-    float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;  // Calculate voltage at ADC pin
-    float batteryVoltage = voltageAtPin * dividerRatio;                  // Calculate the actual battery voltage
+    int adcValue = analogRead(batteryPin);
+    float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;
+    float batteryVoltage = voltageAtPin * dividerRatio;
     float correctedVoltage = batteryVoltage * f_batteryCalibrationFactor;
     f_batteryVoltage = correctedVoltage;
   }
-  //#endif
 }
 
 float getUsbVoltage(int usbPin) {
-  int adcValue = analogRead(usbPin);                                   // Read the value from ADC
-  float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;  // Calculate voltage at ADC pin
-  float usbVoltage = voltageAtPin * 2.0;                               // Calculate the actual battery voltage
-  //float correctedVoltage = usbVoltage * f_batteryCalibrationFactor;
+  int adcValue = analogRead(usbPin);
+  float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;
+  float usbVoltage = voltageAtPin * 2.0;
   return usbVoltage;
 }
 
@@ -405,7 +346,6 @@ void power_off(int min) {
 
     if (min == -1) {
       t_power_off = millis();
-      //Serial.println("power off timer reset");
     }
     if (min > 0) {
       double d_timeleft = min * 60 - (millis() - t_power_off) / 1000;
@@ -423,12 +363,9 @@ void power_off_gyro(int sec) {
   if (!b_is_charging) {
     if (sec == -1) {
       t_power_off_gyro = millis();
-      //Serial.println("power off by gyro timer reset");
     }
     if (sec > 0) {
       double d_timeleft = sec - (millis() - t_power_off_gyro) / 1000;
-      //Serial.print(d_timeleft);
-      //Serial.println(" seconds to power off by gyro");
       if (d_timeleft <= 0) {
         sendBlePowerOff(4);
         sendWebsocketPowerOff(4);
@@ -457,12 +394,9 @@ void power_off(double sec) {
 
     if (sec == -1) {
       t_power_off = millis();
-      //Serial.println("power off timer reset");
     }
     if (sec > 0) {
       double d_timeleft = sec - (millis() - t_power_off) / 1000;
-      //Serial.print(d_timeleft);
-      //Serial.println(" seconds to power off");
       if (d_timeleft <= 0 && b_autoSleep == true) {
         shut_down_now();
       }
@@ -490,36 +424,28 @@ float get_bat_voltage() {
 #endif  //CHECKBATTERY
 
 void checkBattery() {
-  // Serial.print("Battery Voltage:");
-  // Serial.print(f_batteryVoltage);
-  float perc = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);  //map funtion doesn't take float as input.
+  float perc = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
 #if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
-  //if (getUsbVoltage(USB_DET) > 4.0) {
   if (digitalRead(USB_DET) == LOW) {
 #else
   if (digitalRead(BATTERY_CHARGING) == LOW) {
 #endif
     b_is_charging = true;
-    c_battery = (char*)"6";  // Special icon for charging
-    // Serial.println("Battery is charging");
+    c_battery = (char*)"6";
   } else {
     b_is_charging = false;
-    //power_off_gyro(-1);  //restart gyro timer
-    // Serial.print("Battery is ");
-    // Serial.print(perc);
-    // Serial.println("\%");
     if (perc <= 5) {
-      c_battery = (char*)"0";  // 0% or very low battery
+      c_battery = (char*)"0";
     } else if (perc > 5 && perc <= 20) {
-      c_battery = (char*)"1";  // 6-20% battery
+      c_battery = (char*)"1";
     } else if (perc > 20 && perc <= 40) {
-      c_battery = (char*)"2";  // 21-40% battery
+      c_battery = (char*)"2";
     } else if (perc > 40 && perc <= 60) {
-      c_battery = (char*)"3";  // 41-60% battery
+      c_battery = (char*)"3";
     } else if (perc > 60 && perc <= 80) {
-      c_battery = (char*)"4";  // 61-80% battery
+      c_battery = (char*)"4";
     } else if (perc > 80) {
-      c_battery = (char*)"5";  // 81-100% battery
+      c_battery = (char*)"5";
     }
   }
 }

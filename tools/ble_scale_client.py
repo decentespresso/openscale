@@ -1,28 +1,4 @@
 #!/usr/bin/env python3
-"""
-Decent-Scale BLE client for the Half Decent Scale, using bleak.
-
-Two jobs:
-  1. Provide a realistic "BT active" coexistence load while a WiFi 10 Hz stream
-     runs (the goal requires both at once).
-  2. Serve as the BLE regression test: it holds a persistent link, subscribes to
-     weight notifications, and sends the keep-alive heartbeat the firmware
-     requires. It logs every BLE disconnect and the notify rate -- 0 unexpected
-     disconnects + steady notifies over a long run == BT is still reliable.
-
-Protocol (from include/ble.h, include/config.h):
-  service  0000fff0-0000-1000-8000-00805f9b34fb
-  notify   0000fff4-0000-1000-8000-00805f9b34fb   (weight frames)
-  write    000036f5-0000-1000-8000-00805f9b34fb   (commands)
-  heartbeat command: 03 0A 03 FF FF 00 0A  (resets the scale's 5 s heartbeat
-  timer; without it the scale drops BLE on purpose)
-
-Requires: pip install bleak
-
-Usage:
-    python3 tools/ble_scale_client.py --duration 1500
-    python3 tools/ble_scale_client.py --name "Decent Scale" --hb 2.0
-"""
 
 import argparse
 import asyncio
@@ -58,7 +34,6 @@ async def run(args):
     deadline = started + args.duration if args.duration else None
 
     while deadline is None or time.monotonic() < deadline:
-        # Find the scale.
         t0 = time.monotonic()
         dev = await BleakScanner.find_device_by_name(args.name, timeout=args.scan_timeout)
         if dev is None:
@@ -92,7 +67,6 @@ async def run(args):
                     st.notifies += 1
 
                 await client.start_notify(NOTIFY, on_notify)
-                # Send an initial heartbeat immediately so the 5 s timer is fresh.
                 await client.write_gatt_char(WRITE, HEARTBEAT, response=False)
 
                 last_stat = time.monotonic()

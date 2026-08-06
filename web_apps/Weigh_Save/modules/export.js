@@ -1,4 +1,4 @@
-export class DataExport { // export methods : JSON and CSV functions below. 
+export class DataExport {
     static exportToCSV(weightData) {
         const headers = ['Timestamp', 'Weight (g)', 'Elapsed Time (s)'];
         const csvContent = [

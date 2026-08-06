@@ -54,7 +54,6 @@ def main():
     fd = open_port(args.port)
     print(f"[{ts()}] opened {args.port} (scale resets on open); waiting {args.boot_wait}s for boot")
     time.sleep(args.boot_wait)
-    # Flush boot backlog.
     try:
         while os.read(fd, 4096):
             pass
@@ -90,7 +89,6 @@ def main():
             continue
         now = time.monotonic()
         buf += chunk
-        # Scan for 03 CE weight frames.
         i = 0
         while i + 7 <= len(buf):
             if buf[i] == 0x03 and buf[i + 1] == 0xCE:

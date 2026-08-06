@@ -1,29 +1,4 @@
 #!/usr/bin/env python3
-"""
-WebSocket connection-drop reproducer for the Half Decent Scale firmware.
-
-Mimics the Decenza client (rate 10k + events on + status, then consume the
-~10 Hz JSON stream) and instruments the exact things the field bug report asks
-about:
-
-  * Does the connection drop on a ~1-2 min cadence?  -> inter-drop intervals
-  * Is it a clean WS close (1000/1001) or abnormal (1006, no close frame)?
-  * Does the stream stall right before the drop?      -> frame-gap timeline
-  * How fast does reconnect to the same IP succeed?    -> reconnect latency
-
-It auto-reconnects after each drop and prints a summary on exit (Ctrl-C or when
---duration elapses). Read-only against the scale: it never sends `power off`,
-`sleep`, or any state-changing command beyond rate/events selection.
-
-Requirements:
-    pip install websocket-client
-
-Usage:
-    python3 tools/ws_drop_repro.py                      # ws://hds.local/snapshot, 10 Hz, runs until Ctrl-C
-    python3 tools/ws_drop_repro.py 192.168.10.242
-    python3 tools/ws_drop_repro.py --rate 10k --duration 300
-    python3 tools/ws_drop_repro.py --no-events          # weight stream only, skip status subscription
-"""
 
 import argparse
 import os
@@ -59,7 +34,7 @@ def fmt_dur(seconds):
 class Stats:
     def __init__(self):
         self.connections = 0
-        self.drops = []            # list of dicts, one per drop
+        self.drops = []
         self.reconnect_latencies = []
         self.last_drop_monotonic = None
 
@@ -82,9 +57,6 @@ class Stats:
 
 
 def probe_socket(ws):
-    """After a read failure, peek the raw TCP socket to learn HOW it ended:
-    empty read == graceful FIN (EOF); RST == abrupt reset; timeout == half-open
-    (peer vanished, e.g. WiFi dropped, no FIN/RST ever arrived)."""
     sock = getattr(ws, "sock", None)
     if sock is None:
         return ("no_socket", None, "socket already gone")
@@ -100,7 +72,6 @@ def probe_socket(ws):
         return ("tcp_error", None, f"{type(e).__name__}: {e}")
     if rest == b"":
         return ("tcp_fin", 1006, "graceful FIN / EOF, no WS close frame")
-    # Some trailing bytes -- check for a trailing WS CLOSE frame (opcode 0x8).
     if len(rest) >= 1 and (rest[0] & 0x0F) == ABNF.OPCODE_CLOSE:
         body = rest[2:]
         code = int.from_bytes(body[:2], "big") if len(body) >= 2 else None
@@ -109,16 +80,12 @@ def probe_socket(ws):
 
 
 def classify_close(ws, exc):
-    """Return (kind, code, reason) describing how the connection ended."""
-    # websocket-client stashes a received CLOSE frame here, if any arrived.
     cf = getattr(ws, "close_frame", None)
     if cf is not None and getattr(cf, "data", None):
         data = cf.data
         code = int.from_bytes(data[:2], "big") if len(data) >= 2 else None
         reason = data[2:].decode("utf-8", "replace") if len(data) > 2 else ""
         return ("ws_close", code, reason)
-    # PayloadException = the stream broke mid-frame; the underlying socket state
-    # (FIN vs RST vs half-open) is the real signal, so probe it.
     if isinstance(exc, (WebSocketConnectionClosedException, WebSocketPayloadException)):
         return probe_socket(ws)
     if isinstance(exc, (ConnectionResetError,)):
@@ -129,7 +96,6 @@ def classify_close(ws, exc):
 
 
 def run_session(host, url, args, stats, deadline):
-    """One connect->stream->drop cycle. Returns False if connect failed."""
     t0 = time.monotonic()
     try:
         ws = create_connection(url, timeout=args.connect_timeout)
@@ -140,7 +106,6 @@ def run_session(host, url, args, stats, deadline):
     stats.record_connect(connect_latency if stats.connections > 0 else None)
     print(f"[{now_wall()}] CONNECTED in {connect_latency * 1000:.0f} ms  (session #{stats.connections})")
 
-    # Mimic the Decenza handshake.
     handshake = []
     if args.rate:
         handshake.append(f"rate {args.rate}")
@@ -161,7 +126,6 @@ def run_session(host, url, args, stats, deadline):
 
     while True:
         if deadline and time.monotonic() > deadline:
-            # Hit the overall test budget mid-session; close cleanly and stop.
             ws.close()
             print(f"[{now_wall()}] duration budget reached, closing test")
             return "done"
@@ -169,7 +133,6 @@ def run_session(host, url, args, stats, deadline):
             ws.settimeout(args.recv_timeout)
             opcode, data = ws.recv_data(control_frame=True)
         except WebSocketTimeoutException:
-            # No frame within recv_timeout. At 10 Hz this is already a stall.
             gap = time.monotonic() - last_frame
             if gap > args.stall_threshold and stalled_since is None:
                 stalled_since = last_frame
@@ -313,10 +276,8 @@ def main():
             if stop["flag"]:
                 break
             if result is False:
-                # connect failed; brief backoff then retry
                 time.sleep(min(args.reconnect_delay, 3.0))
                 continue
-            # mimic the client's reconnect delay
             for _ in range(int(args.reconnect_delay * 10)):
                 if stop["flag"]:
                     break

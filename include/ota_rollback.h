@@ -57,10 +57,6 @@ static void hdsOtaRollback(const char *reason) {
   Serial.print("[ota-verify] rollback: ");
   Serial.println(reason);
   hdsOtaClearAttempts();
-  // Every rollback caller here runs on the setup()/main task, before loop()
-  // starts -- never from AsyncTCP or the Pull OTA task -- so it's safe to
-  // withdraw mDNS synchronously rather than queue it. A no-op if WiFi/mDNS
-  // was never brought up (e.g. the early boot-attempt checks).
   stopWifi();
   Serial.flush();
   esp_ota_mark_app_invalid_rollback_and_reboot();

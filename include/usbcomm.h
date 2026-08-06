@@ -6,10 +6,8 @@
 #include <math.h>
 #include <string.h>
 
-// Forward declaration of scale object (defined in declare.h)
 extern ADS1232_ADC scale;
 
-//functions
 void sendUsbVoltage();
 void sendUsbLedResponse();
 void sendUsbAdsDebug();
@@ -158,7 +156,6 @@ struct UsbDecentCommandSink {
 
 class MyUsbCallbacks {
 public:
-  // Function pointer members
   void (*setStableOutputThreshold)(float);
   void (*setTrackingThreshold)(float);
   void (*setTrackingUpdateInterval)(float);
@@ -261,26 +258,24 @@ public:
   }
 
   void onWrite(uint8_t *data, size_t len) {
-    //this is what the esp32 received via usb
     Serial.print("Timer ");
     Serial.print(millis());
     Serial.print(" onWrite counter:");
     Serial.print(i_onWrite_counter++);
     Serial.print(" ");
 
-    
+
     if (data == nullptr || len <= 0) {
       return;
     }
 
 
-    // 打印接收到的 HEX 数据
     Serial.print("Received HEX: ");
     for (size_t i = 0; i < len; i++) {
-      if (data[i] < 0x10) {  // 如果字节小于 0x10
-        Serial.print("0");   // 打印前导零
+      if (data[i] < 0x10) {
+        Serial.print("0");
       }
-      Serial.print(data[i], HEX);  // 以 HEX 格式打印字节
+      Serial.print(data[i], HEX);
     }
     Serial.println(" ");
 
@@ -296,58 +291,55 @@ public:
     UsbDecentCommandSink sink;
     handleDecentBinaryCommand(sink, data, len);
   }
-    
-  
+
+
 
 
   void handleStringCommand(String inputString) {
-    inputString.trim(); // Remove leading/trailing whitespace
+    inputString.trim();
     Serial.printf("handling %s\n", inputString.c_str());
     if (inputString.startsWith("welcome ")) {
       storagePutWelcome(inputString.substring(8));
     }
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
     if (inputString.startsWith("gyro")) {
-      //strcpy(str_welcome, inputString.substring(8).c_str());
       Serial.print("\tGyro:");
       Serial.println(gyro_z());
     }
 #endif
 
-    if (inputString.startsWith("cp ")) {  //手冲粉量
+    if (inputString.startsWith("cp ")) {
       INPUTCOFFEEPOUROVER = inputString.substring(3).toFloat();
       storagePutFloat(KEY_POUROVER, INPUTCOFFEEPOUROVER);
     }
 
-    if (inputString.startsWith("v")) {  //电压
+    if (inputString.startsWith("v")) {
       Serial.print("Battery Voltage:");
       Serial.print(f_batteryVoltage);
-      //#ifndef ADS1115ADC
       if (b_ads1115InitFail) {
-        int adcValue = analogRead(BATTERY_PIN);                              // Read the value from ADC
-        float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;  // Calculate voltage at ADC pin
+        int adcValue = analogRead(BATTERY_PIN);
+        float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;
         Serial.print("\tADC Voltage:");
         Serial.print(voltageAtPin);
         Serial.print("\tbatteryCalibrationFactor: ");
         Serial.print(f_batteryCalibrationFactor);
       }
-      //#endif
       Serial.print("\tlowBatteryCounterTotal: ");
       Serial.print(i_lowBatteryCountTotal);
     }
 
-    if (inputString.startsWith("vf ")) {                                                 // Command to set the battery voltage calibration factor
-      int adcValue = analogRead(BATTERY_PIN);                                            // Read the ADC value from the battery pin
-      float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;                // Calculate the voltage at the ADC pin
-      float batteryVoltage = voltageAtPin * dividerRatio;                                // Calculate the actual battery voltage using the voltage divider ratio
-      f_batteryCalibrationFactor = inputString.substring(3).toFloat() / batteryVoltage;  // Calculate the calibration factor from user input
+    if (inputString.startsWith("vf ")) {
+      int adcValue = analogRead(BATTERY_PIN);
+      float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;
+      float batteryVoltage = voltageAtPin * dividerRatio;
+      f_batteryCalibrationFactor = inputString.substring(3).toFloat() / batteryVoltage;
       storagePutFloat(KEY_BAT_CAL, f_batteryCalibrationFactor);
 
-      Serial.print("Battery Voltage Factor set to: ");  // Output the new calibration factor to the Serial Monitor
+      Serial.print("Battery Voltage Factor set to: ");
       Serial.println(f_batteryCalibrationFactor);
     }
 
-    if (inputString.startsWith("cv ")) {  //校准值
+    if (inputString.startsWith("cv ")) {
       float newCalibrationValue = inputString.substring(3).toFloat();
       if (isValidCalibrationValue(newCalibrationValue)) {
         f_calibration_value = newCalibrationValue;
@@ -372,27 +364,23 @@ public:
       if (setStableOutputThreshold != nullptr) {
         setStableOutputThreshold(inputString.substring(4).toFloat());
       }
-      //b_tempDisablePowerOff = true;
     }
 
     if (inputString.startsWith("tt ")) {
       if (setTrackingThreshold != nullptr) {
         setTrackingThreshold(inputString.substring(3).toFloat());
       }
-      //b_tempDisablePowerOff = true;
     }
 
     if (inputString.startsWith("tui ")) {
       if (setTrackingUpdateInterval != nullptr) {
         setTrackingUpdateInterval(inputString.substring(4).toFloat());
       }
-      //b_tempDisablePowerOff = true;
     }
 
-    if (inputString.startsWith("oled ")) {                     // 校准值
-      int i_oled_contrast = inputString.substring(5).toInt();  // Parse the input as an integer
+    if (inputString.startsWith("oled ")) {
+      int i_oled_contrast = inputString.substring(5).toInt();
 
-      // Clamp the contrast value between 0 and 255
       i_oled_contrast = constrain(i_oled_contrast, 0, 255);
 
       u8g2.setContrast(i_oled_contrast);
@@ -408,11 +396,11 @@ public:
       u8g2.setPowerSave(1);
     }
 
-    if (inputString.startsWith("reset")) {  //重启
+    if (inputString.startsWith("reset")) {
       reset();
     }
 
-    if (inputString.startsWith("cal0")) {  //calibrate load cell 0
+    if (inputString.startsWith("cal0")) {
       b_menu = false;
       i_cal_weight = 0;
       i_button_cal_status = 1;
@@ -420,7 +408,7 @@ public:
       i_calibration = 0;
     }
 
-    if (inputString.startsWith("cal1")) {  ////calibrate load cell 1
+    if (inputString.startsWith("cal1")) {
       b_menu = false;
       i_cal_weight = 0;
       i_button_cal_status = 1;
@@ -441,17 +429,17 @@ public:
     }
 
     if (inputString.startsWith("debug ")) {
-      b_debug = inputString.substring(6).toInt();  // Parse the input as an integer
+      b_debug = inputString.substring(6).toInt();
       Serial.print("Debug:");
       if (b_debug)
         Serial.print("On ");
       else
         Serial.print("Off ");
     }
-    
+
     if (inputString.startsWith("adsd ")) {
       String cmd = inputString.substring(5);
-      cmd.trim(); // Remove any whitespace/newlines
+      cmd.trim();
       if (cmd == "on" || cmd == "1") {
         scale.setDebugEnabled(true);
         Serial.println("ADS1232 debug enabled");
@@ -459,7 +447,6 @@ public:
         scale.setDebugEnabled(false);
         Serial.println("ADS1232 debug disabled");
       } else if (cmd == "info") {
-        // Get one-time debug snapshot without enabling continuous mode
         ADS1232DebugInfo info = scale.getDebugInfo();
         Serial.println("=== ADS1232 Debug Snapshot ===");
         Serial.print("Raw: "); Serial.print(info.rawValue);
@@ -486,13 +473,12 @@ public:
         Serial.println("==============================");
       }
     }
-    
+
 #ifdef BUZZER
-    if (inputString.startsWith("beep")) {  //蜂鸣器
+    if (inputString.startsWith("beep")) {
       b_beep = !b_beep;
       storagePutInt(KEY_BEEP, b_beep);
     }
-    // Send the updated values via USB serial
     Serial.print("\tBuzzer:");
     if (b_beep)
       Serial.println("On");
@@ -502,14 +488,12 @@ public:
   }
 };
 
-// Send voltage via USB
 void sendUsbVoltage() {
   byte data[7];
   buildVoltagePacket(data);
   Serial.write(data, 7);
 }
 
-// Send heartbeat via USB
 void sendUsbHeartBeat() {
   byte data[7];
   buildHeartBeatPacket(data);
@@ -530,8 +514,6 @@ void sendUsbWeight() {
   Serial.write(data, 7);
 }
 
-// Rate-gating is handled centrally by the unified weight-output tick in the
-// main loop; this just emits one line when called.
 void sendUsbTextWeight() {
   Serial.print(millis());
   Serial.print(" Weight: ");
@@ -550,85 +532,52 @@ void sendUsbLedResponse() {
   Serial.write(data, 7);
 }
 
-// Build ADS1232 debug packet
-// Packet format (39 bytes total):
-// [0]    = 0x03 (model byte)
-// [1]    = 0x25 (debug packet type)
-// [2-5]  = timestamp (4 bytes, unsigned long)
-// [6-9]  = rawValue (4 bytes, signed long)
-// [10-13] = smoothedValue (4 bytes, signed long)
-// [14-17] = tareOffset (4 bytes, signed long)
-// [18-19] = conversionTime (2 bytes, float * 100 to get 0.01ms precision)
-// [20-21] = sps (2 bytes, float * 100)
-// [22]    = readIndex (1 byte)
-// [23]    = samplesInUse (1 byte)
-// [24-37] = reserved (14 bytes, zero-filled — stats not precomputed in new lib)
-// [38]    = flags (bits: 0=dataOutOfRange, 1=signalTimeout, bit2 always 0)
-// [39]    = reserved (1 byte, always 0 — tare is instant)
-// [40]    = checksum (XOR of bytes 0-39)
 void buildAdsDebugPacket(byte data[41]) {
   ADS1232DebugInfo info = scale.getDebugInfo();
-  
-  data[0] = 0x03;  // model byte
-  data[1] = 0x25;  // debug packet type
-  
-  // Timestamp (4 bytes)
+
+  data[0] = 0x03;
+  data[1] = 0x25;
+
   data[2] = (info.timestamp >> 24) & 0xFF;
   data[3] = (info.timestamp >> 16) & 0xFF;
   data[4] = (info.timestamp >> 8) & 0xFF;
   data[5] = info.timestamp & 0xFF;
-  
-  // Raw value (4 bytes, signed)
+
   data[6] = (info.rawValue >> 24) & 0xFF;
   data[7] = (info.rawValue >> 16) & 0xFF;
   data[8] = (info.rawValue >> 8) & 0xFF;
   data[9] = info.rawValue & 0xFF;
-  
-  // Smoothed value (4 bytes, signed)
+
   data[10] = (info.smoothedValue >> 24) & 0xFF;
   data[11] = (info.smoothedValue >> 16) & 0xFF;
   data[12] = (info.smoothedValue >> 8) & 0xFF;
   data[13] = info.smoothedValue & 0xFF;
-  
-  // Tare offset (4 bytes, signed)
+
   data[14] = (info.tareOffset >> 24) & 0xFF;
   data[15] = (info.tareOffset >> 16) & 0xFF;
   data[16] = (info.tareOffset >> 8) & 0xFF;
   data[17] = info.tareOffset & 0xFF;
-  
-  // Conversion time (2 bytes, float * 100 for 0.01ms precision)
+
   uint16_t convTime = encodeScaledUInt16(info.conversionTimeMs, 100.0f);
   data[18] = (convTime >> 8) & 0xFF;
   data[19] = convTime & 0xFF;
-  
-  // SPS (2 bytes, float * 100)
+
   uint16_t sps = encodeScaledUInt16(info.sps, 100.0f);
   data[20] = (sps >> 8) & 0xFF;
   data[21] = sps & 0xFF;
-  
-  // Read index (1 byte)
+
   data[22] = info.readIndex & 0xFF;
-  
-  // Samples in use (1 byte)
+
   data[23] = info.samplesInUse & 0xFF;
 
-  // Reset reason (1 byte, raw esp_reset_reason() code captured at boot).
-  // Lets a spontaneous reboot mid-capture (brownout / panic / watchdog) be
-  // attributed instead of looking like a clean power-on. Reuses the head of
-  // the formerly stats-only window (24-37) freed up after the ADC library
-  // swap; bytes 25-37 stay zero-filled and are reserved for future use.
   data[24] = g_resetReasonCode;
   memset(&data[25], 0, 13);
-  
-  // Flags (1 byte: bit 0=dataOutOfRange, bit 1=signalTimeout)
-  // bit 2 (tareInProgress) always 0 — tare is instant
+
   data[38] = (info.dataOutOfRange ? 0x01 : 0x00) |
              (info.signalTimeout ? 0x02 : 0x00);
-  
-  // Tare times (1 byte) — always 0
+
   data[39] = 0;
-  
-  // Checksum (XOR of all previous bytes)
+
   byte checksum = 0;
   for (int i = 0; i < 40; i++) {
     checksum ^= data[i];
@@ -636,14 +585,11 @@ void buildAdsDebugPacket(byte data[41]) {
   data[40] = checksum;
 }
 
-// Build ADS1232 reset response packet (5 bytes)
-// [0] = 0x03 (model), [1] = 0x26 (reset response), [2] = mode, [3] = status, [4] = checksum
 void buildAdsResetResponsePacket(byte data[5], uint8_t mode, uint8_t status) {
   data[0] = 0x03;
   data[1] = 0x26;
   data[2] = mode;
   data[3] = status;
-  // Checksum: XOR of bytes 0-3
   data[4] = data[0] ^ data[1] ^ data[2] ^ data[3];
 }
 
@@ -699,13 +645,11 @@ void handleAdsReset(uint8_t mode) {
   Serial.println("ADS reset complete");
 }
 
-// Send ADS debug info via USB
 void sendUsbAdsDebug() {
   byte data[41];
   buildAdsDebugPacket(data);
   Serial.write(data, 41);
-  
-  // Also print human-readable version to Serial
+
   Serial.println("ADS Debug packet sent (41 bytes)");
 }
 
