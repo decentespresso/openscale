@@ -16,18 +16,8 @@
 static AsyncWebServer server(80);
 static AsyncWebSocket websocket("/snapshot");
 
-// While a WS weight stream is active, HTTP file serves are token-bucket
-// rate-limited: sustained traffic refills at one serve per this interval so it
-// can't saturate the radio and starve the 10 Hz broadcast.
 static const unsigned long HTTP_MIN_INTERVAL_WHILE_STREAMING_MS = 200;
-// Bucket depth. A single web-app page load pulls HTML + CSS + a JS module graph
-// (up to ~15 requests in a burst today); the bucket lets that through at once,
-// then throttles to the refill rate above. Browsers don't retry 503 on
-// sub-resources, so a too-tight limit leaves the on-device apps broken.
 static const int HTTP_STREAMING_BURST = 24;
-// Refill the burst once per page navigation. This prevents a normal app load
-// from inheriting an empty bucket left by an existing stream, while still
-// throttling sustained floods after the page-load burst.
 static const unsigned long HTTP_PAGELOAD_BURST_RESET_MS = 1500;
 static const size_t WIFI_SETUP_MAX_JSON_BYTES = 256;
 static const size_t WIFI_SETUP_MAX_SSID_BYTES = 32;
@@ -68,8 +58,6 @@ static const char *parseDeviceNameRequest(JsonVariant &json) {
 }
 
 void startWebServer() {
-  // Handlers must be registered before server.begin(), and only once across
-  // stop/start cycles — server.end() doesn't clear the handler list.
   static bool handlersRegistered = false;
   if (!handlersRegistered) {
     AsyncCallbackJsonWebHandler *wifiHandler = new AsyncCallbackJsonWebHandler(
@@ -93,10 +81,6 @@ void startWebServer() {
     wifiHandler->setMaxContentLength(WIFI_SETUP_MAX_JSON_BYTES);
     server.addHandler(wifiHandler);
 
-    // Rename the scale. Runs on the AsyncTCP task, so it must not touch mDNS or
-    // publish state the main loop reads: it writes NVS only and queues the
-    // restart that reloads the name (the DHCP hostname can only change before
-    // association anyway).
     AsyncCallbackJsonWebHandler *nameHandler = new AsyncCallbackJsonWebHandler(
         "/setup/name", [](AsyncWebServerRequest *request, JsonVariant &json) {
           const char *requested = parseDeviceNameRequest(json);
@@ -113,10 +97,6 @@ void startWebServer() {
             return;
           }
 
-          // Already this name: answer without writing NVS and without queuing a
-          // restart. The web UI prefills the field, so a stray submit would
-          // otherwise reboot the scale mid-shot -- and a repeated POST of the
-          // current name would hold it in a reboot loop.
           char body[MDNS_NAME_BUFFER_BYTES + 40];
           if (strcmp(normalized, wifiDeviceName()) == 0) {
             snprintf(body, sizeof(body),
@@ -140,22 +120,15 @@ void startWebServer() {
     nameHandler->setMaxContentLength(NAME_SETUP_MAX_JSON_BYTES);
     server.addHandler(nameHandler);
 
-    // Allow multiple concurrent WebSocket clients (e.g. the on-device web UI
-    // and a separate desktop/phone app at the same time). Per-loop the count
-    // is bounded by cleanupClients() in src/hds.ino.
     server.addHandler(&websocket);
 
     if (!LittleFS.begin()) {
       Serial.println("LittleFS mount failed -- web UI unavailable");
-      // Without serveStatic, requests fall through to a bare 404. Serve an
-      // explanatory 503 instead so the failure is diagnosable, not confusing.
       server.onNotFound([](AsyncWebServerRequest *request) {
         request->send(503, "text/plain",
                       "filesystem mount failed; device needs reflashing");
       });
     } else {
-      // LittleFS apps are updated in-place; avoid stale inline JS/CSS and modules
-      // after a firmware/filesystem update.
       server.serveStatic("/", LittleFS, "/")
           .setTryGzipFirst(true)
           .setDefaultFile("index.html")
@@ -163,24 +136,6 @@ void startWebServer() {
       Serial.println("Serving web-apps");
     }
 
-    // HTTP admission control, two layers, both shedding with 503 (clients
-    // retry). Any request to the /snapshot data endpoint is exempt -- matched
-    // by URL, not just the WS upgrade -- so we never block or drop the live
-    // data stream.
-    //
-    //  1. Memory pressure: serving a static file costs ~25 KB transient heap;
-    //     under churn/web-UI bursts those stack and can OOM, wedging the whole
-    //     IP stack. Shed HTTP when free heap is low.
-    //
-    //  2. Stream priority: while a WS weight stream is active, file-serving TX
-    //     can saturate the (shared, coexisting) radio and starve the 10 Hz
-    //     broadcast (measured: a flood of concurrent serves drove a client to
-    //     0 Hz). A token bucket (HTTP_STREAMING_BURST deep, refilling one per
-    //     HTTP_MIN_INTERVAL_WHILE_STREAMING_MS) lets a normal page load burst
-    //     through, then throttles sustained floods so the broadcast keeps radio
-    //     priority. Time-based (no in-flight counter that could leak). The
-    //     bucket is clamped at HTTP_STREAMING_BURST, so accumulated idle time
-    //     never pre-fills it beyond the burst depth.
     server.addMiddleware([](AsyncWebServerRequest *request, ArMiddlewareNext next) {
       const String &url = request->url();
       if (url == "/snapshot") {

@@ -79,7 +79,7 @@ Aymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qyHB5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ
 1b0SHzUvKBds0pjBqAlkd25HN7rOrFleaJ1/ctaJxQZBKT5ZPt0m9STJEadao0xAH0ahmbWnOlFu
 hjuefXKnEgV4We0+UXgVCwOPjdAvBbI+e0ocS3MFEvzG6uBQE3xDk3SzynTnjh8BCNAw1FtxNrQH
 usEwMFxIt4I7mKZ9YIqioymCzLq9gwQbooMDQaHWBfEbwrbwqHyGO0aoSCqI3Haadr8faqU9GY/r
-OPNk3sgrDQoo//fb4hVC1CLQJ13hef4Y53CIrU7m2Ys6xt0nUW7/vGT1M0NPAgMBAAGjQjBAMA4G
+OPNk3sgrDQoo
 A1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBR5tFnme7bl5AFzgAiIyBpY
 9umbbjANBgkqhkiG9w0BAQsFAAOCAgEAVR9YqbyyqFDQDLHYGmkgJykIrGF1XIpu+ILlaS/V9lZL
 ubhzEFnTIZd+50xx+7LSYK05qAvqFyFWhfFQDlnrzuBZ6brJFe+GnY+EgPbk6ZGQ3BebYhtF8GaV
@@ -1280,9 +1280,6 @@ bool pullOtaInstall(
   }
   pullOtaDraw("Firmware done", "Restarting", "Web UI next");
   delay(1500);
-  // Runs on the Pull OTA task, not the main loop: queue the restart through
-  // reset() (mDNS withdrawal, BLE/web-server teardown) instead of a bare
-  // ESP.restart() that skips all of it.
   remoteQueueResetAt(millis());
   return true;
 }
@@ -1374,8 +1371,6 @@ bool pullOtaResumePendingLittleFs() {
   hdsOtaRollbackMarkValid();
   pullOtaDraw("Update done", "Restarting");
   delay(1500);
-  // Called from both the Pull OTA task and, at boot, the setup() task -- queue
-  // through reset() rather than restarting directly from either.
   remoteQueueResetAt(millis());
   return true;
 }

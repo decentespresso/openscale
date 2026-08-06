@@ -1,7 +1,6 @@
 export class UIController {
-    constructor(timerManager) {  // Add timerManager parameter
-        // Timer elements
-        this.timerManager = timerManager;  // Store timerManager reference
+    constructor(timerManager) {
+        this.timerManager = timerManager;
         this.timerDisplay = document.getElementById('timer');
         this.toggleButton = document.getElementById('toggleTimer');
         this.timerOn = false;
@@ -9,11 +8,9 @@ export class UIController {
         this.statusDisplay = document.getElementById('status');
         this.measurementAlert = document.getElementById('measurementAlert');
         this.weightReadingsList = document.getElementById('weightReadings');
-        
-        // Export buttons
+
         this.exportCSVButton = document.getElementById('exportCSV');
         this.exportJSONButton = document.getElementById('exportJSON');
-        //ratedisplay
         this.rateDisplay = document.getElementById('rate');
         this.guidanceDisplay = document.getElementById('guidance');
         this.progressFill = document.getElementById('progressFill');
@@ -23,12 +20,10 @@ export class UIController {
         this.dosingToggleButton = document.getElementById('dosingToggleButton');
         this.durationInput = document.getElementById('duration');
         this.intervalInput = document.getElementById('interval');
-        // Add input elements
         this.targetWeightInput = document.getElementById('targetWeight');
         this.lowThresholdInput = document.getElementById('lowThreshold');
         this.highThresholdInput = document.getElementById('highThreshold');
-        
-        // Initialize input listeners
+
         this.setupTargetWeightListener();
         this.fullscreenButton = document.getElementById('fullscreen-button');
         this.setupFullscreenHandler();
@@ -42,14 +37,12 @@ export class UIController {
         });
     }
 
-    // Add this new method
     setupTargetWeightListener() {
         if (this.targetWeightInput) {
             this.targetWeightInput.addEventListener('input', () => {
                 const targetWeightValue = parseFloat(this.targetWeightInput.value);
-                
+
                 if (!isNaN(targetWeightValue)) {
-                    // Set thresholds to target ± 1.0g
                     if (this.lowThresholdInput) {
                         this.lowThresholdInput.value = (targetWeightValue - 1.0).toFixed(1);
                     }
@@ -62,7 +55,6 @@ export class UIController {
                         high: this.highThresholdInput?.value
                     });
                 } else {
-                    // Clear thresholds if target is invalid
                     if (this.lowThresholdInput) this.lowThresholdInput.value = '';
                     if (this.highThresholdInput) this.highThresholdInput.value = '';
                 }
@@ -73,7 +65,6 @@ export class UIController {
         }
     }
 
-    // Weight display methods
     updateWeightDisplay(weight) {
         if (this.weightDisplay) {
             this.weightDisplay.textContent = `Weight: ${weight.toFixed(1)} g`;
@@ -93,7 +84,6 @@ export class UIController {
         return 0;
     }
 
-    // Progress bar methods
     updateProgressBar(percentage) {
         if (this.progressFill) {
             this.progressFill.style.width = `${percentage}%`;
@@ -107,9 +97,9 @@ export class UIController {
         if (!this.progressFill) return;
 
         this.progressFill.classList.remove(
-            'bg-gray-300', 
-            'bg-yellow-500', 
-            'bg-green-500', 
+            'bg-gray-300',
+            'bg-yellow-500',
+            'bg-green-500',
             'bg-red-600'
         );
 
@@ -128,7 +118,6 @@ export class UIController {
         }
     }
 
-    // Status and guidance methods
     updateStatus(message) {
         if (this.statusDisplay) {
             this.statusDisplay.textContent = `Status: ${message}`;
@@ -138,8 +127,7 @@ export class UIController {
     updateGuidance(message, type = 'info') {
         if (this.guidanceDisplay) {
             this.guidanceDisplay.textContent = message;
-            
-            // Update guidance styling based on type
+
             this.guidanceDisplay.className = 'mt-4 p-4 rounded-lg shadow-md text-center text-lg font-bold';
             switch (type) {
                 case 'success':
@@ -157,18 +145,16 @@ export class UIController {
         }
     }
 
-    // Weight readings display
     displayWeightReadings(weightReadings) {
         if (!this.weightReadingsList) return;
-        
+
         this.weightReadingsList.innerHTML = '';
         const hasData = Array.isArray(weightReadings) && weightReadings.length > 0;
-        
+
         if (hasData) {
             const table = document.createElement('table');
             table.className = 'w-full border-collapse';
-            
-            // Header row
+
             const thead = document.createElement('thead');
             const headerRow = document.createElement('tr');
             headerRow.innerHTML = `
@@ -179,20 +165,17 @@ export class UIController {
             `;
             thead.appendChild(headerRow);
             table.appendChild(thead);
-    
+
             const tbody = document.createElement('tbody');
             const reversedReadings = [...weightReadings].reverse();
-            
+
             reversedReadings.forEach(reading => {
-                // Modify how we split and process the data
                 const [readingNum, weight, rateWithParens, ...timestampParts] = reading.split(',').map(s => s.trim());
-                
-                // Clean up the rate string - remove parentheses and quotes
+
                 const rate = rateWithParens ? rateWithParens.replace(/[()]/g, '').replace(/"/g, '') : '';
-                
-                // Combine timestamp parts back together
+
                 const timestamp = timestampParts.join(', ').trim();
-                
+
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td class="py-1 px-4 border-b border-gray-200">${readingNum}</td>
@@ -202,20 +185,18 @@ export class UIController {
                 `;
                 tbody.appendChild(row);
             });
-            
+
             table.appendChild(tbody);
             this.weightReadingsList.appendChild(table);
         }
-    
+
         this.updateExportButtonStates(hasData);
     }
 
-    // Button control methods
     updateConnectButton(text) {
         if (this.connectButton) {
             console.log('Updating connect button text to:', text);
             this.connectButton.textContent = text;
-            // Update button styling based on connection state
             if (text === 'Disconnect') {
                 this.connectButton.classList.add('bg-red-400', 'text-white');
                 this.connectButton.classList.remove('bg-purple-100', 'hover:bg-purple-200');
@@ -282,7 +263,6 @@ export class UIController {
         }
     }
 
-    // Form input methods
     getTargetWeight() {
         const input = document.getElementById('targetWeight');
         return input ? input.value : '0';
@@ -305,7 +285,6 @@ export class UIController {
         const disabledClasses = ['bg-gray-50', 'opacity-50', 'cursor-not-allowed'];
 
         if (hasData) {
-            // Enable export buttons if there's data
             if (this.exportCSVButton) {
                 this.exportCSVButton.removeAttribute('disabled');
                 disabledClasses.forEach(cls => this.exportCSVButton.classList.remove(cls));
@@ -317,7 +296,6 @@ export class UIController {
                 enabledClasses.forEach(cls => this.exportJSONButton.classList.add(cls));
             }
         } else {
-            // Disable export buttons if no data
             if (this.exportCSVButton) {
                 this.exportCSVButton.setAttribute('disabled', '');
                 enabledClasses.forEach(cls => this.exportCSVButton.classList.remove(cls));
@@ -335,7 +313,6 @@ export class UIController {
             this.timerDisplay.textContent = `Timer: ${time}`;
         }
     }
-    //togle timer 
     updateButtonText() {
         if (this.toggleButton) {
             this.toggleButton.textContent = this.timerOn ? 'Stop' : 'Start';
@@ -347,16 +324,14 @@ export class UIController {
     toggleTimer() {
         if (this.timerOn) {
             this.timerManager.stopTimer();
-            // timerOn will be set to false by resetTimerState
         } else {
-            // const duration = parseInt(document.getElementById('duration').value);
             const interval = parseInt(document.getElementById('interval').value);
-            console.log('Current interval value:', interval); // Debug log
+            console.log('Current interval value:', interval);
             if (interval > 0) {
                 this.timerOn = true;
                 this.updateButtonText();
                 this.timerManager.startTimer(interval);
-                console.log('Starting timer with interval:', interval); // Debug log
+                console.log('Starting timer with interval:', interval);
 
             } else {
                 alert('Please enter valid duration and interval values');
@@ -364,7 +339,6 @@ export class UIController {
             }
         }
     }
-    //toggle timer part end
     showMeasurementAlert() {
         if (this.measurementAlert) {
             this.measurementAlert.style.display = 'block';
@@ -380,7 +354,7 @@ export class UIController {
 
     getIntervalSetting() {
         const intervalValue = this.intervalInput?.value;
-        console.log('Interval input value:', intervalValue); // Debug log
+        console.log('Interval input value:', intervalValue);
         return parseInt(this.intervalInput?.value || '5');
     }
 
@@ -392,24 +366,19 @@ export class UIController {
         }
         console.log('Timer state reset, timerOn:', this.timerOn);
     }
-     //make body go full screen 
      toggleFullScreen() {
         const container = document.querySelector('.container');
         if (!document.fullscreenElement) {
-            // Enter fullscreen
             if (container.requestFullscreen) {
                 container.requestFullscreen().catch(err => {
                     console.error(`Error attempting to enable fullscreen: ${err.message}`);
                 });
-                // Add fullscreen attribute to html and body
                 document.documentElement.setAttribute("fullscreen", "");
                 document.body.setAttribute("fullscreen", "");
             }
         } else {
-            // Exit fullscreen
             if (document.exitFullscreen) {
                 document.exitFullscreen();
-                // Remove fullscreen attribute from html and body
                 document.documentElement.removeAttribute("fullscreen");
                 document.body.removeAttribute("fullscreen");
             }

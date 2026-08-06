@@ -40,8 +40,6 @@ def main():
 
     ws = create_connection(f"ws://{args.host}/snapshot", timeout=8)
     ws.send(f"rate {args.rate}")
-    # Brief, TIME-BOUNDED drain of the rate ack/backlog. (Don't loop "until
-    # timeout": at 10 Hz frames arrive every ~100 ms, so that never exits.)
     ws.settimeout(0.3)
     drain_end = time.monotonic() + 0.5
     while time.monotonic() < drain_end:

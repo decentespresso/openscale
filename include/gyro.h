@@ -22,10 +22,6 @@ void ACC_init() {
       delay(100);
     }
 #endif
-    // while (1) {
-    //   delay(1000);
-    //   Serial.println("Failed to find MPU6050 chip");
-    // }
     Serial.println("Failed to find MPU6050 chip");
     b_gyroEnabled = false;
     return;
@@ -99,28 +95,11 @@ double gyro_z() {
   if (b_gyroEnabled) {
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
-    // if (millis() > t_gyro_refresh + i_gyro_print_interval) {
-    //   //达到设定的gyro刷新频率后进行刷新
-    //   t_gyro_refresh = millis();
-    //   Serial.print("\tGyro Z: \t");
-    //   Serial.println(a.acceleration.z);
-    //   Serial.print("\t\tTemp: \t");
-    //   Serial.println(temp.temperature);
-    //   Serial.print("\t\t\tESP32 Hall: \t");
-    //   Serial.println(hallRead());
-    // }
     return (double)a.acceleration.z;
   } else
     return 0.0;
 }
 
-// float gyro_temp() {
-//   sensors_event_t temp;
-//   mpu.getEvent(&temp);
-//   Serial.print("Gyro Temp: \t");
-//   Serial.println(temp.temperature);
-//   return a.temperature;
-// }
 #endif
 
 
@@ -130,13 +109,10 @@ double gyro_z() {
 BMA400 acc;
 int i_gyro_print_interval = 100;
 unsigned long t_gyro_refresh = 0;
-// I2C address selection
-uint8_t i2cAddress = BMA400_I2C_ADDRESS_DEFAULT;  // 0x14
-//uint8_t i2cAddress = BMA400_I2C_ADDRESS_SECONDARY; // 0x15
+uint8_t i2cAddress = BMA400_I2C_ADDRESS_DEFAULT;
 
 void ACC_init() {
   while (acc.beginI2C(i2cAddress) != BMA400_OK) {
-    // Not connected, inform user
     Serial.println("Failed to find BMA400 chip");
 #ifdef BUZZER
     for (int i = 0; i < 4; i++) {
@@ -146,12 +122,7 @@ void ACC_init() {
       delay(100);
     }
 #endif
-    // Wait a bit to see if connection is established
     delay(1000);
-    // while (1) {
-    //   delay(1000);
-    //   Serial.println("Failed to find BMA400 chip");
-    // }
     Serial.println("Failed to find BMA400 chip");
     b_gyroEnabled = false;
     return;

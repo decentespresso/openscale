@@ -33,14 +33,10 @@ def assert_before(path, first, second):
 
 
 def main():
-    # ElegantOTA's own auto-reboot bypasses reset()'s mDNS withdrawal; the
-    # restart must be queued through the main-loop reset mechanism instead.
     assert_contains(WIFI_OTA_HEADER, "ElegantOTA.setAutoReboot(false)")
     assert_not_contains(WIFI_OTA_HEADER, "ElegantOTA.setAutoReboot(true)")
     assert_contains(WIFI_OTA_HEADER, "remoteQueueResetAt(millis() + OTA_RESTART_DELAY_MS)")
 
-    # Pull OTA's success paths must queue the restart rather than calling
-    # ESP.restart() directly from the Pull OTA task or the setup() task.
     assert_contains(PULL_OTA_HEADER, "remoteQueueResetAt(millis())")
     pull_ota_contents = PULL_OTA_HEADER.read_text(encoding="utf-8")
     if pull_ota_contents.count("remoteQueueResetAt(millis())") != 2:
@@ -50,16 +46,12 @@ def main():
         )
     assert_not_contains(PULL_OTA_HEADER, "ESP.restart();\n  return true;")
 
-    # hdsOtaRollback() withdraws mDNS/WiFi before the rollback reboot, since
-    # the pending-LittleFS flow can have brought WiFi (and mDNS) up first.
     assert_before(
         ROLLBACK_HEADER,
         "stopWifi();",
         "esp_ota_mark_app_invalid_rollback_and_reboot();",
     )
 
-    # setHostname() must run before WiFi.config(), which starts STA and
-    # copies the then-current default hostname to the interface.
     assert_before(
         WIFI_SETUP_SOURCE,
         "WiFi.setHostname(params.getMdnsName());",

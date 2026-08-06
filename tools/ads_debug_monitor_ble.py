@@ -1,22 +1,4 @@
 #!/usr/bin/env python3
-"""
-ADS1232 Debug Monitor (BLE)
-Companion to ads_debug_monitor.py that talks to the scale over BLE
-instead of USB serial. Uses the same 0x25 command and 41-byte packet
-format, decoded with decode_ads_debug.py.
-
-BLE GATT layout (Decent Scale):
-  Service:   0000fff0-0000-1000-8000-00805f9b34fb
-  Write:     0000 36f5-0000-1000-8000-00805f9b34fb
-  Notify:    0000fff4-0000-1000-8000-00805f9b34fb
-
-Commands (write to 36f5):
-  03 25 00 <xor>   -> debug streaming OFF
-  03 25 01 <xor>   -> debug streaming CONTINUOUS (~10 Hz)
-  03 25 02 <xor>   -> debug streaming SINGLE (one notify, auto-clears)
-
-Requires: pip install bleak
-"""
 
 import argparse
 import asyncio
@@ -69,7 +51,6 @@ class BleMonitor:
     def __init__(self, address):
         self.address = address
         self.client = None
-        # Notify packets are 41 bytes and fit a single MTU; assume one notify == one packet
         self._packet_handler = None
         self._heartbeat_task = None
 
@@ -101,7 +82,6 @@ class BleMonitor:
         print("Disconnected.")
 
     async def _heartbeat_loop(self):
-        # Keeps firmware-side b_requireHeartBeat timer fed (5s window).
         try:
             while self.client and self.client.is_connected:
                 try:
@@ -113,8 +93,6 @@ class BleMonitor:
             return
 
     def _on_notify(self, _char, data):
-        # Filter to debug packets only (header 0x03 0x25, length 41).
-        # Other notifications on fff4 (weight, voltage, etc.) are ignored.
         if is_debug_packet(data):
             info = decode_ads_debug_packet(bytes(data))
             if info and self._packet_handler:
@@ -124,8 +102,6 @@ class BleMonitor:
         cmd = build_debug_command(mode)
         mode_names = {0: "OFF", 1: "CONTINUOUS", 2: "SINGLE"}
         print(f"Sent: {mode_names.get(mode, '?')} ({format_hex(cmd)})")
-        # Firmware characteristic 36f5 is PROPERTY_WRITE only (with response).
-        # Using response=False here would be silently dropped by some stacks.
         await self.client.write_gatt_char(WRITE_UUID, cmd, response=True)
 
     def set_handler(self, handler):
@@ -141,7 +117,7 @@ async def single_shot(address):
             received.set()
 
         mon.set_handler(handler)
-        await mon.send(2)  # SINGLE
+        await mon.send(2)
         try:
             await asyncio.wait_for(received.wait(), timeout=3.0)
             return True
@@ -159,14 +135,13 @@ async def monitor(address, duration=None):
             nonlocal count, last_print
             count += 1
             now = time.time()
-            # Print every 1s to avoid flooding terminal at ~10 Hz
             if now - last_print >= 1.0:
                 print_debug_info(info)
                 print(f"({count} packets received)\n")
                 last_print = now
 
         mon.set_handler(handler)
-        await mon.send(1)  # CONTINUOUS
+        await mon.send(1)
         print("Streaming. Press Ctrl+C to stop." if duration is None
               else f"Streaming for {duration}s...")
         try:
@@ -179,7 +154,7 @@ async def monitor(address, duration=None):
             print("\nStopping...")
         finally:
             try:
-                await mon.send(0)  # OFF
+                await mon.send(0)
             except Exception:
                 pass
         print(f"Total packets: {count}")

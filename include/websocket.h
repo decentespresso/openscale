@@ -102,10 +102,6 @@ int websocketBatteryPercent() {
   return (int)perc;
 }
 
-// Queue a pending hardware action so the main loop performs it on its own
-// task. Remote callbacks (WebSocket on AsyncTCP, BLE stack callbacks) must not
-// touch u8g2 (I2C/SPI bus), peripheral power-rail GPIOs, StopWatch, or scale
-// mutable state directly.
 inline void remoteQueuePending(uint32_t bits) {
   portENTER_CRITICAL(&wsPendingMux);
   if (bits & WSP_RESET) {
@@ -115,10 +111,6 @@ inline void remoteQueuePending(uint32_t bits) {
   portEXIT_CRITICAL(&wsPendingMux);
 }
 
-// Atomically set `setBits` and clear `clearBits` in the pending mask. Used
-// for mutually-exclusive action pairs (DISPLAY_ON/OFF, SLEEP_ON/OFF, ...) so
-// that if a previous opposing action is still queued, it's superseded by
-// the new one rather than running both in source order.
 inline void remoteReplacePending(uint32_t setBits, uint32_t clearBits) {
   portENTER_CRITICAL(&wsPendingMux);
   wsPendingMask = (wsPendingMask & ~clearBits) | setBits;
@@ -132,7 +124,6 @@ inline void remoteQueueSamplesInUse(uint8_t samplesInUse) {
   portEXIT_CRITICAL(&wsPendingMux);
 }
 
-// Backwards-compatible names for the WebSocket command handler.
 inline void wsQueuePending(uint32_t bits) {
   remoteQueuePending(bits);
 }
@@ -153,11 +144,6 @@ void processWsPendingCmds() {
   portEXIT_CRITICAL(&wsPendingMux);
   if (mask == 0) return;
 
-  // Hardware and multi-field state mutations are touched here on the main loop
-  // task. Doing them from remote callbacks would race display/power drivers or
-  // tear concurrent StopWatch/scale state. State flags used by status frames
-  // (b_u8g2Sleep, b_softSleep, ...) are updated synchronously by the producer
-  // so responses reflect the requested state immediately.
   if (mask & WSP_RESET) {
     if (resetAt != 0 && (long)(millis() - resetAt) < 0) {
       portENTER_CRITICAL(&wsPendingMux);
@@ -210,26 +196,6 @@ void processWsPendingCmds() {
   }
 }
 
-// --- Heap-floor gate for periodic WS broadcasts ------------------------------
-// printfAll() allocates an AsyncWebSocketMessage (a heap buffer) for EVERY
-// connected client. Under WebSocket connection churn the heap can collapse, and
-// that allocation then throws std::bad_alloc -> std::terminate() -> abort()
-// (Arduino-ESP32 builds with -fno-exceptions, so the throw can't be caught) ->
-// reboot. That OOM-reboot is the "weight stops being collected under sustained
-// multi-client load" failure. Skipping a weight frame is invisible (the next is
-// <=500 ms away); skipping a button or power-off broadcast is rarer but also
-// tolerable; crashing is not. The floor sits above the 15 KB heap watchdog
-// (wifi_setup.cpp) so broadcasts back off well before a reboot is even
-// considered. Every broadcast helper below runs on the main loop, so the skip
-// counter needs no synchronization.
-//
-// The floor is 32 KB (vs. the original 25 KB) to leave headroom for lwIP TX
-// buffers during the post-broadcast drain. Under 4-client load the 25 KB floor
-// let free heap dip to ~22 KB after a broadcast burst, where lwIP silently
-// failed to allocate pbufs and WiFi packets dropped while the state machine
-// still reported CONNECTED (no disc/rec increments). Raising the floor by ~7 KB
-// keeps the post-burst trough above the lwIP starvation knee. Measured: 2h+
-// soak at 4 clients, 0% ping loss, 0 reconnects, ~300 averted OOMs.
 static const uint32_t WS_BROADCAST_HEAP_FLOOR = 32000;
 static const size_t WS_CONTROL_MAX_FRAME_BYTES = 512;
 static uint32_t g_wsBroadcastHeapSkips = 0;
@@ -238,7 +204,7 @@ static inline bool wsBroadcastHeapOk() {
   g_wsBroadcastHeapSkips++;
   static unsigned long lastLog = 0;
   unsigned long now = millis();
-  if (now - lastLog >= 2000) {  // rate-limit: broadcasts can be 10 Hz
+  if (now - lastLog >= 2000) {
     lastLog = now;
     Serial.printf("[ws] low heap %lu < %lu -> skip broadcast (total skips=%lu)\n",
                   (unsigned long)ESP.getFreeHeap(),
@@ -341,14 +307,6 @@ void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
                  f_maxDriftCompensation);
 }
 
-// Broadcast via textAll(): it holds the library's client-list mutex and
-// queues to each client independently. We deliberately do NOT gate on
-// availableForWriteAll() (it returns the minimum across clients, coupling every
-// client to the slowest), and we deliberately do NOT hand-iterate getClients()
-// (that accessor doesn't take the mutex, so iterating on the loop task would
-// race client disconnects on the AsyncTCP task). With
-// setCloseClientOnQueueFull(false), a backed-up client drops its own frame
-// without blocking the others.
 void sendWebsocketWeightAll(float grams, unsigned long ms) {
   if (!b_wifiEnabled || websocket.count() == 0) return;
   if (!wsBroadcastHeapOk()) return;
@@ -407,11 +365,6 @@ bool setWebsocketRateFromValue(AsyncWebSocketClient *client, String value) {
   return setWebsocketRateFromHz(client, value.toFloat());
 }
 
-// Trust model: these WebSocket commands are unauthenticated, exactly like the
-// BLE control interface — any host that can reach /snapshot can drive the
-// scale, including destructive commands (`power off`, `sleep`, `display off`).
-// The device assumes it is on a trusted LAN; do not expose it to an untrusted
-// network.
 bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command, String action = "") {
   command.trim();
   action.trim();
@@ -445,11 +398,6 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
   }
 
   if (command == "timer") {
-    // StopWatch is multi-field and is also mutated from the main loop, BLE and
-    // USB. Instead of touching it from the AsyncTCP task (which could tear a
-    // concurrent elapsed()/isRunning() read in the status frame), defer the
-    // mutation to the main loop via the pending mask — the same producer/
-    // consumer guarding that requestRemoteTare() uses for tares.
     if (action == "start") {
       Serial.println("Websocket timer start detected.");
       wsReplacePending(WSP_TIMER_START, WSP_TIMER_STOP | WSP_TIMER_ZERO);
@@ -473,9 +421,6 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
   }
 
   if (command == "display") {
-    // Update the state flag synchronously so the status frame we send next
-    // reflects the requested state. The u8g2 call (I2C, not thread-safe) is
-    // deferred and runs on the main loop one tick later.
     if (action == "on") {
       Serial.println("Websocket display on detected.");
       b_u8g2Sleep = false;
@@ -516,10 +461,6 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
   if (command == "sleep" || command == "soft_sleep") {
     if (action == "on") {
       Serial.println("Websocket soft sleep on detected.");
-      // Set state flags synchronously so status reflects the requested mode.
-      // u8g2 + GPIO power-rail writes are deferred to the main loop. Soft sleep
-      // turns the OLED off, so mark b_u8g2Sleep too (status derives display_on
-      // from it) — mirrors the wake branch below that clears it.
       b_softSleep = true;
       b_u8g2Sleep = true;
       wsReplacePending(WSP_SLEEP_ON, WSP_SLEEP_OFF);
@@ -651,18 +592,12 @@ bool handleWebsocketRateCommand(AsyncWebSocketClient *client, String msg) {
     return setWebsocketRateFromInterval(client, doc["interval_ms"].as<unsigned long>());
   }
 
-  // Shorthand control commands: {"events":"on"}, {"display":"off"},
-  // {"tare":true}, etc. -- a control key at top level whose value is the action.
-  // (Mirrors the {"rate":"10k"} shorthand above.)
   static const char *kControlKeys[] = {
       "events", "tare", "timer", "display", "low_power", "sleep", "soft_sleep", "power"};
   for (const char *key : kControlKeys) {
     if (doc[key].is<const char *>()) {
       return handleWebsocketControlCommand(client, key, doc[key].as<String>());
     }
-    // Bool form: {"display":true/false} -> "on"/"off" (and {"tare":true} fires
-    // tare, which ignores the action). Exclude "power": a bool must not be able
-    // to trigger power-off -- that requires the explicit {"power":"off"} form.
     if (doc[key].is<bool>() && strcmp(key, "power") != 0) {
       return handleWebsocketControlCommand(client, key, doc[key].as<bool>() ? "on" : "off");
     }
@@ -686,27 +621,14 @@ void setupWebsocketEvents() {
     if (type == WS_EVT_CONNECT) {
       Serial.printf("Client %u connected\n", client->id());
       client->setCloseClientOnQueueFull(false);
-      // Ride out transient BT/WiFi coexistence stalls. AsyncTCP's default ACK
-      // timeout (CONFIG_ASYNC_TCP_MAX_ACK_TIME, 5000 ms in esp32async AsyncTCP
-      // ~3.x) closes the socket (graceful FIN, no WS close frame) when a few
-      // seconds of sent data go unacked during a radio stall -- the cause of the
-      // ~1-2 min "clean disconnect" drops. Raising it lets the stream resume
-      // when the radio frees up instead of dropping. A genuinely dead client is
-      // still reaped, just later.
       client->client()->setAckTimeout(30000);
     } else if (type == WS_EVT_DISCONNECT) {
       Serial.printf("Client %u disconnected\n", client->id());
-      // Only reset shared session state when the LAST client leaves —
-      // otherwise one client disconnecting would wipe rate/events state
-      // for any other still-connected clients. server->count() at this
-      // point excludes the disconnecting client.
       if (server->count() == 0) {
         weightWebsocketNotifyInterval = WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS;
         b_websocketEventsEnabled = false;
       }
     } else if (type == WS_EVT_ERROR) {
-      // arg = reason code (uint16_t*), data/len = human-readable reason. Log
-      // both so a protocol error is distinguishable from a network tear.
       Serial.printf("WebSocket error on client %u: code=%u reason=%.*s\n",
                     client->id(), arg ? *((uint16_t *)arg) : 0,
                     (int)len, (len && data) ? (const char *)data : "");
@@ -715,8 +637,6 @@ void setupWebsocketEvents() {
     }
     if (type == WS_EVT_DATA) {
       AwsFrameInfo *info = (AwsFrameInfo *)arg;
-      // Only handle complete, unfragmented text frames. Fragmented or binary
-      // frames would corrupt the parsers below.
       if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
         if (info->len > WS_CONTROL_MAX_FRAME_BYTES) {
           sendWebsocketError(client, "frame_too_large", "control frame too large");
@@ -725,10 +645,6 @@ void setupWebsocketEvents() {
         String msg((const char *)data, len);
         Serial.print("Websocket recv: ");
         Serial.println(msg);
-        // Unrecognized or malformed commands get an explicit error frame
-        // rather than silence, so a client can tell "rejected" from "frame
-        // never arrived". (The legacy bare `tare` string is handled above and
-        // stays intentionally silent.)
         if (!handleWebsocketRateCommand(client, msg)) {
           sendWebsocketError(client, "unknown_command",
                              "unrecognized or malformed command");

@@ -9,13 +9,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     timerManager.setUIController(ui);
 
-    // --- WebSocket for live weight ---
     let currentWeight = 0;
-    let currentTimestamp = 0 
+    let currentTimestamp = 0
     const ws = new ReconnectingWebSocket(`ws://${window.location.host}/snapshot`);
     ws.debug = true;
 
-//mock : ws://localhost:8080/snapshot
     ws.addEventListener('message', (event) => {
   try {
     const jsondata = JSON.parse(event.data);
@@ -31,16 +29,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (jsondata.ms !== undefined) {
       currentTimestamp = jsondata.ms;
     }
-    // console.log('Current Weight:', currentWeight, 'Timestamp:', currentTimestamp);
   } catch (e) {
     console.error('Failed to parse WebSocket message as JSON:', event.data, e);
   }
 
- // Make sure your UIController has this method
     });
     ws.addEventListener('open', () => {
     console.log('WebSocket connection established.');
-    ui.updateStatus('Connected'); // Set status to connected when the WebSocket opens
+    ui.updateStatus('Connected');
 });
     ws.addEventListener('error', () => {
         ui.updateStatus('Connection error');
@@ -50,7 +46,6 @@ document.addEventListener('DOMContentLoaded', () => {
         ui.updateStatus('Disconnected');
     });
 
-    // Tare button
     document.getElementById('tareButton')?.addEventListener('click', () => {
         if (ws.readyState === WebSocket.OPEN) {
             ws.send('tare');
@@ -59,15 +54,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Timer control
     document.getElementById('toggleTimer')?.addEventListener('click', () => {
         ui.toggleTimer();
     });
 
-    
-   
 
-    // Other controls
+
+
     document.getElementById('exportCSV')?.addEventListener('click', () => scale.exportToCSV());
     document.getElementById('exportJSON')?.addEventListener('click', () => scale.exportToJSON());
 });

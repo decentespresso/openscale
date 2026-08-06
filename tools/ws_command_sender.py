@@ -1,20 +1,4 @@
 #!/usr/bin/env python3
-"""
-WebSocket control-command sender for the Half Decent Scale.
-
-Exercises the scale's command/action handling (tare, timer, status, rate,
-events) over the /snapshot control path while the 10 Hz weight stream runs.
-These actions execute on the SAME main loop that emits the 10 Hz broadcast and
-touch the display (I2C) and stopwatch -- so this is the real test of "WiFi stays
-stable while the scale handles other things."
-
-Only non-disruptive commands are sent (no power off / sleep / display off, which
-would blank the screen or shut the scale down). Logs each command's response and
-flags any disconnect.
-
-Usage:
-    python3 tools/ws_command_sender.py 192.168.10.242 --interval 2 --duration 3000
-"""
 
 import argparse
 import time
@@ -22,9 +6,6 @@ from datetime import datetime
 
 from websocket import create_connection, WebSocketException
 
-# Safe, non-disruptive rotation. Each exercises a different handler/main-loop
-# action: status/events = response only; tare = load-cell tare; timer = stopwatch
-# mutate via the pending-mask; rate = notify-interval change.
 COMMANDS = ["status", "events on", "rate 10k", "tare",
             "timer start", "timer stop", "timer zero", "status"]
 
@@ -56,7 +37,6 @@ def main():
             i += 1
             ws.send(cmd)
             sent += 1
-            # Drain any frames briefly so we see the ack and don't backlog.
             ws.settimeout(1.0)
             try:
                 while True:

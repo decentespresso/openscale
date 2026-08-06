@@ -1,21 +1,4 @@
 #!/usr/bin/env python3
-"""
-mDNS responder stressor for the Half Decent Scale.
-
-Hammers the scale's ESPmDNS responder while it streams 10 Hz over WiFi, to make
-sure discovery traffic (which clients generate constantly) doesn't disturb the
-stream or wedge the responder. Sends mDNS queries to 224.0.0.251:5353 with the
-unicast-response (QU) bit and measures replies; with --resolver it also exercises
-the OS resolver the way a real client's discovery does (this is what failed with
-gaierror under load earlier).
-
-Queries:
-  A   hds.local
-  PTR _decentscale._tcp.local
-
-Usage:
-  python3 tools/mdns_stress.py --rate 3 --resolver --duration 3800
-"""
 
 import argparse
 import socket
@@ -31,13 +14,13 @@ def ts():
 
 
 def build_query(name, qtype, qu=True):
-    header = struct.pack(">HHHHHH", 0, 0, 1, 0, 0, 0)  # id0, flags0, qd1
+    header = struct.pack(">HHHHHH", 0, 0, 1, 0, 0, 0)
     q = b""
     for part in name.split("."):
         if part:
             q += bytes([len(part)]) + part.encode()
     q += b"\x00"
-    q += struct.pack(">HH", qtype, 0x8001 if qu else 0x0001)  # QU bit + IN
+    q += struct.pack(">HH", qtype, 0x8001 if qu else 0x0001)
     return header + q
 
 
@@ -77,7 +60,7 @@ def main():
         try:
             s.sendto(q, MCAST)
             sent += 1
-            s.recvfrom(2048)  # any mDNS reply
+            s.recvfrom(2048)
             replied += 1
             lat.append((time.monotonic() - t0) * 1000)
         except socket.timeout:
