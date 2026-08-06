@@ -1,0 +1,11 @@
+{
+  "firmware_ref": "main",
+  "features": [
+    "wifi",
+    "webserver",
+    "littlefs"
+  ],
+  "plugins": [
+    "hello-web"
+  ]
+}
