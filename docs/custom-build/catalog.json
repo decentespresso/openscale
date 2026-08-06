@@ -1,0 +1,24 @@
+{
+  "firmware_refs": ["main"],
+  "features": {
+    "wifi": ["webserver"],
+    "mdns": ["wifi"],
+    "webserver": ["wifi"],
+    "websocket": ["wifi", "webserver"],
+    "littlefs": [],
+    "elegant-ota": ["wifi", "webserver"],
+    "pull-ota": ["wifi"],
+    "grinder": ["wifi", "mdns"]
+  },
+  "defaults": ["pull-ota"],
+  "plugins": [
+    {
+      "id": "hello-web",
+      "name": "Hello Web",
+      "version": "1.0.0",
+      "firmware_refs": ["main"],
+      "requires": ["wifi", "webserver", "littlefs"],
+      "conflicts": []
+    }
+  ]
+}
