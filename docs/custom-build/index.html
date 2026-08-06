@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenScale Custom Build</title>
+  <style>
+    body{font:16px system-ui,sans-serif;max-width:760px;margin:2rem auto;padding:0 1rem}fieldset{margin:1rem 0}label{display:block;margin:.5rem 0}pre{padding:1rem;background:#eee;white-space:pre-wrap}button{padding:.5rem 1rem}.note{color:#555}
+  </style>
+</head>
+<body>
+  <h1>OpenScale custom build</h1>
+  <p class="note">This page prepares a maintainer command. It does not start anonymous builds and stores no GitHub token.</p>
+  <label>Firmware ref <select id="firmware-ref"></select></label>
+  <fieldset><legend>Features</legend><div id="features"></div></fieldset>
+  <fieldset><legend>Approved plugins</legend><div id="plugins"></div></fieldset>
+  <h2>Resolved selection</h2><p id="resolved"></p>
+  <pre id="command"></pre>
+  <button id="copy" type="button">Copy gh command</button>
+  <p><a href="https://github.com/decentespresso/openscale/actions/workflows/custom-build.yml">Open custom-build workflow</a></p>
+  <script src="app.js"></script>
+</body>
+</html>
