@@ -81,7 +81,16 @@ def main():
         "rollbackFound = pullOtaFindCurrentRelease(catalog, rollbackManifest)",
         "!rollbackFound && !pullOtaFetchCurrentReleaseManifest(rollbackManifest)",
     )
-    assert_contains(PULL_OTA_HEADER, "wifi_init();")
+    assert_contains(PULL_OTA_HEADER, "setupWifi();")
+    assert_not_contains(PULL_OTA_HEADER, "wifi_init(")
+    assert_contains(PULL_OTA_HEADER, '#include <LittleFS.h>')
+    assert_contains(PULL_OTA_HEADER, 'pullOtaParseAsset(root["littlefs"], manifest.littlefs, true)')
+    assert_contains(PULL_OTA_HEADER, "!manifest.littlefs.required")
+    assert_not_contains(PULL_OTA_HEADER, '#include "webserver.h"')
+    assert_not_contains(PULL_OTA_HEADER, '#include "wifi_ota.h"')
+    assert_not_contains(PULL_OTA_HEADER, "startWebServer")
+    assert_not_contains(PULL_OTA_HEADER, "stopWebServer")
+    assert_not_contains(PULL_OTA_HEADER, "HDS_FEATURE_PULL_OTA_FILESYSTEM")
     assert_contains(PULL_OTA_HEADER, "pullOtaStorePendingLittleFs")
     assert_contains(PULL_OTA_HEADER, "pullOtaLoadPendingLittleFs")
     assert_contains(PULL_OTA_HEADER, "loaded.version != pullOtaCurrentVersion()")
@@ -113,7 +122,6 @@ def main():
     assert_not_contains(HDS_SOURCE, "drawPullOta" + "Status")
     assert_not_contains(MENU_HEADER, "ODev" + "Studio")
     assert_not_contains(PULL_OTA_HEADER, "FS update needed")
-    assert_not_contains(PULL_OTA_HEADER, "setupWifi();")
     assert_not_contains(PULL_OTA_HEADER, "setInsecure")
     assert_not_contains(PULL_OTA_HEADER, "if (list.count == 1)")
     if OTA_STAGE_MARKER.exists():

@@ -310,7 +310,7 @@ def main():
     assert_contains(HDS_SOURCE, "void consumeScaleTareStatus")
     assert_contains(HDS_SOURCE, "void clearPendingAutomaticTareState")
     assert_contains(USBCOMM_HEADER, "setScaleSamplesInUseWhenReady(samplesInUse, \"USB samples\")")
-    assert_contains(WEBSOCKET_HEADER, "setScaleSamplesInUseWhenReady(samplesInUse, \"remote samples\")")
+    assert_contains(HDS_SOURCE, "setScaleSamplesInUseWhenReady(samplesInUse, \"remote samples\")")
     assert_contains(HEADER.parent / "menu.h", "setScaleSamplesInUseWhenReady(1, \"calibration restore\")")
     assert_contains(HEADER.parent / "menu.h", "calibrationShowUsbWarning();")
     assert_not_contains(HEADER.parent / "menu.h", "Unplug scale")

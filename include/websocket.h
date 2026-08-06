@@ -1,16 +1,15 @@
 #ifndef WEBSOCKET_H
 #define WEBSOCKET_H
+
+#include "config.h"
+
+#if HDS_FEATURE_WEBSOCKET
 #include "declare.h"
 #include "parameter.h"
 #include "power.h"
 #include "display.h"
 #include "wifi_setup.h"
 #include "webserver.h"
-
-void wifiUpdate();
-#if defined(ACC_MPU6050) || defined(ACC_BMA400)
-void sendBleGyro();
-#endif
 
 unsigned long websocketIntervalForRate(float hz) {
   if (fabs(hz - 2.0) < 0.01) {
@@ -106,108 +105,12 @@ int websocketBatteryPercent() {
 // task. Remote callbacks (WebSocket on AsyncTCP, BLE stack callbacks) must not
 // touch u8g2 (I2C/SPI bus), peripheral power-rail GPIOs, StopWatch, or scale
 // mutable state directly.
-inline void remoteQueuePending(uint32_t bits) {
-  portENTER_CRITICAL(&wsPendingMux);
-  if (bits & WSP_RESET) {
-    pendingResetAt = 0;
-  }
-  wsPendingMask |= bits;
-  portEXIT_CRITICAL(&wsPendingMux);
-}
-
-// Atomically set `setBits` and clear `clearBits` in the pending mask. Used
-// for mutually-exclusive action pairs (DISPLAY_ON/OFF, SLEEP_ON/OFF, ...) so
-// that if a previous opposing action is still queued, it's superseded by
-// the new one rather than running both in source order.
-inline void remoteReplacePending(uint32_t setBits, uint32_t clearBits) {
-  portENTER_CRITICAL(&wsPendingMux);
-  wsPendingMask = (wsPendingMask & ~clearBits) | setBits;
-  portEXIT_CRITICAL(&wsPendingMux);
-}
-
-inline void remoteQueueSamplesInUse(uint8_t samplesInUse) {
-  portENTER_CRITICAL(&wsPendingMux);
-  pendingSamplesInUse = samplesInUse;
-  wsPendingMask |= WSP_SET_SAMPLES;
-  portEXIT_CRITICAL(&wsPendingMux);
-}
-
-// Backwards-compatible names for the WebSocket command handler.
 inline void wsQueuePending(uint32_t bits) {
   remoteQueuePending(bits);
 }
 
 inline void wsReplacePending(uint32_t setBits, uint32_t clearBits) {
   remoteReplacePending(setBits, clearBits);
-}
-
-void processWsPendingCmds() {
-  portENTER_CRITICAL(&wsPendingMux);
-  uint32_t mask = wsPendingMask;
-  uint8_t samplesInUse = pendingSamplesInUse;
-  unsigned long resetAt = pendingResetAt;
-  wsPendingMask = 0;
-  if (mask & WSP_RESET) {
-    pendingResetAt = 0;
-  }
-  portEXIT_CRITICAL(&wsPendingMux);
-  if (mask == 0) return;
-
-  // Hardware and multi-field state mutations are touched here on the main loop
-  // task. Doing them from remote callbacks would race display/power drivers or
-  // tear concurrent StopWatch/scale state. State flags used by status frames
-  // (b_u8g2Sleep, b_softSleep, ...) are updated synchronously by the producer
-  // so responses reflect the requested state immediately.
-  if (mask & WSP_RESET) {
-    if (resetAt != 0 && (long)(millis() - resetAt) < 0) {
-      portENTER_CRITICAL(&wsPendingMux);
-      wsPendingMask |= WSP_RESET;
-      pendingResetAt = resetAt;
-      portEXIT_CRITICAL(&wsPendingMux);
-      mask &= ~WSP_RESET;
-      if (mask == 0) return;
-    } else {
-      reset();
-      return;
-    }
-  }
-  if (mask & WSP_DISPLAY_ON)  { u8g2.setPowerSave(0); }
-  if (mask & WSP_DISPLAY_OFF) { u8g2.setPowerSave(1); }
-  if (mask & WSP_LOWPWR_ON)   { u8g2.setContrast(0); }
-  if (mask & WSP_LOWPWR_OFF)  { u8g2.setContrast(255); }
-  if (mask & WSP_SLEEP_OFF) {
-    wakeScaleFromSoftSleep("remote soft wake");
-  }
-#if defined(ACC_MPU6050) || defined(ACC_BMA400)
-  if ((mask & WSP_BLE_GYRO) && !(mask & WSP_SLEEP_ON) && !b_softSleep) {
-    sendBleGyro();
-  }
-#endif
-  if (mask & WSP_SLEEP_ON) {
-    u8g2.setPowerSave(1);
-    digitalWrite(PWR_CTRL, LOW);
-    digitalWrite(ACC_PWR_CTRL, LOW);
-  }
-  if (mask & WSP_TIMER_START) {
-    stopWatch.reset();
-    stopWatch.start();
-  }
-  if (mask & WSP_TIMER_STOP)  { stopWatch.stop(); }
-  if (mask & WSP_TIMER_ZERO)  { stopWatch.reset(); }
-  if (mask & WSP_SET_SAMPLES) {
-    if (setScaleSamplesInUseWhenReady(samplesInUse, "remote samples")) {
-      Serial.print("Samples in use set to: ");
-      Serial.println(scale.getSamplesInUse());
-    } else {
-      Serial.println("Samples in use refresh failed");
-    }
-  }
-  if (mask & WSP_WIFI_UPDATE) {
-    wifiUpdate();
-  }
-  if (mask & WSP_POWER_OFF) {
-    b_powerOff = true;
-  }
 }
 
 // --- Heap-floor gate for periodic WS broadcasts ------------------------------
@@ -737,4 +640,7 @@ void setupWebsocketEvents() {
     }
   });
 }
+
+#endif
+
 #endif

@@ -1,0 +1,7 @@
+{
+  "firmware_ref": "main",
+  "features": [
+    "pull_ota"
+  ],
+  "plugins": []
+}

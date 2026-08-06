@@ -96,7 +96,7 @@ All buttons are TTP223 capacitive touch modules with the AceButton library provi
 | Feature | Define | Notes |
 |---------|--------|-------|
 | BLE | `BT` | Decent Scale BLE protocol (service `fff0`, read `fff4`, write `36f5`). Model byte `0x03`. |
-| WiFi / OTA | `WIFIOTA` | Web server, WebSocket, over-the-air firmware updates. |
+| WiFi / OTA | `HDS_FEATURE_WIFI`, `HDS_FEATURE_WEBSERVER`, `HDS_FEATURE_WEBSOCKET`, `HDS_FEATURE_ELEGANT_OTA`, `HDS_FEATURE_PULL_OTA` | Compile-time-separated WiFi, web, browser OTA, and OLED/button Pull OTA paths. |
 | USB Serial | *(always on)* | Weight data output and debug console. |
 | ESP-NOW | `ESPNOW` | Optional peer-to-peer ESP communication. Currently commented out. |
 

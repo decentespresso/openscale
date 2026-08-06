@@ -1,9 +1,15 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#ifdef HDS_CUSTOM_BUILD
+#include "generated_features.h"
+#endif
+
 #ifndef HDS_ENABLE_GRINDER
 #define HDS_ENABLE_GRINDER 0
 #endif
+
+#include "hds_features.h"
 
 // BLE UUIDs
 
@@ -22,7 +28,6 @@
 // #define SW_SPI //HW_I2C  HW_SPI  SW_I2C  SW_SPI   //oled linkage
 // #define SH1106
 #define V8_1
-#define WIFIOTA
 //#define CAL
 
 //#define SSD1306

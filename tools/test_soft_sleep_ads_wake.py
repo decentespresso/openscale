@@ -105,7 +105,7 @@ def main():
         ],
     )
 
-    ws_pending = method_body(WEBSOCKET_HEADER, "processWsPendingCmds")
+    ws_pending = method_body(HDS_SOURCE, "processRemotePendingCommands")
     assert_ordered(ws_pending, ['wakeScaleFromSoftSleep("remote soft wake")'])
     sleep_off_index = ws_pending.index("if (mask & WSP_SLEEP_OFF)")
     sleep_on_index = ws_pending.index("if (mask & WSP_SLEEP_ON)")

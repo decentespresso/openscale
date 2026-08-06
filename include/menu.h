@@ -1,10 +1,16 @@
 #ifndef MENU_H
 #define MENU_H
 
+#include "config.h"
 #include "esp32-hal.h"
 #include "parameter.h"
-#include "mdns_name.h"
+#if HDS_FEATURE_WIFI
 #include "wifi_setup.h"
+#include <WiFi.h>
+#if HDS_FEATURE_MDNS
+#include "mdns_name.h"
+#endif
+#endif
 #if HDS_ENABLE_GRINDER
 #include "grinder_runtime.h"
 #endif
@@ -38,10 +44,12 @@ void exitMenu();
 void buzzerOn();
 void buzzerOff();
 #endif
+#if HDS_FEATURE_WIFI
 void toggleWifiOff();
 void toggleWifiOn();
 void resetWifi();
 void showWifiStatus();
+#endif
 void heartbeatOn();
 void heartbeatOff();
 void calibrate();
@@ -78,9 +86,6 @@ void grinderTargetMenu();
 void grinderSafetyMenu();
 void grinderZeroRangeMenu();
 #endif
-void wifi_init();
-
-
 // Top-level menu options
 // 1/5 define the 1st level menu
 Menu menuExit = { "Exit", exitMenu, NULL, NULL };
@@ -88,7 +93,9 @@ Menu menuExit = { "Exit", exitMenu, NULL, NULL };
 Menu menuBuzzer = { "Buzzer", NULL, NULL, NULL };
 #endif
 Menu menuCalibration = { "Calibration", NULL, NULL, NULL };
+#if HDS_FEATURE_WIFI
 Menu menuWifi = { "WiFi Settings", NULL, NULL, NULL };
+#endif
 Menu menuStatus = { "Status", showStatus, NULL, NULL };
 // Menu menuWiFiUpdate = {"WiFi Update", NULL, NULL, NULL};
 Menu menuAbout = { "About", showAbout, NULL, NULL };
@@ -119,12 +126,15 @@ Menu menuCalibrationBack = { "Back", NULL, NULL, &menuCalibration };
 Menu menuCalibrate = { "Calibrate", calibrate, NULL, &menuCalibration };
 Menu *calibrationMenu[] = { &menuCalibrationBack, &menuCalibrate };
 
+#if HDS_FEATURE_WIFI
 // WiFi submenu
 Menu menuWiFiUpdateBack = { "Back", NULL, NULL, &menuWifi };
 Menu menuWiFiOnOption = { "WiFi On", toggleWifiOn, NULL, &menuWifi };
 Menu menuWiFiOffOption = { "WiFi Off", toggleWifiOff, NULL, &menuWifi };
 Menu menuWiFiStatusOption = { "WiFi Status", showWifiStatus, NULL, &menuWifi };
+#if HDS_FEATURE_PULL_OTA
 Menu menuWiFiPullUpdateOption = { "WiFi Update", wifiUpdate, NULL, &menuWifi };
+#endif
 Menu menuWiFiResetOption = { "Reset WiFi", resetWifi, NULL, &menuWifi };
 
 Menu *wifiUpdateMenu[] = {
@@ -132,9 +142,13 @@ Menu *wifiUpdateMenu[] = {
   &menuWiFiOnOption,
   &menuWiFiOffOption,
   &menuWiFiStatusOption,
+#if HDS_FEATURE_PULL_OTA
   &menuWiFiPullUpdateOption,
+#endif
   &menuWiFiResetOption,
 };
+
+#endif
 
 // Heartbeat detection
 Menu menuHeartbeatBack = { "Back", NULL, NULL, &menuHeartbeat };
@@ -213,7 +227,11 @@ Menu *mainMenu[] = {
 #ifdef BUZZER
   &menuBuzzer,
 #endif
-  &menuCalibration, &menuWifi, &menuStatus,
+  &menuCalibration,
+#if HDS_FEATURE_WIFI
+  &menuWifi,
+#endif
+  &menuStatus,
   // &menuWiFiUpdate,
   &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen, &menuTimeOnTop,
   &menuBtnFuncWhileConnected, &menuAutoSleep, &menuQuickBoot, &menuDriftComp,
@@ -240,7 +258,9 @@ void linkSubmenus() {
   menuBuzzer.subMenu = buzzerMenu[0];
 #endif
   menuCalibration.subMenu = calibrationMenu[0];
+#if HDS_FEATURE_WIFI
   menuWifi.subMenu = wifiUpdateMenu[0];
+#endif
   menuHeartbeat.subMenu = heartbeatMenu[0];
   menuFlipScreen.subMenu = flipScreenMenu[0];
   menuTimeOnTop.subMenu = timeOnTopMenu[0];
@@ -305,6 +325,7 @@ void buzzerOff() {
 }
 #endif
 
+#if HDS_FEATURE_WIFI
 void toggleWifiOn() {
   b_wifiOnBoot = true;
 #if HDS_ENABLE_GRINDER
@@ -353,9 +374,11 @@ void showWifiStatus() {
   String ip = WiFi.isConnected() ? WiFi.localIP().toString() : "0.0.0.0";
   const char *status = WiFi.isConnected() ? "Enabled" : "Disabled";
 
+#if HDS_FEATURE_MDNS
   char nameLine1[MDNS_NAME_OLED_LINE1_BYTES];
   const char *nameLine2 =
     mdnsNameSplitOledLine1(wifiDeviceName(), nameLine1, sizeof(nameLine1));
+#endif
 
   u8g2.firstPage();
   do {
@@ -371,11 +394,13 @@ void showWifiStatus() {
     u8g2.drawStr(0, 34, "IP:");
     u8g2.drawStr(40, 34, ip.c_str());
 
+#if HDS_FEATURE_MDNS
     u8g2.drawStr(0, 46, "Name:");
     u8g2.drawStr(40, 46, nameLine1);
     if (nameLine2[0] != 0) {
       u8g2.drawStr(0, 58, nameLine2);
     }
+#endif
 
   } while (u8g2.nextPage());
   delay(1000);
@@ -385,10 +410,13 @@ void showWifiStatus() {
     }
   }
 }
+#endif
 
 void showStatus() {
   b_showStatusData = true;
 
+  char wifiLine[32];
+#if HDS_FEATURE_WIFI
   const char *wifiRunState = "Idle";
   if (b_wifiEnabled) {
     if (WiFi.getMode() == WIFI_AP) {
@@ -399,18 +427,21 @@ void showStatus() {
       wifiRunState = "Wait";
     }
   }
-
-  char wifiLine[32];
+#endif
   char bleLine[32];
   char sleepLine[32];
   char driftLine[32];
 #if HDS_ENABLE_GRINDER
   char grinderLine[32];
 #endif
+#if HDS_FEATURE_WIFI
   snprintf(wifiLine, sizeof(wifiLine), "WiFi:%s %s %s",
            b_wifiOnBoot ? "On" : "Off",
            wifiCredentialsSaved() ? "Saved" : "NoCred",
            wifiRunState);
+#else
+  snprintf(wifiLine, sizeof(wifiLine), "WiFi:Not Built");
+#endif
   snprintf(bleLine, sizeof(bleLine), "BLE:%s Btn:%s HB:%s",
            b_ble_enabled ? "On" : "Off",
            b_btnFuncWhileConnected ? "On" : "Off",
@@ -448,6 +479,7 @@ void showStatus() {
   }
 }
 
+#if HDS_FEATURE_WIFI
 void resetWifi() {
   saveCredentials("", "");
   actionMessage = "WiFi Reset";
@@ -455,6 +487,7 @@ void resetWifi() {
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
 }
+#endif
 
 void heartbeatOn() {
   b_requireHeartBeat = true;
@@ -1487,8 +1520,16 @@ void wifiUpdate() {
 #ifdef BUZZER
   buzzer.off();
 #endif
+#if HDS_FEATURE_PULL_OTA
   pullOtaUpdate();
   b_menu = false;
+#else
+  actionMessage = "Pull OTA unavailable";
+  actionMessage2 = "Custom build";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1500;
+  Serial.println("Pull OTA unavailable in this build");
+#endif
 }
 
 void showAbout() {
@@ -1659,9 +1700,11 @@ void selectMenu() {
       if (currentSelection == &menuCalibration) {
       currentMenu = calibrationMenu;
       currentMenuSize = getMenuSize(calibrationMenu);
+#if HDS_FEATURE_WIFI
     } else if (currentSelection == &menuWifi) {
       currentMenu = wifiUpdateMenu;
       currentMenuSize = getMenuSize(wifiUpdateMenu);
+#endif
     } else if (currentSelection == &menuHeartbeat) {
       currentMenu = heartbeatMenu;
       currentMenuSize = getMenuSize(heartbeatMenu);

@@ -1,6 +1,7 @@
 #ifndef POWER_H
 #define POWER_H
 #include <Arduino.h>
+#include "config.h"
 #include "declare.h"
 #include "parameter.h"
 #include "display.h"
@@ -24,10 +25,16 @@ Adafruit_ADS1115 ads;  // Create an ADS1115 object
 
 //prototype
 void sendBlePowerOff(int i_reason);
+#if HDS_FEATURE_WEBSOCKET
 void sendWebsocketPowerOff(int i_reason);
+#endif
 void bleShutdown();  // defined in ble.h
+#if HDS_FEATURE_WIFI
 void stopWifi();  // defined in wifi_setup.cpp
+#endif
+#if HDS_FEATURE_WEBSERVER
 void stopWebServer();  // defined in webserver.h
+#endif
 #if HDS_ENABLE_GRINDER
 void beforeDeepSleepFlush();
 #endif
@@ -64,8 +71,12 @@ void (*resetFunc)(void) = 0;  //AVR重启函数
 void reset() {
 #ifdef ESP32
   bleShutdown();
+#if HDS_FEATURE_WEBSERVER
   stopWebServer();
+#endif
+#if HDS_FEATURE_WIFI
   stopWifi();
+#endif
   ESP.restart();
 #endif  // ESP32
 #ifdef AVR
@@ -196,8 +207,12 @@ void esp32_sleep() {
 #endif
   // Network teardown — centralized here so every shutdown path is covered.
   bleShutdown();    // graceful BLE teardown
+#if HDS_FEATURE_WEBSERVER
   stopWebServer();  // close websocket clients + stop HTTP server
+#endif
+#if HDS_FEATURE_WIFI
   stopWifi();       // disconnect WiFi / power down radio
+#endif
   u8g2.setPowerSave(1);
 #ifdef ACC_MPU6050
   if (b_gyroEnabled) {
@@ -316,7 +331,9 @@ void shut_down_low_battery(float voltage) {
     }
     sendBlePowerOff(3);
 #endif
+#if HDS_FEATURE_WEBSOCKET
     sendWebsocketPowerOff(3);
+#endif
 #ifdef BUZZER
     buzzer.off();
 #endif
@@ -431,7 +448,9 @@ void power_off_gyro(int sec) {
       //Serial.println(" seconds to power off by gyro");
       if (d_timeleft <= 0) {
         sendBlePowerOff(4);
+#if HDS_FEATURE_WEBSOCKET
         sendWebsocketPowerOff(4);
+#endif
         shut_down_now();
       }
     }

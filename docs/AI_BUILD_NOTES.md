@@ -66,3 +66,24 @@ The scale advertises `<name>.local` and `_decentscale._tcp` with `path=/snapshot
 `stopWifi()` withdraws the registration through `MDNS.end()` before the radio goes down. That call is what emits the DNS-SD goodbye, and every deliberate teardown -- remote or USB reset, rename and wifi-setup reboots, deep sleep -- routes through it. Skipping it leaves the instance in resolver caches for the PTR TTL (75 min by convention against 2 min for SRV/A), which browses as a service that never resolves. Withdrawal is best effort: the goodbye is one unacknowledged multicast, and crashes, flat batteries, and unplugs send nothing.
 
 If no WiFi credentials are stored, `setupAP()` in `src/wifi_setup.cpp` starts provisioning mode. `README.md` contains the user-facing connection details.
+
+## Compile-Time Custom Builds
+
+The normal `esp32s3` environment remains the full production-compatible build. Its feature defaults come from `include/hds_features.h` and match the behavior that preceded the custom-build environment.
+
+`esp32s3-custom` reads `custom-build.json` through `tools/configure_custom_build.py` and writes generated headers and staged web assets below `.pio.nosync/generated/esp32s3-custom/`. The normal environment does not run that configurator.
+
+```sh
+python tools/test_plugin_catalog.py
+python tools/configure_custom_build.py validate --config custom-build.json
+pio run -e esp32s3-custom
+pio run -e esp32s3-custom -t buildfs
+```
+
+The supported feature IDs are `wifi`, `mdns`, `webserver`, `websocket`, `littlefs`, `elegant_ota`, `pull_ota`, and `grinder`. Selecting `wifi` directly also selects `webserver` because provisioning uses HTTP. Transitive WiFi use does not itself select WebServer: Pull OTA therefore resolves to WiFi without acquiring WebServer, runtime LittleFS, WebSocket, or ElegantOTA.
+
+`HDS_FEATURE_LITTLEFS` controls runtime mounting and static serving by the WebServer. It does not control Pull OTA replacement of the LittleFS partition. Pull OTA keeps its staged, signed `littlefs.bin` transaction even when runtime static files are excluded from a custom build.
+
+Approved plugins are repository-owned entries under `plugins/<id>/`. The first plugin, `hello-web`, contributes only `plugins/hello/index.html` to the staged LittleFS data directory. There is no runtime plugin loader or C++ plugin interface.
+
+`.github/workflows/custom-build.yml` produces unsigned, non-release artifacts and a measured `build-manifest.json`. It never creates `manifest.sig`, updates the production OTA catalog, or publishes a stable release.

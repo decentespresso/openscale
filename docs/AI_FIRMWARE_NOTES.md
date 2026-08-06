@@ -44,7 +44,7 @@ Allowed from AsyncTCP callbacks:
 
 `volatile` can be appropriate for hardware registers, ISR-visible flags, or an existing API contract, but it does not provide atomicity, memory ordering, or task synchronization.
 
-The WebSocket callback updates visible state and queues hardware work. `loop()` drains pending work at the top via `processWsPendingCmds()`, before the soft-sleep guard, so queued wake and shutdown work can still run.
+The WebSocket callback updates visible state and queues hardware work. `loop()` drains pending work at the top via `processRemotePendingCommands()`, before the soft-sleep guard, so queued wake and shutdown work can still run.
 
 Use `wsQueuePending(bits)` for single actions. Use `wsReplacePending(set, clear)` for mutually exclusive pairs such as display, low power, sleep, and timer commands.
 

@@ -1,6 +1,9 @@
-#ifdef WIFIOTA
 #ifndef WIFI_OTA_H
 #define WIFI_OTA_H
+
+#include "config.h"
+
+#if HDS_FEATURE_ELEGANT_OTA
 #include "display.h"
 /* please remember to edit the ESPAsyncWebServer.h
 add the following line
@@ -135,5 +138,6 @@ void wifiOta() {
   ElegantOTA.onEnd(onOTAEnd);
   otaRegistered = true;
 }
-#endif // WIFI_OTA_H
+#endif
+
 #endif

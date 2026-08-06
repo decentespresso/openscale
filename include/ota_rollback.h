@@ -1,8 +1,11 @@
 #ifndef OTA_ROLLBACK_H
 #define OTA_ROLLBACK_H
 
+#include "config.h"
 #include <Arduino.h>
+#if HDS_FEATURE_PULL_OTA || HDS_FEATURE_LITTLEFS
 #include <LittleFS.h>
+#endif
 #include <Preferences.h>
 #include <esp_ota_ops.h>
 #include <esp_system.h>
@@ -61,7 +64,9 @@ static void hdsOtaRollback(const char *reason) {
   // starts -- never from AsyncTCP or the Pull OTA task -- so it's safe to
   // withdraw mDNS synchronously rather than queue it. A no-op if WiFi/mDNS
   // was never brought up (e.g. the early boot-attempt checks).
+#if HDS_FEATURE_WIFI
   stopWifi();
+#endif
   Serial.flush();
   esp_ota_mark_app_invalid_rollback_and_reboot();
   delay(1000);
@@ -90,12 +95,14 @@ void hdsOtaRollbackBegin(esp_reset_reason_t resetReason) {
 }
 
 static bool hdsOtaLocalChecksPass() {
+#if HDS_FEATURE_PULL_OTA || HDS_FEATURE_LITTLEFS
   if (!LittleFS.begin()) {
     return false;
   }
   if (LittleFS.totalBytes() == 0) {
     return false;
   }
+#endif
   return true;
 }
 

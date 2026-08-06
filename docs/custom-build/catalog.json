@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "firmware_refs": [
+    "main"
+  ],
+  "defaults": {
+    "features": [
+      "pull_ota"
+    ],
+    "plugins": []
+  },
+  "features": [
+    {
+      "id": "wifi",
+      "name": "WiFi",
+      "requires": [],
+      "description": "WiFi station and access-point lifecycle. Explicit selection also enables WebServer for provisioning."
+    },
+    {
+      "id": "mdns",
+      "name": "mDNS",
+      "requires": [
+        "wifi"
+      ],
+      "description": "Local hostname and DNS-SD advertisement."
+    },
+    {
+      "id": "webserver",
+      "name": "WebServer",
+      "requires": [
+        "wifi"
+      ],
+      "description": "Existing AsyncWebServer setup and API endpoints."
+    },
+    {
+      "id": "websocket",
+      "name": "WebSocket",
+      "requires": [
+        "wifi",
+        "webserver"
+      ],
+      "description": "The existing /snapshot data and control endpoint."
+    },
+    {
+      "id": "littlefs",
+      "name": "Runtime LittleFS",
+      "requires": [],
+      "description": "Mount and serve tracked web files at runtime. This is distinct from staged Pull OTA replacement of the LittleFS partition."
+    },
+    {
+      "id": "elegant_ota",
+      "name": "ElegantOTA",
+      "requires": [
+        "wifi",
+        "webserver"
+      ],
+      "description": "Browser-driven ElegantOTA on the existing AsyncWebServer."
+    },
+    {
+      "id": "pull_ota",
+      "name": "Pull OTA",
+      "requires": [
+        "wifi"
+      ],
+      "description": "OLED/button-controlled signed OTA with firmware and staged LittleFS partition replacement."
+    },
+    {
+      "id": "grinder",
+      "name": "Grinder",
+      "requires": [
+        "wifi",
+        "mdns"
+      ],
+      "description": "Grinder discovery and runtime integration."
+    }
+  ],
+  "plugins": [
+    {
+      "id": "hello-web",
+      "name": "Hello Web",
+      "version": "1.0.0",
+      "firmware_refs": [
+        "main"
+      ],
+      "requires": [
+        "wifi",
+        "webserver",
+        "littlefs"
+      ],
+      "conflicts": [],
+      "description": "Adds /plugins/hello/index.html to the custom LittleFS image."
+    }
+  ]
+}

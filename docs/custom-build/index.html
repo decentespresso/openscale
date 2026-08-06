@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>OpenScale custom build selector</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { margin: 0 auto; max-width: 74rem; padding: 2rem; line-height: 1.5; }
+    header, section { margin-bottom: 2rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(18rem,1fr)); gap: 1rem; }
+    .card { border: 1px solid currentColor; border-radius: .5rem; padding: 1rem; }
+    label { display: flex; gap: .6rem; align-items: flex-start; font-weight: 650; }
+    small, .muted { opacity: .75; }
+    code, pre { font-family: ui-monospace, monospace; }
+    pre { border: 1px solid currentColor; border-radius: .5rem; padding: 1rem; overflow: auto; white-space: pre-wrap; }
+    button, select { font: inherit; padding: .55rem .8rem; }
+    .resolved { font-weight: 650; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>OpenScale custom build selector</h1>
+    <p>This page prepares a maintainer command for the repository-approved custom-build workflow. It does not start anonymous builds and does not require a browser token.</p>
+    <p><a href="https://github.com/decentespresso/openscale/actions/workflows/custom-build.yml">Open the Custom firmware build workflow</a></p>
+  </header>
+  <section>
+    <h2>Firmware reference</h2>
+    <select id="firmware-ref" aria-label="Firmware reference"></select>
+  </section>
+  <section>
+    <h2>Features</h2>
+    <div id="features" class="grid"></div>
+  </section>
+  <section>
+    <h2>Approved plugins</h2>
+    <div id="plugins" class="grid"></div>
+  </section>
+  <section>
+    <h2>Resolved configuration</h2>
+    <p id="resolved" class="resolved"></p>
+    <p id="dependency-note" class="muted"></p>
+  </section>
+  <section>
+    <h2>Maintainer command</h2>
+    <pre id="command"></pre>
+    <button id="copy" type="button">Copy command</button>
+    <p id="copy-status" role="status"></p>
+  </section>
+  <script src="app.js"></script>
+</body>
+</html>

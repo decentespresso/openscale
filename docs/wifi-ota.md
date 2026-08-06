@@ -44,14 +44,15 @@ The catalog may include a compatible older release. Check the version before con
 
 The scale downloads only releases that match its hardware and firmware rules. It verifies the signed manifest, HTTPS connection, download URL, file size, and SHA-256 hash before installing anything.
 
-Production releases update both firmware and the built-in web apps:
+Production releases provide two separate signed assets for two separate flash targets:
 
-1. The scale installs the firmware and restarts.
-2. The new firmware shows `Updating web UI` and installs the filesystem.
-3. The scale verifies the filesystem and restarts again.
-4. The normal weight display returns when the update is complete.
+1. `firmware.bin` is written to the inactive OTA application partition.
+2. The scale restarts into the new application.
+3. The new application shows `Updating LittleFS` and writes `littlefs.bin` to the shared LittleFS partition.
+4. The scale verifies and mounts the LittleFS image, marks the application valid, and restarts again.
+5. The normal weight display returns when the staged transaction is complete.
 
-Two restarts are normal. Do not disconnect power while the display shows `Firmware`, `Updating web UI`, or `LittleFS` progress.
+Two restarts are normal. Do not disconnect power while the display shows `Firmware` or `Updating LittleFS` progress.
 
 If no compatible update or downgrade is available, the scale shows `Newest stable` with the installed version.
 
@@ -59,7 +60,7 @@ If no compatible update or downgrade is available, the scale shows `Newest stabl
 
 If the firmware download fails, the scale keeps running the installed firmware. Check the message on the display, restore WiFi or internet access, and start `WiFi Update` again.
 
-If the firmware installed but the web UI update failed, the scale keeps the pending web UI update. Restart the scale with WiFi available, or open `WiFi Update` again. The scale retries the pending filesystem before offering another firmware version.
+If `firmware.bin` was installed but the `littlefs.bin` stage failed, the scale keeps the pending LittleFS transaction. Restart the scale with WiFi available, or open `WiFi Update` again. The scale retries the pending LittleFS image before offering another firmware version.
 
 ## Display Messages
 
@@ -73,7 +74,7 @@ If the firmware installed but the web UI update failed, the scale keeps the pend
 | `Download failed` | A release file could not be downloaded | Check internet access and try again |
 | `Size mismatch` or `Hash mismatch` | The downloaded file did not match the signed manifest | Try again later; do not install files manually from that download |
 | `Update cancelled` | A button hold or screen timeout cancelled selection | Start `WiFi Update` again |
-| `FS verify failed` | The web UI filesystem did not verify after writing | Keep power and WiFi available, then retry |
+| `FS verify failed` | The `littlefs.bin` image did not verify or mount after writing | Keep power and WiFi available, then retry |
 | `Newest stable` | No other compatible stable version is available | No action is needed |
 
 ## Troubleshooting
@@ -90,7 +91,7 @@ The scale must reach GitHub over HTTPS. A local-only network, captive portal, DN
 
 ### The Web Interface Looks Outdated
 
-Wait for the second restart. The firmware restart happens before the built-in web apps are updated. After completion, reload `hds.local`; the server asks browsers not to reuse stale app files.
+Wait for the second restart. `firmware.bin` is installed first; `littlefs.bin`, which contains the built-in web apps in the production build, is written only after the new application boots. After completion, reload `hds.local`; the server asks browsers not to reuse stale app files.
 
 ### The Scale Restarts Into The Previous Firmware
 

@@ -99,3 +99,13 @@ python tools/test_ota_public_key_header.py
 python tools/test_ota_reboot_routing_contract.py
 pio run -e esp32s3
 ```
+
+## Compile-Time Dependency Boundary
+
+Pull OTA is the OLED- and button-controlled production flow. It requires WiFi, HTTPS/TLS, signed-manifest verification, ESP32 Update and partition APIs, and the existing staged LittleFS recovery transaction. It does not require the WebServer UI, WebSocket, ElegantOTA, or runtime static-file serving.
+
+`firmware.bin` and `littlefs.bin` are separate signed release assets with separate flash targets. `firmware.bin` is streamed with `U_FLASH` to the inactive OTA application partition. `littlefs.bin` is streamed with `U_SPIFFS` to the shared LittleFS data partition. Firmware is never described or treated as a file stored in LittleFS.
+
+`HDS_FEATURE_LITTLEFS` governs runtime LittleFS use by the WebServer and approved web plugins. `HDS_FEATURE_PULL_OTA` independently retains pending-state validation, target and restore attempt limits, raw partition verification, mount checks, rollback metadata, filesystem restoration, and application-validity sequencing. Do not add `HDS_FEATURE_PULL_OTA_FILESYSTEM`, a firmware-only production Pull OTA mode, or an option to omit the signed `littlefs.bin` transaction.
+
+ElegantOTA remains a separate browser-driven facility with dependencies on WiFi, AsyncWebServer, and ElegantOTA. Custom-build artifacts are unsigned and are not production release inputs; the normal release workflow continues publishing `firmware.bin`, `littlefs.bin`, `manifest.json`, and `manifest.sig` unchanged.

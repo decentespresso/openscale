@@ -1,21 +1,25 @@
+#include "config.h"
+
+#if HDS_FEATURE_WIFI
 
 #include "NetworkEvents.h"
 #include "WiFiType.h"
-#include "config.h"  // FIRMWARE_VER for the DNS-SD TXT record
 #include "esp32-hal.h"
 #include "esp_system.h"  // esp_restart() for the heap watchdog
 #include "mdns_name.h"
 #include <Arduino.h>
+#if HDS_FEATURE_MDNS
 #include <ESPmDNS.h>
+#endif
 #include <Preferences.h>
 #include <WiFi.h>
 
 volatile bool b_wifiEnabled = false;
-// Set by the GOT_IP WiFi event; the main loop (wifiSupervise) consumes it and
-// (re)advertises mDNS, keeping all mDNS work off the WiFi-event task.
+#if HDS_FEATURE_MDNS
 static volatile bool g_mdnsAdvertisePending = false;
 static bool g_mdnsReady = false;
 static const unsigned long MDNS_GOODBYE_DRAIN_MS = 60;
+#endif
 // BLE link state (defined in declare.h). Used by the heap watchdog to avoid
 // rebooting mid-shot while a BLE client is connected. volatile: written from
 // the BLE task, read here on the main loop.
@@ -113,6 +117,7 @@ void connectToWifi() {
 // deep sleep -- reaches this through stopWifi(), so the withdrawal belongs here
 // rather than at each call site. Best-effort by nature: the goodbye is a single
 // unacknowledged multicast, and a crash, flat battery, or unplug sends nothing.
+#if HDS_FEATURE_MDNS
 static void mdnsWithdraw() {
   if (!g_mdnsReady) {
     return;
@@ -124,16 +129,21 @@ static void mdnsWithdraw() {
   // hands the packet to the mDNS task and does not wait for transmission.
   delay(MDNS_GOODBYE_DRAIN_MS);
 }
+#endif
 
 void stopWifi() {
   const wifi_mode_t mode = WiFi.getMode();
   if (mode == WIFI_MODE_NULL) {
+#if HDS_FEATURE_MDNS
     mdnsWithdraw();
+#endif
     b_wifiEnabled = false;
     return;
   }
 
+#if HDS_FEATURE_MDNS
   mdnsWithdraw();
+#endif
   if ((mode & WIFI_MODE_STA) && WiFi.status() == WL_CONNECTED) {
     WiFi.disconnect(false);
   }
@@ -164,6 +174,7 @@ static volatile bool g_wifiInitDone = false;
 // at hds.local). Returns true if the responder came up; callers may log/branch
 // on failure (MDNS.begin can transiently fail under heap pressure at reconnect
 // time).
+#if HDS_FEATURE_MDNS
 bool setupMdns() {
   if (WiFi.getMode() != WIFI_AP && WiFi.status() != WL_CONNECTED) {
     Serial.printf("[wifi] MDNS deferred wifi=%d ip=%s\n",
@@ -189,13 +200,19 @@ bool setupMdns() {
     snprintf(instance, sizeof(instance), "Half Decent Scale (%s)", name);
     MDNS.setInstanceName(instance);
   }
+#if HDS_FEATURE_WEBSERVER
   MDNS.addService("decentscale", "tcp", 80);
   MDNS.addServiceTxt("decentscale", "tcp", "fw", (const char *)FIRMWARE_VER);
   MDNS.addServiceTxt("decentscale", "tcp", "model", "hds");
   MDNS.addServiceTxt("decentscale", "tcp", "name", name);
+#if HDS_FEATURE_WEBSOCKET
   MDNS.addServiceTxt("decentscale", "tcp", "proto", "ws");
   MDNS.addServiceTxt("decentscale", "tcp", "path", "/snapshot");
+#endif
   Serial.printf("DNS-SD: advertised %s.local _decentscale._tcp on port 80\n", name);
+#else
+  Serial.printf("mDNS: advertised %s.local\n", name);
+#endif
   g_mdnsReady = true;
   return true;
 }
@@ -215,6 +232,7 @@ bool wifiEnsureMdnsReadyForSta() {
   g_mdnsReady = false;
   return setupMdns();
 }
+#endif
 
 void onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) {
   switch (event) {
@@ -231,10 +249,14 @@ void onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) {
       // MDNS.end()/begin() from this WiFi-event-task context races the main
       // loop's mDNS/web-server use; the flag keeps all mDNS work on one thread
       // and avoids double-registering the service on boot.
+#if HDS_FEATURE_MDNS
       g_mdnsAdvertisePending = true;
+#endif
       break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+#if HDS_FEATURE_MDNS
       g_mdnsReady = false;
+#endif
       g_wifiDisconnects++;
       Serial.printf("[wifi] *** STA DISCONNECTED #%lu reason=%u heap=%lu minheap=%lu uptime=%lu\n",
                     (unsigned long)g_wifiDisconnects,
@@ -294,8 +316,9 @@ void setupWifi() {
   } else {
     Serial.println("no wifi data found, setting up AP");
     setupAP();
-    // AP mode emits no GOT_IP event, so advertise mDNS directly.
+#if HDS_FEATURE_MDNS
     setupMdns();
+#endif
   }
 
   // Bring-up complete: from here the loop's supervisor may manage reconnects.
@@ -312,17 +335,14 @@ void wifiSupervise() {
   unsigned long now = millis();
   bool up = WiFi.status() == WL_CONNECTED;
 
-  // (Re)advertise mDNS here -- on the main loop -- when the GOT_IP event asked
-  // for it, instead of doing MDNS.end()/begin() from the WiFi-event task.
-  // Clear the flag BEFORE the work: if a later GOT_IP fires while setupMdns() is
-  // running, it re-sets the flag and we re-advertise on the next pass (so a
-  // reconnect during the rebuild is never lost).
+#if HDS_FEATURE_MDNS
   if (g_mdnsAdvertisePending) {
     g_mdnsAdvertisePending = false;
     MDNS.end();
     g_mdnsReady = false;
     setupMdns();
   }
+#endif
 
   // Heap watchdog. Connection churn can drain the heap to near-zero; in that
   // OOM window the lwIP/IP stack wedges permanently (no ICMP/TCP/mDNS) while
@@ -541,3 +561,5 @@ void WiFiParams::reset() {
   }
   mdnsNameCopyDefault(mdnsName, sizeof(mdnsName));
 }
+
+#endif

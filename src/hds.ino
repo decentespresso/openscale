@@ -8,15 +8,27 @@
 #include "gyro.h"
 #include "display.h"
 #include "declare.h"
+#if HDS_FEATURE_WIFI
 #include "wifi_setup.h"
+#endif
+#if HDS_FEATURE_WEBSERVER
 #include "webserver.h"
+#endif
+#if HDS_FEATURE_WEBSOCKET
 #include "websocket.h"
+#endif
+#if HDS_FEATURE_ELEGANT_OTA
 #include "wifi_ota.h"
+#endif
 #if HDS_ENABLE_GRINDER
 #include "grinder_runtime.h"
 #endif
+#if HDS_FEATURE_PULL_OTA
 #include "pull_ota.h"
+#endif
+#if HDS_FEATURE_PULL_OTA || HDS_FEATURE_ELEGANT_OTA
 #include "ota_rollback.h"
+#endif
 
 
 #include "menu.h"
@@ -30,6 +42,70 @@
 #define GRINDER_MENU_CHORD_HOLD_MS 500
 #endif
 #endif
+
+void processRemotePendingCommands() {
+  portENTER_CRITICAL(&wsPendingMux);
+  uint32_t mask = wsPendingMask;
+  uint8_t samplesInUse = pendingSamplesInUse;
+  unsigned long resetAt = pendingResetAt;
+  wsPendingMask = 0;
+  if (mask & WSP_RESET) {
+    pendingResetAt = 0;
+  }
+  portEXIT_CRITICAL(&wsPendingMux);
+  if (mask == 0) return;
+
+  if (mask & WSP_RESET) {
+    if (resetAt != 0 && (long)(millis() - resetAt) < 0) {
+      portENTER_CRITICAL(&wsPendingMux);
+      wsPendingMask |= WSP_RESET;
+      pendingResetAt = resetAt;
+      portEXIT_CRITICAL(&wsPendingMux);
+      mask &= ~WSP_RESET;
+      if (mask == 0) return;
+    } else {
+      reset();
+      return;
+    }
+  }
+  if (mask & WSP_DISPLAY_ON)  { u8g2.setPowerSave(0); }
+  if (mask & WSP_DISPLAY_OFF) { u8g2.setPowerSave(1); }
+  if (mask & WSP_LOWPWR_ON)   { u8g2.setContrast(0); }
+  if (mask & WSP_LOWPWR_OFF)  { u8g2.setContrast(255); }
+  if (mask & WSP_SLEEP_OFF) {
+    wakeScaleFromSoftSleep("remote soft wake");
+  }
+#if defined(ACC_MPU6050) || defined(ACC_BMA400)
+  if ((mask & WSP_BLE_GYRO) && !(mask & WSP_SLEEP_ON) && !b_softSleep) {
+    sendBleGyro();
+  }
+#endif
+  if (mask & WSP_SLEEP_ON) {
+    u8g2.setPowerSave(1);
+    digitalWrite(PWR_CTRL, LOW);
+    digitalWrite(ACC_PWR_CTRL, LOW);
+  }
+  if (mask & WSP_TIMER_START) {
+    stopWatch.reset();
+    stopWatch.start();
+  }
+  if (mask & WSP_TIMER_STOP)  { stopWatch.stop(); }
+  if (mask & WSP_TIMER_ZERO)  { stopWatch.reset(); }
+  if (mask & WSP_SET_SAMPLES) {
+    if (setScaleSamplesInUseWhenReady(samplesInUse, "remote samples")) {
+      Serial.print("Samples in use set to: ");
+      Serial.println(scale.getSamplesInUse());
+    } else {
+      Serial.println("Samples in use refresh failed");
+    }
+  }
+  if (mask & WSP_WIFI_UPDATE) {
+    wifiUpdate();
+  }
+  if (mask & WSP_POWER_OFF) {
+    b_powerOff = true;
+  }
+}
 
 bool anyScaleButtonPressed() {
   return digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW;
@@ -180,9 +256,11 @@ void wakeFromChargingUi(uint8_t buttonPin) {
     b_ble_enabled = true;
     ble_init();
   }
+#if HDS_FEATURE_WIFI
   if (!b_wifiEnabled) {
     wifi_init();
   }
+#endif
 }
 
 void buttonCircle_Released() {
@@ -281,7 +359,9 @@ void buttonCircle_DoubleClicked() {
   if (!bleClientLive && !b_menu && !b_calibration) {
     Serial.println("Going to sleep now by CircleDoubleClick");
     sendBlePowerOff(1);
+#if HDS_FEATURE_WEBSOCKET
     sendWebsocketPowerOff(1);
+#endif
     b_powerOff = true;
   } else {
     if (bleClientLive) {
@@ -293,7 +373,9 @@ void buttonCircle_DoubleClicked() {
       Serial.println("Menu operating, not going to sleep.");
     if (!b_menu) {
       sendBlePowerOff(0);
+#if HDS_FEATURE_WEBSOCKET
       sendWebsocketPowerOff(0);
+#endif
     }
   }
 }
@@ -304,7 +386,9 @@ void buttonSquare_DoubleClicked() {
   if (!bleClientLive && !b_menu && !b_calibration) {
     Serial.println("Going to sleep now by SquareDoubleClick");
     sendBlePowerOff(2);
+#if HDS_FEATURE_WEBSOCKET
     sendWebsocketPowerOff(2);
+#endif
     b_powerOff = true;
   } else {
     if (bleClientLive) {
@@ -316,7 +400,9 @@ void buttonSquare_DoubleClicked() {
       Serial.println("Menu operating, not going to sleep.");
     if (!b_menu) {
       sendBlePowerOff(0);
+#if HDS_FEATURE_WEBSOCKET
       sendWebsocketPowerOff(0);
+#endif
     }
   }
 }
@@ -414,12 +500,19 @@ void button_init() {
   config1.setLongPressDelay(LONGPRESS_DELAY);
 }
 
+#if HDS_FEATURE_WIFI
 void _wifi_init(void *args) {
   b_wifiEnabled = true;
   setupWifi();
+#if HDS_FEATURE_WEBSERVER
   startWebServer();
+#endif
+#if HDS_FEATURE_ELEGANT_OTA
   wifiOta();
+#endif
+#if HDS_FEATURE_WEBSOCKET
   setupWebsocketEvents();
+#endif
   vTaskDelete(NULL);
 }
 void wifi_init() {
@@ -428,6 +521,7 @@ void wifi_init() {
   }
   xTaskCreate(_wifi_init, "Wifi Init Task", configMINIMAL_STACK_SIZE + 2048, NULL, 0, NULL);
 }
+#endif
 
 MyUsbCallbacks usbCallbacks;
 
@@ -464,7 +558,9 @@ void setup() {
     esp_reset_reason_t r = esp_reset_reason();
     g_resetReasonCode = (uint8_t)r;
     Serial.printf("[boot] reset_reason=%s (%u)\n", resetReasonStr(r), (unsigned)g_resetReasonCode);
+#if HDS_FEATURE_PULL_OTA || HDS_FEATURE_ELEGANT_OTA
     hdsOtaRollbackBegin(r);
+#endif
   }
   if (!storageInit()) {
     Serial.println("NVS settings init failed!");
@@ -778,6 +874,7 @@ void setup() {
     //calibration value is not valid, go to calibration procedure.
   }
 #endif
+#if HDS_FEATURE_WIFI
   b_wifiOnBoot = storageGetBool(KEY_WIFI_BOOT, false);
 #if HDS_ENABLE_GRINDER
   if (grinderSettings.enabled && !b_wifiOnBoot) {
@@ -785,10 +882,19 @@ void setup() {
   }
   grinderRuntimeBegin();
 #endif
+#if HDS_FEATURE_PULL_OTA
   bool b_pendingOtaLittleFs = pullOtaHasPendingLittleFs();
-  if (b_wifiOnBoot && GPIO_power_on_with != BATTERY_CHARGING && !b_pendingOtaLittleFs) {
+#endif
+  if (b_wifiOnBoot && GPIO_power_on_with != BATTERY_CHARGING
+#if HDS_FEATURE_PULL_OTA
+      && !b_pendingOtaLittleFs
+#endif
+  ) {
     wifi_init();
   }
+#else
+  b_wifiOnBoot = false;
+#endif
   // Enter Menu
   if (digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW) {
     b_menu = true;
@@ -891,6 +997,7 @@ void setup() {
   t_bootTare = millis();
   b_bootTare = true;
   updateBattery(BATTERY_PIN);
+#if HDS_FEATURE_PULL_OTA
   if (b_pendingOtaLittleFs) {
     if (!pullOtaResumePendingLittleFs()) {
       hdsOtaRollback("LittleFS update");
@@ -898,6 +1005,9 @@ void setup() {
   } else {
     hdsOtaRollbackMarkValid();
   }
+#elif HDS_FEATURE_ELEGANT_OTA
+  hdsOtaRollbackMarkValid();
+#endif
 }
 
 /**
@@ -1593,10 +1703,7 @@ void setManualStableValue(float value) {
 
 
 void loop() {
-  // Drain any deferred WS hardware actions before checking shutdown/sleep,
-  // so a SLEEP_OFF / POWER_OFF queued from the AsyncTCP task takes effect
-  // here on the loop task rather than racing peripheral drivers.
-  processWsPendingCmds();
+  processRemotePendingCommands();
   processBleStatusResponse();
 
   if (b_powerOff){
@@ -1620,7 +1727,11 @@ void loop() {
   // connected WS client streaming weight resets the auto-off timer just like a
   // BLE central does -- otherwise a WiFi-only client on battery loses the scale
   // to the 15-min auto-off mid-stream (WiFi activity didn't reset t_power_off).
-  if (bleHasLiveClient() || (b_wifiEnabled && websocket.count() > 0)
+  bool networkKeepsAwake = false;
+#if HDS_FEATURE_WEBSOCKET
+  networkKeepsAwake = b_wifiEnabled && websocket.count() > 0;
+#endif
+  if (bleHasLiveClient() || networkKeepsAwake
 #if HDS_ENABLE_GRINDER
       || grinderRuntimeKeepsAwake()
 #endif
@@ -1676,14 +1787,18 @@ void loop() {
     }
     checkBattery();
     if (b_ota) {
+#if HDS_FEATURE_ELEGANT_OTA
       ElegantOTA.loop();
       processOtaDisplayUpdate();
+#endif
       return;
     }
     if (b_menu) {
+#if HDS_FEATURE_WIFI
       if (b_wifiEnabled) {
         wifiSupervise();
       }
+#endif
 #if HDS_ENABLE_GRINDER
       grinderRuntimeTick(f_displayedValue);
 #endif
@@ -1729,20 +1844,18 @@ void loop() {
         //showing charging animation when powered off
         //charging();
       } else {
-        // WiFi housekeeping (not weight-rate-gated): reconnect supervisor, WS
-        // client cleanup, OTA -- run every loop pass when WiFi is on.
+#if HDS_FEATURE_WIFI
         if (b_wifiEnabled) {
           wifiSupervise();
-          // Cap at 4 (lib default 8). Under sustained multi-protocol load
-          // (4+ WS clients + BLE + USB), 8 concurrent clients pushed per-client
-          // queue + AsyncWebSocketMessage allocations past the heap budget and
-          // starved lwIP TX buffers (silent WiFi packet loss while
-          // wifi_status=CONNECTED). 4 fits comfortably; PRs (WS+REST) and the
-          // on-device UI together never exceed 3-4 real concurrent clients.
+#if HDS_FEATURE_WEBSOCKET
           websocket.cleanupClients(4);
+#endif
+#if HDS_FEATURE_ELEGANT_OTA
           ElegantOTA.loop();
           processOtaDisplayUpdate();
+#endif
         }
+#endif
 
         // Snapshot stopWatch state for cross-task-safe reads in
         // sendWebsocketStatus. stopWatch is multi-field and mutated from BLE/USB
@@ -1778,9 +1891,11 @@ void loop() {
             if (b_usbweight_enabled &&
                 weightTickCount % max(1UL, weightUsbNotifyInterval / WEIGHT_BASE_INTERVAL_MS) == 0)
               sendUsbWeight();
+#if HDS_FEATURE_WEBSOCKET
             if (b_wifiEnabled &&
                 weightTickCount % max(1UL, weightWebsocketNotifyInterval / WEIGHT_BASE_INTERVAL_MS) == 0)
               sendWebsocketWeightAll(f_displayedValue, nowMs);
+#endif
           }
         }
 
@@ -2152,10 +2267,8 @@ void drawBattery() {
     }
   }
 
-  // TODO: move to separate func?
+#if HDS_FEATURE_WIFI
   if (b_wifiEnabled) {
-    // Steady once associated (or in AP mode); blink at ~1 Hz while STA is still
-    // connecting so the user sees activity without overloading b_wifiEnabled.
     bool connecting = WiFi.getMode() == WIFI_STA && WiFi.status() != WL_CONNECTED;
     if (!connecting || (millis() / 500) % 2) {
       u8g2.setFont(u8g2_font_open_iconic_www_1x_t);
@@ -2163,6 +2276,7 @@ void drawBattery() {
       u8g2.drawGlyph(10, 64, glyph);
     }
   }
+#endif
 }
 
 void drawAbout() {

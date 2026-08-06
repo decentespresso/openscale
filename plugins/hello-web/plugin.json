@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "id": "hello-web",
+  "name": "Hello Web",
+  "version": "1.0.0",
+  "firmware_refs": [
+    "main"
+  ],
+  "requires": [
+    "wifi",
+    "webserver",
+    "littlefs"
+  ],
+  "conflicts": [],
+  "assets": [
+    {
+      "source": "hello.html",
+      "target": "plugins/hello/index.html"
+    }
+  ],
+  "budget": {
+    "firmware_flash_bytes": 0,
+    "static_ram_bytes": 0,
+    "littlefs_bytes": 4096
+  }
+}

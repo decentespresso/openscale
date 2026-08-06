@@ -78,6 +78,28 @@ portMUX_TYPE otaDisplayMux = portMUX_INITIALIZER_UNLOCKED;
 volatile uint8_t otaDisplayState = OTA_DISPLAY_NONE;
 volatile uint8_t otaDisplayPercent = 0;
 
+inline void remoteQueuePending(uint32_t bits) {
+  portENTER_CRITICAL(&wsPendingMux);
+  if (bits & WSP_RESET) {
+    pendingResetAt = 0;
+  }
+  wsPendingMask |= bits;
+  portEXIT_CRITICAL(&wsPendingMux);
+}
+
+inline void remoteReplacePending(uint32_t setBits, uint32_t clearBits) {
+  portENTER_CRITICAL(&wsPendingMux);
+  wsPendingMask = (wsPendingMask & ~clearBits) | setBits;
+  portEXIT_CRITICAL(&wsPendingMux);
+}
+
+inline void remoteQueueSamplesInUse(uint8_t samplesInUse) {
+  portENTER_CRITICAL(&wsPendingMux);
+  pendingSamplesInUse = samplesInUse;
+  wsPendingMask |= WSP_SET_SAMPLES;
+  portEXIT_CRITICAL(&wsPendingMux);
+}
+
 inline void remoteQueueResetAt(unsigned long resetAt) {
   portENTER_CRITICAL(&wsPendingMux);
   pendingResetAt = resetAt;
@@ -174,7 +196,7 @@ bool b_tareByBle = false;
 portMUX_TYPE remoteTareMux = portMUX_INITIALIZER_UNLOCKED;
 unsigned long t_tareStatus = 0;  //tare done time stamp
 unsigned long t_power_off;       //关机倒计时
-// volatile: set in processWsPendingCmds (main loop) and read in loop's top
+// volatile: set in processRemotePendingCommands (main loop) and read in loop's top
 // guard; main loop also writes it from other paths. Keep volatile defensively.
 volatile bool b_powerOff = false;
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)

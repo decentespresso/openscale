@@ -1,0 +1,129 @@
+name: Custom firmware build
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/custom-build.yml"
+      - "custom-build.json"
+      - "include/**"
+      - "src/**"
+      - "plugins/**"
+      - "tools/configure_custom_build.py"
+      - "tools/test_plugin_catalog.py"
+      - "platformio.ini"
+      - "requirements-platformio.txt"
+      - "docs/custom-build/**"
+  workflow_dispatch:
+    inputs:
+      firmware_ref:
+        description: Supported firmware compatibility reference
+        required: true
+        type: choice
+        default: main
+        options:
+          - main
+      features:
+        description: Comma-separated feature IDs
+        required: false
+        type: string
+        default: pull_ota
+      plugins:
+        description: Comma-separated approved plugin IDs
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Select and validate configuration
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_FIRMWARE_REF: ${{ inputs.firmware_ref }}
+          INPUT_FEATURES: ${{ inputs.features }}
+          INPUT_PLUGINS: ${{ inputs.plugins }}
+        run: |
+          CONFIG_PATH="$RUNNER_TEMP/custom-build.json"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            python tools/configure_custom_build.py selection \
+              --firmware-ref "$INPUT_FIRMWARE_REF" \
+              --features "$INPUT_FEATURES" \
+              --plugins "$INPUT_PLUGINS" \
+              --output "$CONFIG_PATH"
+          else
+            cp custom-build.json "$CONFIG_PATH"
+          fi
+          python tools/configure_custom_build.py validate --config "$CONFIG_PATH"
+          echo "HDS_CUSTOM_BUILD_CONFIG=$CONFIG_PATH" >> "$GITHUB_ENV"
+
+      - name: Run custom-build contracts
+        run: |
+          python tools/test_plugin_catalog.py
+          python tools/test_ai_docs_contract.py
+          python tools/test_gzip_web_assets.py
+
+      - name: Install PlatformIO Core
+        run: python -m pip install --requirement requirements-platformio.txt
+
+      - name: Run native tests
+        run: pio test -e native
+
+      - name: Build normal firmware
+        run: pio run -e esp32s3
+
+      - name: Build custom firmware and filesystem target
+        run: |
+          set -o pipefail
+          pio run -e esp32s3-custom 2>&1 | tee "$RUNNER_TEMP/esp32s3-custom.log"
+          pio run -e esp32s3-custom -t buildfs
+
+      - name: Record dependency inventory
+        run: |
+          BUILD_DIR=.pio.nosync/build/esp32s3-custom
+          pio --version > "$BUILD_DIR/dependencies.txt"
+          pio pkg list -e esp32s3-custom >> "$BUILD_DIR/dependencies.txt"
+
+      - name: Create custom build manifest
+        run: |
+          python tools/configure_custom_build.py manifest \
+            --config "$HDS_CUSTOM_BUILD_CONFIG" \
+            --build-dir .pio.nosync/build/esp32s3-custom \
+            --build-log "$RUNNER_TEMP/esp32s3-custom.log" \
+            --output .pio.nosync/build/esp32s3-custom/build-manifest.json \
+            --source-sha "$GITHUB_SHA" \
+            --environment esp32s3-custom
+
+      - name: Stage custom build artifact
+        run: |
+          BUILD_DIR=.pio.nosync/build/esp32s3-custom
+          ARTIFACT_DIR=.pio.nosync/custom-artifact
+          mkdir -p "$ARTIFACT_DIR"
+          cp "$BUILD_DIR/firmware.bin" "$ARTIFACT_DIR/"
+          cp "$BUILD_DIR/bootloader.bin" "$ARTIFACT_DIR/"
+          cp "$BUILD_DIR/partitions.bin" "$ARTIFACT_DIR/"
+          if [ -f "$BUILD_DIR/littlefs.bin" ]; then
+            cp "$BUILD_DIR/littlefs.bin" "$ARTIFACT_DIR/"
+          fi
+          cp "$BUILD_DIR/build-manifest.json" "$ARTIFACT_DIR/"
+          cp "$BUILD_DIR/dependencies.txt" "$ARTIFACT_DIR/"
+
+      - name: Upload custom build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openscale-custom-${{ github.sha }}
+          path: .pio.nosync/custom-artifact
+          if-no-files-found: error
+          retention-days: 7

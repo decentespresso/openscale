@@ -6,7 +6,9 @@
 #include "parameter.h"
 #include "ble.h"
 #include "usbcomm.h"
+#if HDS_FEATURE_WEBSOCKET
 void sendWebsocketButton(int buttonNumber, int buttonShortPress);
+#endif
 // ============================================
 // Finger Press Recognition Algorithm for HDS
 // ============================================
@@ -212,7 +214,9 @@ bool isFingerPress(int button) {
       if (button == BUTTON_CIRCLE) {
         // Circle Button：Tare
         sendUsbButton(1, 1);
+#if HDS_FEATURE_WEBSOCKET
         sendWebsocketButton(1, 1);
+#endif
         if (bleClientLive) {
           sendBleButton(1, 1);
         }
@@ -225,7 +229,9 @@ bool isFingerPress(int button) {
       } else if (button == BUTTON_SQUARE) {
         // Square Button：Timer control
         sendUsbButton(2, 1);
+#if HDS_FEATURE_WEBSOCKET
         sendWebsocketButton(2, 1);
+#endif
         if (bleClientLive) {
           sendBleButton(2, 1);
         }

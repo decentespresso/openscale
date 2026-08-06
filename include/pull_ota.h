@@ -1,15 +1,14 @@
 #ifndef PULL_OTA_H
 #define PULL_OTA_H
 
-#ifdef WIFIOTA
-
 #include "config.h"
+
+#if HDS_FEATURE_PULL_OTA
+
 #include "display.h"
 #include "parameter.h"
 #include "pull_ota_catalog.h"
 #include "pull_ota_version.h"
-#include "webserver.h"
-#include "wifi_ota.h"
 #include "wifi_setup.h"
 #if __has_include("ota_public_key.h")
 #include "ota_public_key.h"
@@ -17,6 +16,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
+#include <LittleFS.h>
 #include <Preferences.h>
 #include <Update.h>
 #include <WiFi.h>
@@ -27,8 +27,6 @@
 #include <string.h>
 #include <time.h>
 
-void setupWebsocketEvents();
-void wifi_init();
 void hdsOtaRollbackMarkValid();
 
 #ifndef HDS_OTA_MANIFEST_URL
@@ -316,7 +314,8 @@ bool pullOtaManifestCompatible(const PullOtaManifest &manifest) {
   if (fsPartition == nullptr || fsPartition->size != manifest.fsPartitionSize) {
     return false;
   }
-  if (manifest.littlefs.present && manifest.littlefs.size != manifest.fsPartitionSize) {
+  if (!manifest.littlefs.present || !manifest.littlefs.required ||
+      manifest.littlefs.size != manifest.fsPartitionSize) {
     return false;
   }
   return manifest.fsSchema == HDS_OTA_FS_SCHEMA;
@@ -378,8 +377,8 @@ bool pullOtaParseManifestObject(JsonObject root, PullOtaManifest &manifest) {
   if (!pullOtaParseAsset(root["firmware"], manifest.firmware, true)) {
     return false;
   }
-  if (!root["littlefs"].isNull() &&
-      !pullOtaParseAsset(root["littlefs"], manifest.littlefs, false)) {
+  if (!pullOtaParseAsset(root["littlefs"], manifest.littlefs, true) ||
+      !manifest.littlefs.required) {
     return false;
   }
   return pullOtaManifestCompatible(manifest);
@@ -885,7 +884,8 @@ bool pullOtaEnsureWifi(unsigned long timeoutMs = HDS_OTA_WIFI_TIMEOUT_MS) {
   if (!b_wifiEnabled) {
     pullOtaDraw("Starting WiFi");
     b_wifiOnBoot = true;
-    wifi_init();
+    b_wifiEnabled = true;
+    setupWifi();
   }
   unsigned long startedAt = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - startedAt < timeoutMs) {
@@ -1149,16 +1149,12 @@ bool pullOtaConfirmInstall(const PullOtaManifest &manifest) {
 }
 
 void pullOtaPauseFilesystemServices() {
-  stopWebServer();
   LittleFS.end();
   delay(200);
 }
 
 void pullOtaResumeFilesystemServices() {
   LittleFS.begin();
-  if (b_wifiEnabled) {
-    startWebServer();
-  }
 }
 
 bool pullOtaStreamAsset(
@@ -1278,7 +1274,7 @@ bool pullOtaInstall(
     b_ota = false;
     return false;
   }
-  pullOtaDraw("Firmware done", "Restarting", "Web UI next");
+  pullOtaDraw("Firmware done", "Restarting", "LittleFS next");
   delay(1500);
   // Runs on the Pull OTA task, not the main loop: queue the restart through
   // reset() (mDNS withdrawal, BLE/web-server teardown) instead of a bare
@@ -1313,7 +1309,7 @@ bool pullOtaVerifyPendingLittleFs(const PullOtaPendingLittleFs &pending) {
 bool pullOtaAttemptPendingLittleFs(
     const PullOtaPendingLittleFs &pending,
     bool &filesystemWriteStarted) {
-  pullOtaDraw("Updating web UI", pending.version.c_str());
+  pullOtaDraw("Updating LittleFS", pending.version.c_str());
   if (!pullOtaEnsureWifi(HDS_OTA_PENDING_WIFI_TIMEOUT_MS)) {
     return false;
   }
