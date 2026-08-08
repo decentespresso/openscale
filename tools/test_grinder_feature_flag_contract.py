@@ -74,6 +74,7 @@ other();
 
 def main():
     config = source("include/config.h")
+    features = source("include/features.h")
     platformio = source("platformio.ini")
     hds = source("src/hds.ino")
     menu = source("include/menu.h")
@@ -85,7 +86,9 @@ def main():
 
     require_guarded_rejects_sibling()
 
-    require("#ifndef HDS_ENABLE_GRINDER\n#define HDS_ENABLE_GRINDER 0\n#endif", config)
+    require('#include "features.h"', config)
+    require("#define HDS_FEATURE_GRINDER 0", features)
+    require("#define HDS_ENABLE_GRINDER HDS_FEATURE_GRINDER", features)
     normal = platformio.split("[env:esp32s3]", 1)[1].split("[env:esp32s3-grinder]", 1)[0]
     grinder_environment = platformio.split("[env:esp32s3-grinder]", 1)[1].split("[env:native]", 1)[0]
     assert "HDS_ENABLE_GRINDER" not in normal

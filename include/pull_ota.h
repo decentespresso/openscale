@@ -1,15 +1,16 @@
 #ifndef PULL_OTA_H
 #define PULL_OTA_H
 
-#ifdef WIFIOTA
-
 #include "config.h"
+#if HDS_FEATURE_PULL_OTA
+
 #include "display.h"
 #include "parameter.h"
 #include "pull_ota_catalog.h"
 #include "pull_ota_version.h"
+#if HDS_FEATURE_WEBSERVER
 #include "webserver.h"
-#include "wifi_ota.h"
+#endif
 #include "wifi_setup.h"
 #if __has_include("ota_public_key.h")
 #include "ota_public_key.h"
@@ -17,6 +18,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
+#include <LittleFS.h>
 #include <Preferences.h>
 #include <Update.h>
 #include <WiFi.h>
@@ -27,7 +29,6 @@
 #include <string.h>
 #include <time.h>
 
-void setupWebsocketEvents();
 void wifi_init();
 void hdsOtaRollbackMarkValid();
 
@@ -1149,16 +1150,20 @@ bool pullOtaConfirmInstall(const PullOtaManifest &manifest) {
 }
 
 void pullOtaPauseFilesystemServices() {
+#if HDS_FEATURE_WEBSERVER
   stopWebServer();
+#endif
   LittleFS.end();
   delay(200);
 }
 
 void pullOtaResumeFilesystemServices() {
   LittleFS.begin();
+#if HDS_FEATURE_WEBSERVER
   if (b_wifiEnabled) {
     startWebServer();
   }
+#endif
 }
 
 bool pullOtaStreamAsset(
@@ -1280,9 +1285,6 @@ bool pullOtaInstall(
   }
   pullOtaDraw("Firmware done", "Restarting", "Web UI next");
   delay(1500);
-  // Runs on the Pull OTA task, not the main loop: queue the restart through
-  // reset() (mDNS withdrawal, BLE/web-server teardown) instead of a bare
-  // ESP.restart() that skips all of it.
   remoteQueueResetAt(millis());
   return true;
 }
@@ -1374,8 +1376,6 @@ bool pullOtaResumePendingLittleFs() {
   hdsOtaRollbackMarkValid();
   pullOtaDraw("Update done", "Restarting");
   delay(1500);
-  // Called from both the Pull OTA task and, at boot, the setup() task -- queue
-  // through reset() rather than restarting directly from either.
   remoteQueueResetAt(millis());
   return true;
 }

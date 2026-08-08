@@ -1,4 +1,5 @@
-
+#include "features.h"
+#if HDS_FEATURE_WIFI
 #include "NetworkEvents.h"
 #include "WiFiType.h"
 #include "config.h"  // FIRMWARE_VER for the DNS-SD TXT record
@@ -6,19 +7,18 @@
 #include "esp_system.h"  // esp_restart() for the heap watchdog
 #include "mdns_name.h"
 #include <Arduino.h>
+#if HDS_FEATURE_MDNS
 #include <ESPmDNS.h>
+#endif
 #include <Preferences.h>
 #include <WiFi.h>
 
 volatile bool b_wifiEnabled = false;
-// Set by the GOT_IP WiFi event; the main loop (wifiSupervise) consumes it and
-// (re)advertises mDNS, keeping all mDNS work off the WiFi-event task.
+#if HDS_FEATURE_MDNS
 static volatile bool g_mdnsAdvertisePending = false;
 static bool g_mdnsReady = false;
 static const unsigned long MDNS_GOODBYE_DRAIN_MS = 60;
-// BLE link state (defined in declare.h). Used by the heap watchdog to avoid
-// rebooting mid-shot while a BLE client is connected. volatile: written from
-// the BLE task, read here on the main loop.
+#endif
 extern volatile bool deviceConnected;
 
 const char *wifiPrefsKey = "wifi";
@@ -30,9 +30,6 @@ class WiFiParams {
 private:
   String ssid = "";
   String pass = "";
-  // Loaded once on the boot path and never mutated afterwards: the main loop
-  // reads it when advertising mDNS, so the HTTP rename handler writes NVS only
-  // and lets the restart pick the new value up.
   char mdnsName[MDNS_NAME_BUFFER_BYTES] = {0};
   Preferences preferences;
   bool initialized = false;
@@ -75,27 +72,16 @@ void connectToWifi() {
 
   WiFi.begin(params.getSSID(), params.getPass());
   WiFi.setTxPower(WIFI_POWER_18_5dBm);
-  // Intentionally not calling WiFi.setSleep(false): with BLE active it starves
-  // the shared-radio BT/WiFi coexistence layer and causes heavy packet loss.
   int wifiCounter = 0;
   while (WiFi.status() != WL_CONNECTED) {
     wifiCounter++;
     delay(1000);
     Serial.println(".");
     if (wifiCounter > 15) {
-      // Configured scale: do NOT fall back to AP. The old code called
-      // setupAP()+WiFi.disconnect(true) here, which dropped the STA into
-      // WL_STOPPED and disabled recovery, leaving WiFi dead until reboot.
-      // Instead leave STA mode and let wifiSupervise() keep (re)connecting in
-      // the background.
       Serial.println("WiFi not up yet; continuing to retry in background");
       break;
     }
   }
-  // b_wifiEnabled means "WiFi subsystem active" (already true from _wifi_init),
-  // NOT "connected" -- the live link state is WiFi.status() and the supervisor
-  // owns reconnects. Only log success when actually connected (the background-
-  // retry path breaks out while still disconnected).
   b_wifiEnabled = true;
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print("Connected to ");
@@ -105,14 +91,7 @@ void connectToWifi() {
   }
 }
 
-// Withdraw the DNS-SD registration. MDNS.end() -> mdns_free() is what emits the
-// goodbye packet that clears the instance from resolver caches; without it the
-// PTR record lingers for its full TTL (75 min by DNS-SD convention, versus 2 min
-// for SRV/A) and browsers keep offering an instance that no longer resolves.
-// Every deliberate teardown -- remote/USB reset, rename and wifi-setup reboots,
-// deep sleep -- reaches this through stopWifi(), so the withdrawal belongs here
-// rather than at each call site. Best-effort by nature: the goodbye is a single
-// unacknowledged multicast, and a crash, flat battery, or unplug sends nothing.
+#if HDS_FEATURE_MDNS
 static void mdnsWithdraw() {
   if (!g_mdnsReady) {
     return;
@@ -120,10 +99,11 @@ static void mdnsWithdraw() {
   MDNS.end();
   g_mdnsReady = false;
   g_mdnsAdvertisePending = false;
-  // Give the goodbye a chance to leave before the radio goes down; mdns_free()
-  // hands the packet to the mDNS task and does not wait for transmission.
   delay(MDNS_GOODBYE_DRAIN_MS);
 }
+#else
+static void mdnsWithdraw() {}
+#endif
 
 void stopWifi() {
   const wifi_mode_t mode = WiFi.getMode();
@@ -144,26 +124,11 @@ void stopWifi() {
   b_wifiEnabled = false;
 }
 
-// ---------------------------------------------------------------------------
-// WiFi resilience + instrumentation. The firmware used to connect once at boot
-// with no event handler, so a STA deauth -- common under BT/WiFi coexistence --
-// left WiFi dead until reboot while the main loop kept running. These add
-// disconnect logging (with reason + heap) and automatic recovery.
-// ---------------------------------------------------------------------------
 static volatile uint32_t g_wifiDisconnects = 0;
 static volatile uint32_t g_wifiReconnects = 0;
-// Set once the boot-time bring-up has finished. That bring-up is setupWifi()
-// (which calls connectToWifi()), run from the _wifi_init FreeRTOS task.
-// wifiSupervise() runs in the main loop concurrently, so it must NOT force
-// reconnects while the initial association is still in progress, or the two
-// race each other into a WL_STOPPED state.
 static volatile bool g_wifiInitDone = false;
 
-// Advertise <name>.local + the _decentscale._tcp DNS-SD service, where <name>
-// is the stored device name (default "hds", so an unrenamed scale still answers
-// at hds.local). Returns true if the responder came up; callers may log/branch
-// on failure (MDNS.begin can transiently fail under heap pressure at reconnect
-// time).
+#if HDS_FEATURE_MDNS
 bool setupMdns() {
   if (WiFi.getMode() != WIFI_AP && WiFi.status() != WL_CONNECTED) {
     Serial.printf("[wifi] MDNS deferred wifi=%d ip=%s\n",
@@ -178,10 +143,6 @@ bool setupMdns() {
     g_mdnsReady = false;
     return false;
   }
-  // Friendly instance name + DNS-SD service so apps (incl. Android NsdManager)
-  // can discover the scale; a bare <name>.local A record isn't browsable there.
-  // A renamed scale keeps the recognizable product prefix so several scales on
-  // one LAN stay tellable apart in a browser list.
   if (mdnsNameIsDefault(name)) {
     MDNS.setInstanceName("Half Decent Scale");
   } else {
@@ -189,13 +150,21 @@ bool setupMdns() {
     snprintf(instance, sizeof(instance), "Half Decent Scale (%s)", name);
     MDNS.setInstanceName(instance);
   }
+#if HDS_FEATURE_WEBSERVER
   MDNS.addService("decentscale", "tcp", 80);
   MDNS.addServiceTxt("decentscale", "tcp", "fw", (const char *)FIRMWARE_VER);
   MDNS.addServiceTxt("decentscale", "tcp", "model", "hds");
   MDNS.addServiceTxt("decentscale", "tcp", "name", name);
+#if HDS_FEATURE_WEBSOCKET
   MDNS.addServiceTxt("decentscale", "tcp", "proto", "ws");
   MDNS.addServiceTxt("decentscale", "tcp", "path", "/snapshot");
+#endif
+#endif
+#if HDS_FEATURE_WEBSERVER
   Serial.printf("DNS-SD: advertised %s.local _decentscale._tcp on port 80\n", name);
+#else
+  Serial.printf("mDNS: advertised %s.local\n", name);
+#endif
   g_mdnsReady = true;
   return true;
 }
@@ -215,6 +184,7 @@ bool wifiEnsureMdnsReadyForSta() {
   g_mdnsReady = false;
   return setupMdns();
 }
+#endif
 
 void onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) {
   switch (event) {
@@ -227,14 +197,14 @@ void onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) {
       Serial.printf("[wifi] GOT_IP %s heap=%lu\n",
                     WiFi.localIP().toString().c_str(),
                     (unsigned long)ESP.getFreeHeap());
-      // Defer the mDNS (re)advertise to the main loop (wifiSupervise). Running
-      // MDNS.end()/begin() from this WiFi-event-task context races the main
-      // loop's mDNS/web-server use; the flag keeps all mDNS work on one thread
-      // and avoids double-registering the service on boot.
+#if HDS_FEATURE_MDNS
       g_mdnsAdvertisePending = true;
+#endif
       break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+#if HDS_FEATURE_MDNS
       g_mdnsReady = false;
+#endif
       g_wifiDisconnects++;
       Serial.printf("[wifi] *** STA DISCONNECTED #%lu reason=%u heap=%lu minheap=%lu uptime=%lu\n",
                     (unsigned long)g_wifiDisconnects,
@@ -251,37 +221,12 @@ void onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) {
 void setupWifi() {
   params.init();
 
-  // Bare DHCP label, no ".local" suffix: that belongs to mDNS, not to the DHCP
-  // hostname option. setHostname() only takes effect before association, which
-  // is why a rename restarts the scale. WiFi.config() starts STA and copies
-  // the then-current default hostname to the interface, so it must run after
-  // setHostname() -- reversed, DHCP keeps advertising the generated
-  // esp32s3-xxxxxx name while mDNS answers under the configured one.
   WiFi.setHostname(params.getMdnsName());
   WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
 
-  // Register the handler BEFORE connecting so connect/disconnect/GOT_IP are all
-  // logged. Disable the core's fixed ~4 s auto-reconnect: when an AP is
-  // rate-limiting us (deauth storm), retrying every few seconds perpetuates the
-  // block. wifiSupervise() retries with exponential backoff (quiet gaps) so the
-  // AP can recover.
   WiFi.onEvent(onWifiEvent);
   WiFi.setAutoReconnect(false);
 
-  // Multi-AP-aware connect policy. arduino-esp32's defaults are FAST_SCAN +
-  // persistent(true), which stop the scan at the first BSSID seen for the
-  // configured SSID and cache that BSSID in NVS. In a multi-AP setup (e.g.
-  // UniFi with the same SSID broadcast from several APs on different channels)
-  // that frequently associates to the wrong BSSID -- the one whose channel is
-  // scanned first, or the one cached from a previous association where the
-  // scale was somewhere else in the building. This makes every WiFi.begin()
-  // (initial connect + every supervisor reconnect) do a full scan of all
-  // channels and associate to the strongest matching BSSID right now, so the
-  // scale follows itself to whichever AP is currently closest and recovers
-  // from one AP going down without needing a reboot. Trade-off: ~1-2 extra
-  // seconds per begin() for the full-channel scan; well worth it. persistent
-  // off because we already own credential storage via the Preferences-backed
-  // WiFiParams, so the WiFi driver's NVS cache only hurts (stale BSSID hint).
   WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
   WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
   WiFi.persistent(false);
@@ -289,16 +234,14 @@ void setupWifi() {
   if (params.hasCredentials()) {
     Serial.printf("trying to connect to wifi: %s\n", params.getSSID().c_str());
     connectToWifi();
-    // STA advertises mDNS via the GOT_IP path (deferred to wifiSupervise), so
-    // don't also register it here -- that would double-register the service.
   } else {
     Serial.println("no wifi data found, setting up AP");
     setupAP();
-    // AP mode emits no GOT_IP event, so advertise mDNS directly.
+#if HDS_FEATURE_MDNS
     setupMdns();
+#endif
   }
 
-  // Bring-up complete: from here the loop's supervisor may manage reconnects.
   g_wifiInitDone = true;
 }
 
@@ -312,31 +255,18 @@ void wifiSupervise() {
   unsigned long now = millis();
   bool up = WiFi.status() == WL_CONNECTED;
 
-  // (Re)advertise mDNS here -- on the main loop -- when the GOT_IP event asked
-  // for it, instead of doing MDNS.end()/begin() from the WiFi-event task.
-  // Clear the flag BEFORE the work: if a later GOT_IP fires while setupMdns() is
-  // running, it re-sets the flag and we re-advertise on the next pass (so a
-  // reconnect during the rebuild is never lost).
+#if HDS_FEATURE_MDNS
   if (g_mdnsAdvertisePending) {
     g_mdnsAdvertisePending = false;
     MDNS.end();
     g_mdnsReady = false;
     setupMdns();
   }
+#endif
 
-  // Heap watchdog. Connection churn can drain the heap to near-zero; in that
-  // OOM window the lwIP/IP stack wedges permanently (no ICMP/TCP/mDNS) while
-  // WiFi stays associated and the main loop runs -- so WiFi.status() can't see
-  // it. If free heap stays critically low for a sustained window, reboot to
-  // self-heal (clients auto-reconnect); a reboot is far better than the silent
-  // permanent hang it replaces. Normal idle heap is ~70 KB, so this only fires
-  // under pathological churn, not in everyday use.
   uint32_t freeHeap = ESP.getFreeHeap();
   const uint32_t HEAP_CRITICAL = 15000;
   const unsigned long HEAP_CRITICAL_WINDOW = 2000;
-  // Upper bound on how long we'll defer the reboot for a connected BLE client.
-  // A normal shot is well under this, so we never reboot mid-shot, but a stack
-  // that stays wedged this long still self-heals even if BLE never disconnects.
   const unsigned long HEAP_CRITICAL_BLE_DEFER_MAX = 60000;
   if (freeHeap < HEAP_CRITICAL) {
     if (lowHeapSince == 0) {
@@ -344,13 +274,8 @@ void wifiSupervise() {
       Serial.printf("[heap] CRITICAL low free=%lu minfree=%lu @%lu\n",
                     (unsigned long)freeHeap, (unsigned long)ESP.getMinFreeHeap(), now);
     } else if (now - lowHeapSince >= HEAP_CRITICAL_WINDOW) {
-      // Prefer not to reboot mid-shot: a WiFi-side OOM shouldn't kill a live BLE
-      // session (heap exhaustion needs WiFi/HTTP churn, not BLE). While a BLE
-      // client is connected, defer -- but only up to HEAP_CRITICAL_BLE_DEFER_MAX,
-      // so a genuinely wedged stack still self-heals. Keep the timer armed so the
-      // reboot also fires immediately once BLE disconnects.
       if (deviceConnected && now - lowHeapSince < HEAP_CRITICAL_BLE_DEFER_MAX) {
-        if (now - lastDeferLog >= 5000) {  // rate-limit: the main loop has no sleep
+        if (now - lastDeferLog >= 5000) {
           lastDeferLog = now;
           Serial.printf("[heap] critical for %lums (free=%lu) but BLE connected -> defer reboot\n",
                         now - lowHeapSince, (unsigned long)freeHeap);
@@ -363,11 +288,6 @@ void wifiSupervise() {
       }
     }
   } else {
-    // Recovered to a healthy heap: clear the timer so any later dip needs a
-    // fresh sustained window. (The old +5000 hysteresis left a 15-20 KB dead
-    // band where a stale start time could trigger an instant reboot on the
-    // next brief dip.) Also reset the defer-log rate-limit so a later episode's
-    // first "defer reboot" line isn't suppressed by a stale timestamp.
     lowHeapSince = 0;
     lastDeferLog = 0;
   }
@@ -380,17 +300,11 @@ void wifiSupervise() {
                   (unsigned long)g_wifiDisconnects, (unsigned long)g_wifiReconnects);
   }
 
-  // Reconnect supervisor with exponential backoff. Gated on having credentials
-  // (NOT WiFi.getMode() or a one-shot flag) so it always recovers a configured
-  // scale -- including from WL_STOPPED, where getMode() no longer reports STA.
-  // Backoff (5 s -> 10 -> 20 -> 40 -> 60 cap, with a quiet WiFi.disconnect()
-  // between tries) keeps a rate-limiting AP from being hammered into holding the
-  // deauth block, while still recovering a normal one-off deauth within ~5 s.
   if (g_wifiInitDone && params.hasCredentials() && !up) {
     if (downSince == 0) {
       downSince = now;
-      backoffMs = 5000;            // first retry is quick (normal deauth recovery)
-      lastAttempt = now - backoffMs;  // ...so the branch below fires next tick
+      backoffMs = 5000;
+      lastAttempt = now - backoffMs;
       Serial.printf("[wifi] link down @%lu status=%d\n", now, (int)WiFi.status());
     }
     if (now - lastAttempt >= backoffMs) {
@@ -399,11 +313,10 @@ void wifiSupervise() {
       Serial.printf("[wifi] down %lums (status=%d) -> reconnect #%lu backoff=%lums heap=%lu\n",
                     now - downSince, (int)WiFi.status(), (unsigned long)g_wifiReconnects,
                     backoffMs, (unsigned long)ESP.getFreeHeap());
-      // Go quiet first (stop any in-flight assoc), then one clean attempt.
       WiFi.disconnect();
       WiFi.mode(WIFI_STA);
       WiFi.begin(params.getSSID(), params.getPass());
-      backoffMs = backoffMs < 60000 ? backoffMs * 2 : 60000;  // escalate, cap 60 s
+      backoffMs = backoffMs < 60000 ? backoffMs * 2 : 60000;
     }
   } else if (up) {
     downSince = 0;
@@ -433,9 +346,6 @@ bool saveDeviceNameForRestart(const char *name, char *stored, size_t storedSize)
   return params.saveMdnsNameForRestart(name, stored, storedSize);
 }
 
-// ----------------------------------------------------
-// ------------------ WiFiParams ----------------------
-// ----------------------------------------------------
 
 void WiFiParams::saveCredentials(const String &ssid, const String &pass) {
   if (!initialized) {
@@ -463,16 +373,10 @@ bool WiFiParams::saveCredentialsForRestart(const String &ssid, const String &pas
     return false;
   }
 
-  // /setup/wifi reboots shortly after responding. Do not publish these strings
-  // to the running WiFi supervisor, or AP mode can be torn down before the
-  // response finishes and String reads/writes can race across tasks.
   return writeCredentialsToNvs(ssid, pass);
 }
 
 bool WiFiParams::writeCredentialsToNvs(const String &ssid, const String &pass) {
-  // putString returns strlen(value), so an empty WiFi password returns 0 even
-  // when NVS saved it correctly. Verify the stored values instead of treating
-  // a zero byte count as failure.
   size_t wroteSsid = preferences.putString(wifiSSIDKey, ssid.c_str());
   size_t wrotePass = preferences.putString(wifiPassKey, pass.c_str());
   String storedSsid = preferences.getString(wifiSSIDKey, "\x01");
@@ -497,9 +401,6 @@ bool WiFiParams::saveMdnsNameForRestart(const char *name, char *stored, size_t s
     return false;
   }
 
-  // Like the credential path: NVS only. The running mDNS/hostname state is not
-  // touched here because this runs on the AsyncTCP task; the queued restart
-  // reloads the name in init().
   preferences.putString(wifiMdnsNameKey, stored);
   return preferences.getString(wifiMdnsNameKey, "\x01") == stored;
 }
@@ -520,8 +421,6 @@ void WiFiParams::init() {
   if (mdnsName[0] == 0) {
     char storedName[MDNS_NAME_BUFFER_BYTES] = {0};
     size_t length = preferences.getString(wifiMdnsNameKey, storedName, sizeof(storedName));
-    // A stored value that no longer validates (older firmware, truncated read)
-    // falls back to the default instead of advertising an illegal label.
     if (length == 0 || !mdnsNameNormalize(storedName, mdnsName, sizeof(mdnsName))) {
       mdnsNameCopyDefault(mdnsName, sizeof(mdnsName));
     }
@@ -535,9 +434,9 @@ void WiFiParams::reset() {
     init();
   }
   if (initialized) {
-    // clear() drops the whole 'wifi' namespace, including the device name: a
-    // full network reset restores the factory identity too.
     preferences.clear();
   }
   mdnsNameCopyDefault(mdnsName, sizeof(mdnsName));
 }
+
+#endif

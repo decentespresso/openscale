@@ -3,8 +3,10 @@
 
 #include "esp32-hal.h"
 #include "parameter.h"
+#if HDS_FEATURE_WIFI
 #include "mdns_name.h"
 #include "wifi_setup.h"
+#endif
 #if HDS_ENABLE_GRINDER
 #include "grinder_runtime.h"
 #endif
@@ -24,29 +26,31 @@ template<typename T> int getMenuSize(T &menu) {
   return sizeof(menu) / sizeof(menu[0]);
 }
 
-// Menu structure
 struct Menu {
-  const char *name;  // menu name
-  void (*action)();  // what to do NULL for submenu
-  Menu *subMenu;     // submenu NULL for none
-  Menu *parentMenu;  // parentmenu NULL for root menu
+  const char *name;
+  void (*action)();
+  Menu *subMenu;
+  Menu *parentMenu;
 };
 
-// Function prototypes
 void exitMenu();
 #ifdef BUZZER
 void buzzerOn();
 void buzzerOff();
 #endif
+#if HDS_FEATURE_WIFI
 void toggleWifiOff();
 void toggleWifiOn();
 void resetWifi();
 void showWifiStatus();
+#endif
 void heartbeatOn();
 void heartbeatOff();
 void calibrate();
 void drawButton();
+#if HDS_FEATURE_PULL_OTA
 void wifiUpdate();
+#endif
 void showStatus();
 void showAbout();
 void showMenu();
@@ -78,19 +82,20 @@ void grinderTargetMenu();
 void grinderSafetyMenu();
 void grinderZeroRangeMenu();
 #endif
+#if HDS_FEATURE_WIFI
 void wifi_init();
+#endif
 
 
-// Top-level menu options
-// 1/5 define the 1st level menu
 Menu menuExit = { "Exit", exitMenu, NULL, NULL };
 #ifdef BUZZER
 Menu menuBuzzer = { "Buzzer", NULL, NULL, NULL };
 #endif
 Menu menuCalibration = { "Calibration", NULL, NULL, NULL };
+#if HDS_FEATURE_WIFI
 Menu menuWifi = { "WiFi Settings", NULL, NULL, NULL };
+#endif
 Menu menuStatus = { "Status", showStatus, NULL, NULL };
-// Menu menuWiFiUpdate = {"WiFi Update", NULL, NULL, NULL};
 Menu menuAbout = { "About", showAbout, NULL, NULL };
 Menu menuLogo = { "Show Logo", showLogo, NULL, NULL };
 Menu menuFactory = { "Factory", NULL, NULL, NULL };
@@ -106,25 +111,24 @@ Menu menuGrinder = { "Grinder Plug", NULL, NULL, NULL };
 #endif
 
 
-// 2/5 define the 2st level menu
 #ifdef BUZZER
-// Buzzer submenu
 Menu menuBuzzerBack = { "Back", NULL, NULL, &menuBuzzer };
 Menu menuBuzzerOn = { "Buzzer On", buzzerOn, NULL, &menuBuzzer };
 Menu menuBuzzerOff = { "Buzzer Off", buzzerOff, NULL, &menuBuzzer };
 Menu *buzzerMenu[] = { &menuBuzzerBack, &menuBuzzerOn, &menuBuzzerOff };
 #endif
-// Calibration submenu
 Menu menuCalibrationBack = { "Back", NULL, NULL, &menuCalibration };
 Menu menuCalibrate = { "Calibrate", calibrate, NULL, &menuCalibration };
 Menu *calibrationMenu[] = { &menuCalibrationBack, &menuCalibrate };
 
-// WiFi submenu
+#if HDS_FEATURE_WIFI
 Menu menuWiFiUpdateBack = { "Back", NULL, NULL, &menuWifi };
 Menu menuWiFiOnOption = { "WiFi On", toggleWifiOn, NULL, &menuWifi };
 Menu menuWiFiOffOption = { "WiFi Off", toggleWifiOff, NULL, &menuWifi };
 Menu menuWiFiStatusOption = { "WiFi Status", showWifiStatus, NULL, &menuWifi };
+#if HDS_FEATURE_PULL_OTA
 Menu menuWiFiPullUpdateOption = { "WiFi Update", wifiUpdate, NULL, &menuWifi };
+#endif
 Menu menuWiFiResetOption = { "Reset WiFi", resetWifi, NULL, &menuWifi };
 
 Menu *wifiUpdateMenu[] = {
@@ -132,32 +136,31 @@ Menu *wifiUpdateMenu[] = {
   &menuWiFiOnOption,
   &menuWiFiOffOption,
   &menuWiFiStatusOption,
+#if HDS_FEATURE_PULL_OTA
   &menuWiFiPullUpdateOption,
+#endif
   &menuWiFiResetOption,
 };
+#endif
 
-// Heartbeat detection
 Menu menuHeartbeatBack = { "Back", NULL, NULL, &menuHeartbeat };
 Menu menuHeartbeatOn = { "Heartbeat On", heartbeatOn, NULL, &menuHeartbeat };
 Menu menuHeartbeatOff = { "Heartbeat Off", heartbeatOff, NULL, &menuHeartbeat };
 Menu *heartbeatMenu[] = { &menuHeartbeatBack, &menuHeartbeatOn,
                           &menuHeartbeatOff };
 
-// Screen flip option
 Menu menuFlipScreenBack = { "Back", NULL, NULL, &menuFlipScreen };
 Menu menuFlipScreenOn = { "Flip On", flipScreenOn, NULL, &menuFlipScreen };
 Menu menuFlipScreenOff = { "Flip Off", flipScreenOff, NULL, &menuFlipScreen };
 Menu *flipScreenMenu[] = { &menuFlipScreenBack, &menuFlipScreenOn,
                            &menuFlipScreenOff };
 
-// Swap weight time option
 Menu menuTimeOnTopBack = { "Back", NULL, NULL, &menuTimeOnTop };
 Menu menuTimeOnTopOn = { "Time On Top", timeOnTopOn, NULL, &menuTimeOnTop };
 Menu menuTimeOnTopOff = { "Weight On Top", timeOnTopOff, NULL, &menuTimeOnTop };
 Menu *timeOnTopMenu[] = { &menuTimeOnTopBack, &menuTimeOnTopOn,
                           &menuTimeOnTopOff };
 
-// Enable button function while BLE connected
 Menu menuBtnFuncWhileConnectedBack = { "Back", NULL, NULL,
                                        &menuBtnFuncWhileConnected };
 Menu menuBtnFuncWhileConnectedOn = { "Enable Buttons", btnFuncWhileConnectedOn,
@@ -169,13 +172,11 @@ Menu *btnFuncWhileConnectedMenu[] = { &menuBtnFuncWhileConnectedBack,
                                       &menuBtnFuncWhileConnectedOn,
                                       &menuBtnFuncWhileConnectedOff };
 
-// Auto sleep function
 Menu menuAutoSleepBack = { "Back", NULL, NULL, &menuAutoSleep };
 Menu menuAutoSleepOn = { "Auto Sleep On", autoSleepOn, NULL, &menuAutoSleep };
 Menu menuAutoSleepOff = { "Auto Sleep Off", autoSleepOff, NULL, &menuAutoSleep };
 Menu *autoSleepMenu[] = { &menuAutoSleepBack, &menuAutoSleepOn, &menuAutoSleepOff };
 
-// Quick boot function(aka no delay when pressing the button to boot the scale)
 Menu menuQuickBootBack = { "Back", NULL, NULL, &menuQuickBoot };
 Menu menuQuickBootOn = { "Quick Boot On", quickBootOn, NULL, &menuQuickBoot };
 Menu menuQuickBootOff = { "Quick Boot Off", quickBootOff, NULL, &menuQuickBoot };
@@ -200,47 +201,40 @@ Menu menuGrinderZero = { "Zero Range", grinderZeroRangeMenu, NULL, &menuGrinder 
 Menu *grinderMenu[] = { &menuGrinderBack, &menuGrinderOn, &menuGrinderOff, &menuGrinderSelect, &menuGrinderTarget, &menuGrinderSafety, &menuGrinderZero };
 #endif
 
-// Menu menuFactoryBack = { "Back", NULL, NULL, &menuFactory };
-// Menu menuCalibrateVoltage = { "Calibrate 4.2v", calibrateVoltage, NULL,
-// &menuFactory }; Menu menuFactoryDebug = { "Debug Info", enableDebug, NULL,
-// &menuFactory }; Menu *factoryMenu[] = { &menuFactoryBack,
-// &menuCalibrateVoltage, &menuFactoryDebug };
 
-// Main menu
-// 3/5 write all the 1st menu to mainMenu
 Menu *mainMenu[] = {
   &menuExit,
 #ifdef BUZZER
   &menuBuzzer,
 #endif
-  &menuCalibration, &menuWifi, &menuStatus,
-  // &menuWiFiUpdate,
+  &menuCalibration,
+#if HDS_FEATURE_WIFI
+  &menuWifi,
+#endif
+  &menuStatus,
   &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen, &menuTimeOnTop,
   &menuBtnFuncWhileConnected, &menuAutoSleep, &menuQuickBoot, &menuDriftComp,
 #if HDS_ENABLE_GRINDER
   &menuGrinder,
 #endif
-  //, &menuFactory
 };
-//  &menuHolder1, &menuHolder2, &menuHolder3, &menuHolder4,
-//  &menuHolder5, &menuHolder6};
 Menu **currentMenu = mainMenu;
 Menu *currentSelection = mainMenu[0];
-int currentMenuSize = getMenuSize(mainMenu);  // Top-level menu size
+int currentMenuSize = getMenuSize(mainMenu);
 int currentIndex = 0;
 const int linesPerPage =
-  4;                                                  // Maximum number of lines that can fit on the display
-int currentPage = 0;                                  // Determine the current page
-int totalPages = currentMenuSize / linesPerPage + 1;  // Calculate total pages
+  4;
+int currentPage = 0;
+int totalPages = currentMenuSize / linesPerPage + 1;
 
-// 4/5 link all the submenus
 void linkSubmenus() {
-// Link submenus
 #ifdef BUZZER
   menuBuzzer.subMenu = buzzerMenu[0];
 #endif
   menuCalibration.subMenu = calibrationMenu[0];
+#if HDS_FEATURE_WIFI
   menuWifi.subMenu = wifiUpdateMenu[0];
+#endif
   menuHeartbeat.subMenu = heartbeatMenu[0];
   menuFlipScreen.subMenu = flipScreenMenu[0];
   menuTimeOnTop.subMenu = timeOnTopMenu[0];
@@ -251,10 +245,8 @@ void linkSubmenus() {
 #if HDS_ENABLE_GRINDER
   menuGrinder.subMenu = grinderMenu[0];
 #endif
-  // menuFactory.subMenu = factoryMenu[0];
 }
 
-// Menu actions
 void exitMenu() {
   u8g2.setFont(FONT_M);
   u8g2.firstPage();
@@ -276,10 +268,7 @@ void exitMenu() {
   currentMenuSize = getMenuSize(mainMenu);
   currentIndex = 0;
   currentSelection = currentMenu[currentIndex];
-  // Optionally reset or perform an exit action
   t_menuExitTime = millis();
-  // Capture the moment when menu exit begins to establish a reference point
-  // This enables timing-based protection against unintended triggers
 }
 
 #ifdef BUZZER
@@ -305,6 +294,7 @@ void buzzerOff() {
 }
 #endif
 
+#if HDS_FEATURE_WIFI
 void toggleWifiOn() {
   b_wifiOnBoot = true;
 #if HDS_ENABLE_GRINDER
@@ -348,7 +338,6 @@ void toggleWifiOff() {
 void showWifiStatus() {
   b_showWifiData = true;
 
-  // Get WiFi info
   String ssid = WiFi.isConnected() ? WiFi.SSID() : "N/A";
   String ip = WiFi.isConnected() ? WiFi.localIP().toString() : "0.0.0.0";
   const char *status = WiFi.isConnected() ? "Enabled" : "Disabled";
@@ -360,7 +349,7 @@ void showWifiStatus() {
   u8g2.firstPage();
   do {
 
-    u8g2.setFont(u8g2_font_6x12_tr);  // Use readable font
+    u8g2.setFont(u8g2_font_6x12_tr);
 
     u8g2.drawStr(0, 10, "WiFi Status:");
     u8g2.drawStr(72, 10, status);
@@ -385,10 +374,19 @@ void showWifiStatus() {
     }
   }
 }
+#endif
 
 void showStatus() {
   b_showStatusData = true;
 
+  char wifiLine[32];
+  char bleLine[32];
+  char sleepLine[32];
+  char driftLine[32];
+#if HDS_ENABLE_GRINDER
+  char grinderLine[32];
+#endif
+#if HDS_FEATURE_WIFI
   const char *wifiRunState = "Idle";
   if (b_wifiEnabled) {
     if (WiFi.getMode() == WIFI_AP) {
@@ -400,17 +398,13 @@ void showStatus() {
     }
   }
 
-  char wifiLine[32];
-  char bleLine[32];
-  char sleepLine[32];
-  char driftLine[32];
-#if HDS_ENABLE_GRINDER
-  char grinderLine[32];
-#endif
   snprintf(wifiLine, sizeof(wifiLine), "WiFi:%s %s %s",
            b_wifiOnBoot ? "On" : "Off",
            wifiCredentialsSaved() ? "Saved" : "NoCred",
            wifiRunState);
+#else
+  snprintf(wifiLine, sizeof(wifiLine), "WiFi:Unavailable");
+#endif
   snprintf(bleLine, sizeof(bleLine), "BLE:%s Btn:%s HB:%s",
            b_ble_enabled ? "On" : "Off",
            b_btnFuncWhileConnected ? "On" : "Off",
@@ -448,6 +442,7 @@ void showStatus() {
   }
 }
 
+#if HDS_FEATURE_WIFI
 void resetWifi() {
   saveCredentials("", "");
   actionMessage = "WiFi Reset";
@@ -455,6 +450,7 @@ void resetWifi() {
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
 }
+#endif
 
 void heartbeatOn() {
   b_requireHeartBeat = true;
@@ -870,11 +866,8 @@ void grinderZeroRangeMenu() {
 
 void calibrate() {
   b_menu = false;
-  b_calibration = true;  // 让按钮进入校准状态3
+  b_calibration = true;
   i_calibration = 0;
-  // calibration(0);
-  // the calibration if is after the showMenu() if, so it should exit menu to do
-  // calibration
 }
 
 struct CalibrationRawCapture {
@@ -1186,7 +1179,6 @@ void calibration(int input) {
           x = 0;
           y = u8g2.getMaxCharHeight();
           u8g2.drawUTF8(x, y, "Calibration Weight");
-          // u8g2.setFont(FONT_M);
           x += 5;
           y += u8g2.getMaxCharHeight();
           u8g2.drawUTF8(x, y, weights[0]);
@@ -1220,7 +1212,6 @@ void calibration(int input) {
 
           u8g2.setDrawColor(2);
           drawButton();
-          // drawBleBox();
         } while (u8g2.nextPage());
       }
       if (input == 1) {
@@ -1228,8 +1219,6 @@ void calibration(int input) {
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
-          // 2行
-          // FONT_M = u8g2_font_fub14_tn;
           u8g2.drawUTF8(AC((char *)"Remove all weight"),
                         u8g2.getMaxCharHeight() + i_margin_top + 3,
                         (char *)"Remove all weight");
@@ -1243,14 +1232,12 @@ void calibration(int input) {
       Serial.println("Before if check, i_cal_weight = " + String(i_cal_weight));
 
       if (i_cal_weight == 0) {
-        // exit was selected, exit the calibration.
         calibrationFinish(true);
         return;
       }
       if (b_is_charging) {
         calibrationShowUsbWarning();
       }
-      // scale.update();
       if (input == 0) {
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
@@ -1462,8 +1449,6 @@ void calibration(int input) {
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
-          // 2行
-          // FONT_M = u8g2_font_fub14_tn;
           u8g2.drawUTF8(AC((char *)"Recalibration done"), AM(),
                         (char *)"Recalibration done");
         } while (u8g2.nextPage());
@@ -1483,6 +1468,7 @@ void calibration(int input) {
   }
 }
 
+#if HDS_FEATURE_PULL_OTA
 void wifiUpdate() {
 #ifdef BUZZER
   buzzer.off();
@@ -1490,6 +1476,7 @@ void wifiUpdate() {
   pullOtaUpdate();
   b_menu = false;
 }
+#endif
 
 void showAbout() {
   actionMessage = FIRMWARE_VER;
@@ -1499,7 +1486,7 @@ void showAbout() {
   u8g2.firstPage();
   do {
     u8g2.setFont(FONT_S);
-    u8g2.drawStr(AC(actionMessage.c_str()), AM() - 24, actionMessage.c_str()); 
+    u8g2.drawStr(AC(actionMessage.c_str()), AM() - 24, actionMessage.c_str());
     u8g2.drawStr(AC(actionMessage2.c_str()), AM(), actionMessage2.c_str());
     u8g2.drawStr(AC(GIT_REV), AM()+ 24, GIT_REV);
   } while (u8g2.nextPage());
@@ -1519,19 +1506,16 @@ void showLogo() {
 
   do {
     if (!b_showNumber) {
-      // show logo
       u8g2.setFont(u8g2_font_logisoso22_tf);
       u8g2.drawStr(AC("Half"), 26, "Half");
       u8g2.drawBox(4, LCDHeight / 2, LCDWidth - 4 * 2, 2);
       u8g2.drawStr(AC("Decent"), LCDHeight - 2, "Decent");
     } else {
-      // show number
-      u8g2.drawXBM(121, 52, 7, 12, image_battery_4);  // 75-100% battery
+      u8g2.drawXBM(121, 52, 7, 12, image_battery_4);
       u8g2.drawXBM(3, 51, 5, 13, image_ble_enabled);
       u8g2.setFont(FONT_TIMER);
       u8g2.drawStr(AC("345"), LCDHeight - 8, "345");
 
-      // Extract the integer part
       float number = 1234.5;
       int i_weightInt = (int)number;
       if (number >= 0) {
@@ -1540,20 +1524,17 @@ void showLogo() {
         b_negativeWeight = true;
       }
 
-      // Calculate the decimal part by subtracting the integer part from the
-      // number and then multiplying by 10 to shift the first decimal digit into
-      // the integer place
       float decimalPart = number - (float)(i_weightInt);
       int i_weightFirstDecimal = abs((int)(decimalPart * 10));
       char integerStr[10] =
-        "-0";  // to save the - sign if the input is between -1 to 0
+        "-0";
       char decimalStr[10] = "0";
       if (number >= 0 || number <= -1) {
         snprintf(integerStr, sizeof(integerStr), "%d", i_weightInt);
       }
       snprintf(decimalStr, sizeof(decimalStr), "%d", i_weightFirstDecimal);
       u8g2.setFont(FONT_GRAM);
-      int gramWidth = u8g2.getUTF8Width("g");  // Width of the "g" character
+      int gramWidth = u8g2.getUTF8Width("g");
       u8g2.setFont(FONT_WEIGHT);
       int integerWidth = u8g2.getUTF8Width(trim(integerStr));
       int decimalWidth = u8g2.getUTF8Width(trim(decimalStr));
@@ -1567,8 +1548,7 @@ void showLogo() {
       int y = AT() - 15;
       u8g2.drawStr(x_decimalPoint, y, ".");
       u8g2.drawStr(x_integer, y,
-                   trim(integerStr));  // Assuming vertical position at 28,
-                                       // adjust as needed
+                   trim(integerStr));
       u8g2.drawStr(x_decimal, y, trim(decimalStr));
       if (number > -1000.0) {
         u8g2.setFont(FONT_GRAM);
@@ -1582,9 +1562,7 @@ void showLogo() {
   delay(1000);
   while (b_showLogo) {
     if (digitalRead(BUTTON_SQUARE) == LOW) {
-      // next time to show number
       b_showNumber = !b_showNumber;
-      // exit
       b_showLogo = false;
     }
   }
@@ -1602,54 +1580,42 @@ void enableDebug() {
   delay(1000);
   b_debug = true;
   b_menu = false;
-  // Optionally reset or perform an exit action
 }
 
 void calibrateVoltage() {
   actionMessage = "Calibrate 4.2v";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  const int numReadings = 50;  // Number of readings to average
+  const int numReadings = 50;
   long adcSum = 0;
 
-  // Take multiple ADC readings and calculate their sum
   for (int i = 0; i < numReadings; i++) {
     adcSum += analogRead(BATTERY_PIN);
-    delay(10);  // Optional: Add a small delay between readings for stability
+    delay(10);
   }
 
-  // Calculate the average ADC value
   float adcValue = adcSum / (float)numReadings;
 
-  // Calculate the voltage at the pin and the actual battery voltage
   float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;
   float batteryVoltage = voltageAtPin * dividerRatio;
 
-  // Calculate the calibration factor
   f_batteryCalibrationFactor = 4.2 / batteryVoltage;
 
   storagePutFloat(KEY_BAT_CAL, f_batteryCalibrationFactor);
 
-  // Output the new calibration factor to the Serial Monitor
   Serial.print("Battery Voltage Factor set to: ");
   Serial.println(f_batteryCalibrationFactor);
 }
 
-// Navigate menu
 void navigateMenu(int direction) {
   currentIndex = (currentIndex + direction + currentMenuSize) % currentMenuSize;
   currentSelection = currentMenu[currentIndex];
   Serial.print("currentIndex ");
   Serial.println(currentIndex);
-  // showMenu();
 }
 
-// Select menu
-// 5/5 count submenu items
 void selectMenu() {
-  // use the static way to avoid get size of dynamic array.
   if (currentSelection->subMenu) {
-// Enter the submenu
 #ifdef BUZZER
     if (currentSelection == &menuBuzzer) {
       currentMenu = buzzerMenu;
@@ -1659,9 +1625,11 @@ void selectMenu() {
       if (currentSelection == &menuCalibration) {
       currentMenu = calibrationMenu;
       currentMenuSize = getMenuSize(calibrationMenu);
+#if HDS_FEATURE_WIFI
     } else if (currentSelection == &menuWifi) {
       currentMenu = wifiUpdateMenu;
       currentMenuSize = getMenuSize(wifiUpdateMenu);
+#endif
     } else if (currentSelection == &menuHeartbeat) {
       currentMenu = heartbeatMenu;
       currentMenuSize = getMenuSize(heartbeatMenu);
@@ -1690,15 +1658,9 @@ void selectMenu() {
       currentMenuSize = getMenuSize(grinderMenu);
 #endif
     }
-    // else if (currentSelection == &menuFactory) {
-    //   currentMenu = factoryMenu;
-    //   currentMenuSize = getMenuSize(factoryMenu);
-    // }
     currentIndex = 0;
     currentSelection = currentMenu[currentIndex];
-    // showMenu();
   } else if (currentSelection->action) {
-    // Execute the action if available
     currentSelection->action();
   } else if (currentSelection->parentMenu) {
 #if HDS_ENABLE_GRINDER
@@ -1707,16 +1669,13 @@ void selectMenu() {
       return;
     }
 #endif
-    // Go back to the parent menu
     currentMenu = mainMenu;
     currentMenuSize = getMenuSize(mainMenu);
-    currentIndex = 0;  // Reset to the first item in the parent menu
+    currentIndex = 0;
     currentSelection = currentMenu[currentIndex];
-    // showMenu();
   }
 }
 
-// Display menu
 void showMenu() {
   if (b_screenFlipped)
     u8g2.setDisplayRotation(U8G2_R0);
@@ -1741,18 +1700,16 @@ void showMenu() {
     } else {
       actionMessage == "Default";
       currentPage = currentIndex / linesPerPage + 1;
-      // currentMenuSize = getMenuSize(currentMenu);
-      totalPages = (currentMenuSize + linesPerPage - 1) / linesPerPage;  // Calculate total pages
+      totalPages = (currentMenuSize + linesPerPage - 1) / linesPerPage;
       char pageInfo[10];
       snprintf(pageInfo, sizeof(pageInfo), "%d/%d", currentPage, totalPages);
       if (totalPages > 1)
         u8g2.drawStr(AR(pageInfo), u8g2.getMaxCharHeight(),
-                     pageInfo);  // Show on top-right of the screen if more than
-                                 // one page is needed.
+                     pageInfo);
       for (int i = 0; i < currentMenuSize; i++) {
         if (currentMenu[i] == currentSelection) {
           u8g2.drawStr(0, u8g2.getMaxCharHeight() * (i % linesPerPage + 1),
-                       ">");  // Highlight current selection
+                       ">");
         }
         if (i >= (currentPage - 1) * linesPerPage && i < currentPage * linesPerPage)
           u8g2.drawStr(10, u8g2.getMaxCharHeight() * (i % linesPerPage + 1),

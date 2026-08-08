@@ -1,0 +1,97 @@
+{
+  "firmware_refs": [
+    "main"
+  ],
+  "features": [
+    {
+      "id": "wifi",
+      "name": "WiFi",
+      "description": "Wireless networking support for connected features.",
+      "tooltip": "Provides the WiFi stack used by OTA updates, discovery, web tools, and connected plugins.",
+      "requires": []
+    },
+    {
+      "id": "mdns",
+      "name": "mDNS",
+      "description": "Local network discovery without an IP address.",
+      "tooltip": "Advertises the scale on the local network using multicast DNS. WiFi is included automatically.",
+      "requires": [
+        "wifi"
+      ]
+    },
+    {
+      "id": "webserver",
+      "name": "Web server",
+      "description": "Serve the local configuration interface.",
+      "tooltip": "Adds the embedded HTTP server for web settings, APIs, and approved web plugins.",
+      "requires": [
+        "wifi"
+      ]
+    },
+    {
+      "id": "websocket",
+      "name": "WebSocket",
+      "description": "Bidirectional live updates for web clients.",
+      "tooltip": "Enables persistent browser communication and includes WiFi and the web server.",
+      "requires": [
+        "wifi",
+        "webserver"
+      ]
+    },
+    {
+      "id": "littlefs",
+      "name": "Runtime LittleFS files",
+      "description": "Bundle files in the runtime flash filesystem.",
+      "tooltip": "Adds runtime assets such as HTML, configuration, or plugin resources to LittleFS.",
+      "requires": []
+    },
+    {
+      "id": "elegant-ota",
+      "name": "ElegantOTA",
+      "description": "Browser-based firmware update flow.",
+      "tooltip": "Adds ElegantOTA and includes WiFi and the web server.",
+      "requires": [
+        "wifi",
+        "webserver"
+      ]
+    },
+    {
+      "id": "pull-ota",
+      "name": "OLED Pull OTA",
+      "description": "Install official releases from the scale display.",
+      "tooltip": "Downloads signed firmware and LittleFS release assets over WiFi from the OLED update flow.",
+      "requires": [
+        "wifi"
+      ],
+      "default": true
+    },
+    {
+      "id": "grinder",
+      "name": "Grinder",
+      "description": "Enable supported grinder integrations.",
+      "tooltip": "Adds grinder connectivity and includes WiFi and mDNS.",
+      "requires": [
+        "wifi",
+        "mdns"
+      ]
+    }
+  ],
+  "plugins": [
+    {
+      "id": "hello-web",
+      "name": "Hello Web",
+      "description": "Example web plugin with bundled runtime assets.",
+      "tooltip": "Approved example plugin requiring WiFi, the web server, and runtime LittleFS files.",
+      "version": "1.0.0",
+      "firmware_refs": [
+        "main"
+      ],
+      "requires": [
+        "wifi",
+        "webserver",
+        "littlefs"
+      ],
+      "conflicts": []
+    }
+  ]
+}

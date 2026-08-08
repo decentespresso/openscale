@@ -1,0 +1,86 @@
+name: Custom firmware build
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/custom-build.yml"
+      - "custom-build.json"
+      - "docs/custom-build/catalog.json"
+      - "include/**"
+      - "platformio.ini"
+      - "plugins/**"
+      - "src/**"
+      - "tools/build_custom_firmware.py"
+      - "tools/configure_custom_build.py"
+      - "tools/test_custom_build_execution.py"
+      - "tools/test_plugin_catalog.py"
+  workflow_dispatch:
+    inputs:
+      firmware_ref:
+        description: Firmware ref
+        required: true
+        default: main
+      features:
+        description: Comma-separated feature IDs
+        required: false
+        default: wifi,webserver,littlefs,pull-ota
+      plugins:
+        description: Comma-separated plugin IDs
+        required: false
+        default: hello-web
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install PlatformIO Core
+        run: python -m pip install --requirement requirements-platformio.txt
+      - name: Configure dispatch selection
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          FIRMWARE_REF: ${{ inputs.firmware_ref }}
+          FEATURES: ${{ inputs.features }}
+          PLUGINS: ${{ inputs.plugins }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          split = lambda value: [item.strip() for item in value.split(",") if item.strip()]
+          Path("custom-build.json").write_text(json.dumps({
+              "firmware_ref": os.environ["FIRMWARE_REF"],
+              "features": split(os.environ["FEATURES"]),
+              "plugins": split(os.environ["PLUGINS"]),
+          }, indent=2) + "\n", encoding="utf-8")
+          PY
+      - name: Validate custom build contracts
+        run: |
+          python tools/test_plugin_catalog.py
+          python tools/test_custom_build_execution.py
+      - name: Build standard firmware
+        run: pio run -e esp32s3
+      - name: Build isolated custom firmware and filesystem
+        run: python tools/build_custom_firmware.py
+      - name: Upload custom binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: openscale-custom-${{ github.run_id }}
+          path: |
+            .pio.nosync/custom-output/firmware.bin
+            .pio.nosync/custom-output/bootloader.bin
+            .pio.nosync/custom-output/partitions.bin
+            .pio.nosync/custom-output/littlefs.bin
+            .pio.nosync/custom-output/build-manifest.json
+            .pio.nosync/custom-output/dependencies.txt
+          if-no-files-found: error
