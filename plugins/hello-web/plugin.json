@@ -1,0 +1,23 @@
+{
+  "schema": 2,
+  "id": "hello-web",
+  "name": "Hello Web",
+  "description": "Example web plugin with bundled runtime assets.",
+  "tooltip": "Approved example plugin requiring WiFi, the web server, and runtime LittleFS files.",
+  "version": "1.0.0",
+  "firmware_refs": ["main"],
+  "requires": ["wifi", "webserver", "littlefs"],
+  "conflicts": [],
+  "patches": {},
+  "assets": [
+    {
+      "source": "hello.html",
+      "target": "plugins/hello/index.html"
+    }
+  ],
+  "budget": {
+    "firmware_flash_bytes": 0,
+    "static_ram_bytes": 0,
+    "littlefs_bytes": 4096
+  }
+}

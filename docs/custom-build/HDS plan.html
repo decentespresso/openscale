@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#10241c">
+  <title>OpenScale Custom Builds</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #14221c;
+      --muted: #5d6b65;
+      --paper: #f5f7f4;
+      --white: #ffffff;
+      --line: #cfd8d2;
+      --green: #087a55;
+      --green-soft: #dcefe6;
+      --amber: #a96612;
+      --amber-soft: #f7e6c4;
+      --coral: #b94d3e;
+      --coral-soft: #f6ddd8;
+      --blue: #356a8a;
+      --blue-soft: #dceaf1;
+      --stage-pad: 5rem;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-synthesis: none;
+      background: var(--paper);
+      color: var(--ink);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { width: 100%; height: 100%; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      overflow: hidden;
+      background: var(--paper);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, a { font: inherit; }
+
+    button:focus-visible, a:focus-visible {
+      outline: 3px solid var(--amber);
+      outline-offset: 3px;
+    }
+
+    .deck {
+      position: relative;
+      width: 100%;
+      height: 100svh;
+      overflow: hidden;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      align-content: center;
+      gap: 2.25rem;
+      min-height: 100svh;
+      padding: var(--stage-pad);
+      overflow-y: auto;
+      background: var(--paper);
+      opacity: 0;
+      transform: translateX(2rem);
+      visibility: hidden;
+      transition: opacity 220ms ease, transform 220ms ease, visibility 220ms ease;
+    }
+
+    .slide.is-active {
+      z-index: 2;
+      opacity: 1;
+      transform: translateX(0);
+      visibility: visible;
+    }
+
+    .slide-inner {
+      width: min(1120px, 100%);
+      margin: 0 auto;
+    }
+
+    .kicker {
+      margin: 0 0 1rem;
+      color: var(--green);
+      font-size: .78rem;
+      font-weight: 800;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, p { letter-spacing: 0; }
+
+    h1 {
+      max-width: 52rem;
+      margin: 0;
+      font-size: 4.5rem;
+      line-height: 1.02;
+      font-weight: 760;
+    }
+
+    h2 {
+      max-width: 54rem;
+      margin: 0;
+      font-size: 3.2rem;
+      line-height: 1.06;
+      font-weight: 740;
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 1.15rem;
+      line-height: 1.25;
+    }
+
+    .lede {
+      max-width: 45rem;
+      margin: 1.4rem 0 0;
+      color: var(--muted);
+      font-size: 1.3rem;
+      line-height: 1.55;
+    }
+
+    .hero {
+      color: var(--white);
+      background: #10241c;
+    }
+
+    .hero-media {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: rgba(9, 24, 18, .62);
+    }
+
+    .hero .slide-inner {
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero .kicker { color: #8ee0ba; }
+
+    .hero .lede {
+      max-width: 39rem;
+      color: #e0ebe5;
+    }
+
+    .hero-facts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2.5rem;
+      margin-top: 3rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid rgba(255, 255, 255, .34);
+    }
+
+    .hero-fact strong {
+      display: block;
+      font-size: 1.65rem;
+      line-height: 1;
+    }
+
+    .hero-fact span {
+      display: block;
+      margin-top: .45rem;
+      color: #c9d7d0;
+      font-size: .78rem;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, .9fr) minmax(26rem, 1.1fr);
+      gap: 5rem;
+      align-items: center;
+    }
+
+    .tension-map {
+      border-top: 1px solid var(--line);
+    }
+
+    .tension-row {
+      display: grid;
+      grid-template-columns: 8rem 1fr;
+      gap: 1.5rem;
+      align-items: center;
+      min-height: 7.5rem;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .tension-row strong {
+      font-size: 2.4rem;
+      line-height: 1;
+    }
+
+    .tension-row:nth-child(1) strong { color: var(--coral); }
+    .tension-row:nth-child(2) strong { color: var(--amber); }
+    .tension-row:nth-child(3) strong { color: var(--blue); }
+
+    .tension-row p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.45;
+    }
+
+    .model-grid {
+      display: grid;
+      grid-template-columns: minmax(20rem, .85fr) minmax(0, 1.15fr);
+      gap: 4rem;
+      margin-top: 3rem;
+      align-items: center;
+    }
+
+    .file-tree {
+      margin: 0;
+      padding: 1.6rem;
+      overflow: auto;
+      border: 1px solid #283b33;
+      border-radius: 6px;
+      color: #e5f3eb;
+      background: #13231c;
+      font: 600 .92rem/1.75 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .principles {
+      display: grid;
+      gap: 1.4rem;
+    }
+
+    .principle {
+      display: grid;
+      grid-template-columns: 2.3rem 1fr;
+      gap: 1rem;
+      align-items: start;
+    }
+
+    .principle-index {
+      display: grid;
+      place-items: center;
+      width: 2.3rem;
+      height: 2.3rem;
+      border-radius: 50%;
+      color: var(--white);
+      background: var(--green);
+      font-weight: 800;
+    }
+
+    .principle p {
+      margin: .3rem 0 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .lanes {
+      display: grid;
+      gap: 1rem;
+      margin-top: 3rem;
+    }
+
+    .lane {
+      display: grid;
+      grid-template-columns: 11rem 1fr 12rem;
+      gap: 2rem;
+      align-items: center;
+      min-height: 8.5rem;
+      padding: 1.5rem 1.75rem;
+      border-left: 6px solid var(--green);
+      background: var(--green-soft);
+    }
+
+    .lane.custom {
+      border-color: var(--amber);
+      background: var(--amber-soft);
+    }
+
+    .lane-label {
+      font-size: 1.25rem;
+      font-weight: 800;
+    }
+
+    .lane-copy {
+      color: #34453e;
+      line-height: 1.5;
+    }
+
+    .lane-end {
+      text-align: right;
+      font-weight: 800;
+    }
+
+    .trust-note {
+      margin: 1.5rem 0 0;
+      color: var(--muted);
+      font-size: .92rem;
+      text-align: right;
+    }
+
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1rem;
+      margin-top: 3.25rem;
+    }
+
+    .pipeline-node {
+      position: relative;
+      min-height: 11rem;
+      padding: 1.35rem;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--white);
+    }
+
+    .pipeline-node:not(:last-child)::after {
+      content: ">";
+      position: absolute;
+      top: 50%;
+      right: -1.35rem;
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      width: 1.7rem;
+      height: 1.7rem;
+      border-radius: 50%;
+      color: var(--white);
+      background: var(--ink);
+      transform: translateY(-50%);
+      font-weight: 900;
+    }
+
+    .node-number {
+      color: var(--green);
+      font-size: .74rem;
+      font-weight: 850;
+    }
+
+    .pipeline-node h3 { margin-top: 1rem; }
+
+    .pipeline-node p {
+      margin: .75rem 0 0;
+      color: var(--muted);
+      font-size: .9rem;
+      line-height: 1.5;
+    }
+
+    .cache-branch {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .cache-path {
+      padding: .9rem 1rem;
+      border-top: 3px solid var(--green);
+      background: var(--green-soft);
+      font-size: .85rem;
+      font-weight: 750;
+    }
+
+    .cache-path:last-child {
+      border-color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1rem;
+      margin-top: 3rem;
+    }
+
+    .phase {
+      min-height: 17rem;
+      padding: 1.4rem;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--white);
+    }
+
+    .phase:nth-child(1) { border-top: 6px solid var(--green); }
+    .phase:nth-child(2) { border-top: 6px solid var(--blue); }
+    .phase:nth-child(3) { border-top: 6px solid var(--amber); }
+    .phase:nth-child(4) { border-top: 6px solid var(--coral); }
+
+    .phase-number {
+      color: var(--muted);
+      font-size: .76rem;
+      font-weight: 850;
+    }
+
+    .phase h3 { margin-top: 1.2rem; }
+
+    .phase p {
+      margin: .8rem 0 0;
+      color: var(--muted);
+      font-size: .92rem;
+      line-height: 1.5;
+    }
+
+    .phase-result {
+      display: block;
+      margin-top: 1.4rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--line);
+      color: var(--ink);
+      font-size: .82rem;
+      font-weight: 750;
+    }
+
+    .final {
+      color: var(--white);
+      background: #10241c;
+    }
+
+    .final h2 { max-width: 52rem; }
+
+    .outcomes {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 2.2rem;
+      margin-top: 3rem;
+      padding-top: 2rem;
+      border-top: 1px solid rgba(255, 255, 255, .26);
+    }
+
+    .outcome strong {
+      display: block;
+      color: #8ee0ba;
+      font-size: 1.12rem;
+    }
+
+    .outcome p {
+      margin: .65rem 0 0;
+      color: #cbd8d1;
+      line-height: 1.5;
+    }
+
+    .plan-link {
+      display: inline-block;
+      margin-top: 2.6rem;
+      color: var(--white);
+      text-underline-offset: .25rem;
+      font-weight: 750;
+    }
+
+    .deck-nav {
+      position: fixed;
+      right: 1.5rem;
+      bottom: 1.5rem;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      padding: .4rem;
+      border: 1px solid rgba(20, 34, 28, .18);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, .92);
+      box-shadow: 0 8px 24px rgba(17, 34, 26, .12);
+      backdrop-filter: blur(10px);
+    }
+
+    .nav-button {
+      display: grid;
+      place-items: center;
+      width: 2.6rem;
+      height: 2.6rem;
+      padding: 0;
+      border: 0;
+      border-radius: 6px;
+      color: var(--ink);
+      background: transparent;
+      cursor: pointer;
+      font-size: 1.2rem;
+      font-weight: 850;
+    }
+
+    .nav-button:hover { background: var(--green-soft); }
+    .nav-button:disabled { opacity: .28; cursor: default; }
+    .nav-button:disabled:hover { background: transparent; }
+
+    .slide-count {
+      min-width: 3.6rem;
+      text-align: center;
+      color: var(--muted);
+      font: 750 .78rem/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .progress {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 12;
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, .26);
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0;
+      background: var(--green);
+      transition: width 220ms ease;
+    }
+
+    @media (max-width: 900px) {
+      :root { --stage-pad: 3.5rem 2rem 6rem; }
+      h1 { font-size: 3.4rem; }
+      h2 { font-size: 2.5rem; }
+      .split, .model-grid { grid-template-columns: 1fr; gap: 2.5rem; }
+      .split { align-items: start; }
+      .pipeline, .timeline { grid-template-columns: 1fr 1fr; }
+      .pipeline-node:not(:last-child)::after { display: none; }
+      .lane { grid-template-columns: 9rem 1fr; }
+      .lane-end { grid-column: 2; text-align: left; }
+    }
+
+    @media (max-width: 600px) {
+      :root { --stage-pad: 2.25rem 1.15rem 6rem; }
+      .slide { align-content: start; }
+      h1 { font-size: 2.55rem; }
+      h2 { font-size: 2.1rem; }
+      .lede { font-size: 1.05rem; }
+      .hero-facts { gap: 1.4rem; }
+      .tension-row { grid-template-columns: 6rem 1fr; min-height: 6rem; }
+      .tension-row strong { font-size: 1.8rem; }
+      .pipeline, .timeline, .outcomes, .cache-branch { grid-template-columns: 1fr; }
+      .lane { grid-template-columns: 1fr; gap: .65rem; }
+      .lane-end { grid-column: auto; }
+      .phase { min-height: auto; }
+      .deck-nav { right: .8rem; bottom: .8rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .slide, .progress-bar { transition: none; }
+    }
+
+    @media print {
+      body { overflow: visible; }
+      .deck { height: auto; overflow: visible; }
+      .slide {
+        position: relative;
+        display: grid;
+        min-height: 100vh;
+        page-break-after: always;
+        opacity: 1;
+        transform: none;
+        visibility: visible;
+      }
+      .deck-nav, .progress { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" aria-label="OpenScale custom builds pitch deck">
+    <section class="slide hero is-active" aria-labelledby="slide-1-title">
+      <img class="hero-media" src="scale-workbench.webp?v=2" alt="Decent Espresso machine with a cup on the scale">
+      <div class="slide-inner">
+        <p class="kicker">OpenScale custom builds</p>
+        <h1 id="slide-1-title">A broader ecosystem without a heavier core.</h1>
+        <p class="lede">Approved plugins, exact firmware targets, and reproducible builds on demand.</p>
+        <div class="hero-facts" aria-label="Concept summary">
+          <div class="hero-fact"><strong>1</strong><span>trusted catalog</span></div>
+          <div class="hero-fact"><strong>4</strong><span>delivery phases</span></div>
+          <div class="hero-fact"><strong>0</strong><span>production keys exposed</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" aria-labelledby="slide-2-title">
+      <div class="slide-inner split">
+        <div>
+          <p class="kicker">The problem</p>
+          <h2 id="slide-2-title">The core should not carry every idea.</h2>
+          <p class="lede">Twenty useful plugins should not become twenty permanent maintenance paths inside the standard firmware.</p>
+        </div>
+        <div class="tension-map" aria-label="Current tensions">
+          <div class="tension-row"><strong>20x</strong><p>More integrations create overlapping code, dependencies, and compatibility edges.</p></div>
+          <div class="tension-row"><strong>1 core</strong><p>The stable release must stay predictable for every scale, including BLE/USB-only users.</p></div>
+          <div class="tension-row"><strong>Many</strong><p>Users still need combinations tailored to their workflow and hardware.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" aria-labelledby="slide-3-title">
+      <div class="slide-inner">
+        <p class="kicker">Package contract</p>
+        <h2 id="slide-3-title">One manifest binds code, assets, and compatibility.</h2>
+        <div class="model-grid">
+          <pre class="file-tree" aria-label="Plugin package structure">plugins/&lt;plugin-id&gt;/
+|-- plugin.json
+|   |-- version: 1.4.0
+|   |-- firmware_refs: [v3.2.0]
+|   |-- requires:
+|   |   |-- wifi
+|   |   |-- webserver
+|   |   `-- littlefs
+|   `-- conflicts: [legacy-grinder]
+|-- patches/
+|   `-- v3.2.0.patch
+`-- assets/
+    `-- grinder.html</pre>
+          <div class="principles">
+            <div class="principle"><span class="principle-index">1</span><div><h3>Version matched</h3><p>The selected firmware ref resolves to a commit and may use only its reviewed diff patch.</p></div></div>
+            <div class="principle"><span class="principle-index">2</span><div><h3>Dependencies declared</h3><p>Required features, conflicts, plugin version, and resource budgets are validated before compilation.</p></div></div>
+            <div class="principle"><span class="principle-index">3</span><div><h3>Web assets staged</h3><p>Selected files enter the LittleFS staging directory only after every patch passes exact validation.</p></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" aria-labelledby="slide-4-title">
+      <div class="slide-inner">
+        <p class="kicker">Trust boundary</p>
+        <h2 id="slide-4-title">Two delivery lanes. One stable contract.</h2>
+        <div class="lanes">
+          <div class="lane">
+            <div class="lane-label">Official release</div>
+            <div class="lane-copy">Standard firmware and mandatory LittleFS image, signed through the existing production release workflow.</div>
+            <div class="lane-end">OLED Pull OTA</div>
+          </div>
+          <div class="lane custom">
+            <div class="lane-label">Custom build</div>
+            <div class="lane-copy">Exact feature and plugin combination with full provenance, isolated from production signing.</div>
+            <div class="lane-end">USB install</div>
+          </div>
+        </div>
+        <p class="trust-note">A custom build may include Pull OTA, but that client remains on the official signed release channel.</p>
+      </div>
+    </section>
+
+    <section class="slide" aria-labelledby="slide-5-title">
+      <div class="slide-inner">
+        <p class="kicker">Build-on-demand</p>
+        <h2 id="slide-5-title">Build once. Reuse the exact combination.</h2>
+        <div class="pipeline" aria-label="Build pipeline">
+          <div class="pipeline-node"><span class="node-number">01</span><h3>Configure</h3><p>GitHub Pages resolves approved features and plugins.</p></div>
+          <div class="pipeline-node"><span class="node-number">02</span><h3>Validate</h3><p>The Worker checks IDs, dependencies, conflicts, and rate limits, then derives the canonical hash.</p></div>
+          <div class="pipeline-node"><span class="node-number">03</span><h3>Build</h3><p>Actions applies exact patches, stages assets, and builds firmware plus LittleFS in a clean checkout.</p></div>
+          <div class="pipeline-node"><span class="node-number">04</span><h3>Deliver</h3><p>R2 publishes binaries, dependency report, and a manifest of commits, versions, and SHA-256 hashes.</p></div>
+        </div>
+        <div class="cache-branch">
+          <div class="cache-path">Cache hit: download immediately</div>
+          <div class="cache-path">Cache miss: queue one build</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" aria-labelledby="slide-6-title">
+      <div class="slide-inner">
+        <p class="kicker">Delivery plan</p>
+        <h2 id="slide-6-title">Four phases, each useful on its own.</h2>
+        <div class="timeline">
+          <div class="phase"><span class="phase-number">Phase 1</span><h3>Package and catalog</h3><p>One validated source of truth for assets, patches, refs, dependencies, and conflicts.</p><span class="phase-result">Result: approved package contract</span></div>
+          <div class="phase"><span class="phase-number">Phase 2</span><h3>Secure patch build</h3><p>Exact patch application in a temporary checkout with deterministic provenance.</p><span class="phase-result">Result: safe custom binaries</span></div>
+          <div class="phase"><span class="phase-number">Phase 3</span><h3>Artifact cache</h3><p>Canonical combination hashes and durable public downloads.</p><span class="phase-result">Result: build once, reuse</span></div>
+          <div class="phase"><span class="phase-number">Phase 4</span><h3>Public service</h3><p>Rate-limited requests, status tracking, and a single self-service interface.</p><span class="phase-result">Result: build on demand</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide final" aria-labelledby="slide-7-title">
+      <div class="slide-inner">
+        <p class="kicker">The outcome</p>
+        <h2 id="slide-7-title">A smaller core. A safer extension path. Firmware that fits the user.</h2>
+        <div class="outcomes">
+          <div class="outcome"><strong>For maintainers</strong><p>Plugin compatibility is isolated from the stable firmware path.</p></div>
+          <div class="outcome"><strong>For contributors</strong><p>A reviewed package can target main or a specific release without permanent core changes.</p></div>
+          <div class="outcome"><strong>For users</strong><p>Choose only what is needed, then download a reproducible build.</p></div>
+        </div>
+        <a class="plan-link" href="base_plan.md">Read the implementation plan</a>
+      </div>
+    </section>
+  </main>
+
+  <div class="progress" aria-hidden="true"><div class="progress-bar" id="progress-bar"></div></div>
+  <nav class="deck-nav" aria-label="Slide navigation">
+    <button class="nav-button" id="previous" type="button" title="Previous slide" aria-label="Previous slide">&#8592;</button>
+    <span class="slide-count" id="slide-count" aria-live="polite">1 / 7</span>
+    <button class="nav-button" id="next" type="button" title="Next slide" aria-label="Next slide">&#8594;</button>
+  </nav>
+
+  <script>
+    (() => {
+      const slides = [...document.querySelectorAll(".slide")];
+      const previous = document.querySelector("#previous");
+      const next = document.querySelector("#next");
+      const count = document.querySelector("#slide-count");
+      const progress = document.querySelector("#progress-bar");
+      let current = Math.max(0, Math.min(slides.length - 1, Number(location.hash.slice(1)) - 1 || 0));
+      let touchStart = 0;
+
+      const render = () => {
+        slides.forEach((slide, index) => {
+          slide.classList.toggle("is-active", index === current);
+          slide.setAttribute("aria-hidden", String(index !== current));
+        });
+        slides[current].scrollTop = 0;
+        previous.disabled = current === 0;
+        next.disabled = current === slides.length - 1;
+        count.textContent = `${current + 1} / ${slides.length}`;
+        progress.style.width = `${((current + 1) / slides.length) * 100}%`;
+        history.replaceState(null, "", `#${current + 1}`);
+      };
+
+      const move = direction => {
+        current = Math.max(0, Math.min(slides.length - 1, current + direction));
+        render();
+      };
+
+      previous.addEventListener("click", () => move(-1));
+      next.addEventListener("click", () => move(1));
+      document.addEventListener("keydown", event => {
+        if (["ArrowRight", "PageDown", " "].includes(event.key)) move(1);
+        if (["ArrowLeft", "PageUp"].includes(event.key)) move(-1);
+        if (event.key === "Home") { current = 0; render(); }
+        if (event.key === "End") { current = slides.length - 1; render(); }
+      });
+      document.addEventListener("touchstart", event => { touchStart = event.changedTouches[0].clientX; }, {passive: true});
+      document.addEventListener("touchend", event => {
+        const distance = event.changedTouches[0].clientX - touchStart;
+        if (Math.abs(distance) > 60) move(distance < 0 ? 1 : -1);
+      }, {passive: true});
+      window.addEventListener("hashchange", () => {
+        current = Math.max(0, Math.min(slides.length - 1, Number(location.hash.slice(1)) - 1 || 0));
+        render();
+      });
+      render();
+    })();
+  </script>
+</body>
+</html>
