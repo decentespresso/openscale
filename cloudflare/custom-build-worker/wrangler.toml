@@ -1,0 +1,11 @@
+name = "openscale-custom-builds"
+main = "src/worker.mjs"
+compatibility_date = "2026-08-08"
+workers_dev = true
+
+[vars]
+ALLOWED_ORIGIN = "https://decentespresso.github.io"
+
+[[r2_buckets]]
+binding = "BUILDS"
+bucket_name = "openscale-custom-builds"

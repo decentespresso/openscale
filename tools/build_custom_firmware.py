@@ -6,6 +6,9 @@ import re
 import shutil
 import subprocess
 import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
 
 import configure_custom_build as customBuild
 
@@ -20,6 +23,7 @@ BUILD_FILES = (
     "build-manifest.json",
     "dependencies.txt",
 )
+MAX_REMOTE_MANIFEST_BYTES = 1024 * 1024
 
 
 def runCommand(command, cwd, capture=False, environment=None):
@@ -111,6 +115,57 @@ def requireBuildFiles(buildDir):
         raise ValueError(f"custom build did not produce: {missing}")
 
 
+def completeCacheEntry(entryDir, expectedHash, expectedInput):
+    if any(not (entryDir / name).is_file() for name in BUILD_FILES):
+        return False
+    try:
+        manifest = json.loads((entryDir / "build-manifest.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if manifest.get("combination_hash") != expectedHash:
+        return False
+    if manifest.get("combination_input") != expectedInput:
+        return False
+    binaries = manifest.get("binaries")
+    if not isinstance(binaries, dict):
+        return False
+    for name in BUILD_FILES:
+        if not name.endswith(".bin"):
+            continue
+        if binaries.get(name) != customBuild.fileMetadata(entryDir / name):
+            return False
+    return manifest.get("dependencies") == customBuild.fileMetadata(entryDir / "dependencies.txt")
+
+
+def remoteCacheHit(baseUrl, expectedHash, expectedInput):
+    parsed = urllib.parse.urlsplit(baseUrl)
+    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+        raise ValueError("remote cache URL must be HTTPS without credentials")
+    if parsed.query or parsed.fragment:
+        raise ValueError("remote cache URL cannot contain a query or fragment")
+    manifestUrl = f"{baseUrl.rstrip('/')}/v1/{expectedHash}/build-manifest.json"
+    try:
+        with urllib.request.urlopen(manifestUrl, timeout=15) as response:
+            payload = response.read(MAX_REMOTE_MANIFEST_BYTES + 1)
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            return False
+        raise ValueError(f"remote cache request failed: HTTP {error.code}") from error
+    except urllib.error.URLError as error:
+        raise ValueError(f"remote cache request failed: {error.reason}") from error
+    if len(payload) > MAX_REMOTE_MANIFEST_BYTES:
+        raise ValueError("remote cache manifest is too large")
+    try:
+        manifest = json.loads(payload)
+    except (TypeError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("remote cache manifest is invalid") from error
+    if manifest.get("combination_hash") != expectedHash:
+        raise ValueError("remote cache manifest has the wrong combination hash")
+    if manifest.get("combination_input") != expectedInput:
+        raise ValueError("remote cache manifest has the wrong combination input")
+    return True
+
+
 def publishArtifacts(buildDir, outputDir):
     outputDir.parent.mkdir(parents=True, exist_ok=True)
     if outputDir.exists():
@@ -123,10 +178,8 @@ def publishArtifacts(buildDir, outputDir):
         ready.replace(outputDir)
 
 
-def buildCustomFirmware(configPath, outputDir, sourceCommit=None):
+def buildCustomFirmware(configPath, outputRoot, sourceCommit=None, cacheUrl=None):
     configuration = customBuild.resolveConfiguration(configPath)
-    if outputDir.exists():
-        raise ValueError(f"output directory already exists: {outputDir}")
     commitSha = (
         verifySourceCommit(ROOT, sourceCommit)
         if sourceCommit
@@ -135,6 +188,25 @@ def buildCustomFirmware(configPath, outputDir, sourceCommit=None):
     with tempfile.TemporaryDirectory(prefix="openscale-custom-") as temporaryDirectory:
         checkoutRoot = Path(temporaryDirectory) / "source"
         cloneSource(ROOT, commitSha, checkoutRoot)
+        identity = customBuild.combinationInput(configuration, commitSha, checkoutRoot)
+        combinationHash = customBuild.combinationHash(identity)
+        outputDir = outputRoot / combinationHash
+        if completeCacheEntry(outputDir, combinationHash, identity):
+            return {
+                "base_source": commitSha,
+                "cache_hit": True,
+                "combination_hash": combinationHash,
+                "output": str(outputDir),
+            }
+        if outputDir.exists():
+            raise ValueError(f"incomplete cache entry already exists: {outputDir}")
+        if cacheUrl and remoteCacheHit(cacheUrl, combinationHash, identity):
+            return {
+                "base_source": commitSha,
+                "cache_hit": True,
+                "combination_hash": combinationHash,
+                "output": str(outputDir),
+            }
         applyPatches(configuration, checkoutRoot)
         environment = {
             **os.environ,
@@ -155,22 +227,40 @@ def buildCustomFirmware(configPath, outputDir, sourceCommit=None):
             buildDir / "build-manifest.json",
             commitSha,
             checkoutRoot,
+            identity,
         )
         requireBuildFiles(buildDir)
         publishArtifacts(buildDir, outputDir)
-    return commitSha
+    return {
+        "base_source": commitSha,
+        "cache_hit": False,
+        "combination_hash": combinationHash,
+        "output": str(outputDir),
+    }
+
+
+def writeGithubOutput(path, result):
+    with path.open("a", encoding="utf-8") as output:
+        for key in ("combination_hash", "output", "cache_hit"):
+            output.write(f"{key}={str(result[key]).lower() if key == 'cache_hit' else result[key]}\n")
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, default=ROOT / "custom-build.json")
     parser.add_argument("--output", type=Path, default=ROOT / ".pio.nosync" / "custom-output")
+    parser.add_argument("--github-output", type=Path)
+    parser.add_argument("--cache-url")
     args = parser.parse_args()
     try:
-        commitSha = buildCustomFirmware(args.config.resolve(), args.output.resolve(), pullRequestCommit())
+        result = buildCustomFirmware(
+            args.config.resolve(), args.output.resolve(), pullRequestCommit(), args.cache_url
+        )
     except (ValueError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"custom build failed: {error}\n")
-    print(json.dumps({"base_source": commitSha, "output": str(args.output.resolve())}, sort_keys=True))
+    if args.github_output:
+        writeGithubOutput(args.github_output.resolve(), result)
+    print(json.dumps(result, sort_keys=True))
 
 
 if __name__ == "__main__":
