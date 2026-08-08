@@ -72,6 +72,8 @@ PLUGIN_KEYS = {
     "firmware_refs", "requires", "conflicts", "patches", "assets", "budget",
 }
 BUDGET_KEYS = {"firmware_flash_bytes", "static_ram_bytes", "littlefs_bytes"}
+BUILD_CONTRACT_SCHEMA = 1
+PLATFORMIO_ENVIRONMENT = "esp32s3-custom"
 
 
 def readJson(path):
@@ -373,26 +375,78 @@ def partitionMetadata(sourceRoot):
     raise ValueError("esp32s3-custom has no partition schema")
 
 
-def writeBuildManifest(configuration, buildDir, outputPath, commitSha=None, sourceRoot=ROOT):
+def combinationInput(configuration, commitSha, sourceRoot=ROOT):
+    packages = []
+    for package in packageMetadata(configuration):
+        packages.append({
+            "id": package["id"],
+            "version": package["version"],
+            "patches": sorted(
+                [
+                    {"sha256": patch["sha256"]}
+                    for patch in package["patches"]
+                    if patch["firmware_ref"] == configuration["firmware_ref"]
+                ],
+                key=lambda patch: patch["sha256"],
+            ),
+            "assets": sorted(
+                [
+                    {
+                        "target": asset["target"],
+                        "sha256": asset["sha256"],
+                    }
+                    for asset in package["assets"]
+                ],
+                key=lambda asset: (asset["target"], asset["sha256"]),
+            ),
+        })
+    partition = partitionMetadata(sourceRoot)
+    return {
+        "schema": BUILD_CONTRACT_SCHEMA,
+        "base_source": commitSha,
+        "features": sorted(configuration["features"]),
+        "plugins": sorted(packages, key=lambda package: package["id"]),
+        "platformio_environment": PLATFORMIO_ENVIRONMENT,
+        "partition_schema": {
+            "path": partition["path"],
+            "sha256": partition["sha256"],
+        },
+    }
+
+
+def combinationHash(value):
+    canonical = json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def writeBuildManifest(
+    configuration, buildDir, outputPath, commitSha=None, sourceRoot=ROOT, identity=None
+):
     if commitSha is None:
         commitSha = subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True,
             capture_output=True, text=True,
         ).stdout.strip()
+    if identity is None:
+        identity = combinationInput(configuration, commitSha, sourceRoot)
     binaries = {}
     for path in sorted(buildDir.glob("*.bin")):
         binaries[path.name] = fileMetadata(path)
     manifest = {
         **serializableConfiguration(configuration),
         "base_source": commitSha,
-        "platformio_environment": "esp32s3-custom",
+        "platformio_environment": PLATFORMIO_ENVIRONMENT,
         "partition_schema": partitionMetadata(sourceRoot),
         "packages": packageMetadata(configuration),
+        "combination_input": identity,
+        "combination_hash": combinationHash(identity),
         "custom_build": True,
         "binaries": binaries,
+        "dependencies": fileMetadata(buildDir / "dependencies.txt"),
     }
     outputPath.parent.mkdir(parents=True, exist_ok=True)
     outputPath.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    return manifest["combination_hash"]
 
 
 def main():

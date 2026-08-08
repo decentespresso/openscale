@@ -162,6 +162,7 @@ def main():
                 "firmware.bin", "firmware.factory.bin", "bootloader.bin", "partitions.bin", "littlefs.bin",
             ):
                 (buildDir / name).write_bytes(name.encode("ascii"))
+            (buildDir / "dependencies.txt").write_text("PlatformIO Core", encoding="utf-8")
             firstManifest = buildDir / "first.json"
             secondManifest = buildDir / "second.json"
             customBuild.writeBuildManifest(
@@ -174,6 +175,7 @@ def main():
             second = json.loads(secondManifest.read_text(encoding="utf-8"))
             assert first == second
             assert first["base_source"] == sourceCommit
+            assert first["combination_hash"] == customBuild.combinationHash(first["combination_input"])
             assert first["partition_schema"]["path"] == "partitions/test.csv"
             assert list(first["binaries"]) == [
                 "bootloader.bin", "firmware.bin", "firmware.factory.bin", "littlefs.bin", "partitions.bin",
@@ -185,12 +187,44 @@ def main():
             assetPackage = next(item for item in first["packages"] if item["id"] == "asset-only")
             assert assetPackage["assets"][0]["target"] == "plugins/asset/index.html"
             (buildDir / "build-manifest.json").write_bytes(firstManifest.read_bytes())
-            (buildDir / "dependencies.txt").write_text("PlatformIO Core", encoding="utf-8")
             customRunner.requireBuildFiles(buildDir)
-            outputDir = root / "published"
+            combinationHash = first["combination_hash"]
+            combinationInput = first["combination_input"]
+            cacheRoot = root / "published"
+            outputDir = cacheRoot / combinationHash
             customRunner.publishArtifacts(buildDir, outputDir)
             assert sorted(path.name for path in outputDir.iterdir()) == sorted(customRunner.BUILD_FILES)
+            assert customRunner.completeCacheEntry(outputDir, combinationHash, combinationInput)
             assertRejected(lambda: customRunner.publishArtifacts(buildDir, outputDir))
+            dependencies = outputDir / "dependencies.txt"
+            dependencies.write_text("incomplete", encoding="utf-8")
+            assert not customRunner.completeCacheEntry(outputDir, combinationHash, combinationInput)
+            dependencies.write_text("PlatformIO Core", encoding="utf-8")
+            with patch.object(customRunner, "applyPatches") as applyPatches:
+                result = customRunner.buildCustomFirmware(configPath, cacheRoot, sourceCommit)
+            assert result["cache_hit"] is True
+            assert result["combination_hash"] == combinationHash
+            applyPatches.assert_not_called()
+            githubOutput = root / "github-output.txt"
+            customRunner.writeGithubOutput(githubOutput, result)
+            assert githubOutput.read_text(encoding="utf-8").splitlines() == [
+                f"combination_hash={combinationHash}",
+                f"output={outputDir}",
+                "cache_hit=true",
+            ]
+
+            changedIdentity = customBuild.combinationInput(configuration, "0" * 40, sourceRoot)
+            assert customBuild.combinationHash(changedIdentity) != combinationHash
+            assetPath = catalogRoot / "plugins" / "asset-only" / "assets" / "index.html"
+            assetPath.write_text("changed asset plugin", encoding="utf-8")
+            changedIdentity = customBuild.combinationInput(configuration, sourceCommit, sourceRoot)
+            assert customBuild.combinationHash(changedIdentity) != combinationHash
+            assetPath.write_text("asset plugin", encoding="utf-8")
+            patchPath = catalogRoot / "plugins" / "patch-a" / "patches" / "main.patch"
+            patchPath.write_text(PATCHES["patch-a"].replace("patched a", "changed a"), encoding="utf-8")
+            changedIdentity = customBuild.combinationInput(configuration, sourceCommit, sourceRoot)
+            assert customBuild.combinationHash(changedIdentity) != combinationHash
+            patchPath.write_text(PATCHES["patch-a"], encoding="utf-8")
 
             malformed = catalogRoot / "plugins" / "patch-b" / "patches" / "main.patch"
             malformed.write_text(PATCHES["patch-b"].replace("base b", "missing b"), encoding="utf-8")
@@ -215,6 +249,9 @@ def main():
     assert "fetch-depth: 0" in workflow
     assert "python tools/test_custom_build_execution.py" in workflow
     assert "python tools/build_custom_firmware.py" in workflow
+    assert "--cache-url https://openscale-custom-builds.odevstudio.workers.dev" in workflow
+    assert "python tools/publish_custom_build.py" in workflow
+    assert "steps.custom_build.outputs.combination_hash" in workflow
     assert "pio run -e esp32s3-custom" not in workflow
     print("custom build execution tests passed")
 

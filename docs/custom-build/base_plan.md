@@ -16,7 +16,8 @@ The existing configurator will later become the shared interface for existing do
 - `hello-web` is an approved asset plugin without a firmware patch.
 - The configurator currently generates only a maintainer command for `custom-build.yml`.
 - The custom workflow resolves an allowed firmware ref to an exact commit and applies approved patches only in a temporary checkout.
-- Each workflow run creates its own time-limited Actions artifact. There is no durable combination cache or public build endpoint yet.
+- Custom artifacts use a canonical combination hash and a complete local cache entry. Actions artifacts remain time-limited.
+- The private R2 Standard cache and read gateway are provisioned at `openscale-custom-builds.odevstudio.workers.dev`, with 180-day artifact retention. The Worker and GitHub Actions share an encrypted upload token.
 
 ## Invariants
 

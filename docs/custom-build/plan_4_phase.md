@@ -4,6 +4,16 @@
 
 For a selected configuration, the existing GitHub Pages configurator either shows available downloads or requests exactly one new build. Secrets, validation, and rate limits remain outside the browser.
 
+## Cost Boundary
+
+The Cloudflare Workers Free plan currently includes 100,000 requests per day with 10 milliseconds of CPU time per invocation. A paid Worker is therefore not required for the initial service. The Workers Paid plan is only needed when measured usage or CPU time exceeds the free limits and currently starts at $5 per month. Source checked on 2026-08-08: [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/).
+
+## Hosting
+
+The configurator is `docs/custom-build/index.html`. After this branch is merged, enable GitHub Pages with `main` and `/docs` as the source. It will then be available at `https://decentespresso.github.io/openscale/custom-build/`. No custom DNS domain is required.
+
+The Cloudflare Worker uses `openscale-custom-builds.odevstudio.workers.dev` for the API and artifact downloads. The R2 bucket remains private and has no `r2.dev` endpoint.
+
 ## Components
 
 ```text
