@@ -882,6 +882,11 @@ void setup() {
   } else {
     hdsOtaRollbackMarkValid();
   }
+
+  if (!b_wifiOnBoot) {
+    setCpuFrequencyMhz(80);
+    Serial.printf("[power] CPU %u MHz (BLE-only idle)\n", getCpuFrequencyMhz());
+  }
 }
 
 /**

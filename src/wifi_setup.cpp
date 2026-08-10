@@ -44,6 +44,7 @@ public:
 WiFiParams params;
 
 void setupAP() {
+  setCpuFrequencyMhz(240);
   WiFi.mode(WIFI_AP);
   delay(100);
   WiFi.softAP("DecentScale", "12345678");
@@ -60,6 +61,7 @@ void setupAP() {
 }
 
 void connectToWifi() {
+  setCpuFrequencyMhz(240);
   WiFi.mode(WIFI_STA);
 
   WiFi.begin(params.getSSID(), params.getPass());
@@ -109,6 +111,7 @@ void stopWifi() {
   }
   WiFi.mode(WIFI_OFF);
   b_wifiEnabled = false;
+  setCpuFrequencyMhz(80);
 }
 
 // ---------------------------------------------------------------------------
