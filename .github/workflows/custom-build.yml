@@ -41,12 +41,16 @@ on:
         description: Expected combination hash supplied by the build service
         required: false
         default: ""
+      attempt_id:
+        description: Fenced build attempt supplied by the build service
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
 concurrency:
-  group: custom-build-${{ github.event_name == 'workflow_dispatch' && 'service' || github.run_id }}
+  group: custom-build-${{ github.event_name == 'workflow_dispatch' && inputs.combination_hash || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -91,13 +95,15 @@ jobs:
         if: >-
           github.event_name == 'workflow_dispatch' &&
           github.ref == 'refs/heads/main' &&
-          inputs.combination_hash != ''
+          inputs.combination_hash != '' &&
+          inputs.attempt_id != ''
         env:
           CUSTOM_BUILD_UPLOAD_TOKEN: ${{ secrets.CUSTOM_BUILD_UPLOAD_TOKEN }}
         run: >-
           python tools/update_custom_build_status.py
           --base-url https://openscale-custom-builds.odevstudio.workers.dev
           --combination-hash "${{ inputs.combination_hash }}"
+          --attempt-id "${{ inputs.attempt_id }}"
           --state building
       - name: Build standard firmware
         if: github.event_name == 'pull_request'
@@ -110,14 +116,14 @@ jobs:
           --github-output "$GITHUB_OUTPUT"
           --source-commit "${{ inputs.source_commit }}"
           --expected-hash "${{ inputs.combination_hash }}"
-      - name: Upload custom binaries
+      - name: Upload custom build
         if: steps.custom_build.outputs.cache_hit != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: openscale-custom-${{ steps.custom_build.outputs.combination_hash }}
           path: ${{ steps.custom_build.outputs.output }}/*
           if-no-files-found: error
-      - name: Publish custom binaries
+      - name: Publish custom build
         if: >-
           github.event_name == 'workflow_dispatch' &&
           github.ref == 'refs/heads/main' &&
@@ -132,24 +138,28 @@ jobs:
         if: >-
           github.event_name == 'workflow_dispatch' &&
           github.ref == 'refs/heads/main' &&
-          inputs.combination_hash != ''
+          inputs.combination_hash != '' &&
+          inputs.attempt_id != ''
         env:
           CUSTOM_BUILD_UPLOAD_TOKEN: ${{ secrets.CUSTOM_BUILD_UPLOAD_TOKEN }}
         run: >-
           python tools/update_custom_build_status.py
           --base-url https://openscale-custom-builds.odevstudio.workers.dev
           --combination-hash "${{ inputs.combination_hash }}"
+          --attempt-id "${{ inputs.attempt_id }}"
           --state ready
       - name: Mark custom build as failed
         if: >-
           failure() &&
           github.event_name == 'workflow_dispatch' &&
           github.ref == 'refs/heads/main' &&
-          inputs.combination_hash != ''
+          inputs.combination_hash != '' &&
+          inputs.attempt_id != ''
         env:
           CUSTOM_BUILD_UPLOAD_TOKEN: ${{ secrets.CUSTOM_BUILD_UPLOAD_TOKEN }}
         run: >-
           python tools/update_custom_build_status.py
           --base-url https://openscale-custom-builds.odevstudio.workers.dev
           --combination-hash "${{ inputs.combination_hash }}"
+          --attempt-id "${{ inputs.attempt_id }}"
           --state failed

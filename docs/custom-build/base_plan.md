@@ -17,6 +17,7 @@ The existing configurator will later become the shared interface for existing do
 - The configurator now uses the local Phase 4 status/build API contract. Production deployment remains pending.
 - The custom workflow resolves an allowed firmware ref to an exact commit and applies approved patches only in a temporary checkout.
 - Custom artifacts use a canonical combination hash and a complete local cache entry. Actions artifacts remain time-limited.
+- The only user-facing custom-build download is one ZIP containing the four flashable BIN images. Its manifest and dependency inventory remain service metadata.
 - The private R2 Standard cache and read gateway are provisioned at `openscale-custom-builds.odevstudio.workers.dev`, with 180-day artifact retention. The Worker and GitHub Actions share an encrypted upload token.
 - The build service resolves `main` to an exact commit and derives the combination hash from the trusted service catalog at that commit.
 

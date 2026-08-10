@@ -18,7 +18,9 @@ The Cloudflare Worker uses `openscale-custom-builds.odevstudio.workers.dev` for 
 
 The repository contains the Phase 4 API, Durable Object coordinator, trusted service catalog, exact source-commit workflow inputs, authenticated build status callbacks, and configurator integration. The local contract tests pass. The GitHub App is installed and the Worker secrets are provisioned. Before production deployment, an organization owner must restrict the installation to `decentespresso/openscale`, and the trusted service catalog must be present on `main` so public requests can resolve it.
 
-The initial server limits are three new builds per client per day, twenty new builds globally per day, two attempts per combination, and one active service workflow at a time. Duplicate requests do not consume another build slot. Client rate-limit hashes expire after 24 hours.
+The initial server limits are three new builds per client per day, twenty new builds globally per day, and two attempts per combination. Duplicate requests do not consume another build slot. Client rate-limit hashes expire after 24 hours, while GitHub controls runner concurrency.
+
+Each attempt has a two-hour lease and a UUID fencing token. The Durable Object alarm marks an expired `queued` or `building` attempt as failed, and late callbacks from an older attempt are rejected. Status responses include `attempts`, `max_attempts`, and `retryable`; a build request after the second failure returns HTTP 409.
 
 ## Required Secrets
 
@@ -46,7 +48,7 @@ Cloudflare Worker
 2. Resolve and restrict the allowed firmware ref server-side.
 3. Return status and downloads immediately for an existing cache entry.
 4. Deduplicate concurrent requests for the same combination.
-5. Enforce per-client and global limits plus a small maximum build concurrency.
+5. Enforce per-client and global daily limits.
 6. Trigger GitHub with a minimally privileged server-side GitHub App or installation token.
 7. Never expose GitHub credentials through the browser, logs, or artifacts.
 8. Provide the simple states `missing`, `queued`, `building`, `ready`, and `failed`.
@@ -60,6 +62,13 @@ Cloudflare Worker
 5. After a request, poll status at a bounded interval.
 6. Never start a potentially billable build merely because a selection changed.
 7. Show concise errors without internal secrets.
+8. Abort superseded requests and reject responses that no longer match the current selection.
+
+## Compile Coverage Gate
+
+The current CI proves the standard firmware, grinder environment, one custom configuration, dependency resolution, patch application, hashing, and cache contracts. It does not yet prove every valid feature set. This is a test-coverage gap, not evidence that the remaining combinations fail to compile.
+
+Before the public service is deployed, CI must compile a representative matrix covering: no optional features; WiFi only; WiFi with the web server and no runtime LittleFS; WebSocket; ElegantOTA; Pull OTA without the web server; Grinder; and a plugin with assets. The full set of 62 valid core combinations is not required unless the representative matrix exposes interaction failures.
 
 ## Operations and Security
 
@@ -80,7 +89,7 @@ Selecting `pull-ota` includes the existing OLED/button client. It remains pointe
 - A missing combination can be requested once and followed through completion.
 - Unknown IDs, manipulated hashes, and disallowed firmware refs are rejected.
 - GitHub and storage credentials are absent from delivered browser code.
-- Rate limiting and global concurrency prevent unlimited builds.
+- Rate limiting prevents unlimited builds.
 - GitHub Pages, the standard build, the custom build, and the existing Stable Pull OTA contract remain functional.
 
 ## Not Included

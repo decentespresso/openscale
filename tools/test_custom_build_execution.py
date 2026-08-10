@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import zipfile
 from unittest.mock import patch
 
 import build_custom_firmware as customRunner
@@ -117,6 +118,7 @@ def assertRejected(action, exceptionType=ValueError):
 
 
 def main():
+    assertRejected(lambda: customBuild.safeRelativePath("plugins/naive-\u00e9.html", "test path"))
     with patch.dict(os.environ, {}, clear=True):
         assert customRunner.pullRequestCommit() is None
     with patch.dict(os.environ, {"GITHUB_EVENT_NAME": "pull_request"}, clear=True):
@@ -148,14 +150,24 @@ def main():
 
             checkoutRoot = root / "valid-checkout"
             customRunner.cloneSource(sourceRoot, sourceCommit, checkoutRoot)
+            assert customRunner.sourceDateEpoch(checkoutRoot) == runGit(sourceRoot, "show", "-s", "--format=%ct", "HEAD")
             customRunner.applyPatches(configuration, checkoutRoot)
+            customRunner.configureReproducibleBuild(checkoutRoot)
+            reproducibleScript = checkoutRoot / ".pio.nosync" / "reproducible_build.py"
+            reproducibleCompiler = reproducibleScript.read_text(encoding="utf-8")
+            assert "-ffile-prefix-map=" in reproducibleCompiler
+            assert '"-Wl,-s"' in reproducibleCompiler
+            filesystemScript = checkoutRoot / ".pio.nosync" / "reproducible_filesystem.py"
+            assert "os.utime(path, (epoch, epoch))" in filesystemScript.read_text(encoding="utf-8")
+            platformioConfiguration = (checkoutRoot / "platformio.ini").read_text(encoding="utf-8")
+            assert "pre:.pio.nosync/reproducible_build.py" in platformioConfiguration
+            assert "post:.pio.nosync/reproducible_filesystem.py" in platformioConfiguration
             assert (checkoutRoot / "a.txt").read_text(encoding="utf-8") == "patched a\n"
             assert (checkoutRoot / "b.txt").read_text(encoding="utf-8") == "patched b\n"
             stageRoot = root / "staged-assets"
             customBuild.stageAssets(configuration, stageRoot, sourceRoot)
             assert (stageRoot / "base.html").is_file()
             assert (stageRoot / "plugins" / "asset" / "index.html").is_file()
-
             buildDir = root / "build"
             buildDir.mkdir()
             for name in (
@@ -163,6 +175,12 @@ def main():
             ):
                 (buildDir / name).write_bytes(name.encode("ascii"))
             (buildDir / "dependencies.txt").write_text("PlatformIO Core", encoding="utf-8")
+            customRunner.createFirmwareArchive(buildDir)
+            archiveBytes = (buildDir / customBuild.FIRMWARE_ARCHIVE).read_bytes()
+            customRunner.createFirmwareArchive(buildDir)
+            assert (buildDir / customBuild.FIRMWARE_ARCHIVE).read_bytes() == archiveBytes
+            with zipfile.ZipFile(buildDir / customBuild.FIRMWARE_ARCHIVE) as archive:
+                assert archive.namelist() == list(customBuild.PUBLIC_BINARIES)
             firstManifest = buildDir / "first.json"
             secondManifest = buildDir / "second.json"
             customBuild.writeBuildManifest(
@@ -177,9 +195,9 @@ def main():
             assert first["base_source"] == sourceCommit
             assert first["combination_hash"] == customBuild.combinationHash(first["combination_input"])
             assert first["partition_schema"]["path"] == "partitions/test.csv"
-            assert list(first["binaries"]) == [
-                "bootloader.bin", "firmware.bin", "firmware.factory.bin", "littlefs.bin", "partitions.bin",
-            ]
+            assert list(first["binaries"]) == sorted(customBuild.PUBLIC_BINARIES)
+            assert "firmware.factory.bin" not in first["binaries"]
+            assert first["archive"] == customBuild.fileMetadata(buildDir / customBuild.FIRMWARE_ARCHIVE)
             patchPackage = next(item for item in first["packages"] if item["id"] == "patch-a")
             assert patchPackage["patches"][0]["sha256"] == hashlib.sha256(
                 (catalogRoot / "plugins" / "patch-a" / "patches" / "main.patch").read_bytes()
@@ -259,9 +277,16 @@ def main():
     assert "steps.custom_build.outputs.combination_hash" in workflow
     assert '--source-commit "${{ inputs.source_commit }}"' in workflow
     assert '--expected-hash "${{ inputs.combination_hash }}"' in workflow
+    assert '--attempt-id "${{ inputs.attempt_id }}"' in workflow
     assert "python tools/update_custom_build_status.py" in workflow
-    assert "custom-build-${{ github.event_name == 'workflow_dispatch'" in workflow
+    assert "inputs.combination_hash || github.run_id" in workflow
     assert "pio run -e esp32s3-custom" not in workflow
+    configurator = (customBuild.SCRIPT_ROOT / "docs" / "custom-build" / "app.js").read_text(
+        encoding="utf-8"
+    )
+    assert "selectionController = new AbortController()" in configurator
+    assert "generation !== selectionGeneration" in configurator
+    assert "result.combination_hash !== expectedHash" in configurator
     print("custom build execution tests passed")
 
 
