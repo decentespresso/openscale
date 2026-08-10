@@ -1,4 +1,5 @@
 (async () => {
+  const apiBase = "https://openscale-custom-builds.odevstudio.workers.dev";
   const response = await fetch("catalog.json", {cache: "no-cache"});
   if (!response.ok) throw new Error(`catalog request failed: ${response.status}`);
   const catalog = await response.json();
@@ -15,7 +16,13 @@
   const pluginRoot = document.querySelector("#plugins");
   const featureById = new Map(catalog.features.map(item => [item.id, item]));
   const pluginById = new Map(catalog.plugins.map(item => [item.id, item]));
+  const buildButton = document.querySelector("#request-build");
   let toastTimer;
+  let statusTimer;
+  let pollTimer;
+  let pollRemaining = 0;
+  let statusRequest = 0;
+  let currentSelection;
 
   const escapeHtml = value => String(value).replace(/[&<>'"]/g, character => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
@@ -48,18 +55,11 @@
 
   const resolveSelection = () => {
     const resolved = new Set(state.requested);
-    state.plugins.forEach(id => {
-      const plugin = pluginById.get(id);
-      if (plugin) plugin.requires.forEach(feature => resolved.add(feature));
-    });
-    let changed = true;
-    while (changed) {
-      const previousSize = resolved.size;
-      [...resolved].forEach(id => {
-        const feature = featureById.get(id);
-        if (feature) feature.requires.forEach(required => resolved.add(required));
-      });
-      changed = previousSize !== resolved.size;
+    state.plugins.forEach(id => pluginById.get(id)?.requires.forEach(feature => resolved.add(feature)));
+    let previousSize = -1;
+    while (resolved.size !== previousSize) {
+      previousSize = resolved.size;
+      [...resolved].forEach(id => featureById.get(id)?.requires.forEach(required => resolved.add(required)));
     }
     return resolved;
   };
@@ -68,12 +68,12 @@
     const reasons = [];
     state.plugins.forEach(id => {
       const plugin = pluginById.get(id);
-      if (plugin && plugin.requires.includes(featureId)) reasons.push(plugin.name);
+      if (plugin?.requires.includes(featureId)) reasons.push(plugin.name);
     });
     resolved.forEach(id => {
       if (id === featureId) return;
       const feature = featureById.get(id);
-      if (feature && feature.requires.includes(featureId)) reasons.push(feature.name);
+      if (feature?.requires.includes(featureId)) reasons.push(feature.name);
     });
     const unique = [...new Set(reasons)];
     return unique.length ? `Required by ${unique.join(", ")}` : "Included as a dependency";
@@ -84,9 +84,87 @@
     const conflicting = [...state.plugins].find(selectedId => {
       if (selectedId === plugin.id) return false;
       const selected = pluginById.get(selectedId);
-      return plugin.conflicts.includes(selectedId) || (selected && selected.conflicts.includes(plugin.id));
+      return plugin.conflicts.includes(selectedId) || selected?.conflicts.includes(plugin.id);
     });
     return conflicting ? `Conflicts with ${pluginById.get(conflicting).name}` : "";
+  };
+
+  const showToast = message => {
+    const toast = document.querySelector("#toast");
+    document.querySelector("#toast-message").textContent = message;
+    clearTimeout(toastTimer);
+    toast.classList.add("is-visible");
+    toastTimer = setTimeout(() => toast.classList.remove("is-visible"), 2200);
+  };
+
+  const setStatus = result => {
+    const buildState = document.querySelector("#build-state");
+    const combinationHash = result.combination_hash || "";
+    const messages = {
+      missing: "This combination has not been built yet.",
+      queued: "The build is waiting for an available runner.",
+      building: "The firmware and filesystem images are being built.",
+      ready: "The verified build files are ready to download.",
+      failed: "The build did not complete. One retry is available.",
+      unavailable: "The build service is currently unavailable.",
+      checking: "Checking the build cache."
+    };
+    buildState.className = `ready state-${result.state}`;
+    buildState.textContent = result.state[0].toUpperCase() + result.state.slice(1);
+    document.querySelector("#combination-hash").textContent = combinationHash ? combinationHash.slice(0, 12) : "";
+    document.querySelector("#status-message").textContent = messages[result.state] || messages.unavailable;
+    buildButton.disabled = !["missing", "failed"].includes(result.state);
+    const downloads = document.querySelector("#downloads");
+    downloads.replaceChildren();
+    if (result.state === "ready") {
+      Object.entries(result.downloads || {}).forEach(([name, href]) => {
+        const link = document.createElement("a");
+        link.href = href;
+        link.textContent = name;
+        downloads.append(link);
+      });
+    }
+    if (["queued", "building"].includes(result.state) && combinationHash) schedulePoll(combinationHash);
+  };
+
+  const apiRequest = async (path, options = {}) => {
+    const apiResponse = await fetch(`${apiBase}${path}`, {
+      ...options,
+      headers: {"Content-Type": "application/json", ...(options.headers || {})}
+    });
+    const result = await apiResponse.json();
+    if (!apiResponse.ok) throw new Error(result.error || `request failed: ${apiResponse.status}`);
+    return result;
+  };
+
+  const schedulePoll = combinationHash => {
+    clearTimeout(pollTimer);
+    if (pollRemaining <= 0) return;
+    pollTimer = setTimeout(async () => {
+      try {
+        pollRemaining -= 1;
+        const result = await apiRequest(`/api/v1/status/${combinationHash}`);
+        setStatus(result);
+      } catch {
+        setStatus({state: "unavailable", combination_hash: combinationHash});
+      }
+    }, 10000);
+  };
+
+  const checkStatus = async selection => {
+    const requestNumber = ++statusRequest;
+    clearTimeout(pollTimer);
+    pollRemaining = 300;
+    setStatus({state: "checking"});
+    try {
+      const result = await apiRequest("/api/v1/status", {
+        method: "POST",
+        body: JSON.stringify(selection)
+      });
+      if (requestNumber === statusRequest) setStatus(result);
+    } catch {
+      if (requestNumber === statusRequest) setStatus({state: "unavailable"});
+    }
   };
 
   const render = () => {
@@ -94,7 +172,6 @@
       if (!plugin.firmware_refs.includes(refSelect.value)) state.plugins.delete(plugin.id);
     });
     const resolved = resolveSelection();
-
     document.querySelectorAll('[data-kind="feature"]').forEach(input => {
       const id = input.value;
       const card = input.closest(".option-card");
@@ -108,7 +185,6 @@
       card.classList.toggle("is-disabled", isRequired);
       card.querySelector(".status-badge").textContent = isRequired ? requirementReason(id, resolved) : "";
     });
-
     document.querySelectorAll('[data-kind="plugin"]').forEach(input => {
       const plugin = pluginById.get(input.value);
       const card = input.closest(".option-card");
@@ -120,7 +196,6 @@
       card.classList.toggle("is-unavailable", input.disabled);
       card.querySelector(".status-badge").textContent = input.disabled ? unavailableReason : "";
     });
-
     const features = [...resolved].sort();
     const plugins = [...state.plugins].sort();
     const resolvedRoot = document.querySelector("#resolved");
@@ -138,30 +213,13 @@
       empty.textContent = "No features selected";
       resolvedRoot.append(empty);
     }
-
     document.querySelector("#feature-count").textContent = `${features.length} selected`;
     document.querySelector("#plugin-count").textContent = `${plugins.length} selected`;
     document.querySelector("#summary-ref").textContent = refSelect.value;
     document.querySelector("#summary-plugins").textContent = plugins.length || "None";
-    document.querySelector("#command").textContent = `gh workflow run custom-build.yml -f firmware_ref=${refSelect.value} -f features=${features.join(",")} -f plugins=${plugins.join(",")}`;
-  };
-
-  const showToast = message => {
-    const toast = document.querySelector("#toast");
-    document.querySelector("#toast-message").textContent = message;
-    clearTimeout(toastTimer);
-    toast.classList.add("is-visible");
-    toastTimer = setTimeout(() => toast.classList.remove("is-visible"), 2200);
-  };
-
-  const copyCommand = async () => {
-    const command = document.querySelector("#command").textContent;
-    try {
-      await navigator.clipboard.writeText(command);
-      showToast("Command copied to clipboard");
-    } catch (error) {
-      showToast("Select the command and copy it manually");
-    }
+    currentSelection = {firmware_ref: refSelect.value, features, plugins};
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => checkStatus(currentSelection), 350);
   };
 
   document.addEventListener("change", event => {
@@ -177,8 +235,21 @@
   });
 
   refSelect.addEventListener("change", render);
-  document.querySelector("#copy").addEventListener("click", copyCommand);
-  document.querySelector("#icon-copy").addEventListener("click", copyCommand);
+  buildButton.addEventListener("click", async () => {
+    buildButton.disabled = true;
+    setStatus({state: "checking"});
+    try {
+      const result = await apiRequest("/api/v1/build", {
+        method: "POST",
+        body: JSON.stringify(currentSelection)
+      });
+      pollRemaining = 300;
+      setStatus(result);
+    } catch {
+      setStatus({state: "unavailable"});
+      showToast("Build request rejected");
+    }
+  });
   document.querySelector("#reset").addEventListener("click", () => {
     state.requested = new Set(catalog.features.filter(item => item.default).map(item => item.id));
     state.plugins = new Set(catalog.plugins.filter(item => item.default).map(item => item.id));
@@ -191,9 +262,7 @@
 })().catch(() => {
   document.querySelector("#feature-count").textContent = "Unavailable";
   document.querySelector("#plugin-count").textContent = "Unavailable";
-  document.querySelector("#command").textContent = "Catalog unavailable";
-  const resolved = document.querySelector("#resolved");
-  resolved.textContent = "The build catalog could not be loaded.";
-  resolved.classList.add("empty-state");
+  document.querySelector("#status-message").textContent = "The build catalog could not be loaded.";
+  document.querySelector("#build-state").textContent = "Unavailable";
   document.querySelectorAll("button, select").forEach(control => { control.disabled = true; });
 });
