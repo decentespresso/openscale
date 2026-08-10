@@ -1,5 +1,8 @@
 #include <Arduino.h>
 #include <cstring>
+#include "esp_pm.h"
+#include "esp_sleep.h"
+#include "driver/uart.h"
 #include "config.h"
 
 #include "parameter.h"
@@ -882,6 +885,21 @@ void setup() {
   } else {
     hdsOtaRollbackMarkValid();
   }
+
+#if CONFIG_PM_ENABLE
+  {
+    esp_pm_config_t pmcfg = {
+      .max_freq_mhz = 240,
+      .min_freq_mhz = 80,
+      .light_sleep_enable = true,
+    };
+    esp_err_t pmrc = esp_pm_configure(&pmcfg);
+    Serial.printf("[pm] esp_pm_configure ls=on 240/80 -> %s\n", esp_err_to_name(pmrc));
+    uart_set_wakeup_threshold(UART_NUM_0, 3);
+    esp_err_t urc = esp_sleep_enable_uart_wakeup(UART_NUM_0);
+    Serial.printf("[pm] uart0 wake-on-rx -> %s\n", esp_err_to_name(urc));
+  }
+#endif
 }
 
 /**
@@ -1605,6 +1623,7 @@ void loop() {
       data[len++] = Serial.read();
     }
     usbCallbacks.onStream(data, len);  // Process serial byte stream
+    t_lastSerialActivity = millis();
   }
   usbCallbacks.poll();
 
@@ -1785,6 +1804,14 @@ void loop() {
       }
     }
   }
+
+#if CONFIG_PM_ENABLE
+  if (millis() - t_lastSerialActivity > 250) {
+    vTaskDelay(pdMS_TO_TICKS(10));
+  } else {
+    vTaskDelay(1);
+  }
+#endif
 }
 
 
