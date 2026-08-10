@@ -21,8 +21,10 @@
   let statusTimer;
   let pollTimer;
   let pollRemaining = 0;
-  let statusRequest = 0;
+  let selectionGeneration = 0;
+  let selectionController;
   let currentSelection;
+  let currentCombinationHash = "";
 
   const escapeHtml = value => String(value).replace(/[&<>'"]/g, character => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
@@ -97,15 +99,17 @@
     toastTimer = setTimeout(() => toast.classList.remove("is-visible"), 2200);
   };
 
-  const setStatus = result => {
+  const setStatus = (result, generation = selectionGeneration) => {
+    if (generation !== selectionGeneration) return;
     const buildState = document.querySelector("#build-state");
     const combinationHash = result.combination_hash || "";
     const messages = {
       missing: "This combination has not been built yet.",
       queued: "The build is waiting for an available runner.",
       building: "The firmware and filesystem images are being built.",
-      ready: "The verified build files are ready to download.",
-      failed: "The build did not complete. One retry is available.",
+      ready: "The verified build archive is ready to download.",
+      failed: result.retryable ? "The build did not complete. One retry is available." :
+        "The build did not complete after two attempts.",
       unavailable: "The build service is currently unavailable.",
       checking: "Checking the build cache."
     };
@@ -113,7 +117,8 @@
     buildState.textContent = result.state[0].toUpperCase() + result.state.slice(1);
     document.querySelector("#combination-hash").textContent = combinationHash ? combinationHash.slice(0, 12) : "";
     document.querySelector("#status-message").textContent = messages[result.state] || messages.unavailable;
-    buildButton.disabled = !["missing", "failed"].includes(result.state);
+    buildButton.disabled = result.state !== "missing" && !(result.state === "failed" && result.retryable);
+    if (combinationHash) currentCombinationHash = combinationHash;
     const downloads = document.querySelector("#downloads");
     downloads.replaceChildren();
     if (result.state === "ready") {
@@ -124,7 +129,9 @@
         downloads.append(link);
       });
     }
-    if (["queued", "building"].includes(result.state) && combinationHash) schedulePoll(combinationHash);
+    if (["queued", "building"].includes(result.state) && combinationHash) {
+      schedulePoll(combinationHash, generation);
+    }
   };
 
   const apiRequest = async (path, options = {}) => {
@@ -133,37 +140,45 @@
       headers: {"Content-Type": "application/json", ...(options.headers || {})}
     });
     const result = await apiResponse.json();
-    if (!apiResponse.ok) throw new Error(result.error || `request failed: ${apiResponse.status}`);
+    if (!apiResponse.ok) {
+      const error = new Error(result.error || `request failed: ${apiResponse.status}`);
+      error.result = result;
+      throw error;
+    }
     return result;
   };
 
-  const schedulePoll = combinationHash => {
+  const schedulePoll = (combinationHash, generation) => {
     clearTimeout(pollTimer);
-    if (pollRemaining <= 0) return;
+    if (pollRemaining <= 0 || generation !== selectionGeneration) return;
     pollTimer = setTimeout(async () => {
       try {
         pollRemaining -= 1;
-        const result = await apiRequest(`/api/v1/status/${combinationHash}`);
-        setStatus(result);
-      } catch {
-        setStatus({state: "unavailable", combination_hash: combinationHash});
+        const result = await apiRequest(`/api/v1/status/${combinationHash}`, {
+          signal: selectionController.signal
+        });
+        if (result.combination_hash === combinationHash) setStatus(result, generation);
+      } catch (error) {
+        if (error.name !== "AbortError") {
+          setStatus({state: "unavailable", combination_hash: combinationHash}, generation);
+        }
       }
     }, 10000);
   };
 
-  const checkStatus = async selection => {
-    const requestNumber = ++statusRequest;
+  const checkStatus = async (selection, generation) => {
     clearTimeout(pollTimer);
     pollRemaining = 300;
-    setStatus({state: "checking"});
+    setStatus({state: "checking"}, generation);
     try {
       const result = await apiRequest("/api/v1/status", {
         method: "POST",
-        body: JSON.stringify(selection)
+        body: JSON.stringify(selection),
+        signal: selectionController.signal
       });
-      if (requestNumber === statusRequest) setStatus(result);
-    } catch {
-      if (requestNumber === statusRequest) setStatus({state: "unavailable"});
+      setStatus(result, generation);
+    } catch (error) {
+      if (error.name !== "AbortError") setStatus({state: "unavailable"}, generation);
     }
   };
 
@@ -217,9 +232,20 @@
     document.querySelector("#plugin-count").textContent = `${plugins.length} selected`;
     document.querySelector("#summary-ref").textContent = refSelect.value;
     document.querySelector("#summary-plugins").textContent = plugins.length || "None";
-    currentSelection = {firmware_ref: refSelect.value, features, plugins};
+    selectionGeneration += 1;
+    selectionController?.abort();
+    selectionController = new AbortController();
+    currentCombinationHash = "";
+    currentSelection = Object.freeze({
+      firmware_ref: refSelect.value,
+      features: Object.freeze(features),
+      plugins: Object.freeze(plugins)
+    });
+    const generation = selectionGeneration;
+    const selection = currentSelection;
     clearTimeout(statusTimer);
-    statusTimer = setTimeout(() => checkStatus(currentSelection), 350);
+    clearTimeout(pollTimer);
+    statusTimer = setTimeout(() => checkStatus(selection, generation), 350);
   };
 
   document.addEventListener("change", event => {
@@ -236,18 +262,29 @@
 
   refSelect.addEventListener("change", render);
   buildButton.addEventListener("click", async () => {
+    const generation = selectionGeneration;
+    const selection = currentSelection;
+    const expectedHash = currentCombinationHash;
     buildButton.disabled = true;
-    setStatus({state: "checking"});
+    setStatus({state: "checking"}, generation);
     try {
       const result = await apiRequest("/api/v1/build", {
         method: "POST",
-        body: JSON.stringify(currentSelection)
+        body: JSON.stringify(selection),
+        signal: selectionController.signal
       });
+      if (expectedHash && result.combination_hash !== expectedHash) return;
       pollRemaining = 300;
-      setStatus(result);
-    } catch {
-      setStatus({state: "unavailable"});
-      showToast("Build request rejected");
+      setStatus(result, generation);
+    } catch (error) {
+      if (error.name === "AbortError" || generation !== selectionGeneration) return;
+      if (error.result?.state === "failed" && error.result.combination_hash === expectedHash) {
+        setStatus(error.result, generation);
+        showToast("Retry limit reached");
+      } else {
+        setStatus({state: "unavailable"}, generation);
+        showToast("Build request rejected");
+      }
     }
   });
   document.querySelector("#reset").addEventListener("click", () => {

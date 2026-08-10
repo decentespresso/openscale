@@ -12,6 +12,7 @@ import subprocess
 SCRIPT_ROOT = Path(globals().get("__file__", Path.cwd() / "tools" / "configure_custom_build.py")).resolve().parents[1]
 ROOT = Path(os.environ.get("HDS_CUSTOM_BUILD_CATALOG_ROOT", SCRIPT_ROOT)).resolve()
 ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+PATH_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 FIRMWARE_REFS = ("main",)
 FEATURES = {
     "wifi": ("HDS_FEATURE_WIFI", ()),
@@ -74,6 +75,8 @@ PLUGIN_KEYS = {
 BUDGET_KEYS = {"firmware_flash_bytes", "static_ram_bytes", "littlefs_bytes"}
 BUILD_CONTRACT_SCHEMA = 1
 PLATFORMIO_ENVIRONMENT = "esp32s3-custom"
+PUBLIC_BINARIES = ("firmware.bin", "bootloader.bin", "partitions.bin", "littlefs.bin")
+FIRMWARE_ARCHIVE = "HDS_FW_custom.zip"
 
 
 def readJson(path):
@@ -92,7 +95,7 @@ def requireStringList(value, name):
 
 
 def safeRelativePath(value, name):
-    if not isinstance(value, str) or not value or "\\" in value:
+    if not isinstance(value, str) or not PATH_PATTERN.fullmatch(value) or "\\" in value:
         raise ValueError(f"{name} must be a non-empty POSIX path")
     path = PurePosixPath(value)
     if path.is_absolute() or ".." in path.parts or "." in path.parts:
@@ -475,9 +478,10 @@ def writeBuildManifest(
         ).stdout.strip()
     if identity is None:
         identity = combinationInput(configuration, commitSha, sourceRoot)
-    binaries = {}
-    for path in sorted(buildDir.glob("*.bin")):
-        binaries[path.name] = fileMetadata(path)
+    binaries = {
+        name: fileMetadata(buildDir / name)
+        for name in PUBLIC_BINARIES
+    }
     manifest = {
         **serializableConfiguration(configuration),
         "base_source": commitSha,
@@ -488,6 +492,7 @@ def writeBuildManifest(
         "combination_hash": combinationHash(identity),
         "custom_build": True,
         "binaries": binaries,
+        "archive": fileMetadata(buildDir / FIRMWARE_ARCHIVE),
         "dependencies": fileMetadata(buildDir / "dependencies.txt"),
     }
     outputPath.parent.mkdir(parents=True, exist_ok=True)

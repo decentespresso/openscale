@@ -123,7 +123,19 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     platformio_environment: "esp32s3-custom",
     partition_schema: {path: "partitions/default.csv", sha256: "2".repeat(64)},
     features: {wifi: [], mdns: [], webserver: [], littlefs: []},
-    plugins: {},
+    plugins: {
+      "asset-sort": {
+        version: "1.0.0",
+        firmware_refs: ["main"],
+        requires: [],
+        conflicts: [],
+        patches: {},
+        assets: [
+          {target: "plugins/z.txt", sha256: "3".repeat(64)},
+          {target: "Plugins/A.txt", sha256: "4".repeat(64)},
+        ],
+      },
+    },
   };
   const keyPair = await crypto.subtle.generateKey(
     {name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256"},
@@ -172,6 +184,11 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     assert.equal(hash, "8b9b767cb97b5b2b2c8aec859219e8f9d207bab9cd41c0a986b2dab55e03bb86");
     assert.equal(missingStatus.state, "missing");
 
+    const sortedAssets = await api(env, "/api/v1/status", "POST", {
+      firmware_ref: "main", features: [], plugins: ["asset-sort"],
+    });
+    assert.equal((await sortedAssets.json()).combination_hash, "162a3fac8038130b982980aa9c320de19151ae044a5455784ff0476664391609");
+
     const unknown = await api(env, "/api/v1/status", "POST", {
       firmware_ref: "main", features: ["unknown"], plugins: [],
     });
@@ -180,41 +197,49 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     const queued = await api(env, "/api/v1/build", "POST", selection);
     assert.equal(queued.status, 202);
     assert.equal((await queued.json()).state, "queued");
+    const attemptId = (await env.COORDINATOR.coordinator.state.storage.get(`build:${hash}`)).attempt_id;
     const duplicate = await api(env, "/api/v1/build", "POST", selection);
     assert.equal(duplicate.status, 202);
     assert.equal(dispatches, 1);
 
     const building = await worker.fetch(new Request(`https://example.test/internal/v1/status/${hash}`, {
       method: "PUT",
-      body: JSON.stringify({state: "building"}),
+      body: JSON.stringify({state: "building", attempt_id: attemptId}),
       headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
     }), env);
     assert.equal(building.status, 204);
     assert.equal((await (await api(env, `/api/v1/status/${hash}`)).json()).state, "building");
 
-    const payloads = {
+    const binaryPayloads = {
       "firmware.bin": "firmware",
       "bootloader.bin": "bootloader",
       "partitions.bin": "partitions",
       "littlefs.bin": "littlefs",
+    };
+    const payloads = {
+      "HDS_FW_custom.zip": "archive",
       "dependencies.txt": "dependencies",
     };
-    assert.equal((await put(env, hash, "firmware.bin", payloads["firmware.bin"], "wrong-token-with-at-least-32-chars")).status, 401);
+    assert.equal((await put(env, hash, "HDS_FW_custom.zip", payloads["HDS_FW_custom.zip"], "wrong-token-with-at-least-32-chars")).status, 401);
+    assert.equal((await put(env, hash, "firmware.bin", binaryPayloads["firmware.bin"])).status, 404);
+    assert.equal((await put(env, hash, "HDS_FW_custom.zip", new Uint8Array(4 * 1024 * 1024 + 1))).status, 413);
     for (const [filename, payload] of Object.entries(payloads)) {
       assert.equal((await put(env, hash, filename, payload)).status, 201);
     }
     const manifestBinaries = {};
-    for (const [filename, payload] of Object.entries(payloads)) {
-      if (filename.endsWith(".bin")) {
-        manifestBinaries[filename] = {
-          bytes: encoder.encode(payload).byteLength,
-          sha256: await sha256(payload),
-        };
-      }
+    for (const [filename, payload] of Object.entries(binaryPayloads)) {
+      manifestBinaries[filename] = {
+        bytes: encoder.encode(payload).byteLength,
+        sha256: await sha256(payload),
+      };
     }
     const completeManifest = {
       combination_hash: hash,
       binaries: manifestBinaries,
+      archive: {
+        bytes: encoder.encode(payloads["HDS_FW_custom.zip"]).byteLength,
+        sha256: await sha256(payloads["HDS_FW_custom.zip"]),
+      },
       dependencies: {
         bytes: encoder.encode(payloads["dependencies.txt"]).byteLength,
         sha256: await sha256(payloads["dependencies.txt"]),
@@ -223,14 +248,15 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     assert.equal((await put(env, hash, "build-manifest.json", JSON.stringify(completeManifest))).status, 201);
     const readyUpdate = await worker.fetch(new Request(`https://example.test/internal/v1/status/${hash}`, {
       method: "PUT",
-      body: JSON.stringify({state: "ready"}),
+      body: JSON.stringify({state: "ready", attempt_id: attemptId}),
       headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
     }), env);
     assert.equal(readyUpdate.status, 204);
     const ready = await (await api(env, `/api/v1/status/${hash}`)).json();
     assert.equal(ready.state, "ready");
-    assert.equal(ready.downloads["firmware.bin"], `https://example.test/v1/${hash}/firmware.bin`);
-    assert.equal((await put(env, hash, "firmware.bin", "replacement")).status, 409);
+    assert.deepEqual(Object.keys(ready.downloads), ["HDS_FW_custom.zip"]);
+    assert.equal(ready.downloads["HDS_FW_custom.zip"], `https://example.test/v1/${hash}/HDS_FW_custom.zip`);
+    assert.equal((await put(env, hash, "HDS_FW_custom.zip", "replacement")).status, 409);
 
     const preflight = await worker.fetch(new Request("https://example.test/api/v1/status", {
       method: "OPTIONS",
@@ -239,14 +265,42 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     assert.equal(preflight.status, 204);
     assert.equal(preflight.headers.get("Access-Control-Allow-Origin"), origin);
 
-    for (const feature of ["mdns", "webserver"]) {
-      const accepted = await api(env, "/api/v1/build", "POST", {
-        firmware_ref: "main", features: [feature], plugins: [],
-      });
-      assert.equal(accepted.status, 202);
-    }
+    const retrySelection = {firmware_ref: "main", features: ["mdns"], plugins: []};
+    const firstFailure = await api(env, "/api/v1/build", "POST", retrySelection);
+    assert.equal(firstFailure.status, 202);
+    const retryHash = (await firstFailure.json()).combination_hash;
+    const firstAttempt = (await env.COORDINATOR.coordinator.state.storage.get(`build:${retryHash}`)).attempt_id;
+    assert.equal((await worker.fetch(new Request(`https://example.test/internal/v1/status/${retryHash}`, {
+      method: "PUT",
+      body: JSON.stringify({state: "failed", attempt_id: firstAttempt}),
+      headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
+    }), env)).status, 204);
+    const retry = await api(env, "/api/v1/build", "POST", retrySelection);
+    assert.equal(retry.status, 202);
+    const secondAttempt = (await env.COORDINATOR.coordinator.state.storage.get(`build:${retryHash}`)).attempt_id;
+    assert.notEqual(secondAttempt, firstAttempt);
+    assert.equal((await worker.fetch(new Request(`https://example.test/internal/v1/status/${retryHash}`, {
+      method: "PUT",
+      body: JSON.stringify({state: "building", attempt_id: firstAttempt}),
+      headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
+    }), env)).status, 409);
+    assert.equal((await worker.fetch(new Request(`https://example.test/internal/v1/status/${retryHash}`, {
+      method: "PUT",
+      body: JSON.stringify({state: "failed", attempt_id: secondAttempt}),
+      headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
+    }), env)).status, 204);
+    const terminal = await api(env, "/api/v1/build", "POST", retrySelection);
+    assert.equal(terminal.status, 409);
+    assert.deepEqual(await terminal.json(), {
+      state: "failed",
+      combination_hash: retryHash,
+      attempts: 2,
+      max_attempts: 2,
+      retryable: false,
+      updated_at: (await env.COORDINATOR.coordinator.state.storage.get(`build:${retryHash}`)).updated_at,
+    });
     const limited = await api(env, "/api/v1/build", "POST", {
-      firmware_ref: "main", features: ["littlefs"], plugins: [],
+      firmware_ref: "main", features: ["webserver"], plugins: [],
     });
     assert.equal(limited.status, 429);
 
@@ -259,4 +313,28 @@ test("publishes immutable cache entries and deduplicates public builds", async (
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test("expires stale build attempts", async () => {
+  const storage = new Storage();
+  const coordinator = new BuildCoordinator({storage}, {});
+  const hash = "a".repeat(64);
+  const attemptId = "11111111-1111-4111-8111-111111111111";
+  await storage.put({
+    [`build:${hash}`]: {
+      state: "queued",
+      combination_hash: hash,
+      attempts: 1,
+      attempt_id: attemptId,
+      lease_expires_at: 0,
+      updated_at: new Date(0).toISOString(),
+    },
+    pending: {[hash]: {attempt_id: attemptId, lease_expires_at: 0}},
+  });
+  await coordinator.alarm();
+  const record = await storage.get(`build:${hash}`);
+  assert.equal(record.state, "failed");
+  assert.equal(Object.hasOwn(record, "lease_expires_at"), false);
+  assert.deepEqual(await storage.get("pending"), {});
 });

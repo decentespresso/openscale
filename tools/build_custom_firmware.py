@@ -1,4 +1,6 @@
 import argparse
+import configparser
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -9,6 +11,7 @@ import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 
 import configure_custom_build as customBuild
 
@@ -17,10 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 BUILD_FILES = (
-    "firmware.bin",
-    "bootloader.bin",
-    "partitions.bin",
-    "littlefs.bin",
+    customBuild.FIRMWARE_ARCHIVE,
     "build-manifest.json",
     "dependencies.txt",
 )
@@ -99,6 +99,65 @@ def applyPatches(configuration, checkoutRoot):
             raise ValueError(f"patch failed for plugin {pluginId}: {patchPath.name}") from error
 
 
+def sourceDateEpoch(checkoutRoot):
+    return runCommand(
+        ["git", "show", "-s", "--format=%ct", "HEAD"], checkoutRoot, capture=True
+    ).stdout.strip()
+
+
+def configureReproducibleBuild(checkoutRoot):
+    workspace = checkoutRoot / ".pio.nosync"
+    workspace.mkdir(parents=True, exist_ok=True)
+    compilerScript = workspace / "reproducible_build.py"
+    compilerScript.write_text(
+        "from pathlib import Path\n"
+        "Import(\"env\")\n"
+        "projectDir = Path(env.subst(\"$PROJECT_DIR\")).resolve().as_posix()\n"
+        "env.Append(CCFLAGS=[f\"-ffile-prefix-map={projectDir}=.\"])\n"
+        "env.Append(LINKFLAGS=[\"-Wl,-s\"])\n",
+        encoding="utf-8",
+    )
+    filesystemScript = workspace / "reproducible_filesystem.py"
+    filesystemScript.write_text(
+        "import os\n"
+        "from pathlib import Path\n"
+        "Import(\"env\")\n"
+        "def normalizeTimestamps(source, target, env):\n"
+        "    dataDir = Path(env.subst(\"$PROJECT_DATA_DIR\"))\n"
+        "    epoch = int(os.environ[\"SOURCE_DATE_EPOCH\"])\n"
+        "    paths = sorted(dataDir.rglob(\"*\"), key=lambda path: len(path.parts), reverse=True)\n"
+        "    for path in [*paths, dataDir]:\n"
+        "        os.utime(path, (epoch, epoch))\n"
+        "env.AddPreAction(\"$BUILD_DIR/littlefs.bin\", normalizeTimestamps)\n",
+        encoding="utf-8",
+    )
+    configPath = checkoutRoot / "platformio.ini"
+    config = configparser.ConfigParser(interpolation=None)
+    config.optionxform = str
+    if not config.read(configPath, encoding="utf-8"):
+        raise ValueError("selected firmware has no platformio.ini")
+    section = "env:esp32s3-custom"
+    scripts = config.get(section, "extra_scripts", fallback="")
+    config.set(
+        section,
+        "extra_scripts",
+        scripts
+        + "\npre:.pio.nosync/reproducible_build.py"
+        + "\npost:.pio.nosync/reproducible_filesystem.py",
+    )
+    with configPath.open("w", encoding="utf-8") as configFile:
+        config.write(configFile)
+
+
+def createFirmwareArchive(buildDir):
+    archivePath = buildDir / customBuild.FIRMWARE_ARCHIVE
+    with zipfile.ZipFile(archivePath, "w", compression=zipfile.ZIP_STORED) as archive:
+        for name in customBuild.PUBLIC_BINARIES:
+            info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
+            info.external_attr = 0o100644 << 16
+            archive.writestr(info, (buildDir / name).read_bytes())
+
+
 def writeDependencyInventory(buildDir, checkoutRoot, environment):
     version = runCommand(["pio", "--version"], checkoutRoot, capture=True, environment=environment).stdout
     packages = runCommand(
@@ -128,14 +187,25 @@ def completeCacheEntry(entryDir, expectedHash, expectedInput):
     if manifest.get("combination_input") != expectedInput:
         return False
     binaries = manifest.get("binaries")
-    if not isinstance(binaries, dict):
+    if not isinstance(binaries, dict) or set(binaries) != set(customBuild.PUBLIC_BINARIES):
         return False
-    for name in BUILD_FILES:
-        if not name.endswith(".bin"):
-            continue
-        if binaries.get(name) != customBuild.fileMetadata(entryDir / name):
-            return False
-    return manifest.get("dependencies") == customBuild.fileMetadata(entryDir / "dependencies.txt")
+    try:
+        with zipfile.ZipFile(entryDir / customBuild.FIRMWARE_ARCHIVE) as archive:
+            if archive.namelist() != list(customBuild.PUBLIC_BINARIES):
+                return False
+            for name in customBuild.PUBLIC_BINARIES:
+                payload = archive.read(name)
+                if binaries.get(name) != {
+                    "bytes": len(payload),
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                }:
+                    return False
+    except (OSError, KeyError, zipfile.BadZipFile):
+        return False
+    return (
+        manifest.get("archive") == customBuild.fileMetadata(entryDir / customBuild.FIRMWARE_ARCHIVE)
+        and manifest.get("dependencies") == customBuild.fileMetadata(entryDir / "dependencies.txt")
+    )
 
 
 def remoteCacheHit(baseUrl, expectedHash, expectedInput):
@@ -218,10 +288,13 @@ def buildCustomFirmware(
                 "output": str(outputDir),
             }
         applyPatches(configuration, checkoutRoot)
+        configureReproducibleBuild(checkoutRoot)
+        sourceEpoch = sourceDateEpoch(checkoutRoot)
         environment = {
             **os.environ,
             "HDS_CUSTOM_BUILD_CATALOG_ROOT": str(ROOT),
             "HDS_CUSTOM_BUILD_CONFIG": str(configPath),
+            "SOURCE_DATE_EPOCH": sourceEpoch,
         }
         runCommand(["pio", "run", "-e", "esp32s3-custom"], checkoutRoot, environment=environment)
         runCommand(
@@ -231,6 +304,7 @@ def buildCustomFirmware(
         )
         buildDir = checkoutRoot / ".pio.nosync" / "build" / "esp32s3-custom"
         writeDependencyInventory(buildDir, checkoutRoot, environment)
+        createFirmwareArchive(buildDir)
         customBuild.writeBuildManifest(
             configuration,
             buildDir,

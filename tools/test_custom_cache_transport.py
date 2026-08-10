@@ -33,6 +33,7 @@ def createEntry(root):
     entry.mkdir()
     for name in ("firmware.bin", "bootloader.bin", "partitions.bin", "littlefs.bin"):
         (entry / name).write_bytes(name.encode("ascii"))
+    customRunner.createFirmwareArchive(entry)
     (entry / "dependencies.txt").write_text("dependencies", encoding="utf-8")
     manifest = {
         "combination_hash": combinationHash,
@@ -41,9 +42,12 @@ def createEntry(root):
             name: customBuild.fileMetadata(entry / name)
             for name in ("firmware.bin", "bootloader.bin", "partitions.bin", "littlefs.bin")
         },
+        "archive": customBuild.fileMetadata(entry / customBuild.FIRMWARE_ARCHIVE),
         "dependencies": customBuild.fileMetadata(entry / "dependencies.txt"),
     }
     (entry / "build-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    for name in customBuild.PUBLIC_BINARIES:
+        (entry / name).unlink()
     return entry, manifest
 
 
@@ -74,10 +78,7 @@ def main():
         with patch.object(publisher.urllib.request, "urlopen", side_effect=accept):
             assert publisher.publishEntry(entry, baseUrl, "x" * 32) == entry.name
         assert [Path(request.full_url).name for request in requests] == [
-            "firmware.bin",
-            "bootloader.bin",
-            "partitions.bin",
-            "littlefs.bin",
+            "HDS_FW_custom.zip",
             "dependencies.txt",
             "build-manifest.json",
         ]
@@ -88,10 +89,11 @@ def main():
         with patch.object(
             statusUpdater.urllib.request, "urlopen", return_value=StatusResponse()
         ) as updateRequest:
-            statusUpdater.updateStatus(baseUrl, "x" * 32, entry.name, "building")
+            attemptId = "11111111-1111-4111-8111-111111111111"
+            statusUpdater.updateStatus(baseUrl, "x" * 32, entry.name, attemptId, "building")
         request = updateRequest.call_args.args[0]
         assert request.full_url.endswith(f"/internal/v1/status/{entry.name}")
-        assert json.loads(request.data) == {"state": "building"}
+        assert json.loads(request.data) == {"state": "building", "attempt_id": attemptId}
         assert request.get_header("Authorization") == f"Bearer {'x' * 32}"
         assert request.get_header("User-agent") == "OpenScale-Custom-Build/1.0"
     print("custom cache transport tests passed")

@@ -1,21 +1,22 @@
 const hashPattern = /^[0-9a-f]{64}$/;
 const commitPattern = /^[0-9a-f]{40}$/;
 const idPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const pathPattern = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
+const attemptPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const archive = "HDS_FW_custom.zip";
 const files = new Set([
-  "firmware.bin",
-  "bootloader.bin",
-  "partitions.bin",
-  "littlefs.bin",
+  archive,
   "build-manifest.json",
   "dependencies.txt",
 ]);
 const binaries = ["firmware.bin", "bootloader.bin", "partitions.bin", "littlefs.bin"];
 const buildStates = new Set(["building", "ready", "failed"]);
-const maxEntryBytes = 5 * 1024 * 1024;
+const maxEntryBytes = 4 * 1024 * 1024;
 const maxApiBytes = 4096;
 const clientBuildsPerDay = 3;
 const globalBuildsPerDay = 20;
 const maxAttempts = 2;
+const buildLeaseMs = 2 * 60 * 60 * 1000;
 
 class ApiError extends Error {
   constructor(status, code) {
@@ -206,12 +207,16 @@ function resolvePlugins(catalog, firmwareRef, selected) {
       throw new ApiError(400, "plugin_conflict");
     }
     const patch = plugin.patches[firmwareRef];
+    if (plugin.assets.some(asset => !pathPattern.test(asset.target) || !hashPattern.test(asset.sha256))) {
+      throw new ApiError(503, "invalid_service_catalog");
+    }
     return {
       id,
       version: plugin.version,
       patches: patch ? [{sha256: patch.sha256}] : [],
       assets: [...plugin.assets].sort((left, right) =>
-        left.target.localeCompare(right.target) || left.sha256.localeCompare(right.sha256)),
+        (left.target < right.target ? -1 : left.target > right.target ? 1 : 0) ||
+        (left.sha256 < right.sha256 ? -1 : left.sha256 > right.sha256 ? 1 : 0)),
     };
   });
 }
@@ -262,14 +267,23 @@ function readyStatus(env, hash) {
   return {
     state: "ready",
     combination_hash: hash,
-    downloads: Object.fromEntries([...files].map(filename => [filename, `${baseUrl}/v1/${hash}/${filename}`])),
+    downloads: {[archive]: `${baseUrl}/v1/${hash}/${archive}`},
+  };
+}
+
+function buildStatus(record) {
+  const {attempt_id, lease_expires_at, ...status} = record;
+  return {
+    ...status,
+    max_attempts: maxAttempts,
+    retryable: status.state === "failed" && (status.attempts || 0) < maxAttempts,
   };
 }
 
 async function publicStatus(env, hash) {
   if (await env.BUILDS.head(`v1/${hash}/build-manifest.json`)) return readyStatus(env, hash);
   const record = await coordinatorStatus(env, hash);
-  return record.state === "ready" ? {state: "missing", combination_hash: hash} : record;
+  return record.state === "ready" ? {state: "missing", combination_hash: hash} : buildStatus(record);
 }
 
 async function clientKey(request, env) {
@@ -326,6 +340,7 @@ async function dispatchBuild(env, build) {
         plugins: build.configuration.plugins.join(","),
         source_commit: build.sourceCommit,
         combination_hash: build.combinationHash,
+        attempt_id: build.attemptId,
       },
     }),
   });
@@ -339,12 +354,16 @@ async function enqueueBuild(request, env, build) {
     body: JSON.stringify({...build, clientKey: await clientKey(request, env)}),
   });
   const result = await response.json();
-  if (!response.ok) throw new ApiError(response.status, result.error || "build_request_failed");
-  return result;
+  if (!response.ok && response.status !== 409) {
+    throw new ApiError(response.status, result.error || "build_request_failed");
+  }
+  return {result: buildStatus(result), status: response.status === 409 ? 409 : 202};
 }
 
 function metadata(manifest, filename) {
-  return filename === "dependencies.txt" ? manifest.dependencies : manifest.binaries?.[filename];
+  if (filename === "dependencies.txt") return manifest.dependencies;
+  if (filename === archive) return manifest.archive;
+  return manifest.binaries?.[filename];
 }
 
 function validMetadata(value) {
@@ -359,8 +378,10 @@ async function validManifest(env, hash, payload) {
     return false;
   }
   if (manifest.combination_hash !== hash) return false;
+  if (Object.keys(manifest.binaries || {}).sort().join(",") !== [...binaries].sort().join(",") ||
+      binaries.some(filename => !validMetadata(manifest.binaries[filename]))) return false;
   let total = payload.byteLength;
-  for (const filename of [...binaries, "dependencies.txt"]) {
+  for (const filename of [archive, "dependencies.txt"]) {
     const expected = metadata(manifest, filename);
     const object = await env.BUILDS.head(`v1/${hash}/${filename}`);
     if (!validMetadata(expected) || !object) return false;
@@ -387,7 +408,8 @@ async function upload(request, env, target) {
   }
   await env.BUILDS.put(`v1/${target.hash}/${target.filename}`, payload, {
     customMetadata: {sha256: expectedSha},
-    httpMetadata: {contentType: target.filename.endsWith(".json") ? "application/json" : "application/octet-stream"},
+    httpMetadata: {contentType: target.filename.endsWith(".json") ? "application/json" :
+      target.filename.endsWith(".zip") ? "application/zip" : "application/octet-stream"},
   });
   return new Response(null, {status: 201});
 }
@@ -409,7 +431,8 @@ async function download(request, env, target) {
 async function updateStatus(request, env, hash) {
   if (!(await authorized(request, env.UPLOAD_TOKEN))) throw new ApiError(401, "unauthorized");
   const update = await readJson(request, 1024);
-  if (!update || Object.keys(update).join(",") !== "state" || !buildStates.has(update.state)) {
+  if (!update || Object.keys(update).sort().join(",") !== "attempt_id,state" ||
+      !buildStates.has(update.state) || !attemptPattern.test(update.attempt_id)) {
     throw new ApiError(400, "invalid_build_state");
   }
   if (update.state === "ready" && !(await env.BUILDS.head(`v1/${hash}/build-manifest.json`))) {
@@ -430,52 +453,131 @@ export class BuildCoordinator {
     this.env = env;
   }
 
+  async scheduleAlarm() {
+    const [pending, rates] = await Promise.all([
+      this.state.storage.get("pending"),
+      this.state.storage.get("rates"),
+    ]);
+    const expirations = [
+      ...Object.values(pending || {}).map(item => item.lease_expires_at),
+      ...(rates?.expires_at ? [rates.expires_at] : []),
+    ].filter(value => Number.isSafeInteger(value));
+    if (expirations.length) await this.state.storage.setAlarm(Math.min(...expirations));
+  }
+
+  async updateAttempt(hash, update) {
+    const now = Date.now();
+    const result = await this.state.storage.transaction(async transaction => {
+      const key = `build:${hash}`;
+      const [current, storedPending] = await Promise.all([
+        transaction.get(key),
+        transaction.get("pending"),
+      ]);
+      if (!current || current.attempt_id !== update.attempt_id ||
+          !["queued", "building"].includes(current.state)) return null;
+      const remainingPending = Object.fromEntries(
+        Object.entries(storedPending || {}).filter(([pendingHash]) => pendingHash !== hash),
+      );
+      const {lease_expires_at, ...currentWithoutLease} = current;
+      const record = {
+        ...currentWithoutLease,
+        state: update.state,
+        updated_at: new Date(now).toISOString(),
+        ...(update.state === "building" ? {lease_expires_at: now + buildLeaseMs} : {}),
+      };
+      const pending = update.state === "building" ? {
+        ...remainingPending,
+        [hash]: {attempt_id: update.attempt_id, lease_expires_at: record.lease_expires_at},
+      } : remainingPending;
+      await transaction.put({[key]: record, pending});
+      return record;
+    });
+    if (result) await this.scheduleAlarm();
+    return result;
+  }
+
   async fetch(request) {
     const url = new URL(request.url);
     const parts = url.pathname.split("/");
     const hash = parts.length === 3 && hashPattern.test(parts[2]) ? parts[2] : null;
     if (!hash) return Response.json({error: "not_found"}, {status: 404});
     if (parts[1] === "status" && request.method === "GET") {
-      return Response.json(await this.state.storage.get(`build:${hash}`) || {state: "missing", combination_hash: hash});
+      const key = `build:${hash}`;
+      let record = await this.state.storage.get(key);
+      if (["queued", "building"].includes(record?.state) && record.lease_expires_at <= Date.now()) {
+        await this.alarm();
+        record = await this.state.storage.get(key);
+      }
+      return Response.json(record || {state: "missing", combination_hash: hash});
     }
     if (parts[1] === "status" && request.method === "PUT") {
       const update = await request.json();
-      const current = await this.state.storage.get(`build:${hash}`);
-      if (current?.state === "ready") return Response.json(current);
-      const record = {
-        ...(current || {combination_hash: hash, attempts: 1}),
-        state: update.state,
-        updated_at: new Date().toISOString(),
-      };
-      await this.state.storage.put(`build:${hash}`, record);
-      return Response.json(record);
+      const record = await this.updateAttempt(hash, update);
+      return record ? Response.json(record) : Response.json({error: "stale_build_attempt"}, {status: 409});
     }
     if (parts[1] !== "build" || request.method !== "POST") {
       return Response.json({error: "not_found"}, {status: 404});
     }
     const build = await request.json();
-    const day = new Date().toISOString().slice(0, 10);
+    const now = Date.now();
+    const day = new Date(now).toISOString().slice(0, 10);
+    const rateExpiresAt = Date.parse(`${day}T00:00:00.000Z`) + 86400000;
     const reservation = await this.state.storage.transaction(async transaction => {
       const recordKey = `build:${hash}`;
-      const current = await transaction.get(recordKey);
-      if (current && ["queued", "building"].includes(current.state)) return {record: current};
-      if (current?.state === "failed" && current.attempts >= maxAttempts) return {record: current};
+      const [current, storedPending] = await Promise.all([
+        transaction.get(recordKey),
+        transaction.get("pending"),
+      ]);
+      const currentIsStale = ["queued", "building"].includes(current?.state) &&
+        current.lease_expires_at <= now;
+      const {lease_expires_at, ...currentWithoutLease} = current || {};
+      const effectiveCurrent = currentIsStale ? {
+        ...currentWithoutLease,
+        state: "failed",
+        updated_at: new Date(now).toISOString(),
+      } : current;
+      if (currentIsStale) {
+        await transaction.put({
+          [recordKey]: effectiveCurrent,
+          pending: Object.fromEntries(
+            Object.entries(storedPending || {}).filter(([pendingHash]) => pendingHash !== hash),
+          ),
+        });
+      }
+      if (effectiveCurrent && ["queued", "building"].includes(effectiveCurrent.state)) {
+        return {record: effectiveCurrent};
+      }
+      if (effectiveCurrent?.state === "failed" && effectiveCurrent.attempts >= maxAttempts) {
+        return {record: effectiveCurrent, terminal: true};
+      }
       const storedRates = await transaction.get("rates");
-      const rates = storedRates?.day === day ? storedRates : {day, global: 0, clients: {}};
+      const rates = storedRates?.day === day ? storedRates : {
+        day, global: 0, clients: {}, expires_at: rateExpiresAt,
+      };
       const clientCount = rates.clients[build.clientKey] || 0;
       if (clientCount >= clientBuildsPerDay || rates.global >= globalBuildsPerDay) return {rateLimited: true};
+      const attemptId = crypto.randomUUID();
+      const leaseExpiresAt = now + buildLeaseMs;
       const record = {
         state: "queued",
         combination_hash: hash,
-        attempts: (current?.attempts || 0) + 1,
-        updated_at: new Date().toISOString(),
+        attempts: (effectiveCurrent?.state === "failed" ? effectiveCurrent.attempts : 0) + 1,
+        attempt_id: attemptId,
+        lease_expires_at: leaseExpiresAt,
+        updated_at: new Date(now).toISOString(),
+      };
+      const pending = {
+        ...(storedPending || {}),
+        [hash]: {attempt_id: attemptId, lease_expires_at: leaseExpiresAt},
       };
       await transaction.put({
         [recordKey]: record,
+        pending,
         rates: {
           day,
           global: rates.global + 1,
           clients: {...rates.clients, [build.clientKey]: clientCount + 1},
+          expires_at: rates.expires_at,
         },
       });
       return {record, dispatch: true};
@@ -483,20 +585,41 @@ export class BuildCoordinator {
     if (reservation.rateLimited) {
       return Response.json({error: "rate_limited"}, {status: 429, headers: {"Retry-After": "86400"}});
     }
+    if (reservation.terminal) return Response.json(reservation.record, {status: 409});
     if (!reservation.dispatch) return Response.json(reservation.record);
-    await this.state.storage.setAlarm(Date.now() + 86400000);
+    await this.scheduleAlarm();
     try {
-      await dispatchBuild(this.env, build);
+      await dispatchBuild(this.env, {...build, attemptId: reservation.record.attempt_id});
       return Response.json(reservation.record, {status: 202});
     } catch (error) {
-      const record = {...reservation.record, state: "failed", updated_at: new Date().toISOString()};
-      await this.state.storage.put(`build:${hash}`, record);
+      await this.updateAttempt(hash, {state: "failed", attempt_id: reservation.record.attempt_id});
       return Response.json({error: error instanceof ApiError ? error.code : "github_dispatch_failed"}, {status: 503});
     }
   }
 
   async alarm() {
-    await this.state.storage.delete("rates");
+    const now = Date.now();
+    const pending = await this.state.storage.get("pending") || {};
+    const pendingEntries = Object.entries(pending);
+    const remaining = Object.fromEntries(
+      pendingEntries.filter(([, attempt]) => attempt.lease_expires_at > now),
+    );
+    for (const [hash, attempt] of pendingEntries.filter(([, item]) => item.lease_expires_at <= now)) {
+      const key = `build:${hash}`;
+      const current = await this.state.storage.get(key);
+      if (current?.attempt_id === attempt.attempt_id && ["queued", "building"].includes(current.state)) {
+        const {lease_expires_at, ...record} = current;
+        await this.state.storage.put(key, {
+          ...record,
+          state: "failed",
+          updated_at: new Date(now).toISOString(),
+        });
+      }
+    }
+    await this.state.storage.put("pending", remaining);
+    const rates = await this.state.storage.get("rates");
+    if (rates?.expires_at <= now) await this.state.storage.delete("rates");
+    await this.scheduleAlarm();
   }
 }
 
@@ -509,12 +632,12 @@ export default {
         return Object.keys(headers).length ? new Response(null, {status: 204, headers}) : new Response(null, {status: 403});
       }
       const publicTarget = route(url.pathname, "v1");
-      if (publicTarget && (request.method === "GET" || request.method === "HEAD")) return download(request, env, publicTarget);
+      if (publicTarget && (request.method === "GET" || request.method === "HEAD")) return await download(request, env, publicTarget);
       const internalPath = url.pathname.startsWith("/internal/") ? url.pathname.slice(9) : "";
       const internalTarget = route(internalPath, "v1");
-      if (internalTarget && request.method === "PUT") return upload(request, env, internalTarget);
+      if (internalTarget && request.method === "PUT") return await upload(request, env, internalTarget);
       const internalHash = internalStatusHash(url.pathname);
-      if (internalHash && request.method === "PUT") return updateStatus(request, env, internalHash);
+      if (internalHash && request.method === "PUT") return await updateStatus(request, env, internalHash);
       if (url.pathname.startsWith("/api/") && !Object.keys(cors(request, env)).length) {
         throw new ApiError(403, "origin_not_allowed");
       }
@@ -524,7 +647,8 @@ export default {
         const build = await resolveSelection(env, await readJson(request));
         const result = await publicStatus(env, build.combinationHash);
         if (url.pathname.endsWith("/build") && result.state !== "ready") {
-          return json(request, env, await enqueueBuild(request, env, build), 202);
+          const queued = await enqueueBuild(request, env, build);
+          return json(request, env, queued.result, queued.status);
         }
         return json(request, env, result);
       }
