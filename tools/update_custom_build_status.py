@@ -30,6 +30,7 @@ def updateStatus(baseUrl, token, combinationHash, state):
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
+            "User-Agent": "OpenScale-Custom-Build/1.0",
         },
     )
     with urllib.request.urlopen(request, timeout=30) as response:
