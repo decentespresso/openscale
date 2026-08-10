@@ -1806,10 +1806,12 @@ void loop() {
   }
 
 #if CONFIG_PM_ENABLE
-  if (millis() - t_lastSerialActivity > 250) {
-    vTaskDelay(pdMS_TO_TICKS(10));
-  } else {
+  if (millis() - t_lastSerialActivity <= 250) {
     vTaskDelay(1);
+  } else if (b_softSleep) {
+    vTaskDelay(pdMS_TO_TICKS(50));
+  } else {
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 #endif
 }
