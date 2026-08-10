@@ -145,8 +145,11 @@ def remoteCacheHit(baseUrl, expectedHash, expectedInput):
     if parsed.query or parsed.fragment:
         raise ValueError("remote cache URL cannot contain a query or fragment")
     manifestUrl = f"{baseUrl.rstrip('/')}/v1/{expectedHash}/build-manifest.json"
+    request = urllib.request.Request(
+        manifestUrl, headers={"User-Agent": "OpenScale-Custom-Build/1.0"}
+    )
     try:
-        with urllib.request.urlopen(manifestUrl, timeout=15) as response:
+        with urllib.request.urlopen(request, timeout=15) as response:
             payload = response.read(MAX_REMOTE_MANIFEST_BYTES + 1)
     except urllib.error.HTTPError as error:
         if error.code == 404:

@@ -51,10 +51,15 @@ def main():
     with tempfile.TemporaryDirectory() as temporaryDirectory:
         entry, manifest = createEntry(Path(temporaryDirectory))
         baseUrl = "https://openscale-custom-builds.odevstudio.workers.dev"
-        with patch.object(customRunner.urllib.request, "urlopen", return_value=Response(json.dumps(manifest).encode("utf-8"))):
+        with patch.object(
+            customRunner.urllib.request,
+            "urlopen",
+            return_value=Response(json.dumps(manifest).encode("utf-8")),
+        ) as cacheRequest:
             assert customRunner.remoteCacheHit(
                 baseUrl, entry.name, manifest["combination_input"]
             )
+        assert cacheRequest.call_args.args[0].get_header("User-agent") == "OpenScale-Custom-Build/1.0"
         missing = urllib.error.HTTPError("missing", 404, "Not Found", {}, None)
         with patch.object(customRunner.urllib.request, "urlopen", side_effect=missing):
             assert not customRunner.remoteCacheHit(
@@ -78,6 +83,7 @@ def main():
         ]
         for request in requests:
             assert request.get_header("Authorization") == f"Bearer {'x' * 32}"
+            assert request.get_header("User-agent") == "OpenScale-Custom-Build/1.0"
             assert request.get_header("X-openscale-sha256") == hashlib.sha256(request.data).hexdigest()
         with patch.object(
             statusUpdater.urllib.request, "urlopen", return_value=StatusResponse()
@@ -87,6 +93,7 @@ def main():
         assert request.full_url.endswith(f"/internal/v1/status/{entry.name}")
         assert json.loads(request.data) == {"state": "building"}
         assert request.get_header("Authorization") == f"Bearer {'x' * 32}"
+        assert request.get_header("User-agent") == "OpenScale-Custom-Build/1.0"
     print("custom cache transport tests passed")
 
 

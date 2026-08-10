@@ -44,6 +44,7 @@ def publishFile(baseUrl, token, combinationHash, path):
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json" if path.suffix == ".json" else "application/octet-stream",
+            "User-Agent": "OpenScale-Custom-Build/1.0",
             "X-OpenScale-SHA256": digest,
         },
     )
