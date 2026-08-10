@@ -211,6 +211,52 @@ def writeBrowserCatalog(path):
     path.write_bytes((json.dumps(buildBrowserCatalog(), indent=2) + "\n").encode("utf-8"))
 
 
+def buildServiceCatalog(sourceRoot=ROOT):
+    plugins = loadPluginCatalog()
+    partition = partitionMetadata(sourceRoot)
+    return {
+        "schema": BUILD_CONTRACT_SCHEMA,
+        "firmware_refs": list(FIRMWARE_REFS),
+        "platformio_environment": PLATFORMIO_ENVIRONMENT,
+        "partition_schema": {
+            "path": partition["path"],
+            "sha256": partition["sha256"],
+        },
+        "features": {
+            featureId: list(dependencies)
+            for featureId, (_, dependencies) in FEATURES.items()
+        },
+        "plugins": {
+            pluginId: {
+                "version": manifest["version"],
+                "firmware_refs": manifest["firmware_refs"],
+                "requires": manifest["requires"],
+                "conflicts": manifest["conflicts"],
+                "patches": {
+                    firmwareRef: {"sha256": fileMetadata(path)["sha256"]}
+                    for firmwareRef, path in sorted(patches.items())
+                },
+                "assets": sorted(
+                    [
+                        {
+                            "target": target.as_posix(),
+                            "sha256": fileMetadata(source)["sha256"],
+                        }
+                        for source, target in assets
+                    ],
+                    key=lambda asset: (asset["target"], asset["sha256"]),
+                ),
+            }
+            for pluginId, (manifest, assets, patches) in plugins.items()
+        },
+    }
+
+
+def writeServiceCatalog(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes((json.dumps(buildServiceCatalog(), indent=2) + "\n").encode("utf-8"))
+
+
 def resolveConfiguration(configPath):
     config = readJson(configPath)
     if not isinstance(config, dict) or set(config) != CONFIG_KEYS:
@@ -457,6 +503,7 @@ def main():
     parser.add_argument("--manifest-output", type=Path)
     parser.add_argument("--commit-sha")
     parser.add_argument("--catalog-output", type=Path)
+    parser.add_argument("--service-catalog-output", type=Path)
     args = parser.parse_args()
     configuration = configure(args.config.resolve(), args.workspace.resolve())
     if bool(args.manifest_build_dir) != bool(args.manifest_output):
@@ -470,6 +517,8 @@ def main():
         )
     if args.catalog_output:
         writeBrowserCatalog(args.catalog_output.resolve())
+    if args.service_catalog_output:
+        writeServiceCatalog(args.service_catalog_output.resolve())
     print(json.dumps(serializableConfiguration(configuration), sort_keys=True))
 
 

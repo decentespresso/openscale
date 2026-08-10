@@ -27,7 +27,7 @@ Firmware-only flashing does not update `web_apps/`. Flash LittleFS when the on-d
 - `git_rev_macro.py` injects `GIT_REV`; non-git source trees fall back to `nogit0`.
 - `CONFIG_ASYNC_TCP_RUNNING_CORE=1` pins AsyncTCP to core 1, and `CONFIG_ASYNC_TCP_STACK_SIZE=8192` gives the AsyncTCP task an 8 KiB stack.
 - `ELEGANTOTA_USE_ASYNC_WEBSERVER=1` is set; `ElegantOTA.loop()` runs in `loop()`.
-- `include/features.h` keeps the normal `esp32s3` feature defaults. `esp32s3-custom` reads `custom-build.json` through `tools/configure_custom_build.py` and stages generated headers and filesystem data under `.pio.nosync`.
+- `include/hds_features.h` keeps the normal `esp32s3` feature defaults. `esp32s3-custom` reads `custom-build.json` through `tools/configure_custom_build.py` and stages generated headers and filesystem data under `.pio.nosync`.
 - `tools/build_custom_firmware.py` resolves an allowed firmware ref to an exact commit, builds it in a temporary checkout, applies approved patches in plugin-ID order, and publishes firmware, LittleFS, dependency, and provenance artifacts only after the full build succeeds.
 - Custom feature lists are exact. An empty list builds BLE/USB-only firmware; Pull OTA is enabled only when `pull-ota` is selected.
 - `HDS_FEATURE_LITTLEFS` controls runtime filesystem mounting and web assets. Pull OTA retains its staged `littlefs.bin` transaction independently of that runtime feature.

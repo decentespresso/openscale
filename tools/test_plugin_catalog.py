@@ -128,19 +128,26 @@ def main():
     pageCatalog = json.loads(
         (customBuild.ROOT / "docs" / "custom-build" / "catalog.json").read_text(encoding="utf-8")
     )
+    serviceCatalog = json.loads(
+        (customBuild.ROOT / "docs" / "custom-build" / "service-catalog.json").read_text(
+            encoding="utf-8"
+        )
+    )
     assert pageCatalog == generatedCatalog, (
         "browser catalog is stale; run python tools/configure_custom_build.py "
-        "--catalog-output docs/custom-build/catalog.json"
+        "--catalog-output docs/custom-build/catalog.json "
+        "--service-catalog-output docs/custom-build/service-catalog.json"
     )
+    assert serviceCatalog == customBuild.buildServiceCatalog()
     pageRoot = customBuild.ROOT / "docs" / "custom-build"
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
-    designPage = (pageRoot / "openscale-custom-build.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
-    assert indexPage == designPage
-    assert 'src="app.js?v=2"' in indexPage
-    assert 'href="styles.css?v=2"' in indexPage
+    assert 'src="app.js?v=3"' in indexPage
+    assert 'href="styles.css?v=3"' in indexPage
+    assert 'id="request-build"' in indexPage
     assert "catalog-data" not in indexPage
     assert 'fetch("catalog.json"' in appScript
+    assert "openscale-custom-builds.odevstudio.workers.dev" in appScript
     with tempfile.TemporaryDirectory() as temporaryDirectory:
         configuration = customBuild.resolveConfiguration(
             writeConfig(Path(temporaryDirectory), ["pull-ota"], ["hello-web"])

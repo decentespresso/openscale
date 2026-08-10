@@ -201,10 +201,15 @@ def main():
             assert not customRunner.completeCacheEntry(outputDir, combinationHash, combinationInput)
             dependencies.write_text("PlatformIO Core", encoding="utf-8")
             with patch.object(customRunner, "applyPatches") as applyPatches:
-                result = customRunner.buildCustomFirmware(configPath, cacheRoot, sourceCommit)
+                result = customRunner.buildCustomFirmware(
+                    configPath, cacheRoot, sourceCommit, expectedHash=combinationHash
+                )
             assert result["cache_hit"] is True
             assert result["combination_hash"] == combinationHash
             applyPatches.assert_not_called()
+            assertRejected(lambda: customRunner.buildCustomFirmware(
+                configPath, cacheRoot, sourceCommit, expectedHash="0" * 64
+            ))
             githubOutput = root / "github-output.txt"
             customRunner.writeGithubOutput(githubOutput, result)
             assert githubOutput.read_text(encoding="utf-8").splitlines() == [
@@ -252,6 +257,10 @@ def main():
     assert "--cache-url https://openscale-custom-builds.odevstudio.workers.dev" in workflow
     assert "python tools/publish_custom_build.py" in workflow
     assert "steps.custom_build.outputs.combination_hash" in workflow
+    assert '--source-commit "${{ inputs.source_commit }}"' in workflow
+    assert '--expected-hash "${{ inputs.combination_hash }}"' in workflow
+    assert "python tools/update_custom_build_status.py" in workflow
+    assert "custom-build-${{ github.event_name == 'workflow_dispatch'" in workflow
     assert "pio run -e esp32s3-custom" not in workflow
     print("custom build execution tests passed")
 

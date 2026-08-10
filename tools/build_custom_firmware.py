@@ -15,6 +15,7 @@ import configure_custom_build as customBuild
 
 ROOT = Path(__file__).resolve().parents[1]
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 BUILD_FILES = (
     "firmware.bin",
     "bootloader.bin",
@@ -178,8 +179,12 @@ def publishArtifacts(buildDir, outputDir):
         ready.replace(outputDir)
 
 
-def buildCustomFirmware(configPath, outputRoot, sourceCommit=None, cacheUrl=None):
+def buildCustomFirmware(
+    configPath, outputRoot, sourceCommit=None, cacheUrl=None, expectedHash=None
+):
     configuration = customBuild.resolveConfiguration(configPath)
+    if expectedHash is not None and not HASH_PATTERN.fullmatch(expectedHash):
+        raise ValueError("expected combination hash must be 64 lowercase hex characters")
     commitSha = (
         verifySourceCommit(ROOT, sourceCommit)
         if sourceCommit
@@ -190,6 +195,8 @@ def buildCustomFirmware(configPath, outputRoot, sourceCommit=None, cacheUrl=None
         cloneSource(ROOT, commitSha, checkoutRoot)
         identity = customBuild.combinationInput(configuration, commitSha, checkoutRoot)
         combinationHash = customBuild.combinationHash(identity)
+        if expectedHash is not None and combinationHash != expectedHash:
+            raise ValueError("build selection does not match the expected combination hash")
         outputDir = outputRoot / combinationHash
         if completeCacheEntry(outputDir, combinationHash, identity):
             return {
@@ -251,10 +258,16 @@ def main():
     parser.add_argument("--output", type=Path, default=ROOT / ".pio.nosync" / "custom-output")
     parser.add_argument("--github-output", type=Path)
     parser.add_argument("--cache-url")
+    parser.add_argument("--source-commit")
+    parser.add_argument("--expected-hash")
     args = parser.parse_args()
     try:
         result = buildCustomFirmware(
-            args.config.resolve(), args.output.resolve(), pullRequestCommit(), args.cache_url
+            args.config.resolve(),
+            args.output.resolve(),
+            args.source_commit or pullRequestCommit(),
+            args.cache_url,
+            args.expected_hash or None,
         )
     except (ValueError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"custom build failed: {error}\n")
