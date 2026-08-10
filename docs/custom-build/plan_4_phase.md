@@ -14,6 +14,16 @@ The configurator is `docs/custom-build/index.html`. After this branch is merged,
 
 The Cloudflare Worker uses `openscale-custom-builds.odevstudio.workers.dev` for the API and artifact downloads. The R2 bucket remains private and has no `r2.dev` endpoint.
 
+## Implementation Status
+
+The repository contains the Phase 4 API, Durable Object coordinator, trusted service catalog, exact source-commit workflow inputs, authenticated build status callbacks, and configurator integration. The local contract tests pass. The GitHub App is installed and the Worker secrets are provisioned. Before production deployment, an organization owner must restrict the installation to `decentespresso/openscale`, and the trusted service catalog must be present on `main` so public requests can resolve it.
+
+The initial server limits are three new builds per client per day, twenty new builds globally per day, two attempts per combination, and one active service workflow at a time. Duplicate requests do not consume another build slot. Client rate-limit hashes expire after 24 hours.
+
+## Required Secrets
+
+The Worker requires `RATE_LIMIT_SALT`, `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY_PKCS8`. The private key value is the GitHub App key converted to unencrypted PKCS#8 DER and base64 encoded. The GitHub App receives Actions write access and must be installed only on `decentespresso/openscale`. Existing `UPLOAD_TOKEN` continues to authenticate artifact uploads and workflow status callbacks.
+
 ## Components
 
 ```text

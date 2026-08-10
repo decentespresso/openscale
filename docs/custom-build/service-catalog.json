@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "firmware_refs": [
+    "main"
+  ],
+  "platformio_environment": "esp32s3-custom",
+  "partition_schema": {
+    "path": "partitions/default_8MB.csv",
+    "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"
+  },
+  "features": {
+    "wifi": [],
+    "mdns": [
+      "wifi"
+    ],
+    "webserver": [
+      "wifi"
+    ],
+    "websocket": [
+      "wifi",
+      "webserver"
+    ],
+    "littlefs": [],
+    "elegant-ota": [
+      "wifi",
+      "webserver"
+    ],
+    "pull-ota": [
+      "wifi"
+    ],
+    "grinder": [
+      "wifi",
+      "mdns"
+    ]
+  },
+  "plugins": {
+    "hello-web": {
+      "version": "1.0.0",
+      "firmware_refs": [
+        "main"
+      ],
+      "requires": [
+        "wifi",
+        "webserver",
+        "littlefs"
+      ],
+      "conflicts": [],
+      "patches": {},
+      "assets": [
+        {
+          "target": "plugins/hello/index.html",
+          "sha256": "0c56f012349a72135471b5fe3c09a44ddd19ce1b2d2c2d12e1ded6fe0606edc2"
+        }
+      ]
+    }
+  }
+}
