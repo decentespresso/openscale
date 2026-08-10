@@ -14,10 +14,11 @@ The existing configurator will later become the shared interface for existing do
 - Pull OTA requires WiFi, but neither the web server nor the runtime `littlefs` feature.
 - The existing Pull OTA flow still installs the mandatory `firmware.bin` and `littlefs.bin` assets to separate partitions.
 - `hello-web` is an approved asset plugin without a firmware patch.
-- The configurator currently generates only a maintainer command for `custom-build.yml`.
+- The configurator now uses the local Phase 4 status/build API contract. Production deployment remains pending.
 - The custom workflow resolves an allowed firmware ref to an exact commit and applies approved patches only in a temporary checkout.
 - Custom artifacts use a canonical combination hash and a complete local cache entry. Actions artifacts remain time-limited.
 - The private R2 Standard cache and read gateway are provisioned at `openscale-custom-builds.odevstudio.workers.dev`, with 180-day artifact retention. The Worker and GitHub Actions share an encrypted upload token.
+- The build service resolves `main` to an exact commit and derives the combination hash from the trusted service catalog at that commit.
 
 ## Invariants
 

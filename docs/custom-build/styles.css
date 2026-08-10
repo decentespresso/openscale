@@ -485,6 +485,23 @@
       box-shadow: 0 0 0 4px var(--green-soft);
     }
 
+    .state-checking::before, .state-queued::before, .state-building::before {
+      background: #b77a20;
+      box-shadow: 0 0 0 4px var(--amber-soft);
+    }
+
+    .state-missing::before, .state-unavailable::before {
+      background: var(--faint);
+      box-shadow: 0 0 0 4px var(--surface-soft);
+    }
+
+    .state-failed { color: var(--danger); }
+
+    .state-failed::before {
+      background: var(--danger);
+      box-shadow: 0 0 0 4px var(--danger-soft);
+    }
+
     .resolved-list { display: flex; flex-wrap: wrap; gap: 7px; min-height: 27px; }
 
     .resolved-chip {
@@ -524,9 +541,9 @@
 
     .meta-value { display: block; margin-top: 3px; font-size: .79rem; font-weight: 680; }
 
-    .command-section { padding: 21px 23px 23px; }
+    .service-section { padding: 21px 23px 23px; }
 
-    .command-label {
+    .service-heading {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -534,48 +551,48 @@
       margin-bottom: 10px;
     }
 
-    .command-label span:first-child { font-size: .78rem; font-weight: 720; }
-    .command-label span:last-child { color: var(--faint); font-size: .65rem; }
+    .service-heading span { font-size: .78rem; font-weight: 720; }
 
-    .command-box {
-      position: relative;
-      padding: 15px 46px 15px 15px;
-      border: 1px solid #26352d;
-      border-radius: 8px;
-      color: #e9f5ee;
-      background: var(--code);
-      box-shadow: inset 0 1px rgba(255,255,255,.035);
+    .service-heading code {
+      color: var(--faint);
+      font: 600 .65rem/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
-    .command-box code {
-      display: block;
-      min-height: 52px;
-      max-height: 135px;
-      overflow: auto;
-      color: inherit;
-      font: 500 .72rem/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      overflow-wrap: anywhere;
-      scrollbar-width: thin;
+    .status-message {
+      min-height: 42px;
+      margin: 0;
+      color: var(--muted);
+      font-size: .79rem;
+      line-height: 1.55;
     }
 
-    .icon-copy {
-      position: absolute;
-      top: 10px;
-      right: 10px;
+    .downloads {
       display: grid;
-      place-items: center;
-      width: 30px;
-      height: 30px;
-      padding: 0;
-      border: 1px solid rgba(255,255,255,.1);
-      border-radius: 8px;
-      color: #d9e7df;
-      background: rgba(255,255,255,.07);
-      cursor: pointer;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7px;
     }
 
-    .icon-copy:hover, .icon-copy:focus-visible { background: rgba(255,255,255,.13); outline: 2px solid rgba(255,255,255,.24); }
-    .icon-copy svg { width: 16px; height: 16px; }
+    .downloads:empty { display: none; }
+
+    .downloads a {
+      min-width: 0;
+      padding: 8px 9px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--green-dark);
+      background: var(--surface-soft);
+      font: 650 .68rem/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      text-decoration: none;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .downloads a:hover, .downloads a:focus-visible {
+      border-color: var(--green-line);
+      background: var(--green-soft);
+      outline: 0;
+    }
 
     .actions {
       display: flex;
@@ -609,6 +626,7 @@
     .primary-button:hover { background: var(--green-dark); border-color: var(--green-dark); transform: translateY(-1px); }
     .primary-button:focus-visible, .ghost-button:focus-visible { outline: 3px solid rgba(13, 121, 85, .18); outline-offset: 2px; }
     .primary-button svg { width: 16px; height: 16px; }
+    .primary-button:disabled { border-color: var(--line-strong); color: var(--faint); background: var(--surface-soft); box-shadow: none; cursor: default; transform: none; }
 
     .ghost-button {
       border: 0;
@@ -701,7 +719,7 @@
       .intro { margin-bottom: 22px; }
       .intro h2 { font-size: 1.8rem; }
       .intro-copy { font-size: .87rem; }
-      .panel-body, .summary-top, .command-section { padding-left: 18px; padding-right: 18px; }
+      .panel-body, .summary-top, .service-section { padding-left: 18px; padding-right: 18px; }
       .options-grid { grid-template-columns: 1fr; }
       .option-card, .plugin-grid .option-card { min-height: 94px; }
       .panel-head { margin-bottom: 16px; }

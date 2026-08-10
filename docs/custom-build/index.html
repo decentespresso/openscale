@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#0d6b4f">
   <title>HDS Custom Build</title>
-  <link rel="stylesheet" href="styles.css?v=2">
+  <link rel="stylesheet" href="styles.css?v=3">
 </head>
 <body>
   <header class="topbar">
@@ -17,7 +17,7 @@
       </div>
       <a class="workflow-link" href="https://github.com/decentespresso/openscale/actions/workflows/custom-build.yml" target="_blank" rel="noreferrer">
         <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
-        <span>Custom build workflow</span>
+        <span>Source repository</span>
       </a>
     </div>
   </header>
@@ -28,7 +28,7 @@
         <p class="eyebrow">Build configurator</p>
         <h2 id="page-heading">Compose a firmware build.</h2>
       </div>
-      <p class="intro-copy">Choose a firmware version, add the capabilities you need, and copy a dependency-safe command for the maintainer workflow.</p>
+      <p class="intro-copy">Choose a firmware version and the capabilities that belong in the resulting USB-installable build.</p>
     </section>
 
     <div class="layout">
@@ -79,7 +79,7 @@
           <div class="summary-top">
             <div class="summary-kicker">
               <h3 id="summary-heading">Build summary</h3>
-              <span class="ready">Ready</span>
+              <span id="build-state" class="ready state-checking">Checking</span>
             </div>
             <div id="resolved" class="resolved-list" aria-live="polite"></div>
             <div class="summary-meta">
@@ -87,19 +87,15 @@
               <div class="meta-item"><span class="meta-label">Plugins</span><span id="summary-plugins" class="meta-value">None</span></div>
             </div>
           </div>
-          <div class="command-section">
-            <div class="command-label"><span>Maintainer command</span><span>GitHub CLI</span></div>
-            <div class="command-box">
-              <code id="command"></code>
-              <button id="icon-copy" class="icon-copy" type="button" aria-label="Copy maintainer command">
-                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              </button>
+          <div class="service-section">
+            <div class="service-heading">
+              <span>Build status</span>
+              <code id="combination-hash"></code>
             </div>
+            <p id="status-message" class="status-message" role="status" aria-live="polite">Checking the build cache.</p>
+            <div id="downloads" class="downloads" aria-label="Build downloads"></div>
             <div class="actions">
-              <button id="copy" class="primary-button" type="button">
-                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                <span>Copy command</span>
-              </button>
+              <button id="request-build" class="primary-button" type="button" disabled>Request build</button>
               <button id="reset" class="ghost-button" type="button">Reset defaults</button>
             </div>
           </div>
@@ -120,6 +116,6 @@
     <span id="toast-message">Command copied</span>
   </div>
 
-  <script src="app.js?v=2"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>

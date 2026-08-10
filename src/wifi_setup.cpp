@@ -1,4 +1,4 @@
-#include "features.h"
+#include "hds_features.h"
 #if HDS_FEATURE_WIFI
 #include "NetworkEvents.h"
 #include "WiFiType.h"

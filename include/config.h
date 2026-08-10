@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include "features.h"
+#include "hds_features.h"
 
 
 #define CUUID_DECENTSCALE_READ "fff4"

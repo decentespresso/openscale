@@ -9,6 +9,7 @@ from unittest.mock import patch
 import build_custom_firmware as customRunner
 import configure_custom_build as customBuild
 import publish_custom_build as publisher
+import update_custom_build_status as statusUpdater
 
 
 class Response(io.BytesIO):
@@ -19,6 +20,10 @@ class Response(io.BytesIO):
 
     def __exit__(self, *_):
         self.close()
+
+
+class StatusResponse(Response):
+    status = 204
 
 
 def createEntry(root):
@@ -74,6 +79,14 @@ def main():
         for request in requests:
             assert request.get_header("Authorization") == f"Bearer {'x' * 32}"
             assert request.get_header("X-openscale-sha256") == hashlib.sha256(request.data).hexdigest()
+        with patch.object(
+            statusUpdater.urllib.request, "urlopen", return_value=StatusResponse()
+        ) as updateRequest:
+            statusUpdater.updateStatus(baseUrl, "x" * 32, entry.name, "building")
+        request = updateRequest.call_args.args[0]
+        assert request.full_url.endswith(f"/internal/v1/status/{entry.name}")
+        assert json.loads(request.data) == {"state": "building"}
+        assert request.get_header("Authorization") == f"Bearer {'x' * 32}"
     print("custom cache transport tests passed")
 
 
