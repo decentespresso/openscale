@@ -128,8 +128,11 @@ def main():
         raise AssertionError("status notify runs while holding the FFF4 mailbox lock")
     if pending.rindex("portEXIT_CRITICAL(&bleFff4Mux)") > pending.index("pServer->disconnect(currentConnId, 0x13);"):
         raise AssertionError("BLE disconnect runs while holding the FFF4 mailbox lock")
-    assert_contains(function_body(hds, "loop"), "processBleStatusResponse();")
-    assert_contains(function_body(hds, "loop"), "if (bleHasLiveClient() && b_requireHeartBeat")
+    loop = function_body(hds, "loop")
+    assert_contains(loop, "processBleStatusResponse();")
+    assert_contains(loop, "if (bleHasLiveClient() && b_requireHeartBeat", "t_heartBeat = millis();")
+    if "t_heartBeat = millis() +" in loop:
+        raise AssertionError("heartbeat timeout stores a future elapsed-time origin")
 
     heartbeat_disconnect = function_body(ble, "disconnectBLE")
     assert_contains(heartbeat_disconnect, "if (!bleHasLiveClient()")
