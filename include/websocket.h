@@ -480,7 +480,6 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
     if (action == "off" || action == "wake") {
       Serial.println("Websocket soft sleep off detected.");
       bool wasSoftSleep = b_softSleep;
-      b_softSleep = false;
       b_u8g2Sleep = false;
       if (wasSoftSleep) {
         wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);
