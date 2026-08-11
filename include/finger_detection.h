@@ -6,14 +6,12 @@
 #include "parameter.h"
 #include "ble.h"
 #include "usbcomm.h"
+#if HDS_FEATURE_WEBSOCKET
 void sendWebsocketButton(int buttonNumber, int buttonShortPress);
-// ============================================
-// Finger Press Recognition Algorithm for HDS
-// ============================================
+#endif
 #define TOTAL_SAMPLES 50           // Total samples per button
 bool b_fingerDetectionSerialOutput = false;
 
-// Two independent sets of configuration parameters
 #define CIRCLE_POST_RELEASE_DURATION 500      // Circle button post-release sampling duration(ms)
 #define CIRCLE_FINGER_PRESS_MIN_PEAK 3.0      // Circle button minimum peak change(g)
 #define CIRCLE_FINGER_PRESS_MAX_NET 2.0       // Circle button maximum net change(g)
@@ -41,7 +39,6 @@ struct PressSample {
   bool is_release_point;
 };
 
-// 两套独立的采样数据
 struct ButtonPressData {
   PressSample samples[TOTAL_SAMPLES];
   int sample_index;
@@ -66,7 +63,6 @@ void analyzeCompletePressData(int button);
 void updatePressSampling();
 void scaleTimer();
 
-// Get button data pointer
 ButtonPressData* getButtonPressData(int button) {
   if (button == BUTTON_CIRCLE) {
     return &circle_press_data;
@@ -76,9 +72,8 @@ ButtonPressData* getButtonPressData(int button) {
   return nullptr;
 }
 
-// Get button config
-void getButtonPressConfig(int button, 
-                         float* min_peak, float* max_net, 
+void getButtonPressConfig(int button,
+                         float* min_peak, float* max_net,
                          float* min_recovery, unsigned long* max_press_time,
                          unsigned long* min_total_time) {
   if (button == BUTTON_CIRCLE) {
@@ -96,22 +91,19 @@ void getButtonPressConfig(int button,
   }
 }
 
-// Finger press detection function for specific button
 bool isFingerPress(int button) {
   ButtonPressData* data = getButtonPressData(button);
   if (!data) return false;
-  
+
   if (data->sample_index < 5) {
-    // Too few samples, use simplified detection
     return isQuickTap(button);
   }
-  
-  // Find key points
+
   int release_index = -1;
   float start_weight = data->samples[0].weight;
   float peak_weight = start_weight;
   int peak_index = 0;
-  
+
   for (int i = 0; i < data->sample_index; i++) {
     if (data->samples[i].is_release_point) {
       release_index = i;
@@ -121,47 +113,41 @@ bool isFingerPress(int button) {
       peak_index = i;
     }
   }
-  
+
   if (release_index < 0) release_index = data->sample_index - 1;
-  
+
   float final_weight = data->samples[data->sample_index-1].weight;
-  
-  // Calculate key metrics
+
   unsigned long press_duration = data->samples[release_index].timestamp;
   unsigned long total_duration = data->samples[data->sample_index-1].timestamp;
-  
+
   float peak_change = peak_weight - start_weight;
   float net_change = final_weight - start_weight;
-  
-  // Get button-specific configuration
+
   float min_peak, max_net, min_recovery;
   unsigned long max_press_time, min_total_time;
   getButtonPressConfig(button, &min_peak, &max_net, &min_recovery, &max_press_time, &min_total_time);
-  
+
   bool has_significant_peak = (peak_change >= min_peak);
   bool has_good_recovery = (fabs(net_change) <= max_net);
   bool reasonable_press_time = (press_duration <= max_press_time);
   bool reasonable_total_time = (total_duration >= min_total_time);
-  
-  // Calculate recovery ratio
+
   float recovery_ratio = 0;
   if (peak_change > 0.1) {
     float recovery_amount = peak_weight - final_weight;
     recovery_ratio = recovery_amount / peak_change;
   }
   bool has_good_recovery_ratio = (recovery_ratio >= min_recovery);
-  
-  // Your scale's special feature: peak may appear after release
+
   bool peak_after_release = (peak_index > release_index);
-  
-  // Comprehensive judgment (based on your data characteristics)
-  bool is_finger_press = has_significant_peak && 
-                        has_good_recovery && 
+
+  bool is_finger_press = has_significant_peak &&
+                        has_good_recovery &&
                         has_good_recovery_ratio &&
                         reasonable_total_time;
-  
+
   if (b_fingerDetectionSerialOutput) {
-    // Output detailed analysis
     Serial.print("\n🔍 ");
     Serial.print(button == BUTTON_CIRCLE ? "Circle" : "Square");
     Serial.println(" Button Finger Press Analysis:");
@@ -173,46 +159,46 @@ bool isFingerPress(int button) {
     Serial.print(min_peak, 1);
     Serial.print("g) ");
     Serial.println(has_significant_peak ? "✅" : "❌");
-    
+
     Serial.print("Net change: ");
     Serial.print(net_change, 2);
     Serial.print("g (max=");
     Serial.print(max_net, 1);
     Serial.print("g) ");
     Serial.println(has_good_recovery ? "✅" : "❌");
-    
+
     Serial.print("Recovery ratio: ");
     Serial.print(recovery_ratio * 100, 1);
     Serial.print("% (min=");
     Serial.print(min_recovery * 100, 0);
     Serial.print("%) ");
     Serial.println(has_good_recovery_ratio ? "✅" : "❌");
-    
+
     Serial.print("Total time: ");
     Serial.print(total_duration);
     Serial.print("ms (min=");
     Serial.print(min_total_time);
     Serial.print("ms) ");
     Serial.println(reasonable_total_time ? "✅" : "❌");
-    
+
     Serial.print("Peak position: ");
     Serial.print(peak_after_release ? "After release" : "Before release");
     Serial.print(" (sample ");
     Serial.print(peak_index);
     Serial.print(")");
-    
+
     Serial.print("\n🎯 Result: ");
   }
   if (is_finger_press) {
     if (b_fingerDetectionSerialOutput) Serial.println("✅ FINGER PRESS");
-    
-    // Real button fuction if finger detected
+
     const bool bleClientLive = bleHasLiveClient();
     if (!bleClientLive || b_btnFuncWhileConnected) {
       if (button == BUTTON_CIRCLE) {
-        // Circle Button：Tare
         sendUsbButton(1, 1);
+#if HDS_FEATURE_WEBSOCKET
         sendWebsocketButton(1, 1);
+#endif
         if (bleClientLive) {
           sendBleButton(1, 1);
         }
@@ -223,15 +209,15 @@ bool isFingerPress(int button) {
           b_tareByButton = true;
         }
       } else if (button == BUTTON_SQUARE) {
-        // Square Button：Timer control
         sendUsbButton(2, 1);
+#if HDS_FEATURE_WEBSOCKET
         sendWebsocketButton(2, 1);
+#endif
         if (bleClientLive) {
           sendBleButton(2, 1);
         }
         if (!b_menu && !b_calibration && (!bleClientLive || b_btnFuncWhileConnected)) {
           if (millis() - t_menuExitTime > 1000) {
-            // Check if enough time has passed since menu exit (500ms protection period)
 #if HDS_ENABLE_PRESSENSOR
             if (pressensorActive()) {
               pressensorTimerButton(f_displayedValue);
@@ -248,19 +234,18 @@ bool isFingerPress(int button) {
   } else {
     if (b_fingerDetectionSerialOutput) Serial.println("❌ NOT FINGER PRESS");
   }
-  
+
   return is_finger_press;
 }
 
-// quick tap detection for specific button
 bool isQuickTap(int button) {
   ButtonPressData* data = getButtonPressData(button);
   if (!data || data->sample_index < 2) return false;
-  
+
   float start_weight = data->samples[0].weight;
   float final_weight = data->samples[data->sample_index-1].weight;
   float net_change = final_weight - start_weight;
-  
+
   bool is_quick = (fabs(net_change) < 1.5);
   if (b_fingerDetectionSerialOutput) {
     Serial.print("Quick tap detection (");
@@ -270,11 +255,10 @@ bool isQuickTap(int button) {
     Serial.print("g -> ");
     Serial.println(is_quick ? "✅ Likely quick tap" : "❌ Not quick tap");
   }
-  
+
   return is_quick;
 }
 
-/// Modified analyzeCompletePressData function for specific button
 void analyzeCompletePressData(int button) {
   ButtonPressData* data = getButtonPressData(button);
   if (!data || data->sample_index <= 3) {
@@ -288,13 +272,12 @@ void analyzeCompletePressData(int button) {
     Serial.println(" BUTTON PRESS ANALYSIS");
     Serial.println(String(70, '='));
   }
-  
-  // Find key points
+
   int release_index = -1;
   float start_weight = data->samples[0].weight;
   float peak_weight = start_weight;
   int peak_index = 0;
-  
+
   for (int i = 0; i < data->sample_index; i++) {
     if (data->samples[i].is_release_point) {
       release_index = i;
@@ -304,43 +287,41 @@ void analyzeCompletePressData(int button) {
       peak_index = i;
     }
   }
-  
+
   if (release_index < 0) release_index = data->sample_index - 1;
-  
+
   float final_weight = data->samples[data->sample_index-1].weight;
-  
-  // Calculate average sampling interval
+
   float avg_interval = 0;
   if (data->sample_index > 1) {
     avg_interval = data->samples[data->sample_index-1].timestamp / (float)(data->sample_index-1);
   }
-  
+
   if (b_fingerDetectionSerialOutput) {
     Serial.print("Samples: ");
     Serial.print(data->sample_index);
     Serial.print(" | Avg interval: ");
     Serial.print(avg_interval, 1);
     Serial.println("ms");
-  
-    // Key metrics
+
     Serial.println("\n--- KEY METRICS ---");
   }
-  
+
   float press_duration = data->samples[release_index].timestamp;
   float total_duration = data->samples[data->sample_index-1].timestamp;
   float recovery_duration = total_duration - press_duration;
-  
+
   float press_increase = peak_weight - start_weight;
   float recovery_decrease = peak_weight - final_weight;
   float net_change = final_weight - start_weight;
-  
+
   if (b_fingerDetectionSerialOutput) {
     Serial.print("Press duration: ");
     Serial.print(press_duration);
     Serial.print("ms | Total duration: ");
     Serial.print(total_duration);
     Serial.println("ms");
-    
+
     Serial.print("Peak increase: +");
     Serial.print(press_increase, 2);
     Serial.print("g | Recovery decrease: ");
@@ -364,20 +345,17 @@ void analyzeCompletePressData(int button) {
       Serial.println("g/s");
     }
   }
-  
-  // ============ Add finger press recognition ============
+
   if (b_fingerDetectionSerialOutput) Serial.println("\n--- FINGER PRESS RECOGNITION ---");
   bool is_finger = isFingerPress(button);
-  // =====================================================
-  
+
   if (b_fingerDetectionSerialOutput) Serial.println(String(70, '=') + "\n");
 }
 
 void startPressSampling(int button) {
   ButtonPressData* data = getButtonPressData(button);
   if (!data) return;
-  
-  // If this button is already being sampled, ignore new start
+
   if (data->is_active) {
     if (b_fingerDetectionSerialOutput) {
       Serial.print(button == BUTTON_CIRCLE ? "Circle" : "Square");
@@ -385,15 +363,14 @@ void startPressSampling(int button) {
     }
     return;
   }
-  
+
   data->current_phase = PHASE_PRESSING;
   data->sample_index = 0;
   data->press_start_time = millis();
   data->last_sample_real_time = data->press_start_time;
   data->last_sampled_weight = f_current_raw_value;
   data->is_active = true;
-  
-  // Record first sample
+
   if (data->sample_index < TOTAL_SAMPLES) {
     data->samples[data->sample_index].weight = f_current_raw_value;
     data->samples[data->sample_index].timestamp = 0;
@@ -410,16 +387,14 @@ void startPressSampling(int button) {
   }
 }
 
-// Button release handling for specific button
 void onButtonReleased(int button) {
   ButtonPressData* data = getButtonPressData(button);
   if (!data || data->current_phase != PHASE_PRESSING) return;
-  
+
   data->release_time = millis();
   data->release_weight = f_current_raw_value;
   data->current_phase = PHASE_RECOVERING;
-  
-  // Record release point
+
   if (data->sample_index < TOTAL_SAMPLES) {
     data->samples[data->sample_index].weight = data->release_weight;
     data->samples[data->sample_index].timestamp = data->release_time - data->press_start_time;
@@ -434,28 +409,24 @@ void onButtonReleased(int button) {
   }
 }
 
-// Update sampling for all active buttons
 void updatePressSampling() {
-  // Check and update the sampling status of both buttons
   for (int i = BUTTON_CIRCLE; i <= BUTTON_SQUARE; i++) {
     int button = static_cast<int>(i);
     ButtonPressData* data = getButtonPressData(button);
-    
+
     if (!data || !data->is_active) continue;
-    
+
     if (data->current_phase == PHASE_IDLE) {
       data->is_active = false;
       continue;
     }
-    
+
     unsigned long current_time = millis();
-    
-    // Debounce: minimum sampling interval 10ms (~100Hz)
+
     if (current_time - data->last_sample_real_time < 10) continue;
-    
-    // Check for timeout
+
     if (data->current_phase == PHASE_PRESSING) {
-      if (current_time - data->press_start_time > 2000) { // Max press duration 2 seconds
+      if (current_time - data->press_start_time > 2000) {
         if (b_fingerDetectionSerialOutput) {
           Serial.print(button == BUTTON_CIRCLE ? "Circle" : "Square");
           Serial.println(" button press phase timeout");
@@ -465,26 +436,25 @@ void updatePressSampling() {
         continue;
       }
     } else if (data->current_phase == PHASE_RECOVERING) {
-      unsigned long post_release_duration = (button == BUTTON_CIRCLE) ? 
-                                           CIRCLE_POST_RELEASE_DURATION : 
+      unsigned long post_release_duration = (button == BUTTON_CIRCLE) ?
+                                           CIRCLE_POST_RELEASE_DURATION :
                                            SQUARE_POST_RELEASE_DURATION;
-      if (current_time - data->release_time > post_release_duration) { // Recovery phase 500ms
+      if (current_time - data->release_time > post_release_duration) {
         data->current_phase = PHASE_IDLE;
         data->is_active = false;
         analyzeCompletePressData(button);
         continue;
       }
     }
-    
-    // Record sample
+
     if (data->sample_index < TOTAL_SAMPLES) {
       float current_weight = f_current_raw_value;
-      
+
       data->samples[data->sample_index].weight = current_weight;
       data->samples[data->sample_index].timestamp = current_time - data->press_start_time;
       data->samples[data->sample_index].phase = data->current_phase;
       data->samples[data->sample_index].is_release_point = false;
-      
+
       data->sample_index++;
       data->last_sample_real_time = current_time;
       data->last_sampled_weight = current_weight;
@@ -499,5 +469,4 @@ void updatePressSampling() {
   }
 }
 
-//End of finger detection
 #endif

@@ -233,6 +233,17 @@ extern GrinderRuntime grinderRuntime;
 portMUX_TYPE grinderMdnsMux = portMUX_INITIALIZER_UNLOCKED;
 GrinderMdnsCandidate * volatile grinderMdnsCandidateBuffer = nullptr;
 #endif
+#if HDS_ENABLE_PRESSENSOR
+struct PressensorLink;
+struct PressensorSettings;
+struct PressensorShot;
+extern PressensorLink pressensorLink;
+extern PressensorSettings pressensorSettings;
+extern PressensorShot pressensorShot;
+extern portMUX_TYPE pressensorMux;
+extern volatile float pressensorBarShared;
+extern volatile unsigned long pressensorNotifyAtShared;
+#endif
 
 //电子秤参数和计时点
 // Enhanced tracking system global variables

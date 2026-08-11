@@ -1,0 +1,211 @@
+name: Custom firmware build
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/custom-build.yml"
+      - "custom-build.json"
+      - "docs/custom-build/catalog.json"
+      - "docs/custom-build/service-catalog.json"
+      - "include/**"
+      - "platformio.ini"
+      - "plugins/**"
+      - "src/**"
+      - "cloudflare/custom-build-worker/**"
+      - "tools/build_custom_firmware.py"
+      - "tools/configure_custom_build.py"
+      - "tools/publish_custom_build.py"
+      - "tools/test_custom_cache_transport.py"
+      - "tools/test_custom_build_execution.py"
+      - "tools/test_plugin_catalog.py"
+      - "tools/update_custom_build_status.py"
+  workflow_dispatch:
+    inputs:
+      firmware_ref:
+        description: Firmware ref
+        required: true
+        default: main
+      features:
+        description: Comma-separated feature IDs
+        required: false
+        default: wifi,webserver,littlefs,pull-ota
+      plugins:
+        description: Comma-separated plugin IDs
+        required: false
+        default: hello-web
+      source_commit:
+        description: Exact source commit supplied by the build service
+        required: false
+        default: ""
+      combination_hash:
+        description: Expected combination hash supplied by the build service
+        required: false
+        default: ""
+      attempt_id:
+        description: Fenced build attempt supplied by the build service
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: custom-build-${{ github.event_name == 'workflow_dispatch' && inputs.combination_hash || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  compile-matrix:
+    if: github.event_name == 'pull_request'
+    name: compile (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: no-optional-features
+            configuration: '{"firmware_ref":"main","features":[],"plugins":[]}'
+          - name: wifi-only
+            configuration: '{"firmware_ref":"main","features":["wifi"],"plugins":[]}'
+          - name: webserver-without-littlefs
+            configuration: '{"firmware_ref":"main","features":["webserver"],"plugins":[]}'
+          - name: websocket
+            configuration: '{"firmware_ref":"main","features":["websocket"],"plugins":[]}'
+          - name: elegant-ota
+            configuration: '{"firmware_ref":"main","features":["elegant-ota"],"plugins":[]}'
+          - name: pull-ota
+            configuration: '{"firmware_ref":"main","features":["pull-ota"],"plugins":[]}'
+          - name: grinder
+            configuration: '{"firmware_ref":"main","features":["grinder"],"plugins":[]}'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Install PlatformIO Core
+        run: python -m pip install --requirement requirements-platformio.txt
+      - name: Configure selection
+        env:
+          CUSTOM_BUILD_CONFIGURATION: ${{ matrix.configuration }}
+        run: >-
+          python -c "import os; from pathlib import Path;
+          Path('custom-build-matrix.json').write_text(
+          os.environ['CUSTOM_BUILD_CONFIGURATION'] + '\n', encoding='utf-8')"
+      - name: Build isolated custom firmware and filesystem
+        run: >-
+          python tools/build_custom_firmware.py
+          --config custom-build-matrix.json
+          --output .pio.nosync/custom-matrix-output
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Install PlatformIO Core
+        run: python -m pip install --requirement requirements-platformio.txt
+      - name: Configure dispatch selection
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          FIRMWARE_REF: ${{ inputs.firmware_ref }}
+          FEATURES: ${{ inputs.features }}
+          PLUGINS: ${{ inputs.plugins }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          split = lambda value: [item.strip() for item in value.split(",") if item.strip()]
+          Path("custom-build.json").write_text(json.dumps({
+              "firmware_ref": os.environ["FIRMWARE_REF"],
+              "features": split(os.environ["FEATURES"]),
+              "plugins": split(os.environ["PLUGINS"]),
+          }, indent=2) + "\n", encoding="utf-8")
+          PY
+      - name: Validate custom build contracts
+        run: |
+          python tools/test_plugin_catalog.py
+          python tools/test_custom_build_execution.py
+          python tools/test_custom_cache_transport.py
+          node --test cloudflare/custom-build-worker/test/worker.test.mjs
+      - name: Mark custom build as running
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          github.ref == 'refs/heads/main' &&
+          inputs.combination_hash != '' &&
+          inputs.attempt_id != ''
+        env:
+          CUSTOM_BUILD_UPLOAD_TOKEN: ${{ secrets.CUSTOM_BUILD_UPLOAD_TOKEN }}
+        run: >-
+          python tools/update_custom_build_status.py
+          --base-url https://openscale-custom-builds.odevstudio.workers.dev
+          --combination-hash "${{ inputs.combination_hash }}"
+          --attempt-id "${{ inputs.attempt_id }}"
+          --state building
+      - name: Build standard firmware
+        if: github.event_name == 'pull_request'
+        run: pio run -e esp32s3
+      - name: Build isolated custom firmware and filesystem
+        id: custom_build
+        run: >-
+          python tools/build_custom_firmware.py
+          --cache-url https://openscale-custom-builds.odevstudio.workers.dev
+          --github-output "$GITHUB_OUTPUT"
+          --source-commit "${{ inputs.source_commit }}"
+          --expected-hash "${{ inputs.combination_hash }}"
+      - name: Upload custom build
+        if: steps.custom_build.outputs.cache_hit != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: openscale-custom-${{ steps.custom_build.outputs.combination_hash }}
+          path: ${{ steps.custom_build.outputs.output }}/*
+          if-no-files-found: error
+      - name: Publish custom build
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          github.ref == 'refs/heads/main' &&
+          steps.custom_build.outputs.cache_hit != 'true'
+        env:
+          CUSTOM_BUILD_UPLOAD_TOKEN: ${{ secrets.CUSTOM_BUILD_UPLOAD_TOKEN }}
+        run: >-
+          python tools/publish_custom_build.py
+          --entry "${{ steps.custom_build.outputs.output }}"
+          --base-url https://openscale-custom-builds.odevstudio.workers.dev
+      - name: Mark custom build as ready
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          github.ref == 'refs/heads/main' &&
+          inputs.combination_hash != '' &&
+          inputs.attempt_id != ''
+        env:
+          CUSTOM_BUILD_UPLOAD_TOKEN: ${{ secrets.CUSTOM_BUILD_UPLOAD_TOKEN }}
+        run: >-
+          python tools/update_custom_build_status.py
+          --base-url https://openscale-custom-builds.odevstudio.workers.dev
+          --combination-hash "${{ inputs.combination_hash }}"
+          --attempt-id "${{ inputs.attempt_id }}"
+          --state ready
+      - name: Mark custom build as failed
+        if: >-
+          failure() &&
+          github.event_name == 'workflow_dispatch' &&
+          github.ref == 'refs/heads/main' &&
+          inputs.combination_hash != '' &&
+          inputs.attempt_id != ''
+        env:
+          CUSTOM_BUILD_UPLOAD_TOKEN: ${{ secrets.CUSTOM_BUILD_UPLOAD_TOKEN }}
+        run: >-
+          python tools/update_custom_build_status.py
+          --base-url https://openscale-custom-builds.odevstudio.workers.dev
+          --combination-hash "${{ inputs.combination_hash }}"
+          --attempt-id "${{ inputs.attempt_id }}"
+          --state failed

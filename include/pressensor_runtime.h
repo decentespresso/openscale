@@ -253,7 +253,7 @@ static inline void pressensorRuntimeTick(float weight, bool shotLogicPaused) {
   if (!pressensorSettings.enabled) {
     return;
   }
-  if (pressensorLink.state == PRESSENSOR_LINK_OFF) {
+  if (pressensorGetLinkState() == PRESSENSOR_LINK_OFF && pressensorSettings.selectedMac[0] != 0) {
     pressensorApplyLinkTarget();
   }
   pressensorLinkTick();

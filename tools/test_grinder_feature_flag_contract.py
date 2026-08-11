@@ -74,6 +74,7 @@ other();
 
 def main():
     config = source("include/config.h")
+    features = source("include/hds_features.h")
     platformio = source("platformio.ini")
     hds = source("src/hds.ino")
     menu = source("include/menu.h")
@@ -85,7 +86,9 @@ def main():
 
     require_guarded_rejects_sibling()
 
-    require("#ifndef HDS_ENABLE_GRINDER\n#define HDS_ENABLE_GRINDER 0\n#endif", config)
+    require('#include "hds_features.h"', config)
+    require("#define HDS_FEATURE_GRINDER 0", features)
+    require("#define HDS_ENABLE_GRINDER HDS_FEATURE_GRINDER", features)
     normal = platformio.split("[env:esp32s3]", 1)[1].split("[env:esp32s3-grinder]", 1)[0]
     grinder_environment = platformio.split("[env:esp32s3-grinder]", 1)[1].split("[env:native]", 1)[0]
     assert "HDS_ENABLE_GRINDER" not in normal
@@ -115,7 +118,7 @@ def main():
     require_guarded(power, "beforeDeepSleepFlush")
     require("python tools/test_grinder_feature_flag_contract.py", nightly)
     require("- esp32s3-grinder", nightly)
-    artifact_guard = "if: matrix.board == 'esp32s3'\n        uses: actions/upload-artifact@v4"
+    artifact_guard = "if: matrix.board == 'esp32s3'\n        uses: actions/upload-artifact@v7"
     assert nightly.count(artifact_guard) == 2, "grinder artifact upload is not gated"
 
     require("bool wifiEnsureMdnsReadyForSta()", wifi)

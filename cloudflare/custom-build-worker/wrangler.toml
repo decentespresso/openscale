@@ -1,0 +1,23 @@
+name = "openscale-custom-builds"
+main = "src/worker.mjs"
+compatibility_date = "2026-08-08"
+workers_dev = true
+
+[vars]
+ALLOWED_ORIGIN = "https://decentespresso.github.io"
+ALLOWED_FIRMWARE_REFS = "main"
+GITHUB_REPOSITORY = "decentespresso/openscale"
+GITHUB_WORKFLOW = "custom-build.yml"
+PUBLIC_BASE_URL = "https://openscale-custom-builds.odevstudio.workers.dev"
+
+[[r2_buckets]]
+binding = "BUILDS"
+bucket_name = "openscale-custom-builds"
+
+[[durable_objects.bindings]]
+name = "COORDINATOR"
+class_name = "BuildCoordinator"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BuildCoordinator"]
