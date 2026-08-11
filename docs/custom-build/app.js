@@ -24,7 +24,6 @@
   let selectionGeneration = 0;
   let selectionController;
   let currentSelection;
-  let currentCombinationHash = "";
 
   const escapeHtml = value => String(value).replace(/[&<>'"]/g, character => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
@@ -118,7 +117,6 @@
     document.querySelector("#combination-hash").textContent = combinationHash ? combinationHash.slice(0, 12) : "";
     document.querySelector("#status-message").textContent = messages[result.state] || messages.unavailable;
     buildButton.disabled = result.state !== "missing" && !(result.state === "failed" && result.retryable);
-    if (combinationHash) currentCombinationHash = combinationHash;
     const downloads = document.querySelector("#downloads");
     downloads.replaceChildren();
     if (result.state === "ready") {
@@ -235,7 +233,6 @@
     selectionGeneration += 1;
     selectionController?.abort();
     selectionController = new AbortController();
-    currentCombinationHash = "";
     currentSelection = Object.freeze({
       firmware_ref: refSelect.value,
       features: Object.freeze(features),
@@ -264,7 +261,6 @@
   buildButton.addEventListener("click", async () => {
     const generation = selectionGeneration;
     const selection = currentSelection;
-    const expectedHash = currentCombinationHash;
     buildButton.disabled = true;
     setStatus({state: "checking"}, generation);
     try {
@@ -273,12 +269,12 @@
         body: JSON.stringify(selection),
         signal: selectionController.signal
       });
-      if (expectedHash && result.combination_hash !== expectedHash) return;
+      if (generation !== selectionGeneration) return;
       pollRemaining = 300;
       setStatus(result, generation);
     } catch (error) {
       if (error.name === "AbortError" || generation !== selectionGeneration) return;
-      if (error.result?.state === "failed" && error.result.combination_hash === expectedHash) {
+      if (error.result?.state === "failed") {
         setStatus(error.result, generation);
         showToast("Retry limit reached");
       } else {

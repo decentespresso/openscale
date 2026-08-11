@@ -285,8 +285,9 @@ def main():
         encoding="utf-8"
     )
     assert "selectionController = new AbortController()" in configurator
-    assert "generation !== selectionGeneration" in configurator
-    assert "result.combination_hash !== expectedHash" in configurator
+    assert "if (generation !== selectionGeneration) return;" in configurator
+    assert "currentCombinationHash" not in configurator
+    assert "expectedHash" not in configurator
     print("custom build execution tests passed")
 
 
