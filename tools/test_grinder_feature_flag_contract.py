@@ -16,16 +16,16 @@ def require(text, contents):
 DIRECTIVE = re.compile(r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)$")
 
 
-def is_grinder_condition(kind, expression):
+def is_grinder_condition(kind, expression, macro="HDS_ENABLE_GRINDER"):
     normalized = re.sub(r"\s+", "", expression)
     if kind == "ifdef":
-        return normalized == "HDS_ENABLE_GRINDER"
+        return normalized == macro
     if kind in ("if", "elif"):
-        return normalized in ("HDS_ENABLE_GRINDER", "defined(HDS_ENABLE_GRINDER)")
+        return normalized in (macro, f"defined({macro})")
     return False
 
 
-def is_guarded_at(contents, offset):
+def is_guarded_at(contents, offset, macro="HDS_ENABLE_GRINDER"):
     stack = []
     position = 0
     for line in contents.splitlines(keepends=True):
@@ -35,10 +35,10 @@ def is_guarded_at(contents, offset):
         if directive:
             kind, expression = directive.groups()
             if kind in ("if", "ifdef", "ifndef"):
-                stack.append(is_grinder_condition(kind, expression))
+                stack.append(is_grinder_condition(kind, expression, macro))
             elif kind == "elif":
                 assert stack, "unbalanced preprocessor elif"
-                stack[-1] = is_grinder_condition(kind, expression)
+                stack[-1] = is_grinder_condition(kind, expression, macro)
             elif kind == "else":
                 assert stack, "unbalanced preprocessor else"
                 stack[-1] = False

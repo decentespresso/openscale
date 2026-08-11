@@ -31,7 +31,8 @@
     "grinder": [
       "wifi",
       "mdns"
-    ]
+    ],
+    "energy-menu": []
   },
   "plugins": {
     "hello-web": {

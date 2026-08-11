@@ -164,10 +164,16 @@ void processWsPendingCmds() {
       return;
     }
   }
+#if HDS_ENABLE_ENERGY_MENU
+  if (mask & WSP_DISPLAY_ON)  { applyEnergyDisplayCommand(true); }
+  if (mask & WSP_DISPLAY_OFF) { applyEnergyDisplayCommand(false); }
+  if (mask & (WSP_LOWPWR_ON | WSP_LOWPWR_OFF)) { applyEnergyLowPowerCommand(); }
+#else
   if (mask & WSP_DISPLAY_ON)  { u8g2.setPowerSave(0); }
   if (mask & WSP_DISPLAY_OFF) { u8g2.setPowerSave(1); }
   if (mask & WSP_LOWPWR_ON)   { u8g2.setContrast(0); }
   if (mask & WSP_LOWPWR_OFF)  { u8g2.setContrast(255); }
+#endif
   if (mask & WSP_SLEEP_OFF) {
     wakeScaleFromSoftSleep("remote soft wake");
   }
@@ -184,9 +190,22 @@ void processWsPendingCmds() {
   if (mask & WSP_TIMER_START) {
     stopWatch.reset();
     stopWatch.start();
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
   }
-  if (mask & WSP_TIMER_STOP)  { stopWatch.stop(); }
-  if (mask & WSP_TIMER_ZERO)  { stopWatch.reset(); }
+  if (mask & WSP_TIMER_STOP)  {
+    stopWatch.stop();
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
+  }
+  if (mask & WSP_TIMER_ZERO)  {
+    stopWatch.reset();
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
+  }
   if (mask & WSP_SET_SAMPLES) {
     if (setScaleSamplesInUseWhenReady(samplesInUse, "remote samples")) {
       Serial.print("Samples in use set to: ");
@@ -342,6 +361,9 @@ bool setWebsocketRateFromInterval(AsyncWebSocketClient *client, unsigned long in
     return false;
   }
   weightWebsocketNotifyInterval = intervalMs;
+#if HDS_ENABLE_ENERGY_MENU
+  recordEnergyActivity();
+#endif
   Serial.print("Websocket notify interval set to ");
   Serial.print(weightWebsocketNotifyInterval);
   Serial.println(" ms");
@@ -385,6 +407,24 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
     sendWebsocketStatus(client, "ok");
     return true;
   }
+
+#if HDS_ENABLE_ENERGY_MENU
+  const bool onOff = action == "on" || action == "off";
+  const bool eventAction = onOff || action == "enable" || action == "enabled" ||
+                           action == "disable" || action == "disabled";
+  const bool timerAction = action == "start" || action == "stop" ||
+                           action == "zero" || action == "reset";
+  const bool sleepAction = onOff || action == "wake";
+  if (command == "tare" ||
+      (command == "events" && eventAction) ||
+      (command == "timer" && timerAction) ||
+      (command == "display" && onOff) ||
+      (command == "low_power" && onOff) ||
+      ((command == "sleep" || command == "soft_sleep") && sleepAction) ||
+      (command == "power" && action == "off")) {
+    recordEnergyActivity();
+  }
+#endif
 
   if (command == "events") {
     if (action == "on" || action == "enable" || action == "enabled") {
@@ -433,14 +473,22 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
   if (command == "display") {
     if (action == "on") {
       Serial.println("Websocket display on detected.");
+#if HDS_ENABLE_ENERGY_MENU
+      requestEnergyDisplay(true);
+#else
       b_u8g2Sleep = false;
+#endif
       wsReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
       sendWebsocketStatus(client, "ok");
       return true;
     }
     if (action == "off") {
       Serial.println("Websocket display off detected.");
+#if HDS_ENABLE_ENERGY_MENU
+      requestEnergyDisplay(false);
+#else
       b_u8g2Sleep = true;
+#endif
       wsReplacePending(WSP_DISPLAY_OFF, WSP_DISPLAY_ON);
       sendWebsocketStatus(client, "ok");
       return true;
@@ -452,14 +500,22 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
   if (command == "low_power") {
     if (action == "on") {
       Serial.println("Websocket low power mode on detected.");
+#if HDS_ENABLE_ENERGY_MENU
+      requestEnergyLowPower(true);
+#else
       b_websocketLowPowerEnabled = true;
+#endif
       wsReplacePending(WSP_LOWPWR_ON, WSP_LOWPWR_OFF);
       sendWebsocketStatus(client, "ok");
       return true;
     }
     if (action == "off") {
       Serial.println("Websocket low power mode off detected.");
+#if HDS_ENABLE_ENERGY_MENU
+      requestEnergyLowPower(false);
+#else
       b_websocketLowPowerEnabled = false;
+#endif
       wsReplacePending(WSP_LOWPWR_OFF, WSP_LOWPWR_ON);
       sendWebsocketStatus(client, "ok");
       return true;
@@ -481,12 +537,21 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
       Serial.println("Websocket soft sleep off detected.");
       bool wasSoftSleep = b_softSleep;
       b_softSleep = false;
+#if HDS_ENABLE_ENERGY_MENU
+      b_u8g2Sleep = energyRuntime.explicitDisplayOff;
+      if (wasSoftSleep) {
+        wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);
+      } else if (!energyRuntime.explicitDisplayOff) {
+        wsReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
+      }
+#else
       b_u8g2Sleep = false;
       if (wasSoftSleep) {
         wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);
       } else {
         wsReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
       }
+#endif
       sendWebsocketStatus(client, "ok");
       return true;
     }
@@ -629,6 +694,9 @@ void setupWebsocketEvents() {
                       AsyncWebSocket *server, AsyncWebSocketClient *client,
                       AwsEventType type, void *arg, uint8_t *data, size_t len) {
     if (type == WS_EVT_CONNECT) {
+#if HDS_ENABLE_ENERGY_MENU
+      recordEnergyActivity();
+#endif
       Serial.printf("Client %u connected\n", client->id());
       client->setCloseClientOnQueueFull(false);
       client->client()->setAckTimeout(30000);

@@ -53,6 +53,9 @@ void processOtaDisplayUpdate() {
     b_ota = false;
   }
 
+#if HDS_ENABLE_ENERGY_MENU
+  invalidateEnergyOledFrame();
+#endif
   u8g2.firstPage();
   u8g2.setFont(FONT_S);
   if (b_screenFlipped)
@@ -65,6 +68,9 @@ void processOtaDisplayUpdate() {
 }
 
 void onOTAStart() {
+#if HDS_ENABLE_ENERGY_MENU
+  recordEnergyActivity();
+#endif
   Serial.println("OTA update started!");
   b_ota = true;
 }

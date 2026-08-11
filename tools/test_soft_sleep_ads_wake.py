@@ -53,6 +53,9 @@ def main():
         helper,
         [
             "digitalWrite(PWR_CTRL, HIGH);",
+            "#if HDS_ENABLE_ENERGY_MENU",
+            "applyEnergyAccRailState();",
+            "#else",
             "digitalWrite(ACC_PWR_CTRL, HIGH);",
             "scale.powerUp();",
             "refreshScaleDatasetAfterDiscontinuity(context)",
@@ -74,8 +77,11 @@ def main():
         [
             "if (b_softSleep)",
             'wakeScaleFromSoftSleep("USB soft wake")',
+            "#if HDS_ENABLE_ENERGY_MENU",
+            "else if (!energyRuntime.explicitDisplayOff)",
+            "applyEnergyDisplayCommand(true);",
+            "#else",
             "u8g2.setPowerSave(0);",
-            "b_u8g2Sleep = false;",
         ],
     )
     if "digitalWrite(PWR_CTRL, HIGH);" in usb_soft_off:

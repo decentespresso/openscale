@@ -33,6 +33,9 @@ struct Menu {
   Menu *parentMenu;
 };
 
+#if HDS_ENABLE_ENERGY_MENU
+#include "energy_menu.h"
+#endif
 void exitMenu();
 #ifdef BUZZER
 void buzzerOn();
@@ -217,6 +220,9 @@ Menu *mainMenu[] = {
 #if HDS_ENABLE_GRINDER
   &menuGrinder,
 #endif
+#if HDS_ENABLE_ENERGY_MENU
+  &menuEnergy,
+#endif
 };
 Menu **currentMenu = mainMenu;
 Menu *currentSelection = mainMenu[0];
@@ -245,10 +251,14 @@ void linkSubmenus() {
 #if HDS_ENABLE_GRINDER
   menuGrinder.subMenu = grinderMenu[0];
 #endif
+#if HDS_ENABLE_ENERGY_MENU
+  menuEnergy.subMenu = energyMenu[0];
+#endif
 }
 
 void exitMenu() {
   u8g2.setFont(FONT_M);
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   do {
     u8g2.drawStr(AC((char *)"Exit Menu"), AM(), (char *)"Exit Menu");
@@ -346,6 +356,9 @@ void showWifiStatus() {
   const char *nameLine2 =
     mdnsNameSplitOledLine1(wifiDeviceName(), nameLine1, sizeof(nameLine1));
 
+#if HDS_ENABLE_ENERGY_MENU
+  invalidateEnergyOledFrame();
+#endif
   u8g2.firstPage();
   do {
 
@@ -421,6 +434,7 @@ void showStatus() {
            grinderSettings.targetGrams);
 #endif
 
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   do {
     u8g2.setFont(u8g2_font_6x12_tr);
@@ -694,6 +708,7 @@ void grinderDrawPlugList(uint8_t selected) {
   const uint8_t total = grinderRuntime.discoveredCount + 1;
   const uint8_t rows = 6;
   uint8_t first = (selected / rows) * rows;
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   do {
     u8g2.setFont(u8g2_font_5x8_tr);
@@ -762,6 +777,7 @@ static inline float grinderClampDraft(float value, float minValue, float maxValu
 static inline void grinderDrawNumberEditor(const char *title, float value, uint8_t selected) {
   char valueLine[24];
   snprintf(valueLine, sizeof(valueLine), "%.1fg Save", value);
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   do {
     u8g2.setFont(u8g2_font_6x12_tr);
@@ -983,6 +999,7 @@ void calibrationShowFailure(CalibrationRejectReason reason) {
   const char *displayText = calibrationRejectReasonDisplayText(reason);
   Serial.print(F("Calibration failed: "));
   Serial.println(reasonText);
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   u8g2.setFont(FONT_S);
   do {
@@ -1000,6 +1017,7 @@ void calibrationShowFailure(CalibrationRejectReason reason) {
 
 void calibrationShowUsbWarning() {
   Serial.println(F("Calibration warning: USB connected"));
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   u8g2.setFont(FONT_S);
   do {
@@ -1166,6 +1184,7 @@ void calibration(int input) {
           b_calibrationZeroCaptured = false;
         }
         calibrationEnsureSampleWindow();
+        invalidateEnergyOledFrame();
         u8g2.firstPage();
         do {
           if (b_screenFlipped)
@@ -1216,6 +1235,7 @@ void calibration(int input) {
       }
       if (input == 1) {
         calibrationEnsureSampleWindow();
+        invalidateEnergyOledFrame();
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
@@ -1239,6 +1259,7 @@ void calibration(int input) {
         calibrationShowUsbWarning();
       }
       if (input == 0) {
+        invalidateEnergyOledFrame();
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
@@ -1253,6 +1274,7 @@ void calibration(int input) {
 #endif
         delay(2000);
       }
+      invalidateEnergyOledFrame();
       u8g2.firstPage();
       u8g2.setFont(FONT_S);
       do {
@@ -1266,6 +1288,7 @@ void calibration(int input) {
       buzzer.off();
 #endif
       delay(1000);
+      invalidateEnergyOledFrame();
       u8g2.firstPage();
       u8g2.setFont(FONT_S);
       do {
@@ -1280,6 +1303,7 @@ void calibration(int input) {
 #endif
       delay(1000);
 
+      invalidateEnergyOledFrame();
       u8g2.firstPage();
       u8g2.setFont(FONT_S);
       do {
@@ -1294,6 +1318,7 @@ void calibration(int input) {
 #endif
       delay(1000);
 
+      invalidateEnergyOledFrame();
       u8g2.firstPage();
       u8g2.setFont(FONT_S);
       do {
@@ -1324,6 +1349,7 @@ void calibration(int input) {
       Serial.print(F(" valid="));
       Serial.println(calibrationZeroCapture.validSamples);
       Serial.println(F("0g calibration done"));
+      invalidateEnergyOledFrame();
       u8g2.firstPage();
       u8g2.setFont(FONT_S);
       do {
@@ -1347,6 +1373,7 @@ void calibration(int input) {
         snprintf(buffer, sizeof(buffer), "Place %s weight",
                  weights[i_cal_weight]);
 
+        invalidateEnergyOledFrame();
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
@@ -1361,6 +1388,7 @@ void calibration(int input) {
 #endif
         delay(1000);
 
+        invalidateEnergyOledFrame();
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
@@ -1375,6 +1403,7 @@ void calibration(int input) {
 #endif
         delay(1000);
 
+        invalidateEnergyOledFrame();
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
@@ -1389,6 +1418,7 @@ void calibration(int input) {
 #endif
         delay(1000);
 
+        invalidateEnergyOledFrame();
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
@@ -1446,6 +1476,7 @@ void calibration(int input) {
         Serial.print(F("New calibration value c: "));
         Serial.println(trim(c_calval));
 
+        invalidateEnergyOledFrame();
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
@@ -1470,6 +1501,7 @@ void calibration(int input) {
 
 #if HDS_FEATURE_PULL_OTA
 void wifiUpdate() {
+  recordEnergyActivity();
 #ifdef BUZZER
   buzzer.off();
 #endif
@@ -1483,6 +1515,7 @@ void showAbout() {
   actionMessage2 = LINE3;
   b_showAbout = true;
   u8g2.setFont(FONT_S);
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   do {
     u8g2.setFont(FONT_S);
@@ -1502,6 +1535,7 @@ void showAbout() {
 
 void showLogo() {
   b_showLogo = true;
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
 
   do {
@@ -1570,6 +1604,7 @@ void showLogo() {
 
 void enableDebug() {
   u8g2.setFont(FONT_M);
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   do {
     u8g2.drawStr(AC((char *)"Exit Menu"), AM(), (char *)"Exit Menu");
@@ -1608,6 +1643,7 @@ void calibrateVoltage() {
 }
 
 void navigateMenu(int direction) {
+  recordEnergyActivity();
   currentIndex = (currentIndex + direction + currentMenuSize) % currentMenuSize;
   currentSelection = currentMenu[currentIndex];
   Serial.print("currentIndex ");
@@ -1615,6 +1651,9 @@ void navigateMenu(int direction) {
 }
 
 void selectMenu() {
+#if HDS_ENABLE_ENERGY_MENU
+  recordEnergyActivity();
+#endif
   if (currentSelection->subMenu) {
 #ifdef BUZZER
     if (currentSelection == &menuBuzzer) {
@@ -1657,6 +1696,11 @@ void selectMenu() {
       currentMenu = grinderMenu;
       currentMenuSize = getMenuSize(grinderMenu);
 #endif
+#if HDS_ENABLE_ENERGY_MENU
+    } else if (currentSelection == &menuEnergy) {
+      currentMenu = energyMenu;
+      currentMenuSize = getMenuSize(energyMenu);
+#endif
     }
     currentIndex = 0;
     currentSelection = currentMenu[currentIndex];
@@ -1683,6 +1727,7 @@ void showMenu() {
     u8g2.setDisplayRotation(U8G2_R2);
 
   u8g2.setFont(FONT_S);
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   do {
     if (millis() - t_actionMessage < t_actionMessageDelay) {

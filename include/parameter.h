@@ -5,8 +5,70 @@
 #include <Preferences.h>
 #include <math.h>
 #include "calibration_validation.h"
+#if HDS_ENABLE_ENERGY_MENU
+#include "energy_policy.h"
+#include "energy_runtime_policy.h"
+#endif
 
 Preferences settingsPreferences;
+#if HDS_ENABLE_ENERGY_MENU
+EnergyPolicy energyPolicy;
+struct EnergyRuntimeState {
+  OledFrameGate oledFrames;
+  MotionSampleGate motionSamples;
+  BatterySampleGate batterySamples;
+  EnergyRuntimeSchedule schedule;
+  DisplayIdleMode displayMode = DisplayIdleMode::Active;
+  double cachedMotionZ = 0.0;
+  volatile bool explicitDisplayOff = false;
+  volatile uint8_t requestedDisplayContrast = 255;
+  uint32_t batterySampleSequence = 0;
+};
+EnergyRuntimeState energyRuntime;
+portMUX_TYPE energyActivityMux = portMUX_INITIALIZER_UNLOCKED;
+volatile bool energyActivityPending = false;
+
+inline void clearPendingEnergyActivity() {
+  portENTER_CRITICAL(&energyActivityMux);
+  energyActivityPending = false;
+  portEXIT_CRITICAL(&energyActivityMux);
+}
+
+inline void recordEnergyActivity() {
+  if (!energyPolicy.settings.enabled(EnergyFeature::OledIdle)) {
+    return;
+  }
+  portENTER_CRITICAL(&energyActivityMux);
+  energyActivityPending = true;
+  portEXIT_CRITICAL(&energyActivityMux);
+}
+
+inline void processEnergyActivities(unsigned long now) {
+  const uint32_t enabledMask = energyPolicy.settings.features;
+  if (enabledMask == 0 ||
+      !energyPolicy.settings.enabled(EnergyFeature::OledIdle)) {
+    return;
+  }
+  portENTER_CRITICAL(&energyActivityMux);
+  const bool pending = energyActivityPending;
+  energyActivityPending = false;
+  portEXIT_CRITICAL(&energyActivityMux);
+  if (pending) {
+    energyPolicy.recordActivity(now);
+  }
+}
+
+inline void invalidateEnergyOledFrame() {
+  if (!energyPolicy.settings.enabled(EnergyFeature::OledRedraw) &&
+      !energyPolicy.settings.enabled(EnergyFeature::OledStatic)) {
+    return;
+  }
+  energyRuntime.oledFrames.invalidate();
+}
+#else
+inline void recordEnergyActivity() {}
+inline void invalidateEnergyOledFrame() {}
+#endif
 
 //ble
 // volatile: read by the AsyncTCP task in the WS status frame, written by the
@@ -154,6 +216,27 @@ unsigned long t_shutdownFailBle = 0;  //for popping up shut down fail due to ble
 bool b_shutdownFailBle = false;
 // volatile: now also written from the AsyncTCP task (WS display/sleep commands).
 volatile bool b_u8g2Sleep = true;
+
+#if HDS_ENABLE_ENERGY_MENU
+inline void requestEnergyDisplay(bool enabled) {
+  energyRuntime.explicitDisplayOff = !enabled;
+  b_u8g2Sleep = !enabled;
+  recordEnergyActivity();
+}
+
+inline void requestEnergyLowPower(bool enabled) {
+  b_websocketLowPowerEnabled = enabled;
+  energyRuntime.requestedDisplayContrast = enabled ? 0 : 255;
+  recordEnergyActivity();
+}
+
+inline void requestEnergyContrast(uint8_t contrast) {
+  b_websocketLowPowerEnabled = false;
+  energyRuntime.requestedDisplayContrast = contrast;
+  recordEnergyActivity();
+}
+#endif
+
 unsigned long t_bootTare = 0;
 bool b_bootTare = false;
 int i_bootTareDelay = 1000;
@@ -193,6 +276,9 @@ void requestRemoteTare() {
   b_tareByBle = true;
   t_tareByBle = now;
   portEXIT_CRITICAL(&remoteTareMux);
+#if HDS_ENABLE_ENERGY_MENU
+  recordEnergyActivity();
+#endif
 }
 
 bool hasRemoteTareRequest() {

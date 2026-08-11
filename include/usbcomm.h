@@ -38,14 +38,24 @@ struct UsbDecentCommandSink {
   }
 
   void displayOff() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyDisplay(false);
+    applyEnergyDisplayCommand(false);
+#else
     u8g2.setPowerSave(1);
     b_u8g2Sleep = true;
+#endif
     sendUsbLedResponse();
   }
 
   void displayOn() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyDisplay(true);
+    applyEnergyDisplayCommand(true);
+#else
     u8g2.setPowerSave(0);
     b_u8g2Sleep = false;
+#endif
     sendUsbLedResponse();
   }
 
@@ -54,11 +64,21 @@ struct UsbDecentCommandSink {
   }
 
   void lowPowerOn() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyLowPower(true);
+    applyEnergyLowPowerCommand();
+#else
     u8g2.setContrast(0);
+#endif
   }
 
   void lowPowerOff() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyLowPower(false);
+    applyEnergyLowPowerCommand();
+#else
     u8g2.setContrast(255);
+#endif
   }
 
   void softSleepOn() {
@@ -71,23 +91,37 @@ struct UsbDecentCommandSink {
   void softSleepOff() {
     if (b_softSleep) {
       wakeScaleFromSoftSleep("USB soft wake");
+#if HDS_ENABLE_ENERGY_MENU
+    } else if (!energyRuntime.explicitDisplayOff) {
+      applyEnergyDisplayCommand(true);
+#else
     } else {
       u8g2.setPowerSave(0);
       b_u8g2Sleep = false;
+#endif
     }
   }
 
   void timerStart() {
     stopWatch.reset();
     stopWatch.start();
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
   }
 
   void timerStop() {
     stopWatch.stop();
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
   }
 
   void timerZero() {
     stopWatch.reset();
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
   }
 
   void wifiUpdate() {
@@ -387,17 +421,32 @@ public:
 
       i_oled_contrast = constrain(i_oled_contrast, 0, 255);
 
+#if HDS_ENABLE_ENERGY_MENU
+      requestEnergyContrast(static_cast<uint8_t>(i_oled_contrast));
+      applyEnergyLowPowerCommand();
+#else
       u8g2.setContrast(i_oled_contrast);
+#endif
 
       Serial.print("OLED contrast set to ");
       Serial.println(i_oled_contrast);
     }
 
     if (inputString.startsWith("oledon")) {
+#if HDS_ENABLE_ENERGY_MENU
+      requestEnergyDisplay(true);
+      applyEnergyDisplayCommand(true);
+#else
       u8g2.setPowerSave(0);
+#endif
     }
     if (inputString.startsWith("oledoff")) {
+#if HDS_ENABLE_ENERGY_MENU
+      requestEnergyDisplay(false);
+      applyEnergyDisplayCommand(false);
+#else
       u8g2.setPowerSave(1);
+#endif
     }
 
     if (inputString.startsWith("reset")) {

@@ -333,6 +333,9 @@ void updateBattery(int batteryPin){
     float correctedVoltage = batteryVoltage * f_batteryCalibrationFactor;
     f_batteryVoltage = correctedVoltage;
   }
+#if HDS_ENABLE_ENERGY_MENU
+  energyRuntime.batterySampleSequence++;
+#endif
 }
 
 float getUsbVoltage(int usbPin) {
@@ -344,22 +347,56 @@ float getUsbVoltage(int usbPin) {
 
 int i_lowBatteryCount = 0;
 int i_lowBatteryCountTotal = 0;
-void power_off(int min) {
-  if (!b_is_charging) {
-    if (f_batteryVoltage > lowBatteryThreshold) {
-      i_lowBatteryCount = 0;
+#if HDS_ENABLE_ENERGY_MENU
+bool processNewBatterySample() {
+  if (!energyRuntime.batterySamples.shouldEvaluate(energyRuntime.batterySampleSequence)) {
+    return false;
+  }
+  if (b_is_charging || f_batteryVoltage > lowBatteryThreshold) {
+    i_lowBatteryCount = 0;
+  } else if (f_batteryVoltage < lowBatteryThreshold) {
+    i_lowBatteryCount++;
+    i_lowBatteryCountTotal++;
+    if (!EnergyRuntimePolicy::lowBatteryConfirmed(i_lowBatteryCount) &&
+        i_batteryRefreshTareInterval > 1000) {
+      t_batteryRefresh = millis() - (i_batteryRefreshTareInterval - 1000);
     }
+  }
+  if (EnergyRuntimePolicy::lowBatteryConfirmed(i_lowBatteryCount)) {
+    shut_down_low_battery(f_batteryVoltage);
+  }
+  return true;
+}
 
-    if (f_batteryVoltage < lowBatteryThreshold) {
-      i_lowBatteryCount++;
-      i_lowBatteryCountTotal++;
-    }
-
-    if (i_lowBatteryCount > 50) {
-      shut_down_low_battery(f_batteryVoltage);
+void evaluateAutoOff(double seconds, bool showCountdown) {
+  const unsigned long now = millis();
+  const bool cadenceEnabled = energyPolicy.featureEnabled(EnergyFeature::PowerCadence);
+  if (cadenceEnabled) {
+    if (!energyRuntime.schedule.autoOff.shouldRun(true, now, 1000)) {
       return;
     }
+  }
+  const double timeLeft = seconds - (now - t_power_off) / 1000;
+  if (showCountdown && !energyPolicy.featureEnabled(EnergyFeature::SerialQuiet)) {
+    Serial.print(timeLeft);
+    Serial.println(" seconds to power off");
+  }
+  if (timeLeft <= 0 && b_autoSleep) {
+    shut_down_now();
+  }
+}
+#endif
 
+void power_off(int min) {
+#if HDS_ENABLE_ENERGY_MENU
+  processNewBatterySample();
+  if (min == -1) {
+    t_power_off = millis();
+  } else if (min > 0 && !b_is_charging) {
+    evaluateAutoOff(min * 60.0, true);
+  }
+#else
+  if (!b_is_charging) {
     if (min == -1) {
       t_power_off = millis();
     }
@@ -372,6 +409,7 @@ void power_off(int min) {
       }
     }
   }
+#endif
 }
 
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
@@ -395,6 +433,14 @@ void power_off_gyro(int sec) {
 #endif
 
 void power_off(double sec) {
+#if HDS_ENABLE_ENERGY_MENU
+  processNewBatterySample();
+  if (sec == -1) {
+    t_power_off = millis();
+  } else if (sec > 0 && !b_is_charging) {
+    evaluateAutoOff(sec, false);
+  }
+#else
   if (!b_is_charging) {
     if (f_batteryVoltage > lowBatteryThreshold) {
       i_lowBatteryCount = 0;
@@ -420,6 +466,7 @@ void power_off(double sec) {
       }
     }
   }
+#endif
 }
 
 #ifdef CHECKBATTERY

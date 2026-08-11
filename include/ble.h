@@ -71,6 +71,9 @@ class MyServerCallbacks : public BLEServerCallbacks {
     t_heartBeat = millis();
     bleState = CONNECTED;
     deviceConnected = true;
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
 #ifdef BUZZER
     b_beep = false;
 #endif
@@ -90,6 +93,9 @@ class MyServerCallbacks : public BLEServerCallbacks {
 #ifdef BUZZER
     b_beep = storageGetInt(KEY_BEEP, 1);
 #endif
+#if HDS_ENABLE_ENERGY_MENU
+    energyRuntime.explicitDisplayOff = false;
+#endif
     b_u8g2Sleep = false;
     remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
     Serial.print("Device disconnected (connId: ");
@@ -106,6 +112,9 @@ class MyServerCallbacks : public BLEServerCallbacks {
     t_heartBeat = millis();
     bleState = CONNECTED;
     deviceConnected = true;
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
 #ifdef BUZZER
     b_beep = false;
 #endif
@@ -120,6 +129,9 @@ class MyServerCallbacks : public BLEServerCallbacks {
     bleState = DISCONNECTED;
 #ifdef BUZZER
     b_beep = storageGetInt(KEY_BEEP, 1);
+#endif
+#if HDS_ENABLE_ENERGY_MENU
+    energyRuntime.explicitDisplayOff = false;
 #endif
     b_u8g2Sleep = false;
     remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
@@ -139,13 +151,21 @@ struct BleDecentCommandSink {
   }
 
   void displayOff() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyDisplay(false);
+#else
     b_u8g2Sleep = true;
+#endif
     remoteReplacePending(WSP_DISPLAY_OFF, WSP_DISPLAY_ON);
     queueBleStatusResponse();
   }
 
   void displayOn() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyDisplay(true);
+#else
     b_u8g2Sleep = false;
+#endif
     remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
     queueBleStatusResponse();
   }
@@ -155,12 +175,20 @@ struct BleDecentCommandSink {
   }
 
   void lowPowerOn() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyLowPower(true);
+#else
     b_websocketLowPowerEnabled = true;
+#endif
     remoteReplacePending(WSP_LOWPWR_ON, WSP_LOWPWR_OFF);
   }
 
   void lowPowerOff() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyLowPower(false);
+#else
     b_websocketLowPowerEnabled = false;
+#endif
     remoteReplacePending(WSP_LOWPWR_OFF, WSP_LOWPWR_ON);
   }
 
@@ -173,12 +201,21 @@ struct BleDecentCommandSink {
   void softSleepOff() {
     bool wasSoftSleep = b_softSleep;
     b_softSleep = false;
+#if HDS_ENABLE_ENERGY_MENU
+    b_u8g2Sleep = energyRuntime.explicitDisplayOff;
+    if (wasSoftSleep) {
+      remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);
+    } else if (!energyRuntime.explicitDisplayOff) {
+      remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
+    }
+#else
     b_u8g2Sleep = false;
     if (wasSoftSleep) {
       remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);
     } else {
       remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
     }
+#endif
   }
 
   void timerStart() {
