@@ -297,6 +297,16 @@ def main():
     assert "if (generation !== selectionGeneration) return;" in configurator
     assert "currentCombinationHash" not in configurator
     assert "expectedHash" not in configurator
+    configuratorWorkflow = (
+        customBuild.SCRIPT_ROOT / ".github" / "workflows" / "custom-build-configurator.yml"
+    ).read_text(encoding="utf-8")
+    assert '".github/workflows/custom-build-configurator.yml"' in configuratorWorkflow
+    assert '"docs/custom-build/**"' in configuratorWorkflow
+    assert '"!docs/custom-build/catalog.json"' in configuratorWorkflow
+    assert '"!docs/custom-build/service-catalog.json"' in configuratorWorkflow
+    assert "python tools/test_plugin_catalog.py" in configuratorWorkflow
+    assert "python tools/test_custom_build_execution.py" in configuratorWorkflow
+    assert "node --check docs/custom-build/app.js" in configuratorWorkflow
     print("custom build execution tests passed")
 
 

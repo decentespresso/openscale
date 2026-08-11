@@ -1,0 +1,29 @@
+name: Custom build configurator
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/custom-build-configurator.yml"
+      - "docs/custom-build/**"
+      - "!docs/custom-build/catalog.json"
+      - "!docs/custom-build/service-catalog.json"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate configurator contracts
+        run: |
+          python tools/test_plugin_catalog.py
+          python tools/test_custom_build_execution.py
+          node --check docs/custom-build/app.js
