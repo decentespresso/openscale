@@ -8,6 +8,9 @@
 #if HDS_ENABLE_GRINDER
 #include "grinder_runtime.h"
 #endif
+#if HDS_ENABLE_PRESSENSOR
+#include "pressensor_runtime.h"
+#endif
 #include <string.h>
 const char *weights[] = { "Exit", "50g", "100g", "200g", "500g", "1000g" };
 const float weight_values[] = { 0.0, 50.0, 100.0, 200.0, 500.0, 1000.0 };
@@ -78,6 +81,14 @@ void grinderTargetMenu();
 void grinderSafetyMenu();
 void grinderZeroRangeMenu();
 #endif
+#if HDS_ENABLE_PRESSENSOR
+void pressensorMenuOn();
+void pressensorMenuOff();
+void pressensorSelectSensorMenu();
+void pressensorZeroMenu();
+void pressensorAutoStartToggle();
+void pressensorAutoStopToggle();
+#endif
 void wifi_init();
 
 
@@ -103,6 +114,9 @@ Menu menuQuickBoot = { "Quick Boot", NULL, NULL, NULL };
 Menu menuDriftComp = { "Drift Comp", NULL, NULL, NULL };
 #if HDS_ENABLE_GRINDER
 Menu menuGrinder = { "Grinder Plug", NULL, NULL, NULL };
+#endif
+#if HDS_ENABLE_PRESSENSOR
+Menu menuPressensor = { "Pressensor", NULL, NULL, NULL };
 #endif
 
 
@@ -200,6 +214,17 @@ Menu menuGrinderZero = { "Zero Range", grinderZeroRangeMenu, NULL, &menuGrinder 
 Menu *grinderMenu[] = { &menuGrinderBack, &menuGrinderOn, &menuGrinderOff, &menuGrinderSelect, &menuGrinderTarget, &menuGrinderSafety, &menuGrinderZero };
 #endif
 
+#if HDS_ENABLE_PRESSENSOR
+Menu menuPressensorBack = { "Back", NULL, NULL, &menuPressensor };
+Menu menuPressensorOn = { "Pressensor On", pressensorMenuOn, NULL, &menuPressensor };
+Menu menuPressensorOff = { "Pressensor Off", pressensorMenuOff, NULL, &menuPressensor };
+Menu menuPressensorSelect = { "Select Sensor", pressensorSelectSensorMenu, NULL, &menuPressensor };
+Menu menuPressensorZero = { "Zero Sensor", pressensorZeroMenu, NULL, &menuPressensor };
+Menu menuPressensorAutoStart = { "Auto Start", pressensorAutoStartToggle, NULL, &menuPressensor };
+Menu menuPressensorAutoStop = { "Auto Stop", pressensorAutoStopToggle, NULL, &menuPressensor };
+Menu *pressensorMenu[] = { &menuPressensorBack, &menuPressensorOn, &menuPressensorOff, &menuPressensorSelect, &menuPressensorZero, &menuPressensorAutoStart, &menuPressensorAutoStop };
+#endif
+
 // Menu menuFactoryBack = { "Back", NULL, NULL, &menuFactory };
 // Menu menuCalibrateVoltage = { "Calibrate 4.2v", calibrateVoltage, NULL,
 // &menuFactory }; Menu menuFactoryDebug = { "Debug Info", enableDebug, NULL,
@@ -219,6 +244,9 @@ Menu *mainMenu[] = {
   &menuBtnFuncWhileConnected, &menuAutoSleep, &menuQuickBoot, &menuDriftComp,
 #if HDS_ENABLE_GRINDER
   &menuGrinder,
+#endif
+#if HDS_ENABLE_PRESSENSOR
+  &menuPressensor,
 #endif
   //, &menuFactory
 };
@@ -250,6 +278,9 @@ void linkSubmenus() {
   menuDriftComp.subMenu = driftCompMenu[0];
 #if HDS_ENABLE_GRINDER
   menuGrinder.subMenu = grinderMenu[0];
+#endif
+#if HDS_ENABLE_PRESSENSOR
+  menuPressensor.subMenu = pressensorMenu[0];
 #endif
   // menuFactory.subMenu = factoryMenu[0];
 }
@@ -865,6 +896,121 @@ void grinderZeroRangeMenu() {
     grinderSaveSettings();
     grinderSetActionMessage("Zero Saved");
   }
+}
+#endif
+
+#if HDS_ENABLE_PRESSENSOR
+void pressensorSetActionMessage(const char *line1, const char *line2 = nullptr) {
+  actionMessage = line1;
+  actionMessage2 = line2 == nullptr ? "Default" : line2;
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1500;
+}
+
+void pressensorMenuOn() {
+  pressensorSetEnabled(true);
+  pressensorSetActionMessage("Pressensor On", pressensorSettings.selectedMac[0] == 0 ? "Select Sensor" : nullptr);
+  Serial.printf("[pressensor] enabled mac=%s\n", pressensorSettings.selectedMac);
+}
+
+void pressensorMenuOff() {
+  pressensorSetEnabled(false);
+  pressensorSetActionMessage("Pressensor Off");
+  Serial.println("[pressensor] disabled");
+}
+
+void pressensorZeroMenu() {
+  if (pressensorZeroNow()) {
+    pressensorSetActionMessage("Sensor Zeroed");
+  } else {
+    pressensorSetActionMessage("No Sensor", "Connected");
+  }
+}
+
+void pressensorAutoStartToggle() {
+  pressensorSettings.autoStart = !pressensorSettings.autoStart;
+  pressensorSaveSettings();
+  pressensorSetActionMessage(pressensorSettings.autoStart ? "Auto Start On" : "Auto Start Off");
+}
+
+void pressensorAutoStopToggle() {
+  pressensorSettings.autoStop = !pressensorSettings.autoStop;
+  pressensorSaveSettings();
+  pressensorSetActionMessage(pressensorSettings.autoStop ? "Auto Stop On" : "Auto Stop Off");
+}
+
+void pressensorWaitForButtonRelease() {
+  while (digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW) {
+    delay(20);
+  }
+}
+
+void pressensorDrawSensorList(uint8_t selected) {
+  const uint8_t total = pressensorLink.scanListCount + 1;
+  const uint8_t rows = 4;
+  const uint8_t first = (selected / rows) * rows;
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_5x8_tr);
+    u8g2.drawStr(0, 8, "Select sensor");
+    for (uint8_t row = 0; row < rows; row++) {
+      const uint8_t choice = first + row;
+      if (choice >= total) {
+        break;
+      }
+      const uint8_t y = 20 + row * 11;
+      if (choice == selected) {
+        u8g2.drawStr(0, y, ">");
+      }
+      if (choice == 0) {
+        u8g2.drawStr(8, y, "Back");
+      } else {
+        const PressensorScanEntry &entry = pressensorLink.scanList[choice - 1];
+        char line[26];
+        snprintf(line, sizeof(line), "%.10s %.5s %d", entry.name, entry.mac + 12, entry.rssi);
+        u8g2.drawStr(8, y, line);
+      }
+    }
+  } while (u8g2.nextPage());
+}
+
+void pressensorSelectSensorMenu() {
+  if (!BLEDevice::getInitialized()) {
+    pressensorSetActionMessage("BLE Off");
+    return;
+  }
+  refreshOLED((char *)"Scanning", (char *)"Sensors");
+  const uint8_t count = pressensorBlockingScan();
+  if (count == 0) {
+    pressensorApplyLinkTarget();
+    pressensorSetActionMessage("No Sensor Found");
+    return;
+  }
+  pressensorWaitForButtonRelease();
+  uint8_t selected = 0;
+  bool selecting = true;
+  while (selecting) {
+    power_off(-1);
+    pressensorDrawSensorList(selected);
+    if (digitalRead(BUTTON_CIRCLE) == LOW) {
+      selected = (selected + 1) % (count + 1);
+      pressensorWaitForButtonRelease();
+    }
+    if (digitalRead(BUTTON_SQUARE) == LOW) {
+      if (selected > 0) {
+        const PressensorScanEntry &entry = pressensorLink.scanList[selected - 1];
+        snprintf(pressensorSettings.selectedMac, sizeof(pressensorSettings.selectedMac), "%s", entry.mac);
+        snprintf(pressensorSettings.selectedName, sizeof(pressensorSettings.selectedName), "%s", entry.name);
+        pressensorSaveSettings();
+        Serial.printf("[pressensor] selected mac=%s name=%s\n", pressensorSettings.selectedMac, pressensorSettings.selectedName);
+        pressensorSetActionMessage("Sensor Saved", pressensorSettings.enabled ? nullptr : "Turn Mode On");
+      }
+      selecting = false;
+      pressensorWaitForButtonRelease();
+    }
+    delay(40);
+  }
+  pressensorApplyLinkTarget();
 }
 #endif
 
@@ -1688,6 +1834,11 @@ void selectMenu() {
       b_grinderMenuDirectEntry = false;
       currentMenu = grinderMenu;
       currentMenuSize = getMenuSize(grinderMenu);
+#endif
+#if HDS_ENABLE_PRESSENSOR
+    } else if (currentSelection == &menuPressensor) {
+      currentMenu = pressensorMenu;
+      currentMenuSize = getMenuSize(pressensorMenu);
 #endif
     }
     // else if (currentSelection == &menuFactory) {

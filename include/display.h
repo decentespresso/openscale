@@ -60,6 +60,7 @@ U8G2_SSD1306_128X64_NONAME_1_SW_I2C u8g2(U8G2_R0, /* clock=*/OLED_SCL, /* data=*
 #define FONT_EXTRACTION u8g2_font_fub14_tr
 //#define FONT_S FONT_M
 #define FONT_BATTERY u8g2_font_battery19_tn
+#define FONT_PRESSENSOR_VALUE u8g2_font_logisoso16_tr
 //macros
 //文本对齐 AC居中 AR右对齐 AL左对齐 T为要显示的文本
 #define LCDWidth u8g2.getDisplayWidth()

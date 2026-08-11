@@ -230,9 +230,18 @@ bool isFingerPress(int button) {
           sendBleButton(2, 1);
         }
         if (!b_menu && !b_calibration && (!bleClientLive || b_btnFuncWhileConnected)) {
-          if (millis() - t_menuExitTime > 1000)
+          if (millis() - t_menuExitTime > 1000) {
             // Check if enough time has passed since menu exit (500ms protection period)
+#if HDS_ENABLE_PRESSENSOR
+            if (pressensorActive()) {
+              pressensorTimerButton(f_displayedValue);
+            } else {
+              scaleTimer();
+            }
+#else
             scaleTimer();
+#endif
+          }
         }
       }
     }

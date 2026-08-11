@@ -5,6 +5,10 @@
 #define HDS_ENABLE_GRINDER 0
 #endif
 
+#ifndef HDS_ENABLE_PRESSENSOR
+#define HDS_ENABLE_PRESSENSOR 0
+#endif
+
 // BLE UUIDs
 
 #define CUUID_DECENTSCALE_READ "fff4"
