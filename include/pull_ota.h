@@ -1344,7 +1344,7 @@ bool pullOtaResumePendingLittleFs() {
   uint8_t attempts = pending.restore ? 0 : pending.targetAttempts;
   bool filesystemWriteStarted = pending.filesystemDirty;
   bool updated = pullOtaVerifyPendingLittleFs(pending);
-  while (attempts < maxAttempts) {
+  while (!updated && attempts < maxAttempts) {
     attempts++;
     bool attemptRecorded = pending.restore
         ? !pending.restoreAttempted && pullOtaBeginRollbackLittleFsAttempt()
