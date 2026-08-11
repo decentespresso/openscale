@@ -145,6 +145,7 @@ bool isFingerPress(int button) {
   bool is_finger_press = has_significant_peak &&
                         has_good_recovery &&
                         has_good_recovery_ratio &&
+                        reasonable_press_time &&
                         reasonable_total_time;
 
   if (b_fingerDetectionSerialOutput) {
