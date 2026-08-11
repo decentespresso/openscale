@@ -273,8 +273,8 @@ void shut_down_low_battery(float voltage) {
       b_power_off = 1;
       updateEspnow(1);
     }
-    sendBlePowerOff(3);
 #endif
+    sendBlePowerOff(3);
 #if HDS_FEATURE_WEBSOCKET
     sendWebsocketPowerOff(3);
 #endif
