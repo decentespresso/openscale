@@ -29,6 +29,8 @@ void sendBleVoltage();
 void sendBleLedResponse();
 void sendAdsDebugInfoBLE();
 void queueBleStatusResponse();
+void queueBleVoltageResponse();
+void processBleVoltageResponse();
 static bool bleHasLiveClient();
 void buildAdsDebugPacket(byte data[41]);
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
@@ -39,6 +41,7 @@ volatile uint16_t connId = 0xFFFF;
 void resetBleFff4StateLocked(uint16_t subscriptionHandle) {
   bleFff4SubscriptionHandle = subscriptionHandle;
   bleStatusResponsesPending = 0;
+  bleVoltageResponsesPending = 0;
   bleStatusRequestAt = 0;
   bleNotifyFailureLogged = false;
 }
@@ -240,7 +243,7 @@ struct BleDecentCommandSink {
 #endif
 
   void sendVoltage() {
-    sendBleVoltage();
+    queueBleVoltageResponse();
   }
 
   void adsDebug(uint8_t mode) {
@@ -392,6 +395,23 @@ static bool bleCanNotifyCurrent() {
     && pReadCharacteristic != nullptr
     && bleHasLiveClient()
     && subscribed;
+}
+
+void queueBleVoltageResponse() {
+  portENTER_CRITICAL(&bleFff4Mux);
+  if (bleVoltageResponsesPending != UINT16_MAX) bleVoltageResponsesPending = bleVoltageResponsesPending + 1;
+  portEXIT_CRITICAL(&bleFff4Mux);
+}
+
+void processBleVoltageResponse() {
+  bool sendVoltage = false;
+  portENTER_CRITICAL(&bleFff4Mux);
+  if (bleVoltageResponsesPending > 0) {
+    bleVoltageResponsesPending = bleVoltageResponsesPending - 1;
+    sendVoltage = true;
+  }
+  portEXIT_CRITICAL(&bleFff4Mux);
+  if (sendVoltage) sendBleVoltage();
 }
 
 void queueBleStatusResponse() {
