@@ -14,8 +14,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - run: python tools/test_ai_docs_contract.py
@@ -30,8 +30,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install PlatformIO Core
@@ -45,8 +45,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - run: python tools/test_gzip_web_assets.py
@@ -60,7 +60,7 @@ jobs:
           - esp32s3-grinder
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
 
       - uses: actions/cache@v3
         with:
@@ -73,7 +73,7 @@ jobs:
           key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini', 'requirements-platformio.txt') }}
       - uses: actions/setup-node@v4.1.0
 
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
@@ -107,7 +107,7 @@ jobs:
 
       - name: Save firmware file
         if: matrix.board == 'esp32s3'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: HDS-snapshot-${{ matrix.board }}-${{ steps.slugify.outputs.sha }}
           path: |
@@ -118,7 +118,7 @@ jobs:
 
       - name: Save dependency inventory
         if: matrix.board == 'esp32s3'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: HDS-dependencies-${{ matrix.board }}-${{ steps.slugify.outputs.sha }}
           path: .pio.nosync/build/${{ matrix.board }}/dependencies.txt

@@ -78,11 +78,11 @@ jobs:
           - name: grinder
             configuration: '{"firmware_ref":"main","features":["grinder"],"plugins":[]}'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install PlatformIO Core
@@ -104,11 +104,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install PlatformIO Core
@@ -164,7 +164,7 @@ jobs:
           --expected-hash "${{ inputs.combination_hash }}"
       - name: Upload custom build
         if: steps.custom_build.outputs.cache_hit != 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: openscale-custom-${{ steps.custom_build.outputs.combination_hash }}
           path: ${{ steps.custom_build.outputs.output }}/*
