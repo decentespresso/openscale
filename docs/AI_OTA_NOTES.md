@@ -55,8 +55,8 @@ Flow:
 
 1. Current firmware stores both manifests, writes `firmware.bin` to the inactive app slot, and reboots.
 2. The new firmware calls `hdsOtaRollbackBegin()`, detects pending LittleFS work, and runs `pullOtaResumePendingLittleFs()` before application validity marking.
-3. The target filesystem gets at most two attempts. Each attempt is recorded before network or write work; `fs_dirty` is recorded before `Update.begin()` can modify the partition.
-4. A successful target write passes size/schema, raw SHA-256, and mount checks. Pending state is then cleared, the new application is marked valid, and the device reboots.
+3. Recovery first accepts an already-written filesystem that passes size/schema, raw SHA-256, and mount checks. Otherwise, the target filesystem gets at most two attempts. Each attempt is recorded before network or write work; `fs_dirty` is recorded before `Update.begin()` can modify the partition.
+4. A successful target write passes the same checks. The new application is then marked valid before pending state is cleared, and the device reboots.
 5. If both attempts fail before filesystem writing begins, `setup()` calls `hdsOtaRollback("LittleFS update")`; the previous application remains paired with its unchanged filesystem.
 6. If writing may have begun, recovery first replaces pending state with the previous application's matching signed filesystem asset, then rolls the application back. The previous application gets one recorded restore attempt.
 7. A failed restore stops at `UPDATE ERROR`. A successful restore clears pending state and reboots.

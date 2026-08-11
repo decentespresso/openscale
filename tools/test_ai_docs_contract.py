@@ -66,10 +66,10 @@ def main():
     resume_start = find_call(pull_ota, "pullOtaResumePendingLittleFs")
     resume_end = find_call(pull_ota, "pullOtaRunUpdate", resume_start)
     resume_body = pull_ota[resume_start:resume_end]
-    if find_call(resume_body, "pullOtaClearPendingLittleFs") >= find_call(
-        resume_body, "hdsOtaRollbackMarkValid"
+    if find_call(resume_body, "hdsOtaRollbackMarkValid") >= find_call(
+        resume_body, "pullOtaClearPendingLittleFs"
     ):
-        raise AssertionError("successful LittleFS recovery must clear pending state before validity marking")
+        raise AssertionError("successful LittleFS recovery must mark the app valid before clearing recovery state")
     if not re.search(
         r"maxAttempts\s*=\s*pending\.restore\s*\?\s*1\s*:\s*2",
         resume_body,
