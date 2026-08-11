@@ -165,6 +165,7 @@ public:
   void (*setTrackingUpdateInterval)(float);
   void (*buttonSquare_Pressed)();
   void (*buttonCircle_Pressed)();
+  void (*toggleTimer)();
 
   static const size_t USB_RX_BUFFER_SIZE = 160;
   static const unsigned long USB_RX_FRAME_TIMEOUT_MS = 30;
@@ -421,14 +422,18 @@ public:
     }
 
     if (inputString.startsWith("tare")) {
-      if (buttonCircle_Pressed != NULL) {
+      if ((b_menu || b_calibration || b_showChargingUI) && buttonCircle_Pressed != NULL) {
         buttonCircle_Pressed();
+      } else {
+        requestRemoteTare();
       }
     }
 
     if (inputString.startsWith("set")) {
-      if (buttonSquare_Pressed != NULL) {
+      if ((b_menu || b_calibration || b_showChargingUI) && buttonSquare_Pressed != NULL) {
         buttonSquare_Pressed();
+      } else if (toggleTimer != NULL) {
+        toggleTimer();
       }
     }
 

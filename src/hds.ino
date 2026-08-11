@@ -449,6 +449,7 @@ void setup() {
   usbCallbacks.setTrackingUpdateInterval = setTrackingUpdateInterval;
   usbCallbacks.buttonSquare_Pressed = buttonSquare_Pressed;
   usbCallbacks.buttonCircle_Pressed = buttonCircle_Pressed;
+  usbCallbacks.toggleTimer = scaleTimer;
 #ifdef ESP32
   releaseWakePinsFromRtcMode();
 #endif
