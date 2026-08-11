@@ -71,7 +71,7 @@ class EnergyContractTests(unittest.TestCase):
             (STORAGE, "KEY_ENERGY_SCHEMA"),
             (FIRMWARE, "energyLoadSettings(energyPolicy.settings)"),
             (FIRMWARE, "serviceEnergyHousekeeping(millis())"),
-            (POWER, "processNewBatterySample();"),
+            (POWER, "processNewBatterySample()"),
             (GYRO, "featureEnabled(EnergyFeature::MotionPoll)"),
             (WIFI, "featureEnabled(EnergyFeature::SerialQuiet)"),
         ]:
@@ -152,6 +152,39 @@ class EnergyContractTests(unittest.TestCase):
         self.assertIn("featureEnabled(EnergyFeature::OledRedraw)", update_oled)
         self.assertIn("featureEnabled(EnergyFeature::OledStatic)", update_oled)
         self.assertIn("energyRuntime.explicitDisplayOff", FIRMWARE)
+
+    def test_soft_sleep_suspends_oled_idle_and_wake_resynchronizes(self):
+        idle = body(FIRMWARE, "void applyEnergyDisplayIdle")
+        self.assertIn("shouldApplyDisplayIdle(b_softSleep)", idle)
+
+        housekeeping = body(FIRMWARE, "void serviceEnergyHousekeeping")
+        self.assertLess(housekeeping.index("enabledMask == 0"),
+                        housekeeping.index("b_softSleep"))
+        self.assertLess(housekeeping.index("b_softSleep"),
+                        housekeeping.index("applyEnergyDisplayIdle(now)"))
+
+        wake = body(FIRMWARE, "bool wakeScaleFromSoftSleep")
+        wake_steps = [
+            "b_softSleep = false;",
+            "clearPendingEnergyActivity();",
+            "energyPolicy.recordActivity(millis());",
+            "applyEnergyDisplayCommand(!energyRuntime.explicitDisplayOff);",
+        ]
+        self.assertEqual(wake_steps, sorted(wake_steps, key=wake.index))
+
+    def test_disabled_power_cadence_keeps_legacy_low_battery_path(self):
+        legacy = body(POWER, "bool processLegacyLowBattery")
+        self.assertIn("lowBatteryConfirmed(i_lowBatteryCount, false)", legacy)
+        self.assertIn("shut_down_low_battery(f_batteryVoltage)", legacy)
+
+        cadence = body(POWER, "bool processNewBatterySample")
+        self.assertIn("lowBatteryConfirmed(i_lowBatteryCount, true)", cadence)
+
+        for signature in ["void power_off(int min)", "void power_off(double sec)"]:
+            power_off = body(POWER, signature)
+            self.assertIn("featureEnabled(EnergyFeature::PowerCadence)", power_off)
+            self.assertIn("cadenceEnabled && processNewBatterySample()", power_off)
+            self.assertIn("!cadenceEnabled && !b_is_charging && processLegacyLowBattery()", power_off)
 
     def test_no_master_or_extra_energy_menu_was_added(self):
         self.assertNotRegex(MENU, r"Experiments|Energy Fast|NVS|Storage|Persistence")

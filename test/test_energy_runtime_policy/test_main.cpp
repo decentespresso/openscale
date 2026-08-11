@@ -1,4 +1,5 @@
 #include <unity.h>
+#include "energy_policy.h"
 #include "energy_runtime_policy.h"
 
 void setUp() {}
@@ -81,8 +82,26 @@ void testBatteryConfirmationUsesDistinctSamples() {
   TEST_ASSERT_TRUE(samples.shouldEvaluate(1));
   TEST_ASSERT_FALSE(samples.shouldEvaluate(1));
   TEST_ASSERT_TRUE(samples.shouldEvaluate(2));
-  TEST_ASSERT_FALSE(EnergyRuntimePolicy::lowBatteryConfirmed(1));
-  TEST_ASSERT_TRUE(EnergyRuntimePolicy::lowBatteryConfirmed(2));
+  TEST_ASSERT_FALSE(EnergyRuntimePolicy::lowBatteryConfirmed(1, true));
+  TEST_ASSERT_TRUE(EnergyRuntimePolicy::lowBatteryConfirmed(2, true));
+}
+
+void testDisabledPowerCadenceKeepsLegacyBatteryThreshold() {
+  EnergyPolicy policy;
+  const bool cadenceEnabled = policy.featureEnabled(EnergyFeature::PowerCadence);
+  TEST_ASSERT_EQUAL_UINT32(0, policy.settings.features);
+  TEST_ASSERT_FALSE(EnergyRuntimePolicy::lowBatteryConfirmed(2, cadenceEnabled));
+  TEST_ASSERT_FALSE(EnergyRuntimePolicy::lowBatteryConfirmed(50, cadenceEnabled));
+  TEST_ASSERT_TRUE(EnergyRuntimePolicy::lowBatteryConfirmed(51, cadenceEnabled));
+
+  policy.settings.select(EnergyFeature::PowerCadence, true);
+  TEST_ASSERT_TRUE(EnergyRuntimePolicy::lowBatteryConfirmed(
+    2, policy.featureEnabled(EnergyFeature::PowerCadence)));
+}
+
+void testOledIdleIsSuspendedDuringSoftSleep() {
+  TEST_ASSERT_FALSE(EnergyRuntimePolicy::shouldApplyDisplayIdle(true));
+  TEST_ASSERT_TRUE(EnergyRuntimePolicy::shouldApplyDisplayIdle(false));
 }
 
 void testSharedDispatchSkipsEmptyAndUnrelatedMasks() {
@@ -103,6 +122,8 @@ int main(int argc, char **argv) {
   RUN_TEST(testExplicitFreshMotionReadBypassesCache);
   RUN_TEST(testOledIdleTransitionsAndExplicitOffPrecedence);
   RUN_TEST(testBatteryConfirmationUsesDistinctSamples);
+  RUN_TEST(testDisabledPowerCadenceKeepsLegacyBatteryThreshold);
+  RUN_TEST(testOledIdleIsSuspendedDuringSoftSleep);
   RUN_TEST(testSharedDispatchSkipsEmptyAndUnrelatedMasks);
   return UNITY_END();
 }

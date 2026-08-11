@@ -1234,9 +1234,10 @@ bool wakeScaleFromSoftSleep(const char *context) {
   delay(5);
   scale.powerUp();
 #if HDS_ENABLE_ENERGY_MENU
-  u8g2.setPowerSave(energyRuntime.explicitDisplayOff ? 1 : 0);
   b_softSleep = false;
-  b_u8g2Sleep = energyRuntime.explicitDisplayOff;
+  clearPendingEnergyActivity();
+  energyPolicy.recordActivity(millis());
+  applyEnergyDisplayCommand(!energyRuntime.explicitDisplayOff);
 #else
   u8g2.setPowerSave(0);
   b_softSleep = false;
@@ -1665,6 +1666,7 @@ void applyEnergyAccRailState() {
 }
 
 void applyEnergyDisplayIdle(unsigned long now) {
+  if (!EnergyRuntimePolicy::shouldApplyDisplayIdle(b_softSleep)) return;
   const DisplayIdleMode requested = EnergyRuntimePolicy::displayMode(
     energyPolicy.featureEnabled(EnergyFeature::OledIdle), energyDisplayIdleInhibited(),
     energyRuntime.explicitDisplayOff, energyPolicy.inactiveFor(now));
@@ -1701,6 +1703,9 @@ void applyEnergyFeatureTransition(EnergyFeature feature, bool wasEnabled, bool i
 void serviceEnergyHousekeeping(unsigned long now) {
   const uint32_t enabledMask = energyPolicy.settings.features;
   if (enabledMask == 0) {
+    return;
+  }
+  if (b_softSleep) {
     return;
   }
   if (!EnergyRuntimePolicy::shouldServiceFeature(

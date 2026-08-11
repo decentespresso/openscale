@@ -347,6 +347,24 @@ float getUsbVoltage(int usbPin) {
 
 int i_lowBatteryCount = 0;
 int i_lowBatteryCountTotal = 0;
+bool processLegacyLowBattery() {
+  if (f_batteryVoltage > lowBatteryThreshold) {
+    i_lowBatteryCount = 0;
+  }
+  if (f_batteryVoltage < lowBatteryThreshold) {
+    i_lowBatteryCount++;
+    i_lowBatteryCountTotal++;
+  }
+#if HDS_ENABLE_ENERGY_MENU
+  const bool confirmed = EnergyRuntimePolicy::lowBatteryConfirmed(i_lowBatteryCount, false);
+#else
+  const bool confirmed = i_lowBatteryCount > 50;
+#endif
+  if (!confirmed) return false;
+  shut_down_low_battery(f_batteryVoltage);
+  return true;
+}
+
 #if HDS_ENABLE_ENERGY_MENU
 bool processNewBatterySample() {
   if (!energyRuntime.batterySamples.shouldEvaluate(energyRuntime.batterySampleSequence)) {
@@ -357,15 +375,16 @@ bool processNewBatterySample() {
   } else if (f_batteryVoltage < lowBatteryThreshold) {
     i_lowBatteryCount++;
     i_lowBatteryCountTotal++;
-    if (!EnergyRuntimePolicy::lowBatteryConfirmed(i_lowBatteryCount) &&
+    if (!EnergyRuntimePolicy::lowBatteryConfirmed(i_lowBatteryCount, true) &&
         i_batteryRefreshTareInterval > 1000) {
       t_batteryRefresh = millis() - (i_batteryRefreshTareInterval - 1000);
     }
   }
-  if (EnergyRuntimePolicy::lowBatteryConfirmed(i_lowBatteryCount)) {
+  const bool confirmed = EnergyRuntimePolicy::lowBatteryConfirmed(i_lowBatteryCount, true);
+  if (confirmed) {
     shut_down_low_battery(f_batteryVoltage);
   }
-  return true;
+  return confirmed;
 }
 
 void evaluateAutoOff(double seconds, bool showCountdown) {
@@ -389,14 +408,17 @@ void evaluateAutoOff(double seconds, bool showCountdown) {
 
 void power_off(int min) {
 #if HDS_ENABLE_ENERGY_MENU
-  processNewBatterySample();
-  if (min == -1) {
+  const bool cadenceEnabled = energyPolicy.featureEnabled(EnergyFeature::PowerCadence);
+  if (cadenceEnabled && processNewBatterySample()) return;
+  if (!cadenceEnabled && !b_is_charging && processLegacyLowBattery()) return;
+  if (min == -1 && (cadenceEnabled || !b_is_charging)) {
     t_power_off = millis();
   } else if (min > 0 && !b_is_charging) {
     evaluateAutoOff(min * 60.0, true);
   }
 #else
   if (!b_is_charging) {
+    if (processLegacyLowBattery()) return;
     if (min == -1) {
       t_power_off = millis();
     }
@@ -434,27 +456,17 @@ void power_off_gyro(int sec) {
 
 void power_off(double sec) {
 #if HDS_ENABLE_ENERGY_MENU
-  processNewBatterySample();
-  if (sec == -1) {
+  const bool cadenceEnabled = energyPolicy.featureEnabled(EnergyFeature::PowerCadence);
+  if (cadenceEnabled && processNewBatterySample()) return;
+  if (!cadenceEnabled && !b_is_charging && processLegacyLowBattery()) return;
+  if (sec == -1 && (cadenceEnabled || !b_is_charging)) {
     t_power_off = millis();
   } else if (sec > 0 && !b_is_charging) {
     evaluateAutoOff(sec, false);
   }
 #else
   if (!b_is_charging) {
-    if (f_batteryVoltage > lowBatteryThreshold) {
-      i_lowBatteryCount = 0;
-    }
-
-    if (f_batteryVoltage < lowBatteryThreshold) {
-      i_lowBatteryCount++;
-      i_lowBatteryCountTotal++;
-    }
-
-    if (i_lowBatteryCount > 50) {
-      shut_down_low_battery(f_batteryVoltage);
-      return;
-    }
+    if (processLegacyLowBattery()) return;
 
     if (sec == -1) {
       t_power_off = millis();

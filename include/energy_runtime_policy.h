@@ -104,8 +104,12 @@ private:
 struct EnergyRuntimePolicy {
   static constexpr uint8_t lowBatteryConfirmationSamples = 2;
 
-  static bool lowBatteryConfirmed(uint8_t samples) {
-    return samples >= lowBatteryConfirmationSamples;
+  static bool lowBatteryConfirmed(uint32_t samples, bool cadenceEnabled) {
+    return samples >= (cadenceEnabled ? lowBatteryConfirmationSamples : 51);
+  }
+
+  static bool shouldApplyDisplayIdle(bool softSleep) {
+    return !softSleep;
   }
 
   static bool meaningfulWeightChange(float previous, float current, float threshold) {
