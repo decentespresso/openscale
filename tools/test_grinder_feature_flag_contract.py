@@ -118,7 +118,7 @@ def main():
     require_guarded(power, "beforeDeepSleepFlush")
     require("python tools/test_grinder_feature_flag_contract.py", nightly)
     require("- esp32s3-grinder", nightly)
-    artifact_guard = "if: matrix.board == 'esp32s3'\n        uses: actions/upload-artifact@v4"
+    artifact_guard = "if: matrix.board == 'esp32s3'\n        uses: actions/upload-artifact@v7"
     assert nightly.count(artifact_guard) == 2, "grinder artifact upload is not gated"
 
     require("bool wifiEnsureMdnsReadyForSta()", wifi)
