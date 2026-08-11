@@ -346,21 +346,23 @@ int i_lowBatteryCount = 0;
 int i_lowBatteryCountTotal = 0;
 void power_off(int min) {
   if (!b_is_charging) {
-    if (f_batteryVoltage < lowBatteryThreshold) {
-      updateBattery(BATTERY_PIN);
-    }
-    if (f_batteryVoltage > lowBatteryThreshold) {
-      i_lowBatteryCount = 0;
-    }
+    if (!b_softSleep) {
+      if (f_batteryVoltage < lowBatteryThreshold) {
+        updateBattery(BATTERY_PIN);
+      }
+      if (f_batteryVoltage > lowBatteryThreshold) {
+        i_lowBatteryCount = 0;
+      }
 
-    if (f_batteryVoltage < lowBatteryThreshold) {
-      i_lowBatteryCount++;
-      i_lowBatteryCountTotal++;
-    }
+      if (f_batteryVoltage < lowBatteryThreshold) {
+        i_lowBatteryCount++;
+        i_lowBatteryCountTotal++;
+      }
 
-    if (i_lowBatteryCount > 50) {
-      shut_down_low_battery(f_batteryVoltage);
-      return;
+      if (i_lowBatteryCount > 50) {
+        shut_down_low_battery(f_batteryVoltage);
+        return;
+      }
     }
 
     if (min == -1) {
@@ -399,21 +401,23 @@ void power_off_gyro(int sec) {
 
 void power_off(double sec) {
   if (!b_is_charging) {
-    if (f_batteryVoltage < lowBatteryThreshold) {
-      updateBattery(BATTERY_PIN);
-    }
-    if (f_batteryVoltage > lowBatteryThreshold) {
-      i_lowBatteryCount = 0;
-    }
+    if (!b_softSleep) {
+      if (f_batteryVoltage < lowBatteryThreshold) {
+        updateBattery(BATTERY_PIN);
+      }
+      if (f_batteryVoltage > lowBatteryThreshold) {
+        i_lowBatteryCount = 0;
+      }
 
-    if (f_batteryVoltage < lowBatteryThreshold) {
-      i_lowBatteryCount++;
-      i_lowBatteryCountTotal++;
-    }
+      if (f_batteryVoltage < lowBatteryThreshold) {
+        i_lowBatteryCount++;
+        i_lowBatteryCountTotal++;
+      }
 
-    if (i_lowBatteryCount > 50) {
-      shut_down_low_battery(f_batteryVoltage);
-      return;
+      if (i_lowBatteryCount > 50) {
+        shut_down_low_battery(f_batteryVoltage);
+        return;
+      }
     }
 
     if (sec == -1) {
