@@ -6,6 +6,7 @@ WIFI_OTA_HEADER = ROOT / "include" / "wifi_ota.h"
 PULL_OTA_HEADER = ROOT / "include" / "pull_ota.h"
 ROLLBACK_HEADER = ROOT / "include" / "ota_rollback.h"
 WIFI_SETUP_SOURCE = ROOT / "src" / "wifi_setup.cpp"
+HDS_SOURCE = ROOT / "src" / "hds.ino"
 
 
 def assert_contains(path, text):
@@ -33,6 +34,11 @@ def assert_before(path, first, second):
 
 
 def main():
+    hds = HDS_SOURCE.read_text(encoding="utf-8")
+    loop = hds[hds.index("void loop() {"):hds.index("void chargingOLED(")]
+    if "if (b_ota || bleHasLiveClient()" not in loop:
+        raise AssertionError("OTA does not suspend the auto-sleep countdown")
+
     # ElegantOTA's own auto-reboot bypasses reset()'s mDNS withdrawal; the
     # restart must be queued through the main-loop reset mechanism instead.
     assert_contains(WIFI_OTA_HEADER, "ElegantOTA.setAutoReboot(false)")
