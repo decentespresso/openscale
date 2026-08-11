@@ -93,6 +93,18 @@ def main():
         ],
     )
 
+    ble_disconnect_display = method_body(BLE_HEADER, "restoreDisplayAfterBleDisconnect")
+    assert_ordered(
+        ble_disconnect_display,
+        [
+            "if (b_softSleep) return;",
+            "b_u8g2Sleep = false;",
+            "remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);",
+        ],
+    )
+    if read(BLE_HEADER).count("restoreDisplayAfterBleDisconnect();") != 2:
+        raise AssertionError("all BLE disconnect callbacks must preserve soft sleep")
+
     ws_handler = read(WEBSOCKET_HEADER)
     assert_ordered(
         ws_handler,
