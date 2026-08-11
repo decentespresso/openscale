@@ -1517,7 +1517,6 @@ void loop() {
 #endif  //DEBUG
     if (millis() - t_batteryRefresh > i_batteryRefreshTareInterval){
       updateBattery(BATTERY_PIN);
-      t_batteryRefresh = millis();
     }
     checkBattery();
     if (b_ota) {
