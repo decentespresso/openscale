@@ -141,10 +141,10 @@ inline void wsReplacePending(uint32_t setBits, uint32_t clearBits) {
 
 void processWsPendingCmds() {
   portENTER_CRITICAL(&wsPendingMux);
-  uint32_t mask = wsPendingMask;
+  uint32_t mask = b_ota ? (wsPendingMask & WSP_RESET) : wsPendingMask;
   uint8_t samplesInUse = pendingSamplesInUse;
   unsigned long resetAt = pendingResetAt;
-  wsPendingMask = 0;
+  wsPendingMask &= ~mask;
   if (mask & WSP_RESET) {
     pendingResetAt = 0;
   }
@@ -207,6 +207,7 @@ void processWsPendingCmds() {
     wifiUpdate();
 #endif
   }
+  if (b_ota) return;
   if (mask & WSP_POWER_OFF) {
     b_powerOff = true;
   }
