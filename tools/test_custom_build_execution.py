@@ -280,6 +280,15 @@ def main():
     assert '--attempt-id "${{ inputs.attempt_id }}"' in workflow
     assert "python tools/update_custom_build_status.py" in workflow
     assert "inputs.combination_hash || github.run_id" in workflow
+    assert "compile-matrix:" in workflow
+    assert "no-optional-features" in workflow
+    assert "wifi-only" in workflow
+    assert "webserver-without-littlefs" in workflow
+    assert "websocket" in workflow
+    assert "elegant-ota" in workflow
+    assert "pull-ota" in workflow
+    assert "grinder" in workflow
+    assert "hello-web" in workflow
     assert "pio run -e esp32s3-custom" not in workflow
     configurator = (customBuild.SCRIPT_ROOT / "docs" / "custom-build" / "app.js").read_text(
         encoding="utf-8"
