@@ -1447,6 +1447,7 @@ void setManualStableValue(float value) {
 void loop() {
   processWsPendingCmds();
   processBleStatusResponse();
+  processBleVoltageResponse();
 
   if (b_powerOff){
     shut_down_now_nobeep();
