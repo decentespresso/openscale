@@ -84,6 +84,15 @@ def main():
     assert_contains(WIFI_OTA_HEADER, "ElegantOTA.setAutoReboot(false)")
     assert_not_contains(WIFI_OTA_HEADER, "ElegantOTA.setAutoReboot(true)")
     assert_contains(WIFI_OTA_HEADER, "remoteQueueResetAt(millis() + OTA_RESTART_DELAY_MS)")
+    assert_ordered(
+        WIFI_OTA_HEADER,
+        [
+            "void onOTAStart()",
+            "portENTER_CRITICAL(&wsPendingMux);",
+            "b_ota = true;",
+            "portEXIT_CRITICAL(&wsPendingMux);",
+        ],
+    )
 
     # Pull OTA's success paths must queue the restart rather than calling
     # ESP.restart() directly from the Pull OTA task or the setup() task.

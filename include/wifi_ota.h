@@ -66,7 +66,9 @@ void processOtaDisplayUpdate() {
 
 void onOTAStart() {
   Serial.println("OTA update started!");
+  portENTER_CRITICAL(&wsPendingMux);
   b_ota = true;
+  portEXIT_CRITICAL(&wsPendingMux);
 }
 
 void onOTAProgress(size_t current, size_t final) {
