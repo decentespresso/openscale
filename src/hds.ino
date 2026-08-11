@@ -1481,25 +1481,26 @@ void loop() {
   } else {
     power_off(15);
   }
+  if (!b_ota && Serial.available()) {
+    uint8_t data[32];
+    size_t len = 0;
+    while (Serial.available() && len < sizeof(data)) {
+      data[len++] = Serial.read();
+    }
+    usbCallbacks.onStream(data, len);
+  }
   if (!b_ota) {
-    if (Serial.available()) {
-      uint8_t data[32];
-      size_t len = 0;
-      while (Serial.available() && len < sizeof(data)) {
-        data[len++] = Serial.read();
-      }
-      usbCallbacks.onStream(data, len);
-    }
     usbCallbacks.poll();
+  }
 
-    if (!buttonChecksSuppressedUntilRelease()
+  if (!b_ota
+      && !buttonChecksSuppressedUntilRelease()
 #if HDS_ENABLE_GRINDER
-        && !handleGrinderMenuChord()
+      && !handleGrinderMenuChord()
 #endif
-    ) {
-      buttonCircle.check();
-      buttonSquare.check();
-    }
+  ) {
+    buttonCircle.check();
+    buttonSquare.check();
   }
 #ifdef BUZZER
   buzzer.check();

@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 HDS_SOURCE = ROOT / "src" / "hds.ino"
+USB_HEADER = ROOT / "include" / "usbcomm.h"
 
 
 def extract_block(source, opener):
@@ -33,20 +34,36 @@ def main():
     loop_end = contents.index("void chargingOLED(", loop_start)
     loop = contents[loop_start:loop_end]
 
-    normal_input = extract_block(loop, "if (!b_ota) {")
+    serial_input = extract_block(loop, "if (!b_ota && Serial.available()) {")
     require_all(
-        normal_input,
+        serial_input,
         [
-            "Serial.available()",
             "usbCallbacks.onStream(data, len);",
+        ],
+        "serial input gate",
+    )
+    poll_input = extract_block(loop, "if (!b_ota) {")
+    require_all(
+        poll_input,
+        [
             "usbCallbacks.poll();",
+        ],
+        "USB timeout gate",
+    )
+    button_input = extract_block(
+        loop,
+        "if (!b_ota\n      && !buttonChecksSuppressedUntilRelease()",
+    )
+    require_all(
+        button_input,
+        [
             "buttonCircle.check();",
             "buttonSquare.check();",
         ],
-        "normal input gate",
+        "button input gate",
     )
 
-    gate_at = loop.index("if (!b_ota) {")
+    gate_at = loop.index("if (!b_ota && Serial.available()) {")
     if loop.index("processWsPendingCmds();") >= gate_at:
         raise AssertionError("pending reset routing must run during OTA")
     if loop.index("power_off(15);") >= gate_at:
@@ -60,6 +77,15 @@ def main():
     )
     if loop.index("checkBattery();") >= loop.index("if (b_ota) {"):
         raise AssertionError("charging-state refresh must run before OTA servicing")
+
+    usb = USB_HEADER.read_text(encoding="utf-8")
+    usb_buffer = extract_block(usb, "void processUsbRxBuffer(bool allowTimeout) {")
+    if (
+        "onWrite(usbRxBuffer, frameLen);\n"
+        "        consumeUsbRxBytes(frameLen);\n"
+        "        if (b_ota) return;"
+    ) not in usb_buffer:
+        raise AssertionError("USB parser continues after an OTA command")
 
     print("OTA input isolation contract tests passed")
 

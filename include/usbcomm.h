@@ -236,6 +236,7 @@ public:
 
         onWrite(usbRxBuffer, frameLen);
         consumeUsbRxBytes(frameLen);
+        if (b_ota) return;
         continue;
       }
 
