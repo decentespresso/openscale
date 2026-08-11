@@ -1455,7 +1455,7 @@ void loop() {
   if (bleHasLiveClient() && b_requireHeartBeat && millis() - t_firstConnect > HEARTBEAT_TIMEOUT) {
     if (millis() - t_heartBeat > HEARTBEAT_TIMEOUT) {
       disconnectBLE();
-      t_heartBeat = millis() + 10000;
+      t_heartBeat = millis();
     }
   }
 #ifdef HEARTBEATICON
