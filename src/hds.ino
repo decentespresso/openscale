@@ -426,6 +426,13 @@ void wifi_init() {
 
 MyUsbCallbacks usbCallbacks;
 
+#if CONFIG_PM_ENABLE
+// Held while the scale is connected + live (not soft-sleep), pinning the CPU at
+// max freq so on-scale extensions have full compute; released otherwise so DFS
+// scales down and light sleep engages.
+esp_pm_lock_handle_t s_activeFreqLock = nullptr;
+#endif
+
 // Map esp_reset_reason() to a short string for the boot log only. The raw
 // numeric code is what we ship in the ADS debug packet (byte 24); this is
 // purely for human-readable serial output.
@@ -895,6 +902,7 @@ void setup() {
     };
     esp_err_t pmrc = esp_pm_configure(&pmcfg);
     Serial.printf("[pm] esp_pm_configure ls=on 240/80 -> %s\n", esp_err_to_name(pmrc));
+    esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, "active", &s_activeFreqLock);
     uart_set_wakeup_threshold(UART_NUM_0, 3);
     esp_err_t urc = esp_sleep_enable_uart_wakeup(UART_NUM_0);
     Serial.printf("[pm] uart0 wake-on-rx -> %s\n", esp_err_to_name(urc));
@@ -1587,6 +1595,19 @@ void loop() {
   // so a SLEEP_OFF / POWER_OFF queued from the AsyncTCP task takes effect
   // here on the loop task rather than racing peripheral drivers.
   processWsPendingCmds();
+
+#if CONFIG_PM_ENABLE
+  {
+    static bool prevActive = false;
+    bool active = deviceConnected && !b_softSleep;
+    if (active != prevActive && s_activeFreqLock != nullptr) {
+      if (active) esp_pm_lock_acquire(s_activeFreqLock);
+      else        esp_pm_lock_release(s_activeFreqLock);
+      prevActive = active;
+      Serial.printf("[pm] cpu %s (connected+live=%d)\n", active ? "pinned 240" : "released->DFS", active);
+    }
+  }
+#endif
 
   if (b_powerOff){
     shut_down_now_nobeep();
