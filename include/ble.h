@@ -62,6 +62,12 @@ bool clearBleFff4Connection(uint16_t connectionHandle) {
   return isCurrent;
 }
 
+void restoreDisplayAfterBleDisconnect() {
+  if (b_softSleep) return;
+  b_u8g2Sleep = false;
+  remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
+}
+
 
 class MyServerCallbacks : public BLEServerCallbacks {
 #if defined(CONFIG_NIMBLE_ENABLED)
@@ -90,8 +96,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
 #ifdef BUZZER
     b_beep = storageGetInt(KEY_BEEP, 1);
 #endif
-    b_u8g2Sleep = false;
-    remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
+    restoreDisplayAfterBleDisconnect();
     Serial.print("Device disconnected (connId: ");
     Serial.print(desc->conn_handle);
     Serial.println("), restarting advertising...");
@@ -121,8 +126,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
 #ifdef BUZZER
     b_beep = storageGetInt(KEY_BEEP, 1);
 #endif
-    b_u8g2Sleep = false;
-    remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
+    restoreDisplayAfterBleDisconnect();
     Serial.println("Device disconnected, restarting advertising...");
     delay(100);
     pAdvertising->start();
