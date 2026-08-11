@@ -7,6 +7,7 @@ PULL_OTA_HEADER = ROOT / "include" / "pull_ota.h"
 ROLLBACK_HEADER = ROOT / "include" / "ota_rollback.h"
 WIFI_SETUP_SOURCE = ROOT / "src" / "wifi_setup.cpp"
 HDS_SOURCE = ROOT / "src" / "hds.ino"
+WEBSOCKET_HEADER = ROOT / "include" / "websocket.h"
 
 
 def assert_contains(path, text):
@@ -54,6 +55,16 @@ def assert_pending_sleep_ota_interleaving():
         raise AssertionError("OTA wake leaves applied soft sleep or powered-off rails")
 
 
+def assert_ordered(path, snippets):
+    contents = path.read_text(encoding="utf-8")
+    cursor = 0
+    for snippet in snippets:
+        index = contents.find(snippet, cursor)
+        if index < 0:
+            raise AssertionError(f"{path.name} missing ordered snippet: {snippet}")
+        cursor = index + len(snippet)
+
+
 def main():
     assert_pending_sleep_ota_interleaving()
     hds = HDS_SOURCE.read_text(encoding="utf-8")
@@ -99,6 +110,25 @@ def main():
         WIFI_SETUP_SOURCE,
         "WiFi.setHostname(params.getMdnsName());",
         "WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);",
+    )
+
+    assert_ordered(
+        WEBSOCKET_HEADER,
+        [
+            "uint32_t mask = b_ota ? (wsPendingMask & WSP_RESET) : wsPendingMask;",
+            "wsPendingMask &= ~mask;",
+            "if (mask & WSP_RESET)",
+            "if (mask & WSP_DISPLAY_ON)",
+        ],
+    )
+    assert_ordered(
+        WEBSOCKET_HEADER,
+        [
+            "if (mask & WSP_WIFI_UPDATE)",
+            "wifiUpdate();",
+            "if (b_ota) return;",
+            "if (mask & WSP_POWER_OFF)",
+        ],
     )
 
     print("OTA reboot routing contract tests passed")
