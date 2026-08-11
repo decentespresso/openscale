@@ -62,7 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/cache@v3
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cache/pip
@@ -71,8 +71,6 @@ jobs:
           # A static key froze CI on a stale cached `stable` platform zip (3.3.8)
           # even after the pin should have resolved a newer framework.
           key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini', 'requirements-platformio.txt') }}
-      - uses: actions/setup-node@v4.1.0
-
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
@@ -101,9 +99,9 @@ jobs:
             echo "Vendored partition table matches framework default_8MB.csv."
           fi
 
-      - name: "Run slugify"
+      - name: Shorten commit SHA
         id: slugify
-        uses: eltimn/slugify-action@v2.0.2
+        run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Save firmware file
         if: matrix.board == 'esp32s3'
