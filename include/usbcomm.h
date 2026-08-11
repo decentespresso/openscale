@@ -285,11 +285,7 @@ public:
     Serial.println(" ");
 
     if (data[0] != 0x03) {
-      String input;
-      input.reserve(len);
-      for (size_t i = 0; i < len; i++) {
-        input += (char)data[i];
-      }
+      String input((const char *)data, len);
       handleStringCommand(input);
       return;
     }
