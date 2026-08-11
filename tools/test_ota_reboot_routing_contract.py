@@ -38,6 +38,11 @@ def main():
     loop = hds[hds.index("void loop() {"):hds.index("void chargingOLED(")]
     if "if (b_ota || bleHasLiveClient()" not in loop:
         raise AssertionError("OTA does not suspend the auto-sleep countdown")
+    ota_wake = 'if (b_ota && b_softSleep) {\n    wakeScaleFromSoftSleep("OTA wake");'
+    if ota_wake not in loop:
+        raise AssertionError("active OTA does not wake soft-sleep hardware")
+    if loop.index(ota_wake) > loop.index("if (!b_softSleep)"):
+        raise AssertionError("OTA wake runs after the sleeping-loop gate")
 
     # ElegantOTA's own auto-reboot bypasses reset()'s mDNS withdrawal; the
     # restart must be queued through the main-loop reset mechanism instead.

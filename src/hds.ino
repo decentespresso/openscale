@@ -1506,6 +1506,9 @@ void loop() {
   buzzer.check();
 #endif
 
+  if (b_ota && b_softSleep) {
+    wakeScaleFromSoftSleep("OTA wake");
+  }
   if (!b_softSleep) {
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
     if (b_gyroEnabled) {
