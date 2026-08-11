@@ -38,6 +38,12 @@ def main():
     assert_contains(ROLLBACK_HEADER, 'preferences.putUInt("attempts"')
     assert_contains(ROLLBACK_HEADER, "LittleFS.begin()")
     assert_contains(ROLLBACK_HEADER, "LittleFS.totalBytes()")
+    pull_ota = PULL_OTA_HEADER.read_text(encoding="utf-8")
+    resume_start = pull_ota.index("bool pullOtaResumePendingLittleFs()")
+    resume_end = pull_ota.index("void pullOtaRunUpdate()", resume_start)
+    resume = pull_ota[resume_start:resume_end]
+    if resume.index("bool updated = pullOtaVerifyPendingLittleFs(pending);") >= resume.index("while (attempts < maxAttempts)"):
+        raise AssertionError("pending LittleFS must be verified before consuming another attempt")
     print("OTA rollback contract tests passed")
 
 

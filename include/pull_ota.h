@@ -1343,7 +1343,7 @@ bool pullOtaResumePendingLittleFs() {
   uint8_t maxAttempts = pending.restore ? 1 : 2;
   uint8_t attempts = pending.restore ? 0 : pending.targetAttempts;
   bool filesystemWriteStarted = pending.filesystemDirty;
-  bool updated = false;
+  bool updated = pullOtaVerifyPendingLittleFs(pending);
   while (attempts < maxAttempts) {
     attempts++;
     bool attemptRecorded = pending.restore
@@ -1369,11 +1369,11 @@ bool pullOtaResumePendingLittleFs() {
     }
     return false;
   }
+  hdsOtaRollbackMarkValid();
   if (!pullOtaClearPendingLittleFs()) {
     pullOtaFail("FS state failed");
     pullOtaRecoveryError();
   }
-  hdsOtaRollbackMarkValid();
   pullOtaDraw("Update done", "Restarting");
   delay(1500);
   remoteQueueResetAt(millis());
