@@ -346,6 +346,9 @@ int i_lowBatteryCount = 0;
 int i_lowBatteryCountTotal = 0;
 void power_off(int min) {
   if (!b_is_charging) {
+    if (f_batteryVoltage < lowBatteryThreshold) {
+      updateBattery(BATTERY_PIN);
+    }
     if (f_batteryVoltage > lowBatteryThreshold) {
       i_lowBatteryCount = 0;
     }
@@ -396,6 +399,9 @@ void power_off_gyro(int sec) {
 
 void power_off(double sec) {
   if (!b_is_charging) {
+    if (f_batteryVoltage < lowBatteryThreshold) {
+      updateBattery(BATTERY_PIN);
+    }
     if (f_batteryVoltage > lowBatteryThreshold) {
       i_lowBatteryCount = 0;
     }
