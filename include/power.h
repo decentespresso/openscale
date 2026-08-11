@@ -333,6 +333,7 @@ void updateBattery(int batteryPin){
     float correctedVoltage = batteryVoltage * f_batteryCalibrationFactor;
     f_batteryVoltage = correctedVoltage;
   }
+  t_batteryRefresh = millis();
 }
 
 float getUsbVoltage(int usbPin) {
