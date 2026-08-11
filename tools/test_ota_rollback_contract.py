@@ -42,7 +42,8 @@ def main():
     resume_start = pull_ota.index("bool pullOtaResumePendingLittleFs()")
     resume_end = pull_ota.index("void pullOtaRunUpdate()", resume_start)
     resume = pull_ota[resume_start:resume_end]
-    if resume.index("bool updated = pullOtaVerifyPendingLittleFs(pending);") >= resume.index("while (attempts < maxAttempts)"):
+    recovery_loop = "while (!updated && attempts < maxAttempts)"
+    if resume.index("bool updated = pullOtaVerifyPendingLittleFs(pending);") >= resume.index(recovery_loop):
         raise AssertionError("pending LittleFS must be verified before consuming another attempt")
     print("OTA rollback contract tests passed")
 
