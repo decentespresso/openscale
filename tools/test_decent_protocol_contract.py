@@ -24,7 +24,10 @@ def function_body(text, name):
 
 def main():
     protocol = PROTOCOL_HEADER.read_text(encoding="utf-8")
+    xor_helper = function_body(protocol, "decentXor")
     led_response = function_body(protocol, "buildLedResponsePacket")
+    if "return decentPayloadChecksum(data, len);" not in xor_helper:
+        raise AssertionError("response checksum does not cover every payload byte")
     firmware_index = led_response.index("data[5] = verHigh;")
     checksum_index = led_response.index("data[6] = decentXor(data, 6);")
     if checksum_index < firmware_index:

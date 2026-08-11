@@ -131,11 +131,7 @@ static inline bool decentRequireLength(const char *transport, size_t actual, siz
 }
 
 static inline uint8_t decentXor(const uint8_t *data, size_t len) {
-  uint8_t xorValue = 0x03;
-  for (size_t i = 1; i < len - 1; i++) {
-    xorValue ^= data[i];
-  }
-  return xorValue;
+  return decentPayloadChecksum(data, len);
 }
 
 static inline void encodeWeight(float weight, byte &byte1, byte &byte2) {
