@@ -1470,6 +1470,9 @@ void calibration(int input) {
 
 #if HDS_FEATURE_PULL_OTA
 void wifiUpdate() {
+  if (b_softSleep) {
+    wakeScaleFromSoftSleep("WiFi OTA wake");
+  }
 #ifdef BUZZER
   buzzer.off();
 #endif

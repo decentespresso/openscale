@@ -8,6 +8,7 @@ PARAMETER_HEADER = ROOT / "include" / "parameter.h"
 BLE_HEADER = ROOT / "include" / "ble.h"
 USBCOMM_HEADER = ROOT / "include" / "usbcomm.h"
 WEBSOCKET_HEADER = ROOT / "include" / "websocket.h"
+MENU_HEADER = ROOT / "include" / "menu.h"
 
 
 def read(path):
@@ -16,7 +17,7 @@ def read(path):
 
 def method_body(path, name):
     text = read(path)
-    match = re.search(rf"\b\w+\s+{re.escape(name)}\(", text)
+    match = re.search(rf"\b\w+\s+{re.escape(name)}\([^)]*\)\s*\{{", text)
     if match is None:
         raise AssertionError(f"method not found: {name}")
     opening = text.index("{", match.start())
@@ -80,6 +81,16 @@ def main():
     )
     if "digitalWrite(PWR_CTRL, HIGH);" in usb_soft_off:
         raise AssertionError("USB soft wake must use wakeScaleFromSoftSleep")
+
+    wifi_update = method_body(MENU_HEADER, "wifiUpdate")
+    assert_ordered(
+        wifi_update,
+        [
+            "if (b_softSleep)",
+            'wakeScaleFromSoftSleep("WiFi OTA wake")',
+            "pullOtaUpdate();",
+        ],
+    )
 
     ble_soft_off = method_body(BLE_HEADER, "softSleepOff")
     assert_ordered(
