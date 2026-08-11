@@ -169,19 +169,21 @@ test("publishes immutable cache entries and deduplicates public builds", async (
       const request = JSON.parse(options.body);
       assert.equal(request.inputs.source_commit, commit);
       if (dispatches === 1) {
-        assert.equal(request.inputs.combination_hash, "8b9b767cb97b5b2b2c8aec859219e8f9d207bab9cd41c0a986b2dab55e03bb86");
+        assert.equal(request.inputs.combination_hash, "e4bbbdaf4217d914bcb374b66567902893da2584daf0b4c04f5cca0bfb69816a");
+        assert.equal(request.inputs.features, ",");
+        assert.equal(request.inputs.plugins, ",");
       }
       return new Response(null, {status: 204});
     }
     throw new Error(`unexpected fetch: ${target}`);
   };
   try {
-    const selection = {firmware_ref: "main", features: ["wifi"], plugins: []};
+    const selection = {firmware_ref: "main", features: [], plugins: []};
     const missing = await api(env, "/api/v1/status", "POST", selection);
     assert.equal(missing.status, 200);
     const missingStatus = await missing.json();
     const hash = missingStatus.combination_hash;
-    assert.equal(hash, "8b9b767cb97b5b2b2c8aec859219e8f9d207bab9cd41c0a986b2dab55e03bb86");
+    assert.equal(hash, "e4bbbdaf4217d914bcb374b66567902893da2584daf0b4c04f5cca0bfb69816a");
     assert.equal(missingStatus.state, "missing");
 
     const sortedAssets = await api(env, "/api/v1/status", "POST", {
