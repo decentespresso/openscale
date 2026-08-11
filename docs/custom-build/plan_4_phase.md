@@ -10,13 +10,15 @@ The Cloudflare Workers Free plan currently includes 100,000 requests per day wit
 
 ## Hosting
 
-The configurator is `docs/custom-build/index.html`. After this branch is merged, enable GitHub Pages with `main` and `/docs` as the source. It will then be available at `https://decentespresso.github.io/openscale/custom-build/`. No custom DNS domain is required.
+The configurator is `docs/custom-build/index.html`. GitHub Pages serves `main` and `/docs` at `https://decentespresso.github.io/openscale/custom-build/`. No custom DNS domain is required.
 
 The Cloudflare Worker uses `openscale-custom-builds.odevstudio.workers.dev` for the API and artifact downloads. The R2 bucket remains private and has no `r2.dev` endpoint.
 
 ## Implementation Status
 
-The repository contains the Phase 4 API, Durable Object coordinator, trusted service catalog, exact source-commit workflow inputs, authenticated build status callbacks, and configurator integration. The local contract tests pass. The GitHub App is installed and the Worker secrets are provisioned. Before production deployment, an organization owner must restrict the installation to `decentespresso/openscale`, and the trusted service catalog must be present on `main` so public requests can resolve it.
+The Phase 4 API, Durable Object coordinator, trusted service catalog, exact source-commit workflow inputs, authenticated build status callbacks, and configurator integration are deployed. GitHub Pages and the Worker are live, and a production BLE/USB-only request completed successfully. The temporary local GitHub App private-key file was deleted after that test.
+
+The GitHub App installation currently covers the organization because the installer is not the organization owner. Restricting it to `decentespresso/openscale` remains the target least-privilege configuration. The Worker still fixes dispatches to `decentespresso/openscale`; the wider installation is documented security hardening, not a functional deployment blocker.
 
 The initial server limits are three new builds per client per day, twenty new builds globally per day, and two attempts per combination. Duplicate requests do not consume another build slot. Client rate-limit hashes expire after 24 hours, while GitHub controls runner concurrency.
 
@@ -24,7 +26,7 @@ Each attempt has a two-hour lease and a UUID fencing token. The Durable Object a
 
 ## Required Secrets
 
-The Worker requires `RATE_LIMIT_SALT`, `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY_PKCS8`. The private key value is the GitHub App key converted to unencrypted PKCS#8 DER and base64 encoded. The GitHub App receives Actions write access and must be installed only on `decentespresso/openscale`. Existing `UPLOAD_TOKEN` continues to authenticate artifact uploads and workflow status callbacks.
+The Worker requires `RATE_LIMIT_SALT`, `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY_PKCS8`. The private key value is the GitHub App key converted to unencrypted PKCS#8 DER and base64 encoded. The GitHub App receives Actions write access and should be restricted to `decentespresso/openscale`. Existing `UPLOAD_TOKEN` continues to authenticate artifact uploads and workflow status callbacks.
 
 ## Components
 
@@ -66,9 +68,7 @@ Cloudflare Worker
 
 ## Compile Coverage Gate
 
-The current CI proves the standard firmware, grinder environment, one custom configuration, dependency resolution, patch application, hashing, and cache contracts. It does not yet prove every valid feature set. This is a test-coverage gap, not evidence that the remaining combinations fail to compile.
-
-Before the public service is deployed, CI must compile a representative matrix covering: no optional features; WiFi only; WiFi with the web server and no runtime LittleFS; WebSocket; ElegantOTA; Pull OTA without the web server; Grinder; and a plugin with assets. The full set of 62 valid core combinations is not required unless the representative matrix exposes interaction failures.
+CI proves the standard firmware, grinder environment, dependency resolution, patch application, hashing, cache contracts, and the representative custom matrix: no optional features; WiFi only; WiFi with the web server and no runtime LittleFS; WebSocket; ElegantOTA; Pull OTA without the web server; Grinder; and a plugin with assets. The full set of 62 valid core combinations remains unnecessary unless this matrix exposes an interaction failure.
 
 ## Operations and Security
 
@@ -82,6 +82,16 @@ Before the public service is deployed, CI must compile a representative matrix c
 ## Pull OTA Behavior
 
 Selecting `pull-ota` includes the existing OLED/button client. It remains pointed at the official signed release channel. An official update replaces the custom build and its plugin selection. The public build service signs no custom OTA manifests.
+
+## Production Validation
+
+Production validation completed on 2026-08-11:
+
+- GitHub Pages and the Worker returned successful responses from the allowed origin, while an unrelated origin was rejected.
+- Unknown features and disallowed firmware refs were rejected before dispatch.
+- A missing BLE/USB-only combination progressed through GitHub Actions to `ready`.
+- Its public ZIP contained exactly `firmware.bin`, `bootloader.bin`, `partitions.bin`, and `littlefs.bin`, with no factory image or separate public BIN downloads.
+- The completed entry remained publicly readable through the status and download endpoints.
 
 ## Acceptance Criteria
 
