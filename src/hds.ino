@@ -1468,7 +1468,7 @@ void loop() {
   else
     b_heartBeatIcon = false;
 #endif
-  if (bleHasLiveClient()
+  if (b_ota || bleHasLiveClient()
 #if HDS_FEATURE_WEBSOCKET
       || (b_wifiEnabled && websocket.count() > 0)
 #endif
