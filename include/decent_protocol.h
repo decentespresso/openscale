@@ -248,8 +248,6 @@ static inline void buildLedResponsePacket(byte data[7]) {
   }
 
   byte verHigh = (byte)(((major / 10) << 4) | (major % 10));
-  byte verLow = (byte)((minor << 4) | patch);
-
   float weight = f_displayedValue;
   byte weightByte1, weightByte2;
   encodeWeight(weight, weightByte1, weightByte2);
@@ -278,7 +276,7 @@ static inline void buildLedResponsePacket(byte data[7]) {
   data[3] = weightByte2;
   data[4] = batteryByte;
   data[5] = verHigh;
-  data[6] = verLow;
+  data[6] = decentXor(data, 6);
 }
 
 static inline void handleDecentHeartbeatFlag(uint8_t flag) {
