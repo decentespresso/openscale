@@ -29,6 +29,7 @@ Firmware-only flashing does not update `web_apps/`. Flash LittleFS when the on-d
 - `ELEGANTOTA_USE_ASYNC_WEBSERVER=1` is set; `ElegantOTA.loop()` runs in `loop()`.
 - `include/hds_features.h` keeps the normal `esp32s3` feature defaults. `esp32s3-custom` reads `custom-build.json` through `tools/configure_custom_build.py` and stages generated headers and filesystem data under `.pio.nosync`.
 - `tools/build_custom_firmware.py` resolves an allowed firmware ref to an exact commit, builds it in a temporary checkout, applies approved patches in plugin-ID order, and publishes firmware, LittleFS, dependency, and provenance artifacts only after the full build succeeds.
+- `tools/build_custom_firmware.py --verify-plugin-environment esp32s3-<plugin-id>` applies one patch plugin in an isolated checkout, runs its matching contract scripts, and builds its dedicated validation environment without publishing artifacts.
 - Custom feature lists are exact. An empty list builds BLE/USB-only firmware; Pull OTA is enabled only when `pull-ota` is selected.
 - `HDS_FEATURE_LITTLEFS` controls runtime filesystem mounting and web assets. Pull OTA retains its staged `littlefs.bin` transaction independently of that runtime feature.
 - `check_platform_freshness.py` compares the explicit pioarduino pin with the latest stable release as an advisory pre-build check. It never fails offline builds; set `HDS_SKIP_PLATFORM_CHECK=1` only when the check should be skipped deliberately.
@@ -44,6 +45,7 @@ python tools/test_mdns_name_contract.py
 python tools/test_gzip_web_assets.py
 python tools/test_plugin_catalog.py
 python tools/test_custom_build_execution.py
+python tools/test_plugin_ci_contract.py
 python tools/test_release_workflow_contract.py
 pio run -e esp32s3
 pio run -e esp32s3 -t buildfs
