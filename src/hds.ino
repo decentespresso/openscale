@@ -22,9 +22,6 @@
 #if HDS_ENABLE_GRINDER
 #include "grinder_runtime.h"
 #endif
-#if HDS_ENABLE_PRESSENSOR
-#include "pressensor_runtime.h"
-#endif
 #if HDS_FEATURE_PULL_OTA
 #include "pull_ota.h"
 #include "ota_rollback.h"
@@ -440,9 +437,6 @@ void setup() {
   }
 #if HDS_ENABLE_GRINDER
   grinderLoadSettings();
-#endif
-#if HDS_ENABLE_PRESSENSOR
-  pressensorLoadSettings();
 #endif
 
   b_quickBoot = storageGetBool(KEY_QUICK_BOOT, false);
@@ -1477,9 +1471,6 @@ void loop() {
 #if HDS_ENABLE_GRINDER
       || grinderRuntimeKeepsAwake()
 #endif
-#if HDS_ENABLE_PRESSENSOR
-      || pressensorKeepsAwake()
-#endif
   ) {
     power_off(-1);
   } else {
@@ -1544,9 +1535,6 @@ void loop() {
 #endif
 #if HDS_ENABLE_GRINDER
       grinderRuntimeTick(f_displayedValue);
-#endif
-#if HDS_ENABLE_PRESSENSOR
-      pressensorRuntimeTick(f_displayedValue, true);
 #endif
       showMenu();
     } else if (GPIO_power_on_with == BATTERY_CHARGING) {
@@ -1657,16 +1645,7 @@ void loop() {
           }
         }
         pureScale();
-#if HDS_ENABLE_PRESSENSOR
-        pressensorRuntimeTick(f_displayedValue, false);
-        if (pressensorActive()) {
-          updatePressensorOled();
-        } else {
-          updateOled();
-        }
-#else
         updateOled();
-#endif
 #if HDS_ENABLE_GRINDER
         grinderRuntimeTick(f_displayedValue);
 #endif
@@ -1871,119 +1850,6 @@ void drawGrinder() {
   grinderShortStatus(text, sizeof(text));
   u8g2.setFont(u8g2_font_5x8_tr);
   u8g2.drawStr(46, 64, text);
-}
-#endif
-
-#if HDS_ENABLE_PRESSENSOR
-void drawPressensorCell(int cellX, int baseline, const char *value, const char *unit) {
-  u8g2.setFont(FONT_PRESSENSOR_VALUE);
-  const int valueWidth = u8g2.getUTF8Width(value);
-  u8g2.setFont(u8g2_font_5x8_tr);
-  const int unitWidth = unit[0] ? u8g2.getUTF8Width(unit) : 0;
-  const int gap = unit[0] ? 3 : 0;
-  int x = cellX + (63 - valueWidth - gap - unitWidth) / 2;
-  if (x < cellX + 1) {
-    x = cellX + 1;
-  }
-  u8g2.setFont(FONT_PRESSENSOR_VALUE);
-  u8g2.drawStr(x, baseline, value);
-  if (unit[0]) {
-    u8g2.setFont(u8g2_font_5x8_tr);
-    u8g2.drawStr(x + valueWidth + gap, baseline, unit);
-  }
-}
-
-void drawPressensorSmall(int cellX, int baseline, const char *text) {
-  u8g2.setFont(u8g2_font_5x8_tr);
-  int x = cellX + (63 - u8g2.getUTF8Width(text)) / 2;
-  if (x < cellX + 1) {
-    x = cellX + 1;
-  }
-  u8g2.drawStr(x, baseline, text);
-}
-
-void updatePressensorOled() {
-  if (millis() - t_oled_refresh < i_oled_print_interval) {
-    return;
-  }
-  t_oled_refresh = millis();
-
-  const float bar = pressensorShot.liveBar;
-  const float weight = f_displayedValue;
-  const float flow = pressensorShot.flowEma;
-  const bool running = pressensorShot.state == PRESSENSOR_SHOT_RUNNING;
-  const bool done = pressensorShot.state == PRESSENSOR_SHOT_DONE;
-  const bool streaming = pressensorStreaming();
-  const uint32_t elapsedMs = pressensorShotElapsedMs();
-  const char *status = pressensorStatusText();
-
-  char barStr[10];
-  char weightStr[12];
-  const char *weightUnit = "g";
-  char flowStr[10];
-  char peakStr[16];
-  char timeStr[10];
-  snprintf(barStr, sizeof(barStr), "%.1f", bar);
-  if (weight > OVER_WEIGHT) {
-    snprintf(weightStr, sizeof(weightStr), "Over");
-    weightUnit = "";
-  } else if (fabsf(weight) >= 999.95f) {
-    snprintf(weightStr, sizeof(weightStr), "%.0f", weight);
-  } else {
-    snprintf(weightStr, sizeof(weightStr), "%.1f", weight);
-  }
-  snprintf(flowStr, sizeof(flowStr), "%.1f", flow);
-  snprintf(peakStr, sizeof(peakStr), "peak %.1f", pressensorShot.peakBar);
-  const uint32_t totalSeconds = elapsedMs / 1000;
-  snprintf(timeStr, sizeof(timeStr), "%lu:%02lu", (unsigned long)(totalSeconds / 60), (unsigned long)(totalSeconds % 60));
-  int fillWidth = (int)(bar / 12.0f * 126.0f);
-  if (fillWidth < 0) {
-    fillWidth = 0;
-  } else if (fillWidth > 126) {
-    fillWidth = 126;
-  }
-
-  u8g2.firstPage();
-  do {
-    if (b_screenFlipped) {
-      u8g2.setDisplayRotation(U8G2_R0);
-    } else {
-      u8g2.setDisplayRotation(U8G2_R2);
-    }
-    u8g2.setFontMode(1);
-    u8g2.setDrawColor(1);
-
-    u8g2.drawVLine(64, 0, 30);
-    u8g2.drawVLine(64, 34, 30);
-    u8g2.drawFrame(0, 30, 128, 4);
-    if (fillWidth > 0) {
-      u8g2.drawBox(1, 31, fillWidth, 2);
-    }
-
-    drawPressensorCell(0, 24, barStr, "bar");
-    drawPressensorCell(65, 24, weightStr, weightUnit);
-    if (running) {
-      drawPressensorCell(0, 58, flowStr, "g/s");
-    } else if (done) {
-      drawPressensorSmall(0, 48, peakStr);
-      drawPressensorSmall(0, 58, "[] resets");
-    } else {
-      drawPressensorSmall(0, 52, status);
-    }
-    drawPressensorCell(65, 58, timeStr, "");
-
-    if (streaming) {
-      u8g2.drawDisc(4, 4, 2);
-    } else {
-      u8g2.drawCircle(4, 4, 2);
-    }
-
-    u8g2.setDrawColor(2);
-    drawTare();
-    drawShutdownFail();
-    drawAbout();
-    drawDebug();
-  } while (u8g2.nextPage());
 }
 #endif
 

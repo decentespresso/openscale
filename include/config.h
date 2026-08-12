@@ -3,9 +3,6 @@
 
 #include "hds_features.h"
 
-#ifndef HDS_ENABLE_PRESSENSOR
-#define HDS_ENABLE_PRESSENSOR 0
-#endif
 
 #define CUUID_DECENTSCALE_READ "fff4"
 #define CUUID_DECENTSCALE_WRITE "36f5"

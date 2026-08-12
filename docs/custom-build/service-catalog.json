@@ -52,6 +52,20 @@
           "sha256": "0c56f012349a72135471b5fe3c09a44ddd19ce1b2d2c2d12e1ded6fe0606edc2"
         }
       ]
+    },
+    "pressensor": {
+      "version": "1.0.0",
+      "firmware_refs": [
+        "main"
+      ],
+      "requires": [],
+      "conflicts": [],
+      "patches": {
+        "main": {
+          "sha256": "df53c2e9846ee1eed5f5ef1f2448de031e4b177d94e96404becaf41230a90103"
+        }
+      },
+      "assets": []
     }
   }
 }

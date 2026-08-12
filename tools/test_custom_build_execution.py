@@ -39,8 +39,8 @@ def runGit(root, *arguments):
     ).stdout.strip()
 
 
-def writeConfig(root, plugins, firmwareRef="main"):
-    path = root / "custom-build.json"
+def writeConfig(root, plugins, firmwareRef="main", name="custom-build.json"):
+    path = root / name
     path.write_text(json.dumps({
         "firmware_ref": firmwareRef,
         "features": [],
@@ -129,6 +129,9 @@ def main():
         clear=True,
     ):
         assert customRunner.pullRequestCommit() == "1" * 40
+        assert customRunner.requestedSourceCommit(None, None) == "1" * 40
+        assert customRunner.requestedSourceCommit(None, "esp32s3-pressensor") is None
+        assert customRunner.requestedSourceCommit("2" * 40, "esp32s3-pressensor") == "2" * 40
     with tempfile.TemporaryDirectory() as temporaryDirectory:
         root = Path(temporaryDirectory)
         catalogRoot = root / "catalog"
@@ -147,6 +150,43 @@ def main():
             assert [pluginId for pluginId, _ in configuration["patches"]] == ["patch-a", "patch-b"]
             assert customRunner.resolveFirmwareCommit(sourceRoot, "main") == sourceCommit
             assertRejected(lambda: customRunner.verifySourceCommit(sourceRoot, "main"))
+
+            pluginConfigPath = writeConfig(
+                catalogRoot, ["patch-a"], name="plugin-verify.json"
+            )
+
+            def createPluginCheckout(repositoryRoot, commitSha, checkoutRoot):
+                checkoutRoot.mkdir()
+                tools = checkoutRoot / "tools"
+                tools.mkdir()
+                (tools / "test_patch_a_contract.py").write_text("", encoding="utf-8")
+
+            with (
+                patch.object(customRunner, "verifySourceCommit", return_value=sourceCommit),
+                patch.object(customRunner, "cloneSource", side_effect=createPluginCheckout),
+                patch.object(customRunner, "applyPatches") as applyPatches,
+                patch.object(customRunner, "runCommand") as runCommand,
+            ):
+                verification = customRunner.verifyPluginEnvironment(
+                    pluginConfigPath, "esp32s3-patch-a", sourceCommit
+                )
+            assert verification == {
+                "base_source": sourceCommit,
+                "environment": "esp32s3-patch-a",
+                "plugin": "patch-a",
+                "tests": ["test_patch_a_contract.py"],
+            }
+            applyPatches.assert_called_once()
+            commands = [call.args[0] for call in runCommand.call_args_list]
+            assert commands[0][0] == customRunner.sys.executable
+            assert commands[0][1].endswith("test_patch_a_contract.py")
+            assert commands[1] == ["pio", "run", "-e", "esp32s3-patch-a"]
+            assertRejected(lambda: customRunner.verifyPluginEnvironment(
+                pluginConfigPath, "esp32s3-other", sourceCommit
+            ))
+            assertRejected(lambda: customRunner.verifyPluginEnvironment(
+                configPath, "esp32s3-patch-a", sourceCommit
+            ))
 
             checkoutRoot = root / "valid-checkout"
             customRunner.cloneSource(sourceRoot, sourceCommit, checkoutRoot)
@@ -280,14 +320,10 @@ def main():
     assert '--attempt-id "${{ inputs.attempt_id }}"' in workflow
     assert "python tools/update_custom_build_status.py" in workflow
     assert "inputs.combination_hash || github.run_id" in workflow
-    assert "compile-matrix:" in workflow
-    assert "no-optional-features" in workflow
-    assert "wifi-only" in workflow
-    assert "webserver-without-littlefs" in workflow
-    assert "websocket" in workflow
-    assert "elegant-ota" in workflow
-    assert "pull-ota" in workflow
-    assert "grinder" in workflow
+    assert "verify-pressensor:" in workflow
+    assert "--verify-plugin-environment esp32s3-pressensor" in workflow
+    assert '"plugins": ["pressensor"]' in workflow
+    assert "compile-matrix:" not in workflow
     assert "hello-web" in workflow
     assert "pio run -e esp32s3-custom" not in workflow
     configurator = (customBuild.SCRIPT_ROOT / "docs" / "custom-build" / "app.js").read_text(

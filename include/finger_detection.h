@@ -217,17 +217,8 @@ bool isFingerPress(int button) {
           sendBleButton(2, 1);
         }
         if (!b_menu && !b_calibration && (!bleClientLive || b_btnFuncWhileConnected)) {
-          if (millis() - t_menuExitTime > 1000) {
-#if HDS_ENABLE_PRESSENSOR
-            if (pressensorActive()) {
-              pressensorTimerButton(f_displayedValue);
-            } else {
-              scaleTimer();
-            }
-#else
+          if (millis() - t_menuExitTime > 1000)
             scaleTimer();
-#endif
-          }
         }
       }
     }

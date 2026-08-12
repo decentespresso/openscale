@@ -1,0 +1,20 @@
+{
+  "schema": 2,
+  "id": "pressensor",
+  "name": "Pressensor",
+  "description": "Show Pressensor pressure, weight, flow, and shot time on the scale.",
+  "tooltip": "Connects to a selected Pressensor over BLE and adds pressure-aware shot timing without requiring WiFi or runtime LittleFS.",
+  "version": "1.0.0",
+  "firmware_refs": ["main"],
+  "requires": [],
+  "conflicts": [],
+  "patches": {
+    "main": "patches/main.patch"
+  },
+  "assets": [],
+  "budget": {
+    "firmware_flash_bytes": 32768,
+    "static_ram_bytes": 2048,
+    "littlefs_bytes": 0
+  }
+}
