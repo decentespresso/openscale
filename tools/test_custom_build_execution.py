@@ -320,9 +320,13 @@ def main():
     assert '--attempt-id "${{ inputs.attempt_id }}"' in workflow
     assert "python tools/update_custom_build_status.py" in workflow
     assert "inputs.combination_hash || github.run_id" in workflow
-    assert "verify-pressensor:" in workflow
-    assert "--verify-plugin-environment esp32s3-pressensor" in workflow
-    assert '"plugins": ["pressensor"]' in workflow
+    assert "detect_plugins:" in workflow
+    assert "verify_plugins:" in workflow
+    assert "tools/list_changed_patch_plugins.py" in workflow
+    assert "fromJSON(needs.detect_plugins.outputs.matrix)" in workflow
+    assert '--verify-plugin-environment "esp32s3-$PLUGIN_ID"' in workflow
+    assert '"plugins": [os.environ["PLUGIN_ID"]]' in workflow
+    assert "verify-pressensor:" not in workflow
     assert "compile-matrix:" not in workflow
     assert "hello-web" in workflow
     assert "pio run -e esp32s3-custom" not in workflow

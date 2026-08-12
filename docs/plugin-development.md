@@ -159,7 +159,7 @@ python tools/build_custom_firmware.py --config .pio.nosync/plugin-build.json --v
 python tools/build_custom_firmware.py --config .pio.nosync/plugin-build.json --output .pio.nosync/custom-output
 ```
 
-The first PlatformIO build proves the normal firmware still compiles. The verification command applies exactly one patch plugin, runs matching `tools/test_my_plugin_*.py` files from the patch, and builds its dedicated environment. The final command verifies the same package through the production `esp32s3-custom` compositor and creates the four-file ZIP.
+The first PlatformIO build proves the normal firmware still compiles. The verification command applies exactly one patch plugin, runs matching `tools/test_my_plugin_*.py` files from the patch, and builds its dedicated environment. Pull-request CI performs this verification for every changed patch plugin and every firmware ref mapped by that package; it does not rebuild unrelated or asset-only plugins. The final command verifies the same package through the production `esp32s3-custom` compositor and creates the four-file ZIP.
 
 Hardware testing must state what was actually available. A build and menu smoke test do not prove sensor communication, electrical behavior, calibration, or radio coexistence.
 
