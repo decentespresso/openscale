@@ -67,16 +67,31 @@
     },
     {
       "id": "grinder",
-      "name": "Grinder",
-      "description": "Enable supported grinder integrations.",
-      "tooltip": "Adds grinder connectivity and includes WiFi and mDNS.",
+      "name": "Grind by weight",
+      "description": "Stop a supported grinder automatically at the target dose.",
+      "tooltip": "Controls a supported grinder plug and includes WiFi and mDNS.",
       "requires": [
         "wifi",
         "mdns"
-      ]
+      ],
+      "hidden": true
     }
   ],
   "plugins": [
+    {
+      "id": "grind-by-weight",
+      "name": "Grind by weight",
+      "description": "Stop a supported grinder automatically at the target dose.",
+      "tooltip": "Controls a supported Tasmota grinder plug over the local network and includes WiFi and mDNS.",
+      "version": "1.0.0",
+      "firmware_refs": [
+        "main"
+      ],
+      "requires": [
+        "grinder"
+      ],
+      "conflicts": []
+    },
     {
       "id": "hello-web",
       "name": "Hello Web",
@@ -91,6 +106,18 @@
         "webserver",
         "littlefs"
       ],
+      "conflicts": []
+    },
+    {
+      "id": "pressensor",
+      "name": "Pressensor",
+      "description": "Show Pressensor pressure, weight, flow, and shot time on the scale.",
+      "tooltip": "Connects to a selected Pressensor over BLE and adds pressure-aware shot timing without requiring WiFi or runtime LittleFS.",
+      "version": "1.0.0",
+      "firmware_refs": [
+        "main"
+      ],
+      "requires": [],
       "conflicts": []
     }
   ]

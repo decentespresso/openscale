@@ -1,0 +1,18 @@
+{
+  "schema": 2,
+  "id": "grind-by-weight",
+  "name": "Grind by weight",
+  "description": "Stop a supported grinder automatically at the target dose.",
+  "tooltip": "Controls a supported Tasmota grinder plug over the local network and includes WiFi and mDNS.",
+  "version": "1.0.0",
+  "firmware_refs": ["main"],
+  "requires": ["grinder"],
+  "conflicts": [],
+  "patches": {},
+  "assets": [],
+  "budget": {
+    "firmware_flash_bytes": 65536,
+    "static_ram_bytes": 4096,
+    "littlefs_bytes": 0
+  }
+}

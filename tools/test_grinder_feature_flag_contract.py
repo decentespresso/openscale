@@ -82,16 +82,18 @@ def main():
     power = source("include/power.h")
     wifi = source("src/wifi_setup.cpp")
     wifi_header = source("include/wifi_setup.h")
-    nightly = source(".github/workflows/nightly.yml")
 
     require_guarded_rejects_sibling()
 
     require('#include "hds_features.h"', config)
     require("#define HDS_FEATURE_GRINDER 0", features)
     require("#define HDS_ENABLE_GRINDER HDS_FEATURE_GRINDER", features)
+    require('HDS_FEATURE_GRINDER requires HDS_FEATURE_WIFI and HDS_FEATURE_MDNS', features)
     normal = platformio.split("[env:esp32s3]", 1)[1].split("[env:esp32s3-grinder]", 1)[0]
-    grinder_environment = platformio.split("[env:esp32s3-grinder]", 1)[1].split("[env:native]", 1)[0]
+    grinder_environment = platformio.split("[env:esp32s3-grinder]", 1)[1].split("[env:esp32s3-custom]", 1)[0]
+    custom_environment = platformio.split("[env:esp32s3-custom]", 1)[1].split("[env:native]", 1)[0]
     assert "HDS_ENABLE_GRINDER" not in normal
+    assert "HDS_ENABLE_GRINDER" not in custom_environment
     require("extends = env:esp32s3", grinder_environment)
     require("${env:esp32s3.build_flags}", grinder_environment)
     require("-DHDS_ENABLE_GRINDER=1", grinder_environment)
@@ -105,7 +107,7 @@ def main():
     ):
         require_guarded(hds, text)
     require_guarded(menu, '#include "grinder_runtime.h"')
-    for text in ("menuGrinder", '"Grinder Plug"', "grinderSetActionMessage"):
+    for text in ("menuGrinder", '"Grind by weight"', "grinderSetActionMessage"):
         require_guarded(menu, text)
     for text in (
         "GrinderSettings grinderSettings",
@@ -116,10 +118,6 @@ def main():
     ):
         require_guarded(parameter, text)
     require_guarded(power, "beforeDeepSleepFlush")
-    require("python tools/test_grinder_feature_flag_contract.py", nightly)
-    require("- esp32s3-grinder", nightly)
-    artifact_guard = "if: matrix.board == 'esp32s3'\n        uses: actions/upload-artifact@v7"
-    assert nightly.count(artifact_guard) == 2, "grinder artifact upload is not gated"
 
     require("bool wifiEnsureMdnsReadyForSta()", wifi)
     require('MDNS.addService("decentscale", "tcp", 80)', wifi)

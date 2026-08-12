@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import urllib.error
 import urllib.parse
@@ -78,6 +79,10 @@ def pullRequestCommit():
     if not sourceCommit:
         raise ValueError("pull request build has no GITHUB_SHA")
     return sourceCommit
+
+
+def requestedSourceCommit(sourceCommit, verifyPluginEnvironment):
+    return sourceCommit or (None if verifyPluginEnvironment else pullRequestCommit())
 
 
 def cloneSource(repositoryRoot, commitSha, checkoutRoot):
@@ -252,6 +257,38 @@ def publishArtifacts(buildDir, outputDir):
         ready.replace(outputDir)
 
 
+def verifyPluginEnvironment(configPath, platformioEnvironment, sourceCommit=None):
+    configuration = customBuild.resolveConfiguration(configPath)
+    if len(configuration["plugins"]) != 1 or len(configuration["patches"]) != 1:
+        raise ValueError("plugin verification requires exactly one patch plugin")
+    pluginId = configuration["plugins"][0]["id"]
+    if configuration["patches"][0][0] != pluginId:
+        raise ValueError("plugin verification patch does not match the selected plugin")
+    expectedEnvironment = f"esp32s3-{pluginId}"
+    if platformioEnvironment != expectedEnvironment:
+        raise ValueError(f"plugin environment must be {expectedEnvironment}")
+    commitSha = (
+        verifySourceCommit(ROOT, sourceCommit)
+        if sourceCommit
+        else resolveFirmwareCommit(ROOT, configuration["firmware_ref"])
+    )
+    with tempfile.TemporaryDirectory(prefix="openscale-plugin-") as temporaryDirectory:
+        checkoutRoot = Path(temporaryDirectory) / "source"
+        cloneSource(ROOT, commitSha, checkoutRoot)
+        applyPatches(configuration, checkoutRoot)
+        testPattern = f"test_{pluginId.replace('-', '_')}_*.py"
+        tests = sorted((checkoutRoot / "tools").glob(testPattern))
+        for testPath in tests:
+            runCommand([sys.executable, str(testPath)], checkoutRoot)
+        runCommand(["pio", "run", "-e", platformioEnvironment], checkoutRoot)
+    return {
+        "base_source": commitSha,
+        "environment": platformioEnvironment,
+        "plugin": pluginId,
+        "tests": [path.name for path in tests],
+    }
+
+
 def buildCustomFirmware(
     configPath, outputRoot, sourceCommit=None, cacheUrl=None, expectedHash=None
 ):
@@ -337,15 +374,24 @@ def main():
     parser.add_argument("--cache-url")
     parser.add_argument("--source-commit")
     parser.add_argument("--expected-hash")
+    parser.add_argument("--verify-plugin-environment")
     args = parser.parse_args()
+    sourceCommit = requestedSourceCommit(args.source_commit, args.verify_plugin_environment)
+    if args.verify_plugin_environment and any((args.github_output, args.cache_url, args.expected_hash)):
+        parser.error("plugin verification does not publish or use the artifact cache")
     try:
-        result = buildCustomFirmware(
-            args.config.resolve(),
-            args.output.resolve(),
-            args.source_commit or pullRequestCommit(),
-            args.cache_url,
-            args.expected_hash or None,
-        )
+        if args.verify_plugin_environment:
+            result = verifyPluginEnvironment(
+                args.config.resolve(), args.verify_plugin_environment, sourceCommit
+            )
+        else:
+            result = buildCustomFirmware(
+                args.config.resolve(),
+                args.output.resolve(),
+                sourceCommit,
+                args.cache_url,
+                args.expected_hash or None,
+            )
     except (ValueError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"custom build failed: {error}\n")
     if args.github_output:

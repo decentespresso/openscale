@@ -61,9 +61,9 @@ FEATURE_PRESENTATION = {
         "Downloads signed firmware and LittleFS release assets over WiFi from the OLED update flow.",
     ),
     "grinder": (
-        "Grinder",
-        "Enable supported grinder integrations.",
-        "Adds grinder connectivity and includes WiFi and mDNS.",
+        "Grind by weight",
+        "Stop a supported grinder automatically at the target dose.",
+        "Controls a supported grinder plug and includes WiFi and mDNS.",
     ),
 }
 DEFAULT_FEATURES = {"pull-ota"}
@@ -192,6 +192,8 @@ def buildBrowserCatalog():
         }
         if featureId in DEFAULT_FEATURES:
             feature["default"] = True
+        if featureId == "grinder":
+            feature["hidden"] = True
         features.append(feature)
     return {
         "firmware_refs": list(FIRMWARE_REFS),

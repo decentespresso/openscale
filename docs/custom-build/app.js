@@ -51,7 +51,7 @@
   };
 
   catalog.firmware_refs.forEach(ref => refSelect.add(new Option(ref, ref)));
-  catalog.features.forEach(item => featureRoot.append(makeOption(item, "feature")));
+  catalog.features.filter(item => !item.hidden).forEach(item => featureRoot.append(makeOption(item, "feature")));
   catalog.plugins.forEach(item => pluginRoot.append(makeOption(item, "plugin")));
 
   const resolveSelection = () => {
@@ -217,7 +217,7 @@
       features.forEach(id => {
         const chip = document.createElement("span");
         chip.className = "resolved-chip";
-        chip.textContent = id;
+        chip.textContent = featureById.get(id)?.name || id;
         resolvedRoot.append(chip);
       });
     } else {

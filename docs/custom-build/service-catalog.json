@@ -34,6 +34,18 @@
     ]
   },
   "plugins": {
+    "grind-by-weight": {
+      "version": "1.0.0",
+      "firmware_refs": [
+        "main"
+      ],
+      "requires": [
+        "grinder"
+      ],
+      "conflicts": [],
+      "patches": {},
+      "assets": []
+    },
     "hello-web": {
       "version": "1.0.0",
       "firmware_refs": [
@@ -52,6 +64,20 @@
           "sha256": "0c56f012349a72135471b5fe3c09a44ddd19ce1b2d2c2d12e1ded6fe0606edc2"
         }
       ]
+    },
+    "pressensor": {
+      "version": "1.0.0",
+      "firmware_refs": [
+        "main"
+      ],
+      "requires": [],
+      "conflicts": [],
+      "patches": {
+        "main": {
+          "sha256": "32c1e4f31e7ff3240d73617e1c3e7824885abf1eccee53d341536971242edce4"
+        }
+      },
+      "assets": []
     }
   }
 }

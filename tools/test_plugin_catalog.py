@@ -142,12 +142,19 @@ def main():
     pageRoot = customBuild.ROOT / "docs" / "custom-build"
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
-    assert 'src="app.js?v=3"' in indexPage
+    assert 'src="app.js?v=4"' in indexPage
     assert 'href="styles.css?v=3"' in indexPage
     assert 'id="request-build"' in indexPage
     assert "catalog-data" not in indexPage
     assert 'fetch("catalog.json"' in appScript
     assert "openscale-custom-builds.odevstudio.workers.dev" in appScript
+    assert "catalog.features.filter(item => !item.hidden)" in appScript
+    grinderFeature = next(feature for feature in generatedCatalog["features"] if feature["id"] == "grinder")
+    grindByWeight = next(plugin for plugin in generatedCatalog["plugins"] if plugin["id"] == "grind-by-weight")
+    assert grinderFeature["name"] == "Grind by weight"
+    assert grinderFeature["hidden"] is True
+    assert grindByWeight["name"] == "Grind by weight"
+    assert grindByWeight["requires"] == ["grinder"]
     with tempfile.TemporaryDirectory() as temporaryDirectory:
         configuration = customBuild.resolveConfiguration(
             writeConfig(Path(temporaryDirectory), ["pull-ota"], ["hello-web"])
@@ -175,6 +182,8 @@ def main():
         assertRejected(lambda: customBuild.resolveConfiguration(writeConfig(root, [], ["../bad"])))
         resolved = customBuild.resolveConfiguration(writeConfig(root, [], ["hello-web"]))
         assert "littlefs" in resolved["features"]
+        grindByWeight = customBuild.resolveConfiguration(writeConfig(root, [], ["grind-by-weight"]))
+        assert {"grinder", "wifi", "mdns"}.issubset(grindByWeight["features"])
     testTemporaryPluginValidation()
     print("plugin catalog tests passed")
 

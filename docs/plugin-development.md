@@ -15,12 +15,13 @@ The selected package is applied only in a temporary checkout. Its implementation
 
 ## Reference Implementations
 
-Use both references, for different purposes:
+Use these references for different purposes:
 
 - `plugins/hello-web/` shows an asset-only plugin with WiFi, WebServer, and runtime LittleFS dependencies.
+- `plugins/grind-by-weight/` shows how an existing built-in feature appears in the plugin catalog without a patch.
 - The package layout below defines version-specific firmware patches and their dedicated compile environments.
 
-Grinder remains built into the firmware and is not converted into a patch package. It is the reference for containing an optional integration behind one compile gate. Study its environment, feature dependency checks, guarded state, menu integration, setup and loop hooks, storage, power behavior, and contract test. Do not copy its networking dependencies unless the new plugin actually needs them.
+Grind by weight remains built into the firmware and is not converted into a patch package. Its internal feature ID remains `grinder` for compatibility. It is the reference for containing an optional integration behind one compile gate. Study its environment, feature dependency checks, guarded state, menu integration, setup and loop hooks, storage, power behavior, and contract test. Do not copy its networking dependencies unless the new plugin actually needs them.
 
 ## Package Layout
 
@@ -159,7 +160,7 @@ python tools/build_custom_firmware.py --config .pio.nosync/plugin-build.json --v
 python tools/build_custom_firmware.py --config .pio.nosync/plugin-build.json --output .pio.nosync/custom-output
 ```
 
-The first PlatformIO build proves the normal firmware still compiles. The verification command applies exactly one patch plugin, runs matching `tools/test_my_plugin_*.py` files from the patch, and builds its dedicated environment. The final command verifies the same package through the production `esp32s3-custom` compositor and creates the four-file ZIP.
+The first PlatformIO build proves the normal firmware still compiles. The verification command applies exactly one patch plugin, runs matching `tools/test_my_plugin_*.py` files from the patch, and builds its dedicated environment. Pull-request CI performs this verification for every changed patch plugin and every firmware ref mapped by that package; it does not rebuild unrelated or asset-only plugins. The final command verifies the same package through the production `esp32s3-custom` compositor and creates the four-file ZIP.
 
 Hardware testing must state what was actually available. A build and menu smoke test do not prove sensor communication, electrical behavior, calibration, or radio coexistence.
 
@@ -185,7 +186,7 @@ Give the AI the feature source, plugin ID, supported firmware ref, available har
 Work in decentespresso/openscale as a lazy senior developer.
 
 First read AGENTS.md, docs/AI_REPO_MAP.md, docs/AI_PLUGIN_NOTES.md,
-docs/AI_BUILD_NOTES.md, and docs/plugin-development.md. Inspect Grinder only as
+docs/AI_BUILD_NOTES.md, and docs/plugin-development.md. Inspect Grind by weight only as
 the built-in compile-gating reference and plugins/hello-web as the asset-plugin
 reference. Reuse existing build and catalog tools.
 
