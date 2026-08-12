@@ -35,9 +35,10 @@ enum SamplingPhase {
 struct PressSample {
   float weight;
   unsigned long timestamp;
-  SamplingPhase phase;
   bool is_release_point;
 };
+
+static_assert(sizeof(PressSample) == 12);
 
 struct ButtonPressData {
   PressSample samples[TOTAL_SAMPLES];
@@ -45,8 +46,6 @@ struct ButtonPressData {
   SamplingPhase current_phase;
   unsigned long press_start_time;
   unsigned long release_time;
-  float release_weight;
-  float last_sampled_weight;
   unsigned long last_sample_real_time;
   bool is_active;
 };
@@ -360,13 +359,11 @@ void startPressSampling(int button) {
   data->sample_index = 0;
   data->press_start_time = millis();
   data->last_sample_real_time = data->press_start_time;
-  data->last_sampled_weight = f_current_raw_value;
   data->is_active = true;
 
   if (data->sample_index < TOTAL_SAMPLES) {
     data->samples[data->sample_index].weight = f_current_raw_value;
     data->samples[data->sample_index].timestamp = 0;
-    data->samples[data->sample_index].phase = PHASE_PRESSING;
     data->samples[data->sample_index].is_release_point = false;
     data->sample_index++;
   }
@@ -384,13 +381,11 @@ void onButtonReleased(int button) {
   if (!data || data->current_phase != PHASE_PRESSING) return;
 
   data->release_time = millis();
-  data->release_weight = f_current_raw_value;
   data->current_phase = PHASE_RECOVERING;
 
   if (data->sample_index < TOTAL_SAMPLES) {
-    data->samples[data->sample_index].weight = data->release_weight;
+    data->samples[data->sample_index].weight = f_current_raw_value;
     data->samples[data->sample_index].timestamp = data->release_time - data->press_start_time;
-    data->samples[data->sample_index].phase = PHASE_RECOVERING;
     data->samples[data->sample_index].is_release_point = true;
     data->sample_index++;
   }
@@ -444,12 +439,10 @@ void updatePressSampling() {
 
       data->samples[data->sample_index].weight = current_weight;
       data->samples[data->sample_index].timestamp = current_time - data->press_start_time;
-      data->samples[data->sample_index].phase = data->current_phase;
       data->samples[data->sample_index].is_release_point = false;
 
       data->sample_index++;
       data->last_sample_real_time = current_time;
-      data->last_sampled_weight = current_weight;
     } else {
       if (b_fingerDetectionSerialOutput) {
         Serial.print(button == BUTTON_CIRCLE ? "Circle" : "Square");
