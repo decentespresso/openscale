@@ -34,6 +34,18 @@
     ]
   },
   "plugins": {
+    "grind-by-weight": {
+      "version": "1.0.0",
+      "firmware_refs": [
+        "main"
+      ],
+      "requires": [
+        "grinder"
+      ],
+      "conflicts": [],
+      "patches": {},
+      "assets": []
+    },
     "hello-web": {
       "version": "1.0.0",
       "firmware_refs": [
@@ -62,7 +74,7 @@
       "conflicts": [],
       "patches": {
         "main": {
-          "sha256": "df53c2e9846ee1eed5f5ef1f2448de031e4b177d94e96404becaf41230a90103"
+          "sha256": "32c1e4f31e7ff3240d73617e1c3e7824885abf1eccee53d341536971242edce4"
         }
       },
       "assets": []

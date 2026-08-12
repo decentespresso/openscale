@@ -80,9 +80,7 @@ index d002267..18840b3 100644
  #if HDS_FEATURE_WIFI
  void wifi_init();
  #endif
-@@ -109,6 +120,9 @@ Menu menuDriftComp = { "Drift Comp", NULL, NULL, NULL };
- #if HDS_ENABLE_GRINDER
- Menu menuGrinder = { "Grinder Plug", NULL, NULL, NULL };
+@@ -111,4 +122,7 @@
  #endif
 +#if HDS_ENABLE_PRESSENSOR
 +Menu menuPressensor = { "Pressensor", NULL, NULL, NULL };

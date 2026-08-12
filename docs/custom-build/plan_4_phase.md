@@ -68,7 +68,7 @@ Cloudflare Worker
 
 ## Compile Coverage Gate
 
-CI proves the standard firmware, grinder environment, dependency resolution, patch application, hashing, cache contracts, and the representative custom matrix: no optional features; WiFi only; WiFi with the web server and no runtime LittleFS; WebSocket; ElegantOTA; Pull OTA without the web server; Grinder; and a plugin with assets. The full set of 62 valid core combinations remains unnecessary unless this matrix exposes an interaction failure.
+CI proves the standard firmware, custom-build contracts, and every changed patch plugin's dedicated environment. Grind by weight remains built in with its own contract tests and optional `esp32s3-grinder` validation environment; it is not part of the standard PR build matrix. The full set of 62 valid core combinations remains unnecessary unless focused coverage exposes an interaction failure.
 
 ## Operations and Security
 

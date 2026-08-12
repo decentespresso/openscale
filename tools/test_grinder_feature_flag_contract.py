@@ -107,7 +107,7 @@ def main():
     ):
         require_guarded(hds, text)
     require_guarded(menu, '#include "grinder_runtime.h"')
-    for text in ("menuGrinder", '"Grinder Plug"', "grinderSetActionMessage"):
+    for text in ("menuGrinder", '"Grind by weight"', "grinderSetActionMessage"):
         require_guarded(menu, text)
     for text in (
         "GrinderSettings grinderSettings",

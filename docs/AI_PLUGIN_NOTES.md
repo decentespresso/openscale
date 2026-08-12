@@ -8,10 +8,11 @@ The normal firmware tree stays unchanged. An approved plugin is stored under `pl
 
 Only repository-owned plugin IDs are accepted. Never add uploaded archives, arbitrary URLs, external patch locations, or build-request-supplied code.
 
-Two package forms are supported:
+Three package forms are supported:
 
 - Asset-only plugins add files below the staged LittleFS data directory. `plugins/hello-web/` is the reference.
 - Patch plugins add compile-time firmware behavior through an approved package under `plugins/<plugin-id>/`.
+- Built-in selector plugins expose an existing gated firmware feature in the plugin catalog without duplicating its source. `plugins/grind-by-weight/` is the reference.
 
 ## Required Package Shape
 
@@ -58,9 +59,9 @@ This gives three deliberate modes:
 
 Do not make every plugin patch edit the `esp32s3-custom` block. The `HDS_CUSTOM_BUILD` default activates an applied patch without creating a shared patch-conflict hotspot in `platformio.ini`.
 
-## Grinder Reference
+## Grind by weight Reference
 
-Grinder is a built-in, repository-owned compile-time feature and is not a patch plugin. Keep it in the source tree as the reference for a well-contained optional integration:
+Grind by weight is a built-in, repository-owned compile-time feature and is not a patch plugin. Its catalog package requires the existing internal `grinder` feature and contains no patch or asset. Keep the implementation in the source tree as the reference for a well-contained optional integration:
 
 - `include/hds_features.h` owns its default, dependency checks, and compatibility alias.
 - `platformio.ini` provides `esp32s3-grinder` as a direct validation environment.
@@ -69,7 +70,7 @@ Grinder is a built-in, repository-owned compile-time feature and is not a patch 
 - menu, setup, loop, power, and storage behavior remain inside the same gate.
 - `tools/test_grinder_feature_flag_contract.py` prevents unguarded integration and stale dependencies.
 
-Copy this containment pattern, not Grinder's WiFi requirements, implementation, or generated feature mapping. Patch plugin dependencies belong in `plugin.json`. Add a plugin to the core feature graph only when it is intentionally becoming a built-in firmware feature.
+Copy this containment pattern, not Grind by weight's WiFi requirements, implementation, or generated feature mapping. Patch plugin dependencies belong in `plugin.json`. Add a plugin to the core feature graph only when it is intentionally becoming a built-in firmware feature.
 
 ## Dependencies
 

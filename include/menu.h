@@ -107,7 +107,7 @@ Menu menuAutoSleep = { "Auto Sleep", NULL, NULL, NULL };
 Menu menuQuickBoot = { "Quick Boot", NULL, NULL, NULL };
 Menu menuDriftComp = { "Drift Comp", NULL, NULL, NULL };
 #if HDS_ENABLE_GRINDER
-Menu menuGrinder = { "Grinder Plug", NULL, NULL, NULL };
+Menu menuGrinder = { "Grind by weight", NULL, NULL, NULL };
 #endif
 
 
@@ -192,8 +192,8 @@ Menu *driftCompMenu[] = { &menuDriftCompBack, &menuDriftCompOff, &menuQuickBoot0
 
 #if HDS_ENABLE_GRINDER
 Menu menuGrinderBack = { "Back", NULL, NULL, &menuGrinder };
-Menu menuGrinderOn = { "Grinder On", grinderOn, NULL, &menuGrinder };
-Menu menuGrinderOff = { "Grinder Off", grinderOff, NULL, &menuGrinder };
+Menu menuGrinderOn = { "Enable", grinderOn, NULL, &menuGrinder };
+Menu menuGrinderOff = { "Disable", grinderOff, NULL, &menuGrinder };
 Menu menuGrinderSelect = { "Select Plug", grinderSelectPlugMenu, NULL, &menuGrinder };
 Menu menuGrinderTarget = { "Target g", grinderTargetMenu, NULL, &menuGrinder };
 Menu menuGrinderSafety = { "Safety g", grinderSafetyMenu, NULL, &menuGrinder };
@@ -318,11 +318,11 @@ void toggleWifiOff() {
     grinderSettings.previousWifiOnBoot = false;
     grinderSettings.previousWifiOnBootSaved = true;
     grinderSaveSettings();
-    actionMessage = "Grinder Needs WiFi";
-    actionMessage2 = "Off After Grinder";
+    actionMessage = "Grind by weight";
+    actionMessage2 = "Needs WiFi";
     t_actionMessage = millis();
     t_actionMessageDelay = 1500;
-    Serial.println("WiFi Off deferred until Grinder Off.");
+    Serial.println("WiFi Off deferred until Grind by weight is disabled.");
     return;
   }
 #endif
@@ -626,7 +626,7 @@ void grinderOn() {
   if (!b_wifiEnabled) {
     wifi_init();
   }
-  grinderSetActionMessage("Grinder On", "WiFi On");
+  grinderSetActionMessage("Grind by weight", "Enabled");
   Serial.printf("[grinder] enabled selected=%s ip=%s\n",
                 grinderSettings.selectedMac,
                 grinderSettings.lastIp.toString().c_str());
@@ -643,8 +643,8 @@ void grinderOff() {
     grinderSettings.previousWifiOnBootSaved = false;
     grinderSaveSettings();
   }
-  grinderSetActionMessage("Grinder Off");
-  Serial.println("Grinder Off stored in NVS.");
+  grinderSetActionMessage("Grind by weight", "Disabled");
+  Serial.println("Grind by weight disabled and stored in NVS.");
 }
 
 bool grinderEnsureWifiReadyForDiscovery() {
@@ -740,7 +740,7 @@ void grinderSelectPlugMenu() {
                       grinderSettings.hostname,
                       grinderSettings.lastIp.toString().c_str(),
                       grinderSettings.enabled ? 1 : 0);
-        grinderSetActionMessage("Plug Selected", grinderSettings.enabled ? "Saved" : "Turn Grinder On");
+        grinderSetActionMessage("Plug Selected", grinderSettings.enabled ? "Saved" : "Enable in menu");
         selecting = false;
       }
       grinderWaitForButtonRelease();
