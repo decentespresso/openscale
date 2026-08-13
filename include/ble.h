@@ -173,18 +173,11 @@ struct BleDecentCommandSink {
   }
 
   void softSleepOn() {
-    b_softSleep = true;
-    b_u8g2Sleep = true;
     remoteReplacePending(WSP_SLEEP_ON, WSP_SLEEP_OFF);
   }
 
   void softSleepOff() {
-    bool wasSoftSleep = b_softSleep;
-    if (wasSoftSleep) {
-      remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);
-    } else {
-      remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
-    }
+    remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);
   }
 
   void timerStart() {

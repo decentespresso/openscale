@@ -33,7 +33,29 @@ def assert_before(path, first, second):
         raise AssertionError(f"{path.name} must place {first} before {second}")
 
 
+def assert_pending_sleep_ota_interleaving():
+    pending_sleep = True
+    soft_sleep = False
+    rails_on = True
+    ota_active = True
+
+    if ota_active and soft_sleep:
+        soft_sleep = False
+        rails_on = True
+    if pending_sleep:
+        pending_sleep = False
+        soft_sleep = True
+        rails_on = False
+    if ota_active and soft_sleep:
+        soft_sleep = False
+        rails_on = True
+
+    if pending_sleep or soft_sleep or not rails_on:
+        raise AssertionError("OTA wake leaves applied soft sleep or powered-off rails")
+
+
 def main():
+    assert_pending_sleep_ota_interleaving()
     hds = HDS_SOURCE.read_text(encoding="utf-8")
     loop = hds[hds.index("void loop() {"):hds.index("void chargingOLED(")]
     if "if (b_ota || bleHasLiveClient()" not in loop:
@@ -41,6 +63,8 @@ def main():
     ota_wake = 'if (b_ota && b_softSleep) {\n    wakeScaleFromSoftSleep("OTA wake");'
     if ota_wake not in loop:
         raise AssertionError("active OTA does not wake soft-sleep hardware")
+    if loop.index("processWsPendingCmds();") > loop.index(ota_wake):
+        raise AssertionError("pending sleep must be applied before OTA wake")
     if loop.index(ota_wake) > loop.index("if (!b_softSleep)"):
         raise AssertionError("OTA wake runs after the sleeping-loop gate")
 
