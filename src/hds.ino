@@ -454,7 +454,6 @@ void setup() {
   releaseWakePinsFromRtcMode();
 #endif
   button_init();
-  linkSubmenus();
   pinMode(BATTERY_CHARGING, INPUT_PULLUP);
 #if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
   pinMode(USB_DET, INPUT_PULLUP);
