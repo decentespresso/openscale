@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <math.h>
+#include <mutex>
 #include "calibration_validation.h"
 
 Preferences settingsPreferences;
@@ -72,6 +73,7 @@ volatile uint32_t wsPendingMask = 0;
 volatile uint8_t pendingSamplesInUse = 0;
 volatile unsigned long pendingResetAt = 0;
 volatile unsigned long pendingOtaResetAt = 0;
+std::mutex otaDispatchMutex;
 
 const uint8_t OTA_DISPLAY_NONE = 0;
 const uint8_t OTA_DISPLAY_PROGRESS = 1;

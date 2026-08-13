@@ -66,6 +66,7 @@ void processOtaDisplayUpdate() {
 
 void onOTAStart() {
   Serial.println("OTA update started!");
+  std::lock_guard<std::mutex> otaDispatchLock(otaDispatchMutex);
   portENTER_CRITICAL(&wsPendingMux);
   b_ota = true;
   portEXIT_CRITICAL(&wsPendingMux);
