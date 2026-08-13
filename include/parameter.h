@@ -114,7 +114,6 @@ bool b_debug = false;
 
 unsigned long t_batteryIcon = 0;
 bool b_showBatteryIcon = true;
-// volatile: now also written from the AsyncTCP task (WS soft-sleep command).
 volatile bool b_softSleep = false;
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 bool b_gyroEnabled = true;

@@ -169,7 +169,12 @@ void processWsPendingCmds() {
   if (mask & WSP_LOWPWR_ON)   { u8g2.setContrast(0); }
   if (mask & WSP_LOWPWR_OFF)  { u8g2.setContrast(255); }
   if (mask & WSP_SLEEP_OFF) {
-    wakeScaleFromSoftSleep("remote soft wake");
+    if (b_softSleep) {
+      wakeScaleFromSoftSleep("remote soft wake");
+    } else {
+      u8g2.setPowerSave(0);
+      b_u8g2Sleep = false;
+    }
   }
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
   if ((mask & WSP_BLE_GYRO) && !(mask & WSP_SLEEP_ON) && !b_softSleep) {
@@ -177,6 +182,8 @@ void processWsPendingCmds() {
   }
 #endif
   if (mask & WSP_SLEEP_ON) {
+    b_softSleep = true;
+    b_u8g2Sleep = true;
     u8g2.setPowerSave(1);
     digitalWrite(PWR_CTRL, LOW);
     digitalWrite(ACC_PWR_CTRL, LOW);
@@ -471,20 +478,13 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
   if (command == "sleep" || command == "soft_sleep") {
     if (action == "on") {
       Serial.println("Websocket soft sleep on detected.");
-      b_softSleep = true;
-      b_u8g2Sleep = true;
       wsReplacePending(WSP_SLEEP_ON, WSP_SLEEP_OFF);
       sendWebsocketStatus(client, "ok");
       return true;
     }
     if (action == "off" || action == "wake") {
       Serial.println("Websocket soft sleep off detected.");
-      bool wasSoftSleep = b_softSleep;
-      if (wasSoftSleep) {
-        wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);
-      } else {
-        wsReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
-      }
+      wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);
       sendWebsocketStatus(client, "ok");
       return true;
     }
