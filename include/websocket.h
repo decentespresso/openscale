@@ -155,9 +155,21 @@ void processWsPendingCmds() {
   portEXIT_CRITICAL(&wsPendingMux);
   if (mask == 0) return;
 
+  std::lock_guard<std::mutex> otaDispatchLock(otaDispatchMutex);
   portENTER_CRITICAL(&wsPendingMux);
   if (b_ota) {
     uint32_t deferredMask = mask & ~WSP_OTA_RESET;
+    const uint32_t replacementGroups[] = {
+      WSP_DISPLAY_ON | WSP_DISPLAY_OFF,
+      WSP_LOWPWR_ON | WSP_LOWPWR_OFF,
+      WSP_SLEEP_ON | WSP_SLEEP_OFF,
+      WSP_TIMER_START | WSP_TIMER_STOP | WSP_TIMER_ZERO,
+    };
+    for (const uint32_t group : replacementGroups) {
+      if (wsPendingMask & group) {
+        deferredMask &= ~group;
+      }
+    }
     if ((deferredMask & WSP_RESET) && !(wsPendingMask & WSP_RESET)) {
       pendingResetAt = resetAt;
     }
@@ -239,6 +251,10 @@ void processWsPendingCmds() {
 #if HDS_FEATURE_PULL_OTA
     wifiUpdate();
 #endif
+  }
+  if (b_ota) {
+    remoteQueuePending(mask & WSP_POWER_OFF);
+    return;
   }
   if (mask & WSP_POWER_OFF) {
     b_powerOff = true;

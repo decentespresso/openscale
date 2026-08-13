@@ -11,12 +11,25 @@ WEBSOCKET_HEADER = ROOT / "include" / "websocket.h"
 PARAMETER_HEADER = ROOT / "include" / "parameter.h"
 BLE_HEADER = ROOT / "include" / "ble.h"
 
+WSP_DISPLAY_ON = 1 << 0
 WSP_DISPLAY_OFF = 1 << 1
+WSP_LOWPWR_ON = 1 << 2
+WSP_LOWPWR_OFF = 1 << 3
 WSP_SLEEP_ON = 1 << 4
 WSP_SLEEP_OFF = 1 << 5
+WSP_POWER_OFF = 1 << 6
 WSP_TIMER_START = 1 << 7
+WSP_TIMER_STOP = 1 << 8
+WSP_TIMER_ZERO = 1 << 9
 WSP_RESET = 1 << 12
 WSP_OTA_RESET = 1 << 14
+
+REPLACEMENT_GROUPS = (
+    WSP_DISPLAY_ON | WSP_DISPLAY_OFF,
+    WSP_LOWPWR_ON | WSP_LOWPWR_OFF,
+    WSP_SLEEP_ON | WSP_SLEEP_OFF,
+    WSP_TIMER_START | WSP_TIMER_STOP | WSP_TIMER_ZERO,
+)
 
 
 def assert_contains(path, text):
@@ -84,15 +97,37 @@ def assert_interleavings():
     extracted = WSP_DISPLAY_OFF | WSP_TIMER_START | WSP_OTA_RESET
     pending = 0
     deferred = extracted & ~WSP_OTA_RESET
+    for group in REPLACEMENT_GROUPS:
+        if pending & group:
+            deferred &= ~group
     pending |= deferred
     extracted &= WSP_OTA_RESET
     if pending != WSP_DISPLAY_OFF | WSP_TIMER_START or extracted != WSP_OTA_RESET:
         raise AssertionError("OTA start race did not restore extracted remote actions")
 
-    pending = WSP_SLEEP_ON
-    pending = (pending & ~(WSP_SLEEP_ON | WSP_DISPLAY_OFF)) | WSP_SLEEP_OFF
-    if pending & WSP_SLEEP_ON or not pending & WSP_SLEEP_OFF:
-        raise AssertionError("rapid soft wake lost to pending sleep")
+    conflicts = (
+        (WSP_DISPLAY_OFF, WSP_DISPLAY_ON),
+        (WSP_LOWPWR_ON, WSP_LOWPWR_OFF),
+        (WSP_SLEEP_ON, WSP_SLEEP_OFF),
+        (WSP_TIMER_START, WSP_TIMER_ZERO),
+    )
+    for older, newer in conflicts:
+        deferred = older
+        pending = newer
+        for group in REPLACEMENT_GROUPS:
+            if pending & group:
+                deferred &= ~group
+        pending |= deferred
+        if pending != newer:
+            raise AssertionError("restored command overrode newer replacement intent")
+
+    extracted = WSP_POWER_OFF
+    pending = 0
+    ota_active = True
+    if ota_active:
+        pending |= extracted & WSP_POWER_OFF
+    if pending != WSP_POWER_OFF:
+        raise AssertionError("pull OTA start lost an extracted power action")
 
 
 def main():
@@ -120,6 +155,7 @@ def main():
         WIFI_OTA_HEADER,
         [
             "void onOTAStart()",
+            "std::lock_guard<std::mutex> otaDispatchLock(otaDispatchMutex);",
             "portENTER_CRITICAL(&wsPendingMux);",
             "b_ota = true;",
             "portEXIT_CRITICAL(&wsPendingMux);",
@@ -157,6 +193,7 @@ def main():
     assert_contains(PARAMETER_HEADER, "const uint32_t WSP_OTA_RESET   = 1u << 14;")
     assert_contains(PARAMETER_HEADER, "volatile unsigned long pendingOtaResetAt = 0;")
     assert_contains(PARAMETER_HEADER, "inline void remoteQueueOtaResetAt(unsigned long resetAt)")
+    assert_contains(PARAMETER_HEADER, "std::mutex otaDispatchMutex;")
     assert_contains(BLE_HEADER, "remoteQueuePending(WSP_RESET);")
 
     websocket = WEBSOCKET_HEADER.read_text(encoding="utf-8")
@@ -170,13 +207,33 @@ def main():
             "if (mask & WSP_OTA_RESET)",
         ],
     )
+    dispatch_lock = "std::lock_guard<std::mutex> otaDispatchLock(otaDispatchMutex);"
     race_check = dispatcher.index("if (b_ota) {")
+    if dispatcher.index(dispatch_lock) > race_check:
+        raise AssertionError("OTA lifecycle lock starts after the OTA recheck")
     pre_race = dispatcher[dispatcher.index("portEXIT_CRITICAL(&wsPendingMux);"):race_check]
     for action in ["reset();", "u8g2.", "wakeScaleFromSoftSleep", "stopWatch.", "wifiUpdate();", "b_powerOff = true;"]:
         if action in pre_race:
             raise AssertionError(f"pending action dispatches before OTA recheck: {action}")
     if "uint32_t deferredMask = mask & ~WSP_OTA_RESET;" not in dispatcher:
         raise AssertionError("OTA start race does not restore extracted remote actions")
+    for group in [
+        "WSP_DISPLAY_ON | WSP_DISPLAY_OFF",
+        "WSP_LOWPWR_ON | WSP_LOWPWR_OFF",
+        "WSP_SLEEP_ON | WSP_SLEEP_OFF",
+        "WSP_TIMER_START | WSP_TIMER_STOP | WSP_TIMER_ZERO",
+    ]:
+        if group not in dispatcher:
+            raise AssertionError(f"restoration does not preserve newer replacement group: {group}")
+    assert_ordered(
+        WEBSOCKET_HEADER,
+        [
+            "wifiUpdate();",
+            "if (b_ota) {",
+            "remoteQueuePending(mask & WSP_POWER_OFF);",
+            "if (mask & WSP_POWER_OFF)",
+        ],
+    )
 
     print("OTA reboot routing contract tests passed")
 

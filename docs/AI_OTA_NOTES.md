@@ -77,6 +77,8 @@ The single LittleFS partition has no independent rollback slot. Do not weaken si
 
 ElegantOTA auto-reboot stays disabled with `ElegantOTA.setAutoReboot(false)`. Successful ElegantOTA and pull OTA paths call `remoteQueueOtaResetAt()` so their reset remains distinguishable from ordinary remote resets during an active update. Other scheduled main-loop resets use `remoteQueueResetAt()`; neither path should call `ESP.restart()` directly.
 
+ElegantOTA start and main-loop remote action dispatch share `otaDispatchMutex`. Hold it across the complete extracted action batch so `onOTAStart()` cannot publish active OTA until in-flight hardware work finishes. If OTA starts first, restore extracted actions without overwriting newer pending members of the display, low-power, soft-sleep, or timer replacement groups.
+
 The rollback path withdraws WiFi and mDNS with `stopWifi()` before `esp_ota_mark_app_invalid_rollback_and_reboot()`. Do not bypass this routing: a direct reboot can leave the service advertised until resolver caches expire.
 
 ## OTA Files And Tests
