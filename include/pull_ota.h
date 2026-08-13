@@ -1285,7 +1285,7 @@ bool pullOtaInstall(
   }
   pullOtaDraw("Firmware done", "Restarting", "Web UI next");
   delay(1500);
-  remoteQueueResetAt(millis());
+  remoteQueueOtaResetAt(millis());
   return true;
 }
 
@@ -1376,7 +1376,7 @@ bool pullOtaResumePendingLittleFs() {
   }
   pullOtaDraw("Update done", "Restarting");
   delay(1500);
-  remoteQueueResetAt(millis());
+  remoteQueueOtaResetAt(millis());
   return true;
 }
 

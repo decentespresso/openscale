@@ -66,10 +66,12 @@ const uint32_t WSP_SET_SAMPLES = 1u << 10;
 const uint32_t WSP_WIFI_UPDATE = 1u << 11;
 const uint32_t WSP_RESET       = 1u << 12;
 const uint32_t WSP_BLE_GYRO    = 1u << 13;
+const uint32_t WSP_OTA_RESET   = 1u << 14;
 portMUX_TYPE wsPendingMux = portMUX_INITIALIZER_UNLOCKED;
 volatile uint32_t wsPendingMask = 0;
 volatile uint8_t pendingSamplesInUse = 0;
 volatile unsigned long pendingResetAt = 0;
+volatile unsigned long pendingOtaResetAt = 0;
 
 const uint8_t OTA_DISPLAY_NONE = 0;
 const uint8_t OTA_DISPLAY_PROGRESS = 1;
@@ -83,6 +85,13 @@ inline void remoteQueueResetAt(unsigned long resetAt) {
   portENTER_CRITICAL(&wsPendingMux);
   pendingResetAt = resetAt;
   wsPendingMask |= WSP_RESET;
+  portEXIT_CRITICAL(&wsPendingMux);
+}
+
+inline void remoteQueueOtaResetAt(unsigned long resetAt) {
+  portENTER_CRITICAL(&wsPendingMux);
+  pendingOtaResetAt = resetAt;
+  wsPendingMask |= WSP_OTA_RESET;
   portEXIT_CRITICAL(&wsPendingMux);
 }
 

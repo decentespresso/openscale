@@ -87,7 +87,7 @@ void onOTAEnd(bool success) {
   if (success) {
     Serial.println("OTA update finished successfully!");
     queueOtaDisplay(OTA_DISPLAY_SUCCESS);
-    remoteQueueResetAt(millis() + OTA_RESTART_DELAY_MS);
+    remoteQueueOtaResetAt(millis() + OTA_RESTART_DELAY_MS);
   } else {
     Serial.println("There was an error during OTA update!");
     queueOtaDisplay(OTA_DISPLAY_FAILURE);
