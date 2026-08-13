@@ -130,12 +130,27 @@ def main():
         raise AssertionError("BLE disconnect runs while holding the FFF4 mailbox lock")
     loop = function_body(hds, "loop")
     assert_contains(loop, "processBleStatusResponse();")
-    assert_contains(loop, "if (bleHasLiveClient() && b_requireHeartBeat", "t_heartBeat = millis();")
-    if "t_heartBeat = millis() +" in loop:
-        raise AssertionError("heartbeat timeout stores a future elapsed-time origin")
+    assert_contains(
+        loop,
+        "now - t_heartBeat > HEARTBEAT_TIMEOUT",
+        "t_lastDisconnectAttempt == 0",
+        "now - t_lastDisconnectAttempt >= HEARTBEAT_DISCONNECT_RETRY_INTERVAL",
+        "disconnectBLE();",
+    )
+    if "t_heartBeat =" in loop:
+        raise AssertionError("heartbeat timeout mutates heartbeat activity state")
+    assert_contains(ble, "const unsigned long HEARTBEAT_DISCONNECT_RETRY_INTERVAL = 10000;")
 
     heartbeat_disconnect = function_body(ble, "disconnectBLE")
-    assert_contains(heartbeat_disconnect, "if (!bleHasLiveClient()")
+    assert_contains(
+        heartbeat_disconnect,
+        "if (!bleHasLiveClient()",
+        "now - t_lastDisconnectAttempt < HEARTBEAT_TIMEOUT",
+        "t_lastDisconnectAttempt = now;",
+    )
+    heartbeat_log = heartbeat_disconnect.index("***No heartbeat for 5 seconds. Disconnecting BLE...***")
+    if heartbeat_disconnect[:heartbeat_log].count("return;") < 2:
+        raise AssertionError("heartbeat disconnect log runs before retry throttling")
 
     for name in ("buttonCircle_DoubleClicked", "buttonSquare_DoubleClicked"):
         body = function_body(hds, name)

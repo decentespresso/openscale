@@ -11,6 +11,7 @@ enum BleState {
 };
 volatile BleState bleState = DISCONNECTED;
 const unsigned long HEARTBEAT_TIMEOUT = 5000;
+const unsigned long HEARTBEAT_DISCONNECT_RETRY_INTERVAL = 10000;
 const unsigned long BLE_STATUS_RESPONSE_TIMEOUT = 2000;
 unsigned long t_lastDisconnectAttempt = 0;
 unsigned long t_lastDisconnectAttemptNotice = 0;
@@ -350,15 +351,16 @@ void ble_init() {
 
 void disconnectBLE() {
   if (!bleHasLiveClient() || pServer == nullptr || connId == 0xFFFF) return;
-  Serial.println("***No heartbeat for 5 seconds. Disconnecting BLE...***");
-  if (millis() - t_lastDisconnectAttempt < 5000) {
-    if (millis() - t_lastDisconnectAttemptNotice > 1000){
+  const unsigned long now = millis();
+  if (now - t_lastDisconnectAttempt < HEARTBEAT_TIMEOUT) {
+    if (now - t_lastDisconnectAttemptNotice > 1000){
       Serial.println("Disconnect attempt too frequent, skipping...");
-      t_lastDisconnectAttemptNotice = millis();
+      t_lastDisconnectAttemptNotice = now;
     }
     return;
   }
-  t_lastDisconnectAttempt = millis();
+  Serial.println("***No heartbeat for 5 seconds. Disconnecting BLE...***");
+  t_lastDisconnectAttempt = now;
   pServer->disconnect(connId, 0x13);
 }
 
