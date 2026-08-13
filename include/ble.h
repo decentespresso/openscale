@@ -305,6 +305,17 @@ class Fff4Callbacks : public BLECharacteristicCallbacks {
 #if defined(CONFIG_NIMBLE_ENABLED)
   void onSubscribe(BLECharacteristic *pCharacteristic, ble_gap_conn_desc *desc, uint16_t subValue) {
     if (desc == nullptr) return;
+    // iOS 9 CoreBluetooth establishes the link and subscribes but the arduino-esp32
+    // BLE server never runs its connect path (onConnect does not fire, getConnectedCount
+    // stays 0). onSubscribe still fires, so adopt this subscription as the live
+    // connection when none was registered.
+    if (subValue != 0 && connId == 0xFFFF) {
+      setBleFff4Connection(desc->conn_handle, desc->conn_handle);
+      t_firstConnect = millis();
+      t_heartBeat = millis();
+      bleState = CONNECTED;
+      deviceConnected = true;
+    }
     const uint16_t nextHandle = subValue == 0 ? 0xFFFF : desc->conn_handle;
     portENTER_CRITICAL(&bleFff4Mux);
     const bool changed = desc->conn_handle == connId && bleFff4SubscriptionHandle != nextHandle;
@@ -381,7 +392,9 @@ void bleShutdown() {
 
 static bool bleHasLiveClient() {
 #if defined(CONFIG_NIMBLE_ENABLED)
-  return pServer != nullptr && pServer->getConnectedCount() > 0;
+  // connId != 0xFFFF covers the iOS 9 client adopted in onSubscribe, whose
+  // connection the server's getConnectedCount() never counted.
+  return pServer != nullptr && (pServer->getConnectedCount() > 0 || connId != 0xFFFF);
 #else
   return deviceConnected;
 #endif
@@ -464,20 +477,30 @@ void processBleStatusResponse() {
   pServer->disconnect(currentConnId, 0x13);
 }
 
+// Registered clients receive via the server's notify(). The iOS 9 client adopted in
+// onSubscribe is never counted by the server, so send directly on its conn handle.
+static void bleNotifyReadPacket(uint8_t *data, size_t len) {
+  pReadCharacteristic->setValue(data, len);
+  if (pServer->getConnectedCount() > 0) {
+    pReadCharacteristic->notify();
+  } else if (connId != 0xFFFF) {
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(data, len);
+    if (om != nullptr) ble_gatts_notify_custom(connId, pReadCharacteristic->getHandle(), om);
+  }
+}
+
 void sendBleVoltage() {
   if (!bleCanNotifyCurrent()) return;
   byte data[7];
   buildVoltagePacket(data);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
+  bleNotifyReadPacket(data, 7);
 }
 
 void sendBleHeartBeat() {
   if (!bleCanNotifyCurrent()) return;
   byte data[7];
   buildHeartBeatPacket(data);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
+  bleNotifyReadPacket(data, 7);
 }
 
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
@@ -485,8 +508,7 @@ void sendBleGyro() {
   if (!bleCanNotifyCurrent()) return;
   byte data[7];
   buildGyroPacket(data);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
+  bleNotifyReadPacket(data, 7);
 }
 #endif
 
@@ -494,16 +516,14 @@ void sendBleWeight() {
   if (!bleCanNotifyCurrent()) return;
   byte data[7];
   buildWeightPacket(data);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
+  bleNotifyReadPacket(data, 7);
 }
 
 void sendBleButton(int buttonNumber, int buttonShortPress) {
   if (!bleCanNotifyCurrent()) return;
   byte data[7];
   buildButtonPacket(data, buttonNumber, buttonShortPress);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
+  bleNotifyReadPacket(data, 7);
 }
 
 void sendBlePowerOff(int i_reason) {
@@ -512,8 +532,7 @@ void sendBlePowerOff(int i_reason) {
   byte data[7];
   buildPowerOffPacket(data, i_reason);
 
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
+  bleNotifyReadPacket(data, 7);
 }
 
 
@@ -522,8 +541,7 @@ void sendBleLedResponse() {
 
   byte data[7];
   buildLedResponsePacket(data);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
+  bleNotifyReadPacket(data, 7);
 }
 
 void sendAdsDebugInfoBLE() {
@@ -532,8 +550,7 @@ void sendAdsDebugInfoBLE() {
 
   byte data[41];
   buildAdsDebugPacket(data);
-  pReadCharacteristic->setValue(data, 41);
-  pReadCharacteristic->notify();
+  bleNotifyReadPacket(data, 41);
 
   if (bleDebugMode == DEBUG_SINGLE) {
     bleDebugMode = DEBUG_OFF;
