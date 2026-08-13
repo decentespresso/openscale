@@ -1452,11 +1452,14 @@ void loop() {
     return;
   }
 
-  if (bleHasLiveClient() && b_requireHeartBeat && millis() - t_firstConnect > HEARTBEAT_TIMEOUT) {
-    if (millis() - t_heartBeat > HEARTBEAT_TIMEOUT) {
-      disconnectBLE();
-      t_heartBeat = millis();
-    }
+  const unsigned long now = millis();
+  if (bleHasLiveClient()
+      && b_requireHeartBeat
+      && now - t_firstConnect > HEARTBEAT_TIMEOUT
+      && now - t_heartBeat > HEARTBEAT_TIMEOUT
+      && (t_lastDisconnectAttempt == 0
+          || now - t_lastDisconnectAttempt >= HEARTBEAT_DISCONNECT_RETRY_INTERVAL)) {
+    disconnectBLE();
   }
 #ifdef HEARTBEATICON
   if (millis() - t_heartBeat < 500)
