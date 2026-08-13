@@ -221,6 +221,7 @@ public:
 
   void processUsbRxBuffer(bool allowTimeout) {
     while (usbRxLen > 0) {
+      if (b_ota) return;
       bool timedOut = allowTimeout && usbRxTimedOut();
 
       if (usbRxBuffer[0] == 0x03) {
@@ -236,7 +237,6 @@ public:
 
         onWrite(usbRxBuffer, frameLen);
         consumeUsbRxBytes(frameLen);
-        if (b_ota) return;
         continue;
       }
 
