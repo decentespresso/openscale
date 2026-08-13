@@ -97,14 +97,13 @@ def main():
         ble_soft_off,
         [
             "bool wasSoftSleep = b_softSleep;",
-            "b_u8g2Sleep = false;",
             "if (wasSoftSleep)",
             "remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);",
             "remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);",
         ],
     )
-    if "b_softSleep = false;" in ble_soft_off:
-        raise AssertionError("BLE wake publishes awake state before rail restore")
+    if "b_softSleep = false;" in ble_soft_off or "b_u8g2Sleep = false;" in ble_soft_off:
+        raise AssertionError("BLE wake publishes state before main-loop recovery")
 
     ble_disconnect_display = method_body(BLE_HEADER, "restoreDisplayAfterBleDisconnect")
     assert_ordered(
@@ -127,14 +126,13 @@ def main():
         [
             'if (action == "off" || action == "wake")',
             "bool wasSoftSleep = b_softSleep;",
-            "b_u8g2Sleep = false;",
             "if (wasSoftSleep)",
             "wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);",
             "wsReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);",
         ],
     )
-    if "b_softSleep = false;" in ws_wake:
-        raise AssertionError("WebSocket wake publishes awake state before rail restore")
+    if "b_softSleep = false;" in ws_wake or "b_u8g2Sleep = false;" in ws_wake:
+        raise AssertionError("WebSocket wake publishes state before main-loop recovery")
 
     ws_pending = method_body(WEBSOCKET_HEADER, "processWsPendingCmds")
     assert_ordered(ws_pending, ['wakeScaleFromSoftSleep("remote soft wake")'])
