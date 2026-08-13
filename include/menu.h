@@ -30,7 +30,7 @@ struct Menu {
   const char *name;
   void (*action)();
   const Menu *subMenu;
-  Menu *parentMenu;
+  const Menu *parentMenu;
 };
 
 void exitMenu();
@@ -86,28 +86,45 @@ void grinderZeroRangeMenu();
 void wifi_init();
 #endif
 
+extern const Menu menuCalibrationBack;
+extern const Menu menuHeartbeatBack;
+extern const Menu menuFlipScreenBack;
+extern const Menu menuTimeOnTopBack;
+extern const Menu menuBtnFuncWhileConnectedBack;
+extern const Menu menuAutoSleepBack;
+extern const Menu menuQuickBootBack;
+extern const Menu menuDriftCompBack;
+#ifdef BUZZER
+extern const Menu menuBuzzerBack;
+#endif
+#if HDS_FEATURE_WIFI
+extern const Menu menuWiFiUpdateBack;
+#endif
+#if HDS_ENABLE_GRINDER
+extern const Menu menuGrinderBack;
+#endif
 
 const Menu menuExit = { "Exit", exitMenu, NULL, NULL };
 #ifdef BUZZER
-Menu menuBuzzer = { "Buzzer", NULL, NULL, NULL };
+const Menu menuBuzzer = { "Buzzer", NULL, &menuBuzzerBack, NULL };
 #endif
-Menu menuCalibration = { "Calibration", NULL, NULL, NULL };
+const Menu menuCalibration = { "Calibration", NULL, &menuCalibrationBack, NULL };
 #if HDS_FEATURE_WIFI
-Menu menuWifi = { "WiFi Settings", NULL, NULL, NULL };
+const Menu menuWifi = { "WiFi Settings", NULL, &menuWiFiUpdateBack, NULL };
 #endif
 const Menu menuStatus = { "Status", showStatus, NULL, NULL };
 const Menu menuAbout = { "About", showAbout, NULL, NULL };
 const Menu menuLogo = { "Show Logo", showLogo, NULL, NULL };
 const Menu menuFactory = { "Factory", NULL, NULL, NULL };
-Menu menuHeartbeat = { "Heartbeat", NULL, NULL, NULL };
-Menu menuFlipScreen = { "Flip Screen", NULL, NULL, NULL };
-Menu menuTimeOnTop = { "Time On Top", NULL, NULL, NULL };
-Menu menuBtnFuncWhileConnected = { "Button with BLE", NULL, NULL, NULL };
-Menu menuAutoSleep = { "Auto Sleep", NULL, NULL, NULL };
-Menu menuQuickBoot = { "Quick Boot", NULL, NULL, NULL };
-Menu menuDriftComp = { "Drift Comp", NULL, NULL, NULL };
+const Menu menuHeartbeat = { "Heartbeat", NULL, &menuHeartbeatBack, NULL };
+const Menu menuFlipScreen = { "Flip Screen", NULL, &menuFlipScreenBack, NULL };
+const Menu menuTimeOnTop = { "Time On Top", NULL, &menuTimeOnTopBack, NULL };
+const Menu menuBtnFuncWhileConnected = { "Button with BLE", NULL, &menuBtnFuncWhileConnectedBack, NULL };
+const Menu menuAutoSleep = { "Auto Sleep", NULL, &menuAutoSleepBack, NULL };
+const Menu menuQuickBoot = { "Quick Boot", NULL, &menuQuickBootBack, NULL };
+const Menu menuDriftComp = { "Drift Comp", NULL, &menuDriftCompBack, NULL };
 #if HDS_ENABLE_GRINDER
-Menu menuGrinder = { "Grind by weight", NULL, NULL, NULL };
+const Menu menuGrinder = { "Grind by weight", NULL, &menuGrinderBack, NULL };
 #endif
 
 
@@ -226,26 +243,6 @@ const int linesPerPage =
   4;
 int currentPage = 0;
 int totalPages = currentMenuSize / linesPerPage + 1;
-
-void linkSubmenus() {
-#ifdef BUZZER
-  menuBuzzer.subMenu = buzzerMenu[0];
-#endif
-  menuCalibration.subMenu = calibrationMenu[0];
-#if HDS_FEATURE_WIFI
-  menuWifi.subMenu = wifiUpdateMenu[0];
-#endif
-  menuHeartbeat.subMenu = heartbeatMenu[0];
-  menuFlipScreen.subMenu = flipScreenMenu[0];
-  menuTimeOnTop.subMenu = timeOnTopMenu[0];
-  menuBtnFuncWhileConnected.subMenu = btnFuncWhileConnectedMenu[0];
-  menuAutoSleep.subMenu = autoSleepMenu[0];
-  menuQuickBoot.subMenu = quickBootMenu[0];
-  menuDriftComp.subMenu = driftCompMenu[0];
-#if HDS_ENABLE_GRINDER
-  menuGrinder.subMenu = grinderMenu[0];
-#endif
-}
 
 void exitMenu() {
   u8g2.setFont(FONT_M);
