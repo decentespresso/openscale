@@ -98,9 +98,13 @@ def main():
     assert_contains(gate, "bleHasLiveClient()", "portENTER_CRITICAL(&bleFff4Mux)")
     for name in OUTBOUND_FUNCTIONS:
         body = function_body(ble, name)
-        assert_contains(body, "if (!bleCanNotifyCurrent()) return;", "pReadCharacteristic->notify();")
-    if ble.count("pReadCharacteristic->notify();") != len(OUTBOUND_FUNCTIONS):
+        assert_contains(body, "if (!bleCanNotifyCurrent()) return;", "bleNotifyReadPacket(")
+    if ble.count("bleNotifyReadPacket(data,") != len(OUTBOUND_FUNCTIONS):
         raise AssertionError("outbound FFF4 notification bypasses the shared gate")
+    sender = function_body(ble, "bleNotifyReadPacket")
+    assert_contains(sender, "pReadCharacteristic->notify();", "ble_gatts_notify_custom(")
+    if ble.count("pReadCharacteristic->notify();") != 1:
+        raise AssertionError("outbound FFF4 notification bypasses the shared send path")
 
     subscribe = function_body(ble, "onSubscribe")
     assert_contains(subscribe, "portENTER_CRITICAL(&bleFff4Mux)", "bleFff4SubscriptionHandle = nextHandle;")
