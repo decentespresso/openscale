@@ -141,21 +141,54 @@ inline void wsReplacePending(uint32_t setBits, uint32_t clearBits) {
 
 void processWsPendingCmds() {
   portENTER_CRITICAL(&wsPendingMux);
-  uint32_t mask = b_ota ? (wsPendingMask & WSP_RESET) : wsPendingMask;
+  uint32_t mask = b_ota ? (wsPendingMask & WSP_OTA_RESET) : wsPendingMask;
   uint8_t samplesInUse = pendingSamplesInUse;
   unsigned long resetAt = pendingResetAt;
+  unsigned long otaResetAt = pendingOtaResetAt;
   wsPendingMask &= ~mask;
   if (mask & WSP_RESET) {
     pendingResetAt = 0;
   }
+  if (mask & WSP_OTA_RESET) {
+    pendingOtaResetAt = 0;
+  }
   portEXIT_CRITICAL(&wsPendingMux);
   if (mask == 0) return;
 
+  portENTER_CRITICAL(&wsPendingMux);
+  if (b_ota) {
+    uint32_t deferredMask = mask & ~WSP_OTA_RESET;
+    if ((deferredMask & WSP_RESET) && !(wsPendingMask & WSP_RESET)) {
+      pendingResetAt = resetAt;
+    }
+    wsPendingMask |= deferredMask;
+    mask &= WSP_OTA_RESET;
+  }
+  portEXIT_CRITICAL(&wsPendingMux);
+  if (mask == 0) return;
+
+  if (mask & WSP_OTA_RESET) {
+    if (otaResetAt != 0 && (long)(millis() - otaResetAt) < 0) {
+      portENTER_CRITICAL(&wsPendingMux);
+      if (!(wsPendingMask & WSP_OTA_RESET)) {
+        pendingOtaResetAt = otaResetAt;
+      }
+      wsPendingMask |= WSP_OTA_RESET;
+      portEXIT_CRITICAL(&wsPendingMux);
+      mask &= ~WSP_OTA_RESET;
+      if (mask == 0) return;
+    } else {
+      reset();
+      return;
+    }
+  }
   if (mask & WSP_RESET) {
     if (resetAt != 0 && (long)(millis() - resetAt) < 0) {
       portENTER_CRITICAL(&wsPendingMux);
+      if (!(wsPendingMask & WSP_RESET)) {
+        pendingResetAt = resetAt;
+      }
       wsPendingMask |= WSP_RESET;
-      pendingResetAt = resetAt;
       portEXIT_CRITICAL(&wsPendingMux);
       mask &= ~WSP_RESET;
       if (mask == 0) return;
@@ -207,7 +240,6 @@ void processWsPendingCmds() {
     wifiUpdate();
 #endif
   }
-  if (b_ota) return;
   if (mask & WSP_POWER_OFF) {
     b_powerOff = true;
   }
