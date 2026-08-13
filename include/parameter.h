@@ -146,7 +146,6 @@ bool b_grinderMenuDirectEntry = false;
 float INPUTCOFFEEPOUROVER = 20.0;
 float INPUTCOFFEEESPRESSO = 20.0;
 float f_batteryCalibrationFactor = 0.66;
-String str_welcome = "welcome";
 float f_calibration_value = CALIBRATION_VALUE_DEFAULT;   //称重单元校准值
 bool b_calibrationInvalid = false;
 char c_calibrationStatus[32] = "ok";

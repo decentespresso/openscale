@@ -596,10 +596,6 @@ void setup() {
   u8g2.setContrast(255);
   u8g2.setFont(FONT_M);
   power_off(15);
-#ifdef WELCOME
-  str_welcome = storageGetString(KEY_WELCOME, String(WELCOME1));
-  str_welcome.trim();
-#endif
   b_screenFlipped = storageGetBool(KEY_SCREEN_FLIP, false);
   if (b_screenFlipped)
     u8g2.setDisplayRotation(U8G2_R0);
@@ -751,15 +747,23 @@ void setup() {
   Serial.println(digitalRead(BUTTON_CIRCLE));
 #endif
 
-  Serial.print("Welcome: ");
-  if (str_welcome.length() == 127)
-    Serial.print(WELCOME1);
-  else
-    Serial.print(str_welcome);
-  Serial.print("\t");
-  Serial.print(WELCOME2);
-  Serial.print("\t");
-  Serial.println(WELCOME3);
+  {
+#ifdef WELCOME
+    String welcome = storageGetString(KEY_WELCOME, String(WELCOME1));
+    welcome.trim();
+#else
+    String welcome = "welcome";
+#endif
+    Serial.print("Welcome: ");
+    if (welcome.length() == 127)
+      Serial.print(WELCOME1);
+    else
+      Serial.print(welcome);
+    Serial.print("\t");
+    Serial.print(WELCOME2);
+    Serial.print("\t");
+    Serial.println(WELCOME3);
+  }
   Serial.print("Info: ");
   Serial.print(LINE1);
   Serial.print("\t");
