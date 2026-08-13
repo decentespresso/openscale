@@ -80,12 +80,9 @@ def main():
 
     usb = USB_HEADER.read_text(encoding="utf-8")
     usb_buffer = extract_block(usb, "void processUsbRxBuffer(bool allowTimeout) {")
-    if (
-        "onWrite(usbRxBuffer, frameLen);\n"
-        "        consumeUsbRxBytes(frameLen);\n"
-        "        if (b_ota) return;"
-    ) not in usb_buffer:
-        raise AssertionError("USB parser continues after an OTA command")
+    parser_loop = extract_block(usb_buffer, "while (usbRxLen > 0) {")
+    if parser_loop.index("if (b_ota) return;") > parser_loop.index("bool timedOut"):
+        raise AssertionError("USB parser checks OTA state after starting command dispatch")
 
     print("OTA input isolation contract tests passed")
 
