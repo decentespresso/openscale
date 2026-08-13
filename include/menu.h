@@ -29,7 +29,7 @@ template<typename T> int getMenuSize(T &menu) {
 struct Menu {
   const char *name;
   void (*action)();
-  Menu *subMenu;
+  const Menu *subMenu;
   Menu *parentMenu;
 };
 
@@ -87,7 +87,7 @@ void wifi_init();
 #endif
 
 
-Menu menuExit = { "Exit", exitMenu, NULL, NULL };
+const Menu menuExit = { "Exit", exitMenu, NULL, NULL };
 #ifdef BUZZER
 Menu menuBuzzer = { "Buzzer", NULL, NULL, NULL };
 #endif
@@ -95,10 +95,10 @@ Menu menuCalibration = { "Calibration", NULL, NULL, NULL };
 #if HDS_FEATURE_WIFI
 Menu menuWifi = { "WiFi Settings", NULL, NULL, NULL };
 #endif
-Menu menuStatus = { "Status", showStatus, NULL, NULL };
-Menu menuAbout = { "About", showAbout, NULL, NULL };
-Menu menuLogo = { "Show Logo", showLogo, NULL, NULL };
-Menu menuFactory = { "Factory", NULL, NULL, NULL };
+const Menu menuStatus = { "Status", showStatus, NULL, NULL };
+const Menu menuAbout = { "About", showAbout, NULL, NULL };
+const Menu menuLogo = { "Show Logo", showLogo, NULL, NULL };
+const Menu menuFactory = { "Factory", NULL, NULL, NULL };
 Menu menuHeartbeat = { "Heartbeat", NULL, NULL, NULL };
 Menu menuFlipScreen = { "Flip Screen", NULL, NULL, NULL };
 Menu menuTimeOnTop = { "Time On Top", NULL, NULL, NULL };
@@ -112,26 +112,26 @@ Menu menuGrinder = { "Grind by weight", NULL, NULL, NULL };
 
 
 #ifdef BUZZER
-Menu menuBuzzerBack = { "Back", NULL, NULL, &menuBuzzer };
-Menu menuBuzzerOn = { "Buzzer On", buzzerOn, NULL, &menuBuzzer };
-Menu menuBuzzerOff = { "Buzzer Off", buzzerOff, NULL, &menuBuzzer };
-Menu *const buzzerMenu[] = { &menuBuzzerBack, &menuBuzzerOn, &menuBuzzerOff };
+const Menu menuBuzzerBack = { "Back", NULL, NULL, &menuBuzzer };
+const Menu menuBuzzerOn = { "Buzzer On", buzzerOn, NULL, &menuBuzzer };
+const Menu menuBuzzerOff = { "Buzzer Off", buzzerOff, NULL, &menuBuzzer };
+const Menu *const buzzerMenu[] = { &menuBuzzerBack, &menuBuzzerOn, &menuBuzzerOff };
 #endif
-Menu menuCalibrationBack = { "Back", NULL, NULL, &menuCalibration };
-Menu menuCalibrate = { "Calibrate", calibrate, NULL, &menuCalibration };
-Menu *const calibrationMenu[] = { &menuCalibrationBack, &menuCalibrate };
+const Menu menuCalibrationBack = { "Back", NULL, NULL, &menuCalibration };
+const Menu menuCalibrate = { "Calibrate", calibrate, NULL, &menuCalibration };
+const Menu *const calibrationMenu[] = { &menuCalibrationBack, &menuCalibrate };
 
 #if HDS_FEATURE_WIFI
-Menu menuWiFiUpdateBack = { "Back", NULL, NULL, &menuWifi };
-Menu menuWiFiOnOption = { "WiFi On", toggleWifiOn, NULL, &menuWifi };
-Menu menuWiFiOffOption = { "WiFi Off", toggleWifiOff, NULL, &menuWifi };
-Menu menuWiFiStatusOption = { "WiFi Status", showWifiStatus, NULL, &menuWifi };
+const Menu menuWiFiUpdateBack = { "Back", NULL, NULL, &menuWifi };
+const Menu menuWiFiOnOption = { "WiFi On", toggleWifiOn, NULL, &menuWifi };
+const Menu menuWiFiOffOption = { "WiFi Off", toggleWifiOff, NULL, &menuWifi };
+const Menu menuWiFiStatusOption = { "WiFi Status", showWifiStatus, NULL, &menuWifi };
 #if HDS_FEATURE_PULL_OTA
-Menu menuWiFiPullUpdateOption = { "WiFi Update", wifiUpdate, NULL, &menuWifi };
+const Menu menuWiFiPullUpdateOption = { "WiFi Update", wifiUpdate, NULL, &menuWifi };
 #endif
-Menu menuWiFiResetOption = { "Reset WiFi", resetWifi, NULL, &menuWifi };
+const Menu menuWiFiResetOption = { "Reset WiFi", resetWifi, NULL, &menuWifi };
 
-Menu *const wifiUpdateMenu[] = {
+const Menu *const wifiUpdateMenu[] = {
   &menuWiFiUpdateBack,
   &menuWiFiOnOption,
   &menuWiFiOffOption,
@@ -143,66 +143,66 @@ Menu *const wifiUpdateMenu[] = {
 };
 #endif
 
-Menu menuHeartbeatBack = { "Back", NULL, NULL, &menuHeartbeat };
-Menu menuHeartbeatOn = { "Heartbeat On", heartbeatOn, NULL, &menuHeartbeat };
-Menu menuHeartbeatOff = { "Heartbeat Off", heartbeatOff, NULL, &menuHeartbeat };
-Menu *const heartbeatMenu[] = { &menuHeartbeatBack, &menuHeartbeatOn,
+const Menu menuHeartbeatBack = { "Back", NULL, NULL, &menuHeartbeat };
+const Menu menuHeartbeatOn = { "Heartbeat On", heartbeatOn, NULL, &menuHeartbeat };
+const Menu menuHeartbeatOff = { "Heartbeat Off", heartbeatOff, NULL, &menuHeartbeat };
+const Menu *const heartbeatMenu[] = { &menuHeartbeatBack, &menuHeartbeatOn,
                           &menuHeartbeatOff };
 
-Menu menuFlipScreenBack = { "Back", NULL, NULL, &menuFlipScreen };
-Menu menuFlipScreenOn = { "Flip On", flipScreenOn, NULL, &menuFlipScreen };
-Menu menuFlipScreenOff = { "Flip Off", flipScreenOff, NULL, &menuFlipScreen };
-Menu *const flipScreenMenu[] = { &menuFlipScreenBack, &menuFlipScreenOn,
+const Menu menuFlipScreenBack = { "Back", NULL, NULL, &menuFlipScreen };
+const Menu menuFlipScreenOn = { "Flip On", flipScreenOn, NULL, &menuFlipScreen };
+const Menu menuFlipScreenOff = { "Flip Off", flipScreenOff, NULL, &menuFlipScreen };
+const Menu *const flipScreenMenu[] = { &menuFlipScreenBack, &menuFlipScreenOn,
                            &menuFlipScreenOff };
 
-Menu menuTimeOnTopBack = { "Back", NULL, NULL, &menuTimeOnTop };
-Menu menuTimeOnTopOn = { "Time On Top", timeOnTopOn, NULL, &menuTimeOnTop };
-Menu menuTimeOnTopOff = { "Weight On Top", timeOnTopOff, NULL, &menuTimeOnTop };
-Menu *const timeOnTopMenu[] = { &menuTimeOnTopBack, &menuTimeOnTopOn,
+const Menu menuTimeOnTopBack = { "Back", NULL, NULL, &menuTimeOnTop };
+const Menu menuTimeOnTopOn = { "Time On Top", timeOnTopOn, NULL, &menuTimeOnTop };
+const Menu menuTimeOnTopOff = { "Weight On Top", timeOnTopOff, NULL, &menuTimeOnTop };
+const Menu *const timeOnTopMenu[] = { &menuTimeOnTopBack, &menuTimeOnTopOn,
                           &menuTimeOnTopOff };
 
-Menu menuBtnFuncWhileConnectedBack = { "Back", NULL, NULL,
+const Menu menuBtnFuncWhileConnectedBack = { "Back", NULL, NULL,
                                        &menuBtnFuncWhileConnected };
-Menu menuBtnFuncWhileConnectedOn = { "Enable Buttons", btnFuncWhileConnectedOn,
+const Menu menuBtnFuncWhileConnectedOn = { "Enable Buttons", btnFuncWhileConnectedOn,
                                      NULL, &menuBtnFuncWhileConnected };
-Menu menuBtnFuncWhileConnectedOff = { "Disable Buttons",
-                                      btnFuncWhileConnectedOff, NULL,
-                                      &menuBtnFuncWhileConnected };
-Menu *const btnFuncWhileConnectedMenu[] = { &menuBtnFuncWhileConnectedBack,
-                                      &menuBtnFuncWhileConnectedOn,
-                                      &menuBtnFuncWhileConnectedOff };
+const Menu menuBtnFuncWhileConnectedOff = { "Disable Buttons",
+                                       btnFuncWhileConnectedOff, NULL,
+                                       &menuBtnFuncWhileConnected };
+const Menu *const btnFuncWhileConnectedMenu[] = { &menuBtnFuncWhileConnectedBack,
+                                       &menuBtnFuncWhileConnectedOn,
+                                       &menuBtnFuncWhileConnectedOff };
 
-Menu menuAutoSleepBack = { "Back", NULL, NULL, &menuAutoSleep };
-Menu menuAutoSleepOn = { "Auto Sleep On", autoSleepOn, NULL, &menuAutoSleep };
-Menu menuAutoSleepOff = { "Auto Sleep Off", autoSleepOff, NULL, &menuAutoSleep };
-Menu *const autoSleepMenu[] = { &menuAutoSleepBack, &menuAutoSleepOn, &menuAutoSleepOff };
+const Menu menuAutoSleepBack = { "Back", NULL, NULL, &menuAutoSleep };
+const Menu menuAutoSleepOn = { "Auto Sleep On", autoSleepOn, NULL, &menuAutoSleep };
+const Menu menuAutoSleepOff = { "Auto Sleep Off", autoSleepOff, NULL, &menuAutoSleep };
+const Menu *const autoSleepMenu[] = { &menuAutoSleepBack, &menuAutoSleepOn, &menuAutoSleepOff };
 
-Menu menuQuickBootBack = { "Back", NULL, NULL, &menuQuickBoot };
-Menu menuQuickBootOn = { "Quick Boot On", quickBootOn, NULL, &menuQuickBoot };
-Menu menuQuickBootOff = { "Quick Boot Off", quickBootOff, NULL, &menuQuickBoot };
-Menu *const quickBootMenu[] = { &menuQuickBootBack, &menuQuickBootOn, &menuQuickBootOff };
+const Menu menuQuickBootBack = { "Back", NULL, NULL, &menuQuickBoot };
+const Menu menuQuickBootOn = { "Quick Boot On", quickBootOn, NULL, &menuQuickBoot };
+const Menu menuQuickBootOff = { "Quick Boot Off", quickBootOff, NULL, &menuQuickBoot };
+const Menu *const quickBootMenu[] = { &menuQuickBootBack, &menuQuickBootOn, &menuQuickBootOff };
 
-Menu menuDriftCompBack = { "Back", NULL, NULL, &menuDriftComp };
-Menu menuDriftCompOff = { "Drift Comp Off", driftCompOff, NULL, &menuDriftComp };
-Menu menuQuickBoot0050 = { "0.05g", driftComp0050, NULL, &menuDriftComp };
-Menu menuQuickBoot0075 = { "0.075g", driftComp0075, NULL, &menuDriftComp };
-Menu menuQuickBoot0100 = { "0.1g", driftComp0100, NULL, &menuDriftComp };
-Menu menuQuickBoot0200 = { "0.2g", driftComp0200, NULL, &menuDriftComp };
-Menu *const driftCompMenu[] = { &menuDriftCompBack, &menuDriftCompOff, &menuQuickBoot0050, &menuQuickBoot0075, &menuQuickBoot0100, &menuQuickBoot0200 };
+const Menu menuDriftCompBack = { "Back", NULL, NULL, &menuDriftComp };
+const Menu menuDriftCompOff = { "Drift Comp Off", driftCompOff, NULL, &menuDriftComp };
+const Menu menuQuickBoot0050 = { "0.05g", driftComp0050, NULL, &menuDriftComp };
+const Menu menuQuickBoot0075 = { "0.075g", driftComp0075, NULL, &menuDriftComp };
+const Menu menuQuickBoot0100 = { "0.1g", driftComp0100, NULL, &menuDriftComp };
+const Menu menuQuickBoot0200 = { "0.2g", driftComp0200, NULL, &menuDriftComp };
+const Menu *const driftCompMenu[] = { &menuDriftCompBack, &menuDriftCompOff, &menuQuickBoot0050, &menuQuickBoot0075, &menuQuickBoot0100, &menuQuickBoot0200 };
 
 #if HDS_ENABLE_GRINDER
-Menu menuGrinderBack = { "Back", NULL, NULL, &menuGrinder };
-Menu menuGrinderOn = { "Enable", grinderOn, NULL, &menuGrinder };
-Menu menuGrinderOff = { "Disable", grinderOff, NULL, &menuGrinder };
-Menu menuGrinderSelect = { "Select Plug", grinderSelectPlugMenu, NULL, &menuGrinder };
-Menu menuGrinderTarget = { "Target g", grinderTargetMenu, NULL, &menuGrinder };
-Menu menuGrinderSafety = { "Safety g", grinderSafetyMenu, NULL, &menuGrinder };
-Menu menuGrinderZero = { "Zero Range", grinderZeroRangeMenu, NULL, &menuGrinder };
-Menu *const grinderMenu[] = { &menuGrinderBack, &menuGrinderOn, &menuGrinderOff, &menuGrinderSelect, &menuGrinderTarget, &menuGrinderSafety, &menuGrinderZero };
+const Menu menuGrinderBack = { "Back", NULL, NULL, &menuGrinder };
+const Menu menuGrinderOn = { "Enable", grinderOn, NULL, &menuGrinder };
+const Menu menuGrinderOff = { "Disable", grinderOff, NULL, &menuGrinder };
+const Menu menuGrinderSelect = { "Select Plug", grinderSelectPlugMenu, NULL, &menuGrinder };
+const Menu menuGrinderTarget = { "Target g", grinderTargetMenu, NULL, &menuGrinder };
+const Menu menuGrinderSafety = { "Safety g", grinderSafetyMenu, NULL, &menuGrinder };
+const Menu menuGrinderZero = { "Zero Range", grinderZeroRangeMenu, NULL, &menuGrinder };
+const Menu *const grinderMenu[] = { &menuGrinderBack, &menuGrinderOn, &menuGrinderOff, &menuGrinderSelect, &menuGrinderTarget, &menuGrinderSafety, &menuGrinderZero };
 #endif
 
 
-Menu *const mainMenu[] = {
+const Menu *const mainMenu[] = {
   &menuExit,
 #ifdef BUZZER
   &menuBuzzer,
@@ -218,8 +218,8 @@ Menu *const mainMenu[] = {
   &menuGrinder,
 #endif
 };
-Menu *const *currentMenu = mainMenu;
-Menu *currentSelection = mainMenu[0];
+const Menu *const *currentMenu = mainMenu;
+const Menu *currentSelection = mainMenu[0];
 int currentMenuSize = getMenuSize(mainMenu);
 int currentIndex = 0;
 const int linesPerPage =
