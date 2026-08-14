@@ -555,6 +555,12 @@ void setup() {
   fuelGaugeBegin();
   compactMainMenu();
   b_batteryProtect = storageGetBool(KEY_BAT_PROTECT, false);
+  if (b_hasFuelGauge && !storageGetBool(KEY_BAT_CAPACITY_SET, false)) {
+    if (fuelGaugeSetCapacity(700)) {
+      storagePutBool(KEY_BAT_CAPACITY_SET, true);
+      Serial.println("fuelGauge: design capacity set once (700 mAh)");
+    }
+  }
 #ifdef HW_SPI
   SPI.begin(OLED_SCLK, -1, OLED_SDIN, OLED_CS);
 #endif
@@ -834,11 +840,11 @@ void setup() {
   Serial.println("Setup complete...");
   t_bootTare = millis();
   b_bootTare = true;
-#ifdef BATTERY_PIN
-  updateBattery(BATTERY_PIN);
-#else
-  f_batteryVoltage = fuelGaugeVoltageV();
-#endif
+if (!b_hasFuelGauge) {
+    updateBattery(BATTERY_PIN);
+  } else {
+    f_batteryVoltage = fuelGaugeVoltageV();
+  }
 #if HDS_FEATURE_PULL_OTA
   if (b_pendingOtaLittleFs) {
     if (!pullOtaResumePendingLittleFs()) {
@@ -1538,11 +1544,11 @@ void loop() {
     debugData();
 #endif  //DEBUG
     if (millis() - t_batteryRefresh > i_batteryRefreshTareInterval){
-#ifdef BATTERY_PIN
-      updateBattery(BATTERY_PIN);
-#else
-      f_batteryVoltage = fuelGaugeVoltageV();
-#endif
+if (!b_hasFuelGauge) {
+        updateBattery(BATTERY_PIN);
+      } else {
+        f_batteryVoltage = fuelGaugeVoltageV();
+      }
     }
     checkBattery();
     if (b_ota) {

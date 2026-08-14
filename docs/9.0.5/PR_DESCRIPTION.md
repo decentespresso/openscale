@@ -3,38 +3,50 @@
 ## Summary
 
 HDS 9.0.5 hardware adds a **TI BQ27427YZFR single-cell Li-ion fuel gauge**
-(fixed I2C address 0x55, Impedance Track algorithm) compared to 8.3.1.
-This PR adds detection, initialization, and a battery info menu for the new
-chip while keeping full compatibility with 8.3.1 and earlier hardware.
+(fixed I2C address 0x55, Impedance Track algorithm) compared to 8.x boards.
+This PR adds detection, initialization, battery info, and battery
+protection while keeping full compatibility with 8.x hardware —
+**one single firmware binary serves all boards**, the board type is
+detected at runtime.
 
 ## Design principles
 
-- **Probe at boot, enable on demand**: at startup the firmware probes I2C
-  address 0x55 and verifies DEVICE_TYPE == 0x0427. If the gauge is absent,
-  all battery features (menu item, deep-sleep hook, chemistry setup) stay
-  disabled and the 8.3.1 behavior is unchanged.
-- **ADS1115 support retained**: when the gauge is present, the ADS1115 is
-  skipped (voltage comes from the gauge); otherwise the legacy ADS1115 path
-  is used. Boards that later drop the ADS1115 fall back to the existing
-  internal-ADC path.
-- **No changes to existing menu framework logic**: the new menu item is
-  registered with the existing mechanism; menu navigation/rendering code is
-  untouched. On boards without the gauge the item is removed from the menu
-  array at boot (`compactMainMenu`), so 8.3.1 menus look exactly as before.
+- **Single firmware, runtime detection**: one PlatformIO env (`esp32s3`).
+  At startup the firmware probes I2C address 0x55 (with retries for
+  cold-start timing) and verifies DEVICE_TYPE == 0x0427. When the gauge is
+  present (9.0.5), battery voltage/percent come from the gauge, GPIO6
+  becomes CHRG_CTRL (charge enable) and GPIO14 is the gauge GPOUT. When
+  absent (8.x), the legacy ADC/ADS1115 battery path is used and GPIO6 stays
+  the battery ADC input. No compile-time board variant is needed.
+- **Clean config structure**: the `V8_1` pin block stays pure 8.1; the
+  9.0.5 differences (CHRG_CTRL=6, GPOUT=14) live in a separate section
+  with a comment explaining the runtime role switch.
+- **ADS1115 support retained**: `ADS_init()` is gated on `!b_hasFuelGauge`;
+  boards that later drop the ADS1115 fall back to the existing internal-ADC
+  path.
+- **No changes to existing menu framework logic**: new menu items are
+  registered with the existing mechanism. `mainMenuSize()` centralizes the
+  effective main-menu size so returning from a submenu cannot resurrect
+  hidden items (review fix).
 
 ## Changes
 
 | File | Change |
 |---|---|
-| `include/fuel_gauge.h` | New: driver API (pin macros overridable; defaults SDA=5 / SCL=4 / USB_DET=8) |
-| `src/fuel_gauge.cpp` | New: detection, Chem ID 1202 enforcement, read API, charging logic, deep-sleep hook |
-| `include/fuel_gauge_menu.h` | New: Bat. Info paged menu (header-only, follows the showStatus pattern) |
-| `include/menu.h` | Register `menuBatInfo` at the end of the main menu; add `compactMainMenu()` |
-| `include/parameter.h` | New global `volatile bool b_hasFuelGauge` |
-| `src/hds.ino` | Call `fuelGaugeBegin()` + `compactMainMenu()` after `Wire.begin` |
-| `platformio.ini` | Add gauge library to `lib_deps`; CPU 80 MHz config |
-| `.gitignore` | Ignore build artifacts (sdkconfig, managed_components, etc.) |
-| `lib/README.md` | Library source notes (registry auto-download, no vendoring) |
+| `include/config.h` | 9.0.5 differences section (CHRG_CTRL=6, GPOUT=14) after the pure 8.1 block |
+| `include/fuel_gauge.h` | Driver API (pin macros overridable) |
+| `src/fuel_gauge.cpp` | Detection with retry, Chem 1202 enforcement, CC_GAIN sign-bit fix, read API, charging via TP4056 CHRG pin, low-SOC notify, design-capacity query/set, deep-sleep hook |
+| `include/fuel_gauge_menu.h` | Bat. Info menu: full dual-column page with gauge, 4-line page without |
+| `include/menu.h` | Register `menuBatInfo` + `menuBatteryProtect`; `mainMenuSize()`; `compactMainMenu()` hides Battery Protect on gauge-less boards; runtime battery paths |
+| `include/parameter.h` | New globals `b_hasFuelGauge`, `b_batteryProtect` |
+| `include/power.h` | `batteryPercent()` (gauge SOC or legacy map, clamped 0-100); runtime battery paths |
+| `include/storage.h` | `KEY_BAT_PROTECT`, `KEY_BAT_CAPACITY_SET` (+ migration path) |
+| `include/usbcomm.h` | `bc` command (query/set design capacity); runtime-gated legacy commands |
+| `include/decent_protocol.h`, `include/websocket.h` | Battery percent via `batteryPercent()` |
+| `src/hds.ino` | `fuelGaugeBegin()` + `compactMainMenu()`; one-time design-capacity write (700 mAh); runtime battery paths |
+| `platformio.ini` | Gauge library dep; CPU 80 MHz config; single `esp32s3` env |
+| `tools/bq27427_probe/` | I2C diagnostics probe project |
+| `.gitignore`, `lib/README.md` | Build artifacts, library source notes |
 
 ## Library dependency
 
@@ -46,58 +58,85 @@ https://github.com/edreanernst/BQ27427_Arduino_Library)
 
 ### 1. Boot detection and initialization
 
-1. Probe I2C address 0x55; no ACK -> treat as 8.3.1, disable all gauge features.
+1. Probe I2C address 0x55 with retries; no ACK -> treat as 8.x.
 2. Read CONTROL + DEVICE_TYPE (0x0001), verify 0x0427.
-3. Chemistry check: if CHEM_ID != 0x1202 run the TRM switch flow
-   (UNSEAL -> SET_CFGUPDATE -> CHEM_B -> SOFT_RESET), persisted in NVM.
-   Hard-coded for the 4.2 V cell of this product (default 4.35 V profile
-   does not match).
+3. Chemistry check: if CHEM_ID != 1202 run the TRM switch flow with long
+   CFGUPMODE timeouts and sealed-state restore (the library's setChemID
+   uses a 50 ms timeout and its chemID()/CHEM_B comparison never matches
+   the hex-nibble encoding the chip returns). Hard-coded for the 4.2 V cell.
+4. CC_GAIN sign-bit fix: early batches ship a negative coulomb-counter gain
+   which inverts current/power readings; the value lives in RAM and resets
+   on POR, so it is re-checked and fixed on every boot.
+5. Design capacity: written **once** (700 mAh) when the NVS flag
+   `KEY_BAT_CAPACITY_SET` is unset, so reflashing firmware never resets the
+   value. The `bc` USB command can query/set it manually (300-2000 mAh
+   range, user-initiated, does not touch the flag).
 
-### 2. Bat. Info menu (9.0.5 boards only, last menu item)
+### 2. Bat. Info menu
 
-3 data pages, ENTER cycles forward / NEXT steps back (exit on first page),
-500 ms live refresh:
+- With gauge (9.0.5): one dual-column page — voltage, chip temp, current,
+  power, capacity, FCC, health, battery level, charging, USB; plus a note
+  page. 500 ms live refresh; ENTER cycles, NEXT steps back (exit on first
+  page).
+- Without gauge (8.x): 4-line page — voltage, battery level, charging, USB.
+  Battery percent is clamped to 0-100 (the legacy voltage map extrapolates
+  above 100 % at full charge).
+- Charging state reads the **TP4056 CHRG pin** (GPIO10, low = charging).
 
-- Page 1: Voltage (2 decimals), Chip temp, Current, Power, Capacity
-- Page 2: FullCap, Health, Bat. Level, Charging, USB
-- Page 3: note that true capacity/health show after full charge/discharge cycles
+### 3. Battery Protect (9.0.5, off by default, persisted in NVS)
 
-Charging detection (triple check): `USB plugged && gauge not discharging
-(DSG=0) && current > 30 mA`.
+Menu on/off. When enabled, SOC >= 80 % pulls CHRG_CTRL low to cut off the
+charger; charging resumes at 75 % (hysteresis). Verified on hardware
+(cutoff triggered at 97 % on a nearly-full battery).
 
-### 3. Deep-sleep hook
+### 4. Low-SOC notify
 
-`fuelGaugeSleep()` is provided for the deep-sleep path (currently a no-op:
-the gauge self-enters SLEEP at 9 uA under low load; SHUTDOWN can be added
-for longer sleeps). Skipped automatically when the gauge is absent.
+Serial notification (once per transition) when SOC drops below 10 %.
 
 ## Testing
 
-Both boards tested on hardware, 2026-08-14.
+All boards run the same firmware binary.
 
 ### HDS 9.0.5 (with BQ27427)
 
 | Item | Result |
 |---|---|
 | Device identification | DEVICE_TYPE 0x0427, FW 0x0202 |
-| Chemistry | switched to 0x1202 (4.2 V), persists across reboots |
-| Battery readings | 4162 mV / 99 % / 1237 mAh / SOH 94 % / 27.1 C |
-| Charging / discharging | USB unplugged -> Charging No; USB plugged + charging -> Yes |
-| Bat. Info menu | 3 pages, page cycling, exit, 500 ms refresh |
+| Chemistry | 1202 (4.2 V) enforced, persists across reboots |
+| CC_GAIN | negative sign bit detected and fixed at boot (0xB4 -> 0x34) |
+| Design capacity | set once to 700 mAh; FCC then re-evaluated (1256 -> 646 mAh, SOH ~92 %) |
+| Charging (CHRG pin) | low = charging, verified |
+| Bat. Info menu | dual-column page, cycling, 500 ms refresh |
+| Battery Protect | CHRG_CTRL gating verified (cutoff at 97 %) |
+| `bc` command | query + write verified |
 | Weighing | normal operation, no regression |
 
 ### HDS 8.3.1 (no BQ27427)
 
 | Item | Result |
 |---|---|
-| Boot | normal (Begin! / Setup complete) |
-| Gauge probe | skipped cleanly, no error |
-| Main menu | no Bat. Info item (removed at boot) |
+| Boot | normal |
+| Gauge probe | skipped cleanly after retries |
+| Bat. Info menu | 4-line page (voltage/level/CRG/USB), percent clamped |
 | Weighing | normal operation, no regression |
+
+### Notes
+
+- 8.2.0 board: new-NVS migration path was missing the new keys, which
+  blocked first boot; fixed (keys are now ensured in the migration path
+  too). The board's weighing readouts were erratic without a load cell
+  attached — hardware setup, not firmware.
+- ADS1232 effective-resolution test screen lives in a separate copy
+  (`openscale9_0_5_bittest/`, not part of this PR): 3 rounds of 10 s /
+  100 samples each, reporting min/max/range/distinct/effective bits and
+  the minimum division for a 2 kg range. 8.3.1 measured ~17.2-17.6
+  effective bits (~0.01 g division); 9.0.5 similar.
 
 ## Out of scope / follow-ups
 
-- [ ] Wire the deep-sleep hook into the actual `power.h` sleep path (API only in this PR)
+- [ ] Deep-sleep hook wiring into the actual `power.h` sleep path (API only
+      in this PR); GPOUT (GPIO14) available for SOC_INT wake-up
+- [ ] BLE command for design capacity (USB `bc` only for now)
 - [ ] Menu registration single-point refactor (separate task)
 - [ ] Long-term observation of FCC/SOH learning convergence (~1-2 full cycles)
 - [ ] Cycle-count feature: not supported by BQ27427 (no CycleCount command);
@@ -107,5 +146,5 @@ Both boards tested on hardware, 2026-08-14.
 
 - TI datasheet SLUSEBSA / TRM SLUUCD5 (see `docs/9.0.5/`, Chinese translation included)
 - Key protocol details (Control() read method, chem-switch flow, SOH at 0x20,
-  STOP-terminated writes) documented in `docs/9.0.5/BQ27427_中文手册.md`
-  and `BQ27427_Notes_EN.md`
+  CC_GAIN sign-bit issue, STOP-terminated writes) documented in
+  `docs/9.0.5/BQ27427_中文手册.md` and `BQ27427_Notes_EN.md`

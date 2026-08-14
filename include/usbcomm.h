@@ -318,8 +318,7 @@ public:
     if (inputString.startsWith("v")) {
       Serial.print("Battery Voltage:");
       Serial.print(f_batteryVoltage);
-#ifdef BATTERY_PIN
-      if (b_ads1115InitFail) {
+      if (b_ads1115InitFail && !b_hasFuelGauge) {
         int adcValue = analogRead(BATTERY_PIN);
         float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;
         Serial.print("\tADC Voltage:");
@@ -327,13 +326,11 @@ public:
         Serial.print("\tbatteryCalibrationFactor: ");
         Serial.print(f_batteryCalibrationFactor);
       }
-#endif
       Serial.print("\tlowBatteryCounterTotal: ");
       Serial.print(i_lowBatteryCountTotal);
     }
 
-#ifdef BATTERY_PIN
-    if (inputString.startsWith("vf ")) {
+    if (!b_hasFuelGauge && inputString.startsWith("vf ")) {
       int adcValue = analogRead(BATTERY_PIN);
       float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;
       float batteryVoltage = voltageAtPin * dividerRatio;
@@ -343,7 +340,6 @@ public:
       Serial.print("Battery Voltage Factor set to: ");
       Serial.println(f_batteryCalibrationFactor);
     }
-#endif
 
     if (inputString.startsWith("bc")) {
       if (inputString.length() > 2) {

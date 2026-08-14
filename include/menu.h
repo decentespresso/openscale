@@ -1635,11 +1635,11 @@ void calibrateVoltage() {
   long adcSum = 0;
 
   for (int i = 0; i < numReadings; i++) {
-#ifdef BATTERY_PIN
-    adcSum += analogRead(BATTERY_PIN);
-#else
-    adcSum += (long)(fuelGaugeVoltageV() * 1000.0f);
-#endif
+    if (!b_hasFuelGauge) {
+      adcSum += analogRead(BATTERY_PIN);
+    } else {
+      adcSum += (long)(fuelGaugeVoltageV() * 1000.0f);
+    }
     delay(10);
   }
 

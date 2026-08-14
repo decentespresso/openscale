@@ -1,4 +1,5 @@
 #include "fuel_gauge.h"
+#include "config.h"
 #include <Wire.h>
 #include <BQ27427.h>
 
@@ -141,9 +142,7 @@ static void fixCcGainSign() {
 }
 
 static bool s_lowSocNotified = false;
-#ifdef CHRG_CTRL
 static bool s_chrgEnabled = true;
-#endif
 
 uint16_t fuelGaugeDesignCapacityMah() {
   return bq.capacity(DESIGN);
@@ -180,7 +179,6 @@ void fuelGaugeLoop() {
   if (soc >= LOW_SOC_NOTIFY_PERCENT && s_lowSocNotified) {
     s_lowSocNotified = false;
   }
-#ifdef CHRG_CTRL
   if (!b_batteryProtect) {
     if (!s_chrgEnabled) {
       digitalWrite(CHRG_CTRL, HIGH);
@@ -197,19 +195,14 @@ void fuelGaugeLoop() {
     s_chrgEnabled = true;
     Serial.printf("fuelGauge: protect, charge resumed at %u%%\n", soc);
   }
-#endif
 }
 
 void fuelGaugeProtectSet(bool enable) {
-#ifdef CHRG_CTRL
   b_batteryProtect = enable;
   if (!b_batteryProtect) {
     digitalWrite(CHRG_CTRL, HIGH);
     s_chrgEnabled = true;
   }
-#else
-  (void)enable;
-#endif
 }
 
 bool fuelGaugeBegin() {
@@ -236,14 +229,12 @@ bool fuelGaugeBegin() {
       return false;
     }
     fixCcGainSign();
-#ifdef CHRG_CTRL
     pinMode(CHRG_CTRL, OUTPUT);
     digitalWrite(CHRG_CTRL, HIGH);
     s_chrgEnabled = true;
-#endif
-#ifdef GPOUT
     pinMode(GPOUT, INPUT);
-#endif
+    Serial.printf("fuelGauge: FCC %u mAh, design %u mAh\n",
+                  fuelGaugeFullCapacityMah(), fuelGaugeDesignCapacityMah());
   }
   return s_present;
 }

@@ -32,16 +32,15 @@ static void drawBatInfoPage() {
   do {
     u8g2.drawUTF8(AR(pageInfo), 12, pageInfo);
     if (!b_hasFuelGauge) {
-      char l[12];
-      char r[12];
-      snprintf(l, sizeof(l), "%.2f V", f_batteryVoltage);
-      snprintf(r, sizeof(r), "Bat. %d%%", batteryPercent());
+      char l[8];
+      snprintf(l, sizeof(l), "%.2fV", f_batteryVoltage);
       u8g2.drawUTF8(0, 12, l);
-      u8g2.drawUTF8(64, 12, r);
-      snprintf(l, sizeof(l), "CRG %s", fuelGaugeUsbPlugged() ? "Y" : "N");
-      snprintf(r, sizeof(r), "USB %s", fuelGaugeUsbPlugged() ? "Y" : "N");
+      snprintf(l, sizeof(l), "%d%%", batteryPercent());
       u8g2.drawUTF8(0, 24, l);
-      u8g2.drawUTF8(64, 24, r);
+      snprintf(l, sizeof(l), "CRG %s", fuelGaugeUsbPlugged() ? "Y" : "N");
+      u8g2.drawUTF8(0, 36, l);
+      snprintf(l, sizeof(l), "USB %s", fuelGaugeUsbPlugged() ? "Y" : "N");
+      u8g2.drawUTF8(0, 48, l);
     } else if (i_batInfoPage == 0) {
       char l[12];
       char r[12];

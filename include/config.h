@@ -11,12 +11,7 @@
 #define DATA_SET 4
 
 
-#ifdef V9_0_5
-// HDS 9.0.5: BQ27427 fuel gauge present, GPIO6 repurposed from battery ADC
-// to CHRG_CTRL (charge enable, active low), GPOUT of the gauge on GPIO14.
-#else
 #define V8_1
-#endif
 
 
 #define TWO_BUTTON
@@ -104,42 +99,12 @@
 #define SCALE_A0 -1
 #endif
 
-#ifdef V9_0_5
-#define PCB_VER (char*)"PCB: 9.0.5"
-#define HW_SPI
-#define SH1106
-#define ADS1232ADC
-#define ADS1115ADC
-#define ROTATION_180
-
-#define I2C_SCL 4
-#define I2C_SDA 5
-#define CHRG_CTRL 6 // charge enable (low = disabled), drives charger EN
-#define GPOUT 14    // BQ27427 GPOUT (SOC_INT / BAT_LOW)
-#define OLED_SDIN 7
-#define OLED_SCLK 15
-#define OLED_DC 16
-#define OLED_RST 17
-#define OLED_CS 18
-#define USB_DET 8
-#define PWR_CTRL 3
-#define BATTERY_CHARGING 10
-#define SCALE_DOUT 11
-#define SCALE_SCLK 12
-#define SCALE_PDWN 13
-#define SCALE2_DOUT 47
-#define SCALE2_SCLK 48
-#define SCALE2_PDWN 9
-#define ACC_PWR_CTRL 14
-#define BUTTON_CIRCLE 1  //33
-#define BUTTON_SQUARE 2
-#if defined(TWO_BUTTON) || defined(FOUR_BUTTON)
-#define GPIO_NUM_BUTTON_POWER GPIO_NUM_1
-#endif
-
-#define SCALE_A0 -1
-#endif
-
+// HDS 9.0.5 shares the 8.1 pinout; the differences are runtime-selected by
+// fuel gauge detection (fuelGaugeBegin): GPIO6 is the battery ADC input on
+// 8.x boards and CHRG_CTRL (charge enable, low = disabled) on 9.0.5, and
+// GPIO14 is the gauge's GPOUT line.
+#define CHRG_CTRL 6
+#define GPOUT 14
 
 #ifdef V8_0
 #define PCB_VER (char*)"PCB: 8.0.0"

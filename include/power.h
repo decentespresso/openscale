@@ -57,12 +57,18 @@ const float referenceVoltage = 3.3;
 const float lowBatteryThreshold = 3.2;
 
 int batteryPercent() {
-#ifdef V9_0_5
-  return fuelGaugeSocPercent();
-#else
-  return map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000,
-             showFullBatteryAboveVoltage * 1000, 0, 100);
-#endif
+  if (b_hasFuelGauge) {
+    return fuelGaugeSocPercent();
+  }
+  int p = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000,
+              showFullBatteryAboveVoltage * 1000, 0, 100);
+  if (p < 0) {
+    p = 0;
+  }
+  if (p > 100) {
+    p = 100;
+  }
+  return p;
 }
 
 void (*resetFunc)(void) = 0;
@@ -359,11 +365,11 @@ void power_off(int min) {
   if (!b_is_charging) {
     if (!b_softSleep) {
       if (f_batteryVoltage < lowBatteryThreshold) {
-#ifdef BATTERY_PIN
-        updateBattery(BATTERY_PIN);
-#else
-        f_batteryVoltage = fuelGaugeVoltageV();
-#endif
+if (!b_hasFuelGauge) {
+          updateBattery(BATTERY_PIN);
+        } else {
+          f_batteryVoltage = fuelGaugeVoltageV();
+        }
       }
       if (f_batteryVoltage > lowBatteryThreshold) {
         i_lowBatteryCount = 0;
@@ -418,11 +424,11 @@ void power_off(double sec) {
   if (!b_is_charging) {
     if (!b_softSleep) {
       if (f_batteryVoltage < lowBatteryThreshold) {
-#ifdef BATTERY_PIN
-        updateBattery(BATTERY_PIN);
-#else
-        f_batteryVoltage = fuelGaugeVoltageV();
-#endif
+if (!b_hasFuelGauge) {
+          updateBattery(BATTERY_PIN);
+        } else {
+          f_batteryVoltage = fuelGaugeVoltageV();
+        }
       }
       if (f_batteryVoltage > lowBatteryThreshold) {
         i_lowBatteryCount = 0;
