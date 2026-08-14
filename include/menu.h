@@ -266,6 +266,10 @@ void exitMenu() {
   currentIndex = 0;
   currentSelection = currentMenu[currentIndex];
   t_menuExitTime = millis();
+  if (b_menuRestartRequired) {
+    b_menuRestartRequired = false;
+    remoteQueueResetAt(millis());
+  }
 }
 
 #ifdef BUZZER
@@ -302,10 +306,11 @@ void toggleWifiOn() {
   }
 #endif
   actionMessage = "WiFi Enabled";
-  actionMessage2 = "Restart scale";
+  actionMessage2 = "Restart on exit";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_WIFI_BOOT, true);
+  b_menuRestartRequired = true;
   Serial.printf("%s\n", actionMessage);
 }
 
@@ -325,10 +330,11 @@ void toggleWifiOff() {
 #endif
   b_wifiOnBoot = false;
   actionMessage = "WiFi Disabled";
-  actionMessage2 = "Restart scale";
+  actionMessage2 = "Restart on exit";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_WIFI_BOOT, false);
+  b_menuRestartRequired = true;
   Serial.printf("%s\n", actionMessage);
 }
 
@@ -443,9 +449,10 @@ void showStatus() {
 void resetWifi() {
   saveCredentials("", "");
   actionMessage = "WiFi Reset";
-  actionMessage2 = "Restart scale";
+  actionMessage2 = "Restart on exit";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
+  b_menuRestartRequired = true;
 }
 #endif
 
