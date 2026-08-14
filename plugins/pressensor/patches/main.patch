@@ -252,7 +252,7 @@ index 8c02f2e..a036e87 100644
 +#endif
 +
  void calibrate() {
-   b_menu = false;
+   leaveMenu();
    b_calibration = true;
 @@ -1656,6 +1806,11 @@ void selectMenu() {
        b_grinderMenuDirectEntry = false;
