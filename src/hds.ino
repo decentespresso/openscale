@@ -31,6 +31,7 @@
 #include "menu.h"
 #include "ble.h"
 #include "usbcomm.h"
+#include "fuel_gauge.h"
 #include "finger_detection.h"
 
 #if HDS_ENABLE_GRINDER
@@ -551,6 +552,8 @@ void setup() {
 #ifdef ESP32
   Wire.begin(I2C_SDA, I2C_SCL);
 #endif
+  fuelGaugeBegin();
+  compactMainMenu();
 #ifdef HW_SPI
   SPI.begin(OLED_SCLK, -1, OLED_SDIN, OLED_CS);
 #endif

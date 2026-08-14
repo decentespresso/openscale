@@ -1,5 +1,10 @@
 .pio.nosync
 .pio-core/
+.dummy/
+managed_components/
+sdkconfig.defaults
+sdkconfig.esp32s3
+sdkconfig.*
 .vscode/c_cpp_properties.json
 .vscode/extensions.json
 .vscode/launch.json
@@ -16,3 +21,6 @@ dist/
 build/
 
 /web_apps/**/*.gz
+
+# PDF text extraction (intermediate)
+docs/9.0.5/extracted/

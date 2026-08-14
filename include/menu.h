@@ -3,6 +3,8 @@
 
 #include "esp32-hal.h"
 #include "parameter.h"
+#include "fuel_gauge.h"
+#include "fuel_gauge_menu.h"
 #if HDS_FEATURE_WIFI
 #include "mdns_name.h"
 #include "wifi_setup.h"
@@ -52,6 +54,7 @@ void drawButton();
 void wifiUpdate();
 #endif
 void showStatus();
+void compactMainMenu();
 void showAbout();
 void showMenu();
 void showLogo();
@@ -97,6 +100,7 @@ Menu menuWifi = { "WiFi Settings", NULL, NULL, NULL };
 #endif
 Menu menuStatus = { "Status", showStatus, NULL, NULL };
 Menu menuAbout = { "About", showAbout, NULL, NULL };
+Menu menuBatInfo = { "Bat. Info", showBatInfo, NULL, NULL };
 Menu menuLogo = { "Show Logo", showLogo, NULL, NULL };
 Menu menuFactory = { "Factory", NULL, NULL, NULL };
 Menu menuHeartbeat = { "Heartbeat", NULL, NULL, NULL };
@@ -214,6 +218,7 @@ Menu *mainMenu[] = {
   &menuStatus,
   &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen, &menuTimeOnTop,
   &menuBtnFuncWhileConnected, &menuAutoSleep, &menuQuickBoot, &menuDriftComp,
+  &menuBatInfo,
 #if HDS_ENABLE_GRINDER
   &menuGrinder,
 #endif
@@ -1615,6 +1620,21 @@ void navigateMenu(int direction) {
   currentSelection = currentMenu[currentIndex];
   Serial.print("currentIndex ");
   Serial.println(currentIndex);
+}
+
+void compactMainMenu() {
+  if (b_hasFuelGauge) {
+    return;
+  }
+  for (int i = 0; i < currentMenuSize; i++) {
+    if (mainMenu[i] == &menuBatInfo) {
+      for (int j = i; j < currentMenuSize - 1; j++) {
+        mainMenu[j] = mainMenu[j + 1];
+      }
+      currentMenuSize--;
+      break;
+    }
+  }
 }
 
 void selectMenu() {
