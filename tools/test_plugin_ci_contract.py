@@ -32,6 +32,7 @@ def main():
     assert "tools/list_changed_patch_plugins.py" in customWorkflow
     assert "fromJSON(needs.detect_plugins.outputs.matrix)" in customWorkflow
     assert '--verify-plugin-environment "esp32s3-$PLUGIN_ID"' in customWorkflow
+    assert '--source-commit "${{ github.sha }}"' in customWorkflow
     assert "verify-pressensor:" not in customWorkflow
     assert "compile-matrix:" not in customWorkflow
     dispatchBuild = customWorkflow.split("\n  build:\n", 1)[1]
