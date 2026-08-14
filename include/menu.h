@@ -257,7 +257,7 @@ void exitMenu() {
 #if HDS_ENABLE_GRINDER
   grinderResumeAfterMenu();
 #endif
-  b_menu = false;
+  leaveMenu();
 #if HDS_ENABLE_GRINDER
   b_grinderMenuDirectEntry = false;
 #endif
@@ -266,10 +266,6 @@ void exitMenu() {
   currentIndex = 0;
   currentSelection = currentMenu[currentIndex];
   t_menuExitTime = millis();
-  if (b_menuRestartRequired) {
-    b_menuRestartRequired = false;
-    remoteQueueResetAt(millis());
-  }
 }
 
 #ifdef BUZZER
@@ -310,7 +306,7 @@ void toggleWifiOn() {
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_WIFI_BOOT, true);
-  b_menuRestartRequired = true;
+  markMenuRestartRequired();
   Serial.printf("%s\n", actionMessage);
 }
 
@@ -334,7 +330,7 @@ void toggleWifiOff() {
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_WIFI_BOOT, false);
-  b_menuRestartRequired = true;
+  markMenuRestartRequired();
   Serial.printf("%s\n", actionMessage);
 }
 
@@ -452,7 +448,7 @@ void resetWifi() {
   actionMessage2 = "Restart on exit";
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
-  b_menuRestartRequired = true;
+  markMenuRestartRequired();
 }
 #endif
 
@@ -869,7 +865,7 @@ void grinderZeroRangeMenu() {
 #endif
 
 void calibrate() {
-  b_menu = false;
+  leaveMenu();
   b_calibration = true;
   i_calibration = 0;
 }
@@ -1481,7 +1477,7 @@ void wifiUpdate() {
   buzzer.off();
 #endif
   pullOtaUpdate();
-  b_menu = false;
+  leaveMenu();
 }
 #endif
 
@@ -1586,7 +1582,7 @@ void enableDebug() {
 #endif
   delay(1000);
   b_debug = true;
-  b_menu = false;
+  leaveMenu();
 }
 
 void calibrateVoltage() {
