@@ -3,6 +3,8 @@
 
 #include "esp32-hal.h"
 #include "parameter.h"
+#include "fuel_gauge.h"
+#include "fuel_gauge_menu.h"
 #if HDS_FEATURE_WIFI
 #include "mdns_name.h"
 #include "wifi_setup.h"
@@ -46,12 +48,15 @@ void showWifiStatus();
 #endif
 void heartbeatOn();
 void heartbeatOff();
+void batteryProtectOn();
+void batteryProtectOff();
 void calibrate();
 void drawButton();
 #if HDS_FEATURE_PULL_OTA
 void wifiUpdate();
 #endif
 void showStatus();
+void compactMainMenu();
 void showAbout();
 void showMenu();
 void showLogo();
@@ -97,9 +102,11 @@ Menu menuWifi = { "WiFi Settings", NULL, NULL, NULL };
 #endif
 Menu menuStatus = { "Status", showStatus, NULL, NULL };
 Menu menuAbout = { "About", showAbout, NULL, NULL };
+Menu menuBatInfo = { "Bat. Info", showBatInfo, NULL, NULL };
 Menu menuLogo = { "Show Logo", showLogo, NULL, NULL };
 Menu menuFactory = { "Factory", NULL, NULL, NULL };
 Menu menuHeartbeat = { "Heartbeat", NULL, NULL, NULL };
+Menu menuBatteryProtect = { "Battery Protect", NULL, NULL, NULL };
 Menu menuFlipScreen = { "Flip Screen", NULL, NULL, NULL };
 Menu menuTimeOnTop = { "Time On Top", NULL, NULL, NULL };
 Menu menuBtnFuncWhileConnected = { "Button with BLE", NULL, NULL, NULL };
@@ -148,6 +155,11 @@ Menu menuHeartbeatOn = { "Heartbeat On", heartbeatOn, NULL, &menuHeartbeat };
 Menu menuHeartbeatOff = { "Heartbeat Off", heartbeatOff, NULL, &menuHeartbeat };
 Menu *heartbeatMenu[] = { &menuHeartbeatBack, &menuHeartbeatOn,
                           &menuHeartbeatOff };
+Menu menuBatProtectBack = { "Back", NULL, NULL, &menuBatteryProtect };
+Menu menuBatProtectOn = { "Protect On", batteryProtectOn, NULL, &menuBatteryProtect };
+Menu menuBatProtectOff = { "Protect Off", batteryProtectOff, NULL, &menuBatteryProtect };
+Menu *batteryProtectMenu[] = { &menuBatProtectBack, &menuBatProtectOn,
+                               &menuBatProtectOff };
 
 Menu menuFlipScreenBack = { "Back", NULL, NULL, &menuFlipScreen };
 Menu menuFlipScreenOn = { "Flip On", flipScreenOn, NULL, &menuFlipScreen };
@@ -214,6 +226,8 @@ Menu *mainMenu[] = {
   &menuStatus,
   &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen, &menuTimeOnTop,
   &menuBtnFuncWhileConnected, &menuAutoSleep, &menuQuickBoot, &menuDriftComp,
+  &menuBatInfo,
+  &menuBatteryProtect,
 #if HDS_ENABLE_GRINDER
   &menuGrinder,
 #endif
@@ -221,6 +235,13 @@ Menu *mainMenu[] = {
 Menu **currentMenu = mainMenu;
 Menu *currentSelection = mainMenu[0];
 int currentMenuSize = getMenuSize(mainMenu);
+
+// Battery Protect is hidden on gauge-less hardware (removed from the array
+// by compactMainMenu); centralize the effective size so returning from any
+// submenu cannot resurrect it.
+int mainMenuSize() {
+  return getMenuSize(mainMenu) - (b_hasFuelGauge ? 0 : 1);
+}
 int currentIndex = 0;
 const int linesPerPage =
   4;
@@ -236,6 +257,7 @@ void linkSubmenus() {
   menuWifi.subMenu = wifiUpdateMenu[0];
 #endif
   menuHeartbeat.subMenu = heartbeatMenu[0];
+  menuBatteryProtect.subMenu = batteryProtectMenu[0];
   menuFlipScreen.subMenu = flipScreenMenu[0];
   menuTimeOnTop.subMenu = timeOnTopMenu[0];
   menuBtnFuncWhileConnected.subMenu = btnFuncWhileConnectedMenu[0];
@@ -265,7 +287,7 @@ void exitMenu() {
   b_grinderMenuDirectEntry = false;
 #endif
   currentMenu = mainMenu;
-  currentMenuSize = getMenuSize(mainMenu);
+  currentMenuSize = mainMenuSize();
   currentIndex = 0;
   currentSelection = currentMenu[currentIndex];
   t_menuExitTime = millis();
@@ -459,6 +481,26 @@ void heartbeatOn() {
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_HEARTBEAT, b_requireHeartBeat);
   Serial.println("Heartbeat detection...On");
+}
+
+void batteryProtectOn() {
+  b_batteryProtect = true;
+  storagePutBool(KEY_BAT_PROTECT, true);
+  fuelGaugeProtectSet(true);
+  actionMessage = "Protect On";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  Serial.println("Battery protect...On");
+}
+
+void batteryProtectOff() {
+  b_batteryProtect = false;
+  storagePutBool(KEY_BAT_PROTECT, false);
+  fuelGaugeProtectSet(false);
+  actionMessage = "Protect Off";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  Serial.println("Battery protect...Off");
 }
 
 void heartbeatOff() {
@@ -1593,7 +1635,11 @@ void calibrateVoltage() {
   long adcSum = 0;
 
   for (int i = 0; i < numReadings; i++) {
+#ifdef BATTERY_PIN
     adcSum += analogRead(BATTERY_PIN);
+#else
+    adcSum += (long)(fuelGaugeVoltageV() * 1000.0f);
+#endif
     delay(10);
   }
 
@@ -1617,6 +1663,23 @@ void navigateMenu(int direction) {
   Serial.println(currentIndex);
 }
 
+void compactMainMenu() {
+  // 8.3.1 keeps Bat. Info (limited data without the gauge), but Battery
+  // Protect needs the gauge and the CHRG_CTRL pin.
+  if (b_hasFuelGauge) {
+    return;
+  }
+  for (int i = 0; i < currentMenuSize; i++) {
+    if (mainMenu[i] == &menuBatteryProtect) {
+      for (int j = i; j < currentMenuSize - 1; j++) {
+        mainMenu[j] = mainMenu[j + 1];
+      }
+      currentMenuSize--;
+      break;
+    }
+  }
+}
+
 void selectMenu() {
   if (currentSelection->subMenu) {
 #ifdef BUZZER
@@ -1636,6 +1699,9 @@ void selectMenu() {
     } else if (currentSelection == &menuHeartbeat) {
       currentMenu = heartbeatMenu;
       currentMenuSize = getMenuSize(heartbeatMenu);
+    } else if (currentSelection == &menuBatteryProtect) {
+      currentMenu = batteryProtectMenu;
+      currentMenuSize = getMenuSize(batteryProtectMenu);
     } else if (currentSelection == &menuFlipScreen) {
       currentMenu = flipScreenMenu;
       currentMenuSize = getMenuSize(flipScreenMenu);
@@ -1673,7 +1739,7 @@ void selectMenu() {
     }
 #endif
     currentMenu = mainMenu;
-    currentMenuSize = getMenuSize(mainMenu);
+    currentMenuSize = mainMenuSize();
     currentIndex = 0;
     currentSelection = currentMenu[currentIndex];
   }

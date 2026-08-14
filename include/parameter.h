@@ -384,6 +384,8 @@ bool b_minus_container_button = false;  //是否减去称豆容器
 bool b_ready_to_brew = false;           //准备冲煮并计时
 bool b_is_charging = false;             //正在充电标识
 bool b_espnow = false;
+volatile bool b_hasFuelGauge = false;   //BQ27427 电量计存在(9.0.5)
+volatile bool b_batteryProtect = false; //电池保护:充电上限 80%(9.0.5)
 //bool b_debug = DEBUG;                                //debug信息显示
 #if DEBUG_BATTERY
 bool b_debug_battery = false;  //debug电池信息

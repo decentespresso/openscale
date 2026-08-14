@@ -101,11 +101,7 @@ bool websocketIsCharging() {
 }
 
 int websocketBatteryPercent() {
-  float perc = (f_batteryVoltage - showEmptyBatteryBelowVoltage) /
-               (showFullBatteryAboveVoltage - showEmptyBatteryBelowVoltage) * 100.0f;
-  if (perc < 0) perc = 0;
-  if (perc > 100) perc = 100;
-  return (int)perc;
+  return batteryPercent();
 }
 #endif
 

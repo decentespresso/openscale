@@ -27,6 +27,7 @@ constexpr const char *KEY_WIFI_BOOT = "wifi_boot";
 constexpr const char *KEY_AUTO_SLEEP = "auto_sleep";
 constexpr const char *KEY_QUICK_BOOT = "quick_boot";
 constexpr const char *KEY_DRIFT_MAX = "drift_max";
+constexpr const char *KEY_BAT_PROTECT = "bat_protect";
 
 constexpr size_t LEGACY_EEPROM_BYTES = 512;
 constexpr size_t LEGACY_CAL1_ADDRESS = 0;
@@ -116,7 +117,7 @@ inline bool storageHasAllSettings() {
     KEY_CAL1, KEY_CONTAINER, KEY_MODE, KEY_POUROVER, KEY_ESPRESSO,
     KEY_BEEP, KEY_WELCOME, KEY_BAT_CAL, KEY_HEARTBEAT, KEY_SCREEN_FLIP,
     KEY_TIME_ON_TOP, KEY_BTN_CONN, KEY_WIFI_BOOT, KEY_AUTO_SLEEP,
-    KEY_QUICK_BOOT, KEY_DRIFT_MAX
+    KEY_QUICK_BOOT, KEY_DRIFT_MAX, KEY_BAT_PROTECT
   };
   for (const char *key : keys) {
     if (!settingsPreferences.isKey(key)) {
@@ -142,7 +143,8 @@ inline bool storageEnsureDefaults() {
          storageEnsureBool(KEY_WIFI_BOOT, false) &&
          storageEnsureBool(KEY_AUTO_SLEEP, true) &&
          storageEnsureBool(KEY_QUICK_BOOT, false) &&
-         storageEnsureFloat(KEY_DRIFT_MAX, 0.05f);
+         storageEnsureFloat(KEY_DRIFT_MAX, 0.05f) &&
+         storageEnsureBool(KEY_BAT_PROTECT, false);
 }
 
 inline bool storageLegacyBool(size_t address, bool defaultValue) {
