@@ -14,6 +14,16 @@ pio run -e esp32s3 -t uploadfs --upload-port <port>
 
 Firmware-only flashing does not update `web_apps/`. Flash LittleFS when the on-device web UI matters.
 
+## Environment Selection
+
+Build only the environments affected by the change:
+
+- Use `esp32s3` for changes limited to core firmware, weighing, or ADS communication, including an ADS1232 dependency-pin update.
+- Add `esp32s3-grinder` only for grinder-specific code, feature flags, or build configuration.
+- Add `esp32s3-custom` only for custom-build composition, patches, generated inputs, or shared feature-selection changes.
+
+Do not add an environment merely because it exists. Changes limited to ADS1232 behavior or its dependency pin do not require the grinder or custom environments; those environments do not alter the weighing or ADS communication path.
+
 ## PlatformIO Details
 
 - `platformio.ini` uses `.pio.nosync` as the workspace directory.
