@@ -318,6 +318,7 @@ public:
     if (inputString.startsWith("v")) {
       Serial.print("Battery Voltage:");
       Serial.print(f_batteryVoltage);
+#ifdef BATTERY_PIN
       if (b_ads1115InitFail) {
         int adcValue = analogRead(BATTERY_PIN);
         float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;
@@ -326,10 +327,12 @@ public:
         Serial.print("\tbatteryCalibrationFactor: ");
         Serial.print(f_batteryCalibrationFactor);
       }
+#endif
       Serial.print("\tlowBatteryCounterTotal: ");
       Serial.print(i_lowBatteryCountTotal);
     }
 
+#ifdef BATTERY_PIN
     if (inputString.startsWith("vf ")) {
       int adcValue = analogRead(BATTERY_PIN);
       float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;
@@ -339,6 +342,21 @@ public:
 
       Serial.print("Battery Voltage Factor set to: ");
       Serial.println(f_batteryCalibrationFactor);
+    }
+#endif
+
+    if (inputString.startsWith("bc")) {
+      if (inputString.length() > 2) {
+        uint16_t cap = inputString.substring(3).toInt();
+        if (fuelGaugeSetCapacity(cap)) {
+          Serial.printf("Battery capacity set to: %u mAh\n", cap);
+        } else {
+          Serial.println("Invalid capacity (300-2000 mAh)");
+        }
+      } else {
+        Serial.printf("Battery capacity: %u mAh\n",
+                      fuelGaugeDesignCapacityMah());
+      }
     }
 
     if (inputString.startsWith("cv ")) {

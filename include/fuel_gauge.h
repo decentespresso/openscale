@@ -5,6 +5,7 @@
 #include <Arduino.h>
 
 extern volatile bool b_hasFuelGauge;
+extern volatile bool b_batteryProtect;
 
 #ifndef FUEL_GAUGE_I2C_SDA
 #define FUEL_GAUGE_I2C_SDA 5
@@ -15,8 +16,14 @@ extern volatile bool b_hasFuelGauge;
 #ifndef FUEL_GAUGE_USB_DET
 #define FUEL_GAUGE_USB_DET 8
 #endif
+// Charger CHRG status pin (TP4056 output): low while charging.
+#ifndef FUEL_GAUGE_CHRG_DET
+#define FUEL_GAUGE_CHRG_DET 10
+#endif
 
 bool fuelGaugeBegin();
+void fuelGaugeLoop();
+void fuelGaugeProtectSet(bool enable);
 float fuelGaugeVoltageV();
 int16_t fuelGaugeCurrentMa();
 int16_t fuelGaugeStandbyMa();
@@ -24,6 +31,8 @@ int16_t fuelGaugeMaxLoadMa();
 int16_t fuelGaugePowerMw();
 uint16_t fuelGaugeCapacityMah();
 uint16_t fuelGaugeFullCapacityMah();
+uint16_t fuelGaugeDesignCapacityMah();
+bool fuelGaugeSetCapacity(uint16_t mAh);
 uint8_t fuelGaugeSoHPercent();
 uint8_t fuelGaugeSocPercent();
 float fuelGaugeTempC();

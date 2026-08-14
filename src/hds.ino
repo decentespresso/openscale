@@ -457,7 +457,7 @@ void setup() {
   button_init();
   linkSubmenus();
   pinMode(BATTERY_CHARGING, INPUT_PULLUP);
-#if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
+#if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1) || defined(V9_0_5)
   pinMode(USB_DET, INPUT_PULLUP);
   pinMode(OLED_CS, OUTPUT);
   pinMode(OLED_DC, OUTPUT);
@@ -544,7 +544,7 @@ void setup() {
   gpio_hold_dis((gpio_num_t)I2C_SDA);
   gpio_hold_dis((gpio_num_t)PWR_CTRL);
 
-#if defined(V7_3) || defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
+#if defined(V7_3) || defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1) || defined(V9_0_5)
   gpio_hold_dis((gpio_num_t)ACC_PWR_CTRL);
   Serial.println("ACC_PWR_CTRL = HIGH");
 #endif
@@ -554,11 +554,14 @@ void setup() {
 #endif
   fuelGaugeBegin();
   compactMainMenu();
+  b_batteryProtect = storageGetBool(KEY_BAT_PROTECT, false);
 #ifdef HW_SPI
   SPI.begin(OLED_SCLK, -1, OLED_SDIN, OLED_CS);
 #endif
 #ifdef ADS1115ADC
-  ADS_init();
+  if (!b_hasFuelGauge) {
+    ADS_init();
+  }
 #endif
   delay(50);
   b_requireHeartBeat = storageGetBool(KEY_HEARTBEAT, true);
@@ -831,7 +834,11 @@ void setup() {
   Serial.println("Setup complete...");
   t_bootTare = millis();
   b_bootTare = true;
+#ifdef BATTERY_PIN
   updateBattery(BATTERY_PIN);
+#else
+  f_batteryVoltage = fuelGaugeVoltageV();
+#endif
 #if HDS_FEATURE_PULL_OTA
   if (b_pendingOtaLittleFs) {
     if (!pullOtaResumePendingLittleFs()) {
@@ -1451,6 +1458,7 @@ void loop() {
   processWsPendingCmds();
   processBleStatusResponse();
   processBleVoltageResponse();
+  fuelGaugeLoop();
 
   if (b_powerOff){
     shut_down_now_nobeep();
@@ -1530,7 +1538,11 @@ void loop() {
     debugData();
 #endif  //DEBUG
     if (millis() - t_batteryRefresh > i_batteryRefreshTareInterval){
+#ifdef BATTERY_PIN
       updateBattery(BATTERY_PIN);
+#else
+      f_batteryVoltage = fuelGaugeVoltageV();
+#endif
     }
     checkBattery();
     if (b_ota) {
@@ -1553,7 +1565,7 @@ void loop() {
     } else if (GPIO_power_on_with == BATTERY_CHARGING) {
       if (b_chargingOLED) {
         if (digitalRead(BATTERY_CHARGING) == LOW && !b_calibration) {
-          float perc = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
+          float perc = batteryPercent();
           chargingOLED((int)perc, f_batteryVoltage);
           b_showChargingUI = true;
         } else {
@@ -1871,7 +1883,7 @@ void drawBattery() {
     t_batteryIcon = millis();
     b_showBatteryIcon = !b_showBatteryIcon;
   }
-#if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
+#if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1) || defined(V9_0_5)
   if (digitalRead(USB_DET) == LOW) {
 #else
   if (digitalRead(BATTERY_CHARGING) == LOW) {
@@ -1880,7 +1892,7 @@ void drawBattery() {
     u8g2.drawXBM(121, 51, 7, 12, image_battery_charging);
   } else {
     b_is_charging = false;
-    int i_batteryPercent = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
+    int i_batteryPercent = batteryPercent();
     if (i_batteryPercent <= 5) {
       if (b_showBatteryIcon)
         u8g2.drawXBM(121, 52, 7, 12, image_battery_0);
@@ -1942,7 +1954,7 @@ void drawDebug() {
       snprintf(chargingText, sizeof(chargingText), "Not charging");
 
     char batteryText[10];
-    int perc = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
+    int perc = batteryPercent();
     snprintf(batteryText, sizeof(batteryText), "%d%%", (perc > 100) ? 100 : perc);
 
     char voltageText[10];

@@ -8,6 +8,7 @@
 #include "gyro.h"
 #endif
 #include "espnow.h"
+#include "fuel_gauge.h"
 
 #ifdef ESP32
 #include "driver/rtc_io.h"
@@ -54,6 +55,15 @@ const float adcResolution = 4095.0;
 const float referenceVoltage = 3.3;
 
 const float lowBatteryThreshold = 3.2;
+
+int batteryPercent() {
+#ifdef V9_0_5
+  return fuelGaugeSocPercent();
+#else
+  return map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000,
+             showFullBatteryAboveVoltage * 1000, 0, 100);
+#endif
+}
 
 void (*resetFunc)(void) = 0;
 
@@ -349,7 +359,11 @@ void power_off(int min) {
   if (!b_is_charging) {
     if (!b_softSleep) {
       if (f_batteryVoltage < lowBatteryThreshold) {
+#ifdef BATTERY_PIN
         updateBattery(BATTERY_PIN);
+#else
+        f_batteryVoltage = fuelGaugeVoltageV();
+#endif
       }
       if (f_batteryVoltage > lowBatteryThreshold) {
         i_lowBatteryCount = 0;
@@ -404,7 +418,11 @@ void power_off(double sec) {
   if (!b_is_charging) {
     if (!b_softSleep) {
       if (f_batteryVoltage < lowBatteryThreshold) {
+#ifdef BATTERY_PIN
         updateBattery(BATTERY_PIN);
+#else
+        f_batteryVoltage = fuelGaugeVoltageV();
+#endif
       }
       if (f_batteryVoltage > lowBatteryThreshold) {
         i_lowBatteryCount = 0;
@@ -453,8 +471,8 @@ float get_bat_voltage() {
 #endif  //CHECKBATTERY
 
 void checkBattery() {
-  float perc = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
-#if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
+  float perc = batteryPercent();
+#if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1) || defined(V9_0_5)
   if (digitalRead(USB_DET) == LOW) {
 #else
   if (digitalRead(BATTERY_CHARGING) == LOW) {

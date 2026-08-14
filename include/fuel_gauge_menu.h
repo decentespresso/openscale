@@ -1,12 +1,11 @@
 // Bat. Info menu for the BQ27427 fuel gauge, following the showStatus
-// pattern: draw a frame, hold it, then poll buttons. ENTER advances a page,
-// advancing past the last page exits; NEXT steps back, stepping back past
-// the first page exits.
+// pattern: draw a frame, hold it, then poll buttons. ENTER cycles pages,
+// NEXT steps back (exit on first page).
 #ifndef FUEL_GAUGE_MENU_H
 #define FUEL_GAUGE_MENU_H
 #include "fuel_gauge.h"
+#include "power.h"
 #include "display.h"
-#include <string.h>
 
 #ifndef MENU_BTN_ENTER
 #define MENU_BTN_ENTER 2
@@ -15,64 +14,12 @@
 #define MENU_BTN_BACK 1
 #endif
 
-static const int BAT_INFO_PER_PAGE = 5;
-static const int BAT_INFO_ITEMS = 13;
 static bool b_showBatInfoData = false;
 static bool s_showBatInfoBusy = false;
 static int i_batInfoPage = 0;
 
 static int batInfoTotalPages() {
-  return (BAT_INFO_ITEMS + BAT_INFO_PER_PAGE - 1) / BAT_INFO_PER_PAGE;
-}
-
-static void buildBatInfoLine(int index, char *out, size_t len) {
-  switch (index) {
-    case 0:
-      snprintf(out, len, "Voltage %.2f V", fuelGaugeVoltageV());
-      break;
-    case 1:
-      snprintf(out, len, "Chip %.1f C", fuelGaugeTempC());
-      break;
-    case 2:
-      snprintf(out, len, "Current %d mA", fuelGaugeCurrentMa());
-      break;
-    // case 3:
-    //   snprintf(out, len, "Standby %d mA", fuelGaugeStandbyMa());
-    //   break;
-    // case 4:
-    //   snprintf(out, len, "MaxLoad %d mA", fuelGaugeMaxLoadMa());
-    //   break;
-    case 3:
-      snprintf(out, len, "Power %d mW", fuelGaugePowerMw());
-      break;
-    case 4:
-      snprintf(out, len, "Capacity %u mAh", fuelGaugeCapacityMah());
-      break;
-    case 5:
-      snprintf(out, len, "FullCap %u mAh", fuelGaugeFullCapacityMah());
-      break;
-    case 6:
-      snprintf(out, len, "Health %u %%", fuelGaugeSoHPercent());
-      break;
-    case 7:
-      snprintf(out, len, "Bat. Level %u %%", fuelGaugeSocPercent());
-      break;
-    case 8:
-      snprintf(out, len, "Charging %s", fuelGaugeCharging() ? "Yes" : "No");
-      break;
-    case 9:
-      snprintf(out, len, "USB %s", fuelGaugeUsbPlugged() ? "Plugged" : "None");
-      break;
-    case 10:
-      snprintf(out, len, "True cap & health");
-      break;
-    case 11:
-      snprintf(out, len, "after a full charge");
-      break;
-    default:
-      snprintf(out, len, "and discharge cycle");
-      break;
-  }
+  return b_hasFuelGauge ? 2 : 1;
 }
 
 static void drawBatInfoPage() {
@@ -84,20 +31,50 @@ static void drawBatInfoPage() {
   u8g2.setFont(u8g2_font_6x12_tr);
   do {
     u8g2.drawUTF8(AR(pageInfo), 12, pageInfo);
-    for (int i = 0; i < BAT_INFO_PER_PAGE; i++) {
-      int item = i_batInfoPage * BAT_INFO_PER_PAGE + i;
-      if (item >= BAT_INFO_ITEMS) {
-        break;
-      }
-      char line[24];
-      buildBatInfoLine(item, line, sizeof(line));
-      u8g2.drawUTF8(0, 12 * (i + 1), line);
+    if (!b_hasFuelGauge) {
+      char l[12];
+      char r[12];
+      snprintf(l, sizeof(l), "%.2f V", f_batteryVoltage);
+      snprintf(r, sizeof(r), "Bat. %d%%", batteryPercent());
+      u8g2.drawUTF8(0, 12, l);
+      u8g2.drawUTF8(64, 12, r);
+      snprintf(l, sizeof(l), "CRG %s", fuelGaugeUsbPlugged() ? "Y" : "N");
+      snprintf(r, sizeof(r), "USB %s", fuelGaugeUsbPlugged() ? "Y" : "N");
+      u8g2.drawUTF8(0, 24, l);
+      u8g2.drawUTF8(64, 24, r);
+    } else if (i_batInfoPage == 0) {
+      char l[12];
+      char r[12];
+      snprintf(l, sizeof(l), "%.2f V", fuelGaugeVoltageV());
+      snprintf(r, sizeof(r), "%.1f C", fuelGaugeTempC());
+      u8g2.drawUTF8(0, 12, l);
+      u8g2.drawUTF8(64, 12, r);
+      snprintf(l, sizeof(l), "%d mA", fuelGaugeCurrentMa());
+      snprintf(r, sizeof(r), "%d mW", fuelGaugePowerMw());
+      u8g2.drawUTF8(0, 24, l);
+      u8g2.drawUTF8(64, 24, r);
+      snprintf(l, sizeof(l), "Cap %u", fuelGaugeCapacityMah());
+      snprintf(r, sizeof(r), "FCC %u", fuelGaugeFullCapacityMah());
+      u8g2.drawUTF8(0, 36, l);
+      u8g2.drawUTF8(64, 36, r);
+      snprintf(l, sizeof(l), "Health %u%%", fuelGaugeSoHPercent());
+      snprintf(r, sizeof(r), "Bat. %u%%", fuelGaugeSocPercent());
+      u8g2.drawUTF8(0, 48, l);
+      u8g2.drawUTF8(64, 48, r);
+      snprintf(l, sizeof(l), "CRG %s", fuelGaugeCharging() ? "Y" : "N");
+      snprintf(r, sizeof(r), "USB %s", fuelGaugeUsbPlugged() ? "Y" : "N");
+      u8g2.drawUTF8(0, 60, l);
+      u8g2.drawUTF8(64, 60, r);
+    } else {
+      u8g2.drawUTF8(0, 12, "True cap & health");
+      u8g2.drawUTF8(0, 24, "after a full charge");
+      u8g2.drawUTF8(0, 36, "and discharge cycle");
     }
   } while (u8g2.nextPage());
 }
 
 void showBatInfo() {
-  if (!b_hasFuelGauge || s_showBatInfoBusy) {
+  if (s_showBatInfoBusy) {
     return;
   }
   s_showBatInfoBusy = true;
