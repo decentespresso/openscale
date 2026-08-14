@@ -367,6 +367,7 @@ bool b_extraction = false;  //萃取模式标识
 int b_mode = 0;             //0 = pourover; 1 = espresso;
 
 bool b_menu = false;
+bool b_menuRestartRequired = false;
 unsigned long t_menuExitTime = 0;
 // Timestamp recording when the menu exit process started
 // Used to implement a protection period preventing unintended operations

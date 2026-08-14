@@ -10,6 +10,7 @@ HDS_SOURCE = ROOT / "src" / "hds.ino"
 WEBSOCKET_HEADER = ROOT / "include" / "websocket.h"
 PARAMETER_HEADER = ROOT / "include" / "parameter.h"
 BLE_HEADER = ROOT / "include" / "ble.h"
+MENU_HEADER = ROOT / "include" / "menu.h"
 
 WSP_DISPLAY_ON = 1 << 0
 WSP_DISPLAY_OFF = 1 << 1
@@ -195,6 +196,17 @@ def main():
     assert_contains(PARAMETER_HEADER, "inline void remoteQueueOtaResetAt(unsigned long resetAt)")
     assert_contains(PARAMETER_HEADER, "std::mutex otaDispatchMutex;")
     assert_contains(BLE_HEADER, "remoteQueuePending(WSP_RESET);")
+    assert_contains(PARAMETER_HEADER, "bool b_menuRestartRequired = false;")
+    assert_contains(
+        MENU_HEADER,
+        "if (b_menuRestartRequired) {\n"
+        "    b_menuRestartRequired = false;\n"
+        "    remoteQueueResetAt(millis());\n"
+        "  }",
+    )
+    menu_contents = MENU_HEADER.read_text(encoding="utf-8")
+    if menu_contents.count("b_menuRestartRequired = true;") != 3:
+        raise AssertionError("menu.h expected three restart-requiring WiFi actions")
 
     websocket = WEBSOCKET_HEADER.read_text(encoding="utf-8")
     dispatcher_start = websocket.index("void processWsPendingCmds() {")
