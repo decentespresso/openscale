@@ -196,17 +196,37 @@ def main():
     assert_contains(PARAMETER_HEADER, "inline void remoteQueueOtaResetAt(unsigned long resetAt)")
     assert_contains(PARAMETER_HEADER, "std::mutex otaDispatchMutex;")
     assert_contains(BLE_HEADER, "remoteQueuePending(WSP_RESET);")
-    assert_contains(PARAMETER_HEADER, "bool b_menuRestartRequired = false;")
+    assert_contains(PARAMETER_HEADER, "volatile bool b_menuRestartRequired = false;")
     assert_contains(
-        MENU_HEADER,
-        "if (b_menuRestartRequired) {\n"
-        "    b_menuRestartRequired = false;\n"
-        "    remoteQueueResetAt(millis());\n"
-        "  }",
+        PARAMETER_HEADER,
+        "inline void markMenuRestartRequired() {\n"
+        "  portENTER_CRITICAL(&wsPendingMux);\n"
+        "  b_menuRestartRequired = true;\n"
+        "  portEXIT_CRITICAL(&wsPendingMux);\n"
+        "}",
     )
+    assert_contains(
+        PARAMETER_HEADER,
+        "inline void leaveMenu() {\n"
+        "  b_menu = false;\n"
+        "  portENTER_CRITICAL(&wsPendingMux);\n"
+        "  const bool restartRequired = b_menuRestartRequired;\n"
+        "  b_menuRestartRequired = false;\n"
+        "  portEXIT_CRITICAL(&wsPendingMux);\n"
+        "  if (restartRequired) {\n"
+        "    remoteQueueResetAt(millis());\n"
+        "  }\n"
+        "}",
+    )
+    assert_contains(MENU_HEADER, "void calibrate() {\n  leaveMenu();")
+    assert_contains(MENU_HEADER, "pullOtaUpdate();\n  leaveMenu();")
+    assert_contains(MENU_HEADER, "b_debug = true;\n  leaveMenu();")
     menu_contents = MENU_HEADER.read_text(encoding="utf-8")
-    if menu_contents.count("b_menuRestartRequired = true;") != 3:
+    if menu_contents.count("markMenuRestartRequired();") != 3:
         raise AssertionError("menu.h expected three restart-requiring WiFi actions")
+    for path in [*ROOT.glob("include/*.h"), *ROOT.glob("src/*.ino"), *ROOT.glob("src/*.cpp")]:
+        if path != PARAMETER_HEADER:
+            assert_not_contains(path, "b_menu = false;")
 
     websocket = WEBSOCKET_HEADER.read_text(encoding="utf-8")
     dispatcher_start = websocket.index("void processWsPendingCmds() {")

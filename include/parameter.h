@@ -367,8 +367,25 @@ bool b_extraction = false;  //萃取模式标识
 int b_mode = 0;             //0 = pourover; 1 = espresso;
 
 bool b_menu = false;
-bool b_menuRestartRequired = false;
+volatile bool b_menuRestartRequired = false;
 unsigned long t_menuExitTime = 0;
+
+inline void markMenuRestartRequired() {
+  portENTER_CRITICAL(&wsPendingMux);
+  b_menuRestartRequired = true;
+  portEXIT_CRITICAL(&wsPendingMux);
+}
+
+inline void leaveMenu() {
+  b_menu = false;
+  portENTER_CRITICAL(&wsPendingMux);
+  const bool restartRequired = b_menuRestartRequired;
+  b_menuRestartRequired = false;
+  portEXIT_CRITICAL(&wsPendingMux);
+  if (restartRequired) {
+    remoteQueueResetAt(millis());
+  }
+}
 // Timestamp recording when the menu exit process started
 // Used to implement a protection period preventing unintended operations
 

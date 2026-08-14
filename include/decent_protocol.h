@@ -300,7 +300,7 @@ static inline void startDecentCalibration(uint8_t mode, const char *transport) {
   if (mode == 0x00) {
     Serial.print("Manual Calibration via ");
     Serial.println(transport);
-    b_menu = false;
+    leaveMenu();
     i_cal_weight = 0;
     i_button_cal_status = 1;
     i_calibration = 0;
@@ -308,7 +308,7 @@ static inline void startDecentCalibration(uint8_t mode, const char *transport) {
   } else if (mode == 0x01) {
     Serial.print("Smart Calibration via ");
     Serial.println(transport);
-    b_menu = false;
+    leaveMenu();
     i_cal_weight = 0;
     i_button_cal_status = 1;
     i_calibration = 1;
@@ -320,7 +320,7 @@ static inline void handleDecentMenuCommand(const uint8_t *data) {
   if (data[2] == 0x00) {
     if (data[3] == 0x00) {
       Serial.println("Hide menu");
-      b_menu = false;
+      leaveMenu();
     } else if (data[3] == 0x01) {
       Serial.println("Show menu");
       b_menu = true;
@@ -336,7 +336,7 @@ static inline void handleDecentMenuCommand(const uint8_t *data) {
       Serial.println("Show about info");
       b_debug = false;
       b_about = true;
-      b_menu = false;
+      leaveMenu();
     }
   } else if (data[2] == 0x02) {
     if (data[3] == 0x00) {
@@ -346,7 +346,7 @@ static inline void handleDecentMenuCommand(const uint8_t *data) {
       Serial.println("Show debug info");
       b_about = false;
       b_debug = true;
-      b_menu = false;
+      leaveMenu();
     }
   }
 }

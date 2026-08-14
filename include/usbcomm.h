@@ -403,7 +403,7 @@ public:
     }
 
     if (inputString.startsWith("cal0")) {
-      b_menu = false;
+      leaveMenu();
       i_cal_weight = 0;
       i_button_cal_status = 1;
       b_calibration = true;
@@ -411,7 +411,7 @@ public:
     }
 
     if (inputString.startsWith("cal1")) {
-      b_menu = false;
+      leaveMenu();
       i_cal_weight = 0;
       i_button_cal_status = 1;
       b_calibration = true;
