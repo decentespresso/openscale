@@ -8,7 +8,8 @@
       "name": "WiFi",
       "description": "Wireless networking with inline configuration support.",
       "tooltip": "Provides WiFi and a minimal setup server for network and device-name configuration.",
-      "requires": []
+      "requires": [],
+      "default": true
     },
     {
       "id": "mdns",
@@ -17,7 +18,8 @@
       "tooltip": "Advertises the scale on the local network using multicast DNS. WiFi is included automatically.",
       "requires": [
         "wifi"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "webserver",
@@ -26,7 +28,8 @@
       "tooltip": "Adds the embedded HTTP server for web settings, APIs, and approved web plugins.",
       "requires": [
         "wifi"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "websocket",
@@ -36,14 +39,16 @@
       "requires": [
         "wifi",
         "webserver"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "littlefs",
       "name": "Runtime LittleFS files",
       "description": "Bundle files in the runtime flash filesystem.",
       "tooltip": "Adds runtime assets such as HTML, configuration, or plugin resources to LittleFS.",
-      "requires": []
+      "requires": [],
+      "default": true
     },
     {
       "id": "elegant-ota",
@@ -53,7 +58,8 @@
       "requires": [
         "wifi",
         "webserver"
-      ]
+      ],
+      "default": true
     },
     {
       "id": "pull-ota",
@@ -96,7 +102,8 @@
       "recommends": {
         "features": [],
         "plugins": []
-      }
+      },
+      "default": true
     },
     {
       "id": "grind-by-weight",

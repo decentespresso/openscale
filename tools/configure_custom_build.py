@@ -71,8 +71,9 @@ FEATURE_PRESENTATION = {
         "Internal compile gate selected by the Grind by weight plugin.",
     ),
 }
-DEFAULT_FEATURES = {"pull-ota"}
 HIDDEN_FEATURES = {"grinder"}
+DEFAULT_FEATURES = set(FEATURES) - HIDDEN_FEATURES
+DEFAULT_PLUGINS = {"default-web-apps"}
 CONFIG_KEYS = {"firmware_ref", "features", "plugins"}
 PLUGIN_KEYS = {
     "schema", "id", "name", "description", "tooltip", "version",
@@ -289,11 +290,14 @@ def buildBrowserCatalog():
         "features": features,
         "plugins": [
             {
-                key: manifest[key]
-                for key in (
-                    "id", "name", "description", "tooltip", "version",
-                    "firmware_refs", "requires", "depends_on", "conflicts", "recommends",
-                )
+                **{
+                    key: manifest[key]
+                    for key in (
+                        "id", "name", "description", "tooltip", "version",
+                        "firmware_refs", "requires", "depends_on", "conflicts", "recommends",
+                    )
+                },
+                **({"default": True} if manifest["id"] in DEFAULT_PLUGINS else {}),
             }
             for manifest, _, _ in plugins.values()
         ],

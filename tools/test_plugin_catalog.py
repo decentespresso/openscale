@@ -174,6 +174,12 @@ def main():
         "--service-catalog-output docs/custom-build/service-catalog.json"
     )
     assert serviceCatalog == customBuild.buildServiceCatalog()
+    assert {
+        feature["id"] for feature in generatedCatalog["features"] if feature.get("default")
+    } == set(customBuild.FEATURES) - customBuild.HIDDEN_FEATURES
+    assert [
+        plugin["id"] for plugin in generatedCatalog["plugins"] if plugin.get("default")
+    ] == ["default-web-apps"]
     pageRoot = customBuild.ROOT / "docs" / "custom-build"
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
