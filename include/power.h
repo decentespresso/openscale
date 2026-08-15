@@ -32,6 +32,8 @@ void stopWifi();
 #endif
 #if HDS_FEATURE_WEBSERVER
 void stopWebServer();
+#elif HDS_FEATURE_WIFI
+static void stopWifiConfigServer();
 #endif
 #if HDS_ENABLE_GRINDER
 void beforeDeepSleepFlush();
@@ -62,6 +64,8 @@ void reset() {
   bleShutdown();
 #if HDS_FEATURE_WEBSERVER
   stopWebServer();
+#elif HDS_FEATURE_WIFI
+  stopWifiConfigServer();
 #endif
 #if HDS_FEATURE_WIFI
   stopWifi();
@@ -178,6 +182,8 @@ void esp32_sleep() {
   bleShutdown();
 #if HDS_FEATURE_WEBSERVER
   stopWebServer();
+#elif HDS_FEATURE_WIFI
+  stopWifiConfigServer();
 #endif
 #if HDS_FEATURE_WIFI
   stopWifi();

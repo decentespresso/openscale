@@ -150,7 +150,6 @@ bool setupMdns() {
     snprintf(instance, sizeof(instance), "Half Decent Scale (%s)", name);
     MDNS.setInstanceName(instance);
   }
-#if HDS_FEATURE_WEBSERVER
   MDNS.addService("decentscale", "tcp", 80);
   MDNS.addServiceTxt("decentscale", "tcp", "fw", (const char *)FIRMWARE_VER);
   MDNS.addServiceTxt("decentscale", "tcp", "model", "hds");
@@ -159,12 +158,7 @@ bool setupMdns() {
   MDNS.addServiceTxt("decentscale", "tcp", "proto", "ws");
   MDNS.addServiceTxt("decentscale", "tcp", "path", "/snapshot");
 #endif
-#endif
-#if HDS_FEATURE_WEBSERVER
   Serial.printf("DNS-SD: advertised %s.local _decentscale._tcp on port 80\n", name);
-#else
-  Serial.printf("mDNS: advertised %s.local\n", name);
-#endif
   g_mdnsReady = true;
   return true;
 }

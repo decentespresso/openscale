@@ -223,13 +223,13 @@ def main():
             resolvedFeature = customBuild.resolveConfiguration(writeConfig(root, [feature], []))
             assert set(dependencies).issubset(resolvedFeature["features"])
         wifi = customBuild.resolveConfiguration(writeConfig(root, ["wifi"], []))
-        assert wifi["features"] == ["webserver", "wifi"]
+        assert wifi["features"] == ["wifi"]
         noFeatures = customBuild.resolveConfiguration(writeConfig(root, [], []))
         assert noFeatures["features"] == []
         pullOnly = customBuild.resolveConfiguration(writeConfig(root, ["pull-ota"], []))
         assert {"pull-ota", "wifi"}.issubset(pullOnly["features"])
         assert "littlefs" not in pullOnly["features"]
-        assert "webserver" in pullOnly["features"]
+        assert "webserver" not in pullOnly["features"]
         assertRejected(lambda: customBuild.resolveConfiguration(writeConfig(root, [], ["../bad"])))
         resolved = customBuild.resolveConfiguration(writeConfig(root, [], ["default-web-apps"]))
         assert {"littlefs", "wifi", "webserver", "websocket"}.issubset(resolved["features"])

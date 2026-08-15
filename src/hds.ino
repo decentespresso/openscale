@@ -14,6 +14,8 @@
 #endif
 #if HDS_FEATURE_WEBSERVER
 #include "webserver.h"
+#elif HDS_FEATURE_WIFI
+#include "wifi_config_server.h"
 #endif
 #include "websocket.h"
 #if HDS_FEATURE_ELEGANT_OTA
@@ -1544,6 +1546,9 @@ void loop() {
 #if HDS_FEATURE_WIFI
       if (b_wifiEnabled) {
         wifiSupervise();
+#if !HDS_FEATURE_WEBSERVER
+        wifiConfigServerPoll();
+#endif
       }
 #endif
 #if HDS_ENABLE_GRINDER
@@ -1590,6 +1595,9 @@ void loop() {
 #if HDS_FEATURE_WIFI
         if (b_wifiEnabled) {
           wifiSupervise();
+#if !HDS_FEATURE_WEBSERVER
+          wifiConfigServerPoll();
+#endif
 #if HDS_FEATURE_WEBSOCKET
           websocket.cleanupClients(4);
 #endif

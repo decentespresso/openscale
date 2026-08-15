@@ -79,6 +79,30 @@ def check_endpoint(webserver_source):
         raise AssertionError("/setup/name must report whether it is restarting")
 
 
+def check_mini_config_server(mini_server, hds_source):
+    if "HDS_FEATURE_WIFI && !HDS_FEATURE_WEBSERVER" not in mini_server:
+        raise AssertionError("mini setup server must only compile for WiFi without Webserver")
+    for snippet in (
+        "socket(AF_INET, SOCK_STREAM, IPPROTO_IP)",
+        '"GET / HTTP/1.1"',
+        '"POST /setup/wifi HTTP/1.1"',
+        '"POST /setup/name HTTP/1.1"',
+        "saveCredentialsForRestart",
+        "saveDeviceNameForRestart",
+        "wifiConfigOriginSeen",
+        "WIFI_CONFIG_BUFFER_MAX_BYTES",
+    ):
+        if snippet not in mini_server:
+            raise AssertionError(f"mini setup server missing {snippet}")
+    for forbidden in ("AsyncWebServer", "AsyncTCP", "ArduinoJson", "LittleFS"):
+        if forbidden in mini_server:
+            raise AssertionError(f"mini setup server must not use {forbidden}")
+    if '#elif HDS_FEATURE_WIFI\n#include "wifi_config_server.h"' not in hds_source:
+        raise AssertionError("WiFi-only firmware does not include the mini setup server")
+    if "wifiConfigServerPoll();" not in hds_source:
+        raise AssertionError("main loop does not service the mini setup server")
+
+
 def check_device_screen(menu_source):
     if "wifiDeviceName()" not in menu_source:
         raise AssertionError("include/menu.h must show the device name on the WiFi status screen")
@@ -114,11 +138,13 @@ def check_web_ui(index_html):
 
 def main():
     wifi_source = read("src/wifi_setup.cpp")
+    hds_source = read("src/hds.ino")
     check_no_hardcoded_identity(wifi_source)
     check_shutdown_withdraws_mdns(wifi_source)
     check_name_rules(read("include/mdns_name.h"))
     check_storage_ownership(wifi_source, read("include/storage.h"))
     check_endpoint(read("include/webserver.h"))
+    check_mini_config_server(read("include/wifi_config_server.h"), hds_source)
     check_status_frame(read("include/websocket.h"))
     check_web_ui(read("plugins/default-web-apps/assets/index.html"))
     check_device_screen(read("include/menu.h"))
