@@ -72,6 +72,16 @@ def verifySourceCommit(repositoryRoot, sourceCommit):
     return verifiedCommit(repositoryRoot, sourceCommit)
 
 
+def verifyBuilderCommit(repositoryRoot, expectedCommit=None):
+    actualCommit = verifiedCommit(repositoryRoot, "HEAD")
+    if expectedCommit:
+        if not SHA_PATTERN.fullmatch(expectedCommit):
+            raise ValueError("builder commit must be a full lowercase SHA-1")
+        if actualCommit != expectedCommit:
+            raise ValueError("builder checkout does not match the expected commit")
+    return actualCommit
+
+
 def pullRequestCommit():
     if os.environ.get("GITHUB_EVENT_NAME") != "pull_request":
         return None
@@ -259,14 +269,16 @@ def publishArtifacts(buildDir, outputDir):
 
 def verifyPluginEnvironment(configPath, platformioEnvironment, sourceCommit=None):
     configuration = customBuild.resolveConfiguration(configPath)
-    if len(configuration["plugins"]) != 1 or len(configuration["patches"]) != 1:
-        raise ValueError("plugin verification requires exactly one patch plugin")
-    pluginId = configuration["plugins"][0]["id"]
-    if configuration["patches"][0][0] != pluginId:
-        raise ValueError("plugin verification patch does not match the selected plugin")
-    expectedEnvironment = f"esp32s3-{pluginId}"
-    if platformioEnvironment != expectedEnvironment:
-        raise ValueError(f"plugin environment must be {expectedEnvironment}")
+    if not platformioEnvironment.startswith("esp32s3-"):
+        raise ValueError("invalid plugin environment")
+    pluginId = platformioEnvironment.removeprefix("esp32s3-")
+    if configuration["requested_plugins"] != [pluginId]:
+        raise ValueError("plugin verification requires one selected target plugin")
+    pluginIds = [plugin["id"] for plugin in configuration["plugins"]]
+    if pluginId not in pluginIds:
+        raise ValueError("plugin environment does not match the selected plugin")
+    if pluginId not in [patchPluginId for patchPluginId, _ in configuration["patches"]]:
+        raise ValueError("plugin verification target has no matching patch")
     commitSha = (
         verifySourceCommit(ROOT, sourceCommit)
         if sourceCommit
@@ -290,11 +302,13 @@ def verifyPluginEnvironment(configPath, platformioEnvironment, sourceCommit=None
 
 
 def buildCustomFirmware(
-    configPath, outputRoot, sourceCommit=None, cacheUrl=None, expectedHash=None
+    configPath, outputRoot, sourceCommit=None, cacheUrl=None, expectedHash=None,
+    builderCommit=None,
 ):
     configuration = customBuild.resolveConfiguration(configPath)
     if expectedHash is not None and not HASH_PATTERN.fullmatch(expectedHash):
         raise ValueError("expected combination hash must be 64 lowercase hex characters")
+    builderSha = verifyBuilderCommit(ROOT, builderCommit)
     commitSha = (
         verifySourceCommit(ROOT, sourceCommit)
         if sourceCommit
@@ -303,7 +317,9 @@ def buildCustomFirmware(
     with tempfile.TemporaryDirectory(prefix="openscale-custom-") as temporaryDirectory:
         checkoutRoot = Path(temporaryDirectory) / "source"
         cloneSource(ROOT, commitSha, checkoutRoot)
-        identity = customBuild.combinationInput(configuration, commitSha, checkoutRoot)
+        identity = customBuild.combinationInput(
+            configuration, commitSha, checkoutRoot, builderSha
+        )
         combinationHash = customBuild.combinationHash(identity)
         if expectedHash is not None and combinationHash != expectedHash:
             raise ValueError("build selection does not match the expected combination hash")
@@ -311,6 +327,7 @@ def buildCustomFirmware(
         if completeCacheEntry(outputDir, combinationHash, identity):
             return {
                 "base_source": commitSha,
+                "builder_source": builderSha,
                 "cache_hit": True,
                 "combination_hash": combinationHash,
                 "output": str(outputDir),
@@ -320,6 +337,7 @@ def buildCustomFirmware(
         if cacheUrl and remoteCacheHit(cacheUrl, combinationHash, identity):
             return {
                 "base_source": commitSha,
+                "builder_source": builderSha,
                 "cache_hit": True,
                 "combination_hash": combinationHash,
                 "output": str(outputDir),
@@ -331,6 +349,7 @@ def buildCustomFirmware(
             **os.environ,
             "HDS_CUSTOM_BUILD_CATALOG_ROOT": str(ROOT),
             "HDS_CUSTOM_BUILD_CONFIG": str(configPath),
+            "HDS_FIRMWARE_VERSION": identity["firmware_version"],
             "SOURCE_DATE_EPOCH": sourceEpoch,
         }
         runCommand(["pio", "run", "-e", "esp32s3-custom"], checkoutRoot, environment=environment)
@@ -354,6 +373,7 @@ def buildCustomFirmware(
         publishArtifacts(buildDir, outputDir)
     return {
         "base_source": commitSha,
+        "builder_source": builderSha,
         "cache_hit": False,
         "combination_hash": combinationHash,
         "output": str(outputDir),
@@ -372,6 +392,7 @@ def main():
     parser.add_argument("--output", type=Path, default=ROOT / ".pio.nosync" / "custom-output")
     parser.add_argument("--github-output", type=Path)
     parser.add_argument("--cache-url")
+    parser.add_argument("--builder-commit")
     parser.add_argument("--source-commit")
     parser.add_argument("--expected-hash")
     parser.add_argument("--verify-plugin-environment")
@@ -391,6 +412,7 @@ def main():
                 sourceCommit,
                 args.cache_url,
                 args.expected_hash or None,
+                args.builder_commit or None,
             )
     except (ValueError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"custom build failed: {error}\n")

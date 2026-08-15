@@ -100,12 +100,12 @@ def check_status_frame(websocket_source):
 
 def check_web_ui(index_html):
     if "/setup/name" not in index_html:
-        raise AssertionError("web_apps/index.html does not post to /setup/name")
+        raise AssertionError("default web app index.html does not post to /setup/name")
     for element in ("name-form", "device-name", "setting-name", "name-status"):
         if f'id="{element}"' not in index_html:
-            raise AssertionError(f"web_apps/index.html missing element id {element}")
+            raise AssertionError(f"default web app index.html missing element id {element}")
     if "status.mdns_name" not in index_html:
-        raise AssertionError("web_apps/index.html does not render mdns_name from the status frame")
+        raise AssertionError("default web app index.html does not render mdns_name from the status frame")
     if "deviceNamePrefilled" not in index_html:
         raise AssertionError("the name field must prefill once, not on every status poll")
     if "body.restarting" not in index_html:
@@ -120,7 +120,7 @@ def main():
     check_storage_ownership(wifi_source, read("include/storage.h"))
     check_endpoint(read("include/webserver.h"))
     check_status_frame(read("include/websocket.h"))
-    check_web_ui(read("web_apps/index.html"))
+    check_web_ui(read("plugins/default-web-apps/assets/index.html"))
     check_device_screen(read("include/menu.h"))
     check_ci(read(".github/workflows/nightly.yml"))
     print("mdns name contract checks passed")

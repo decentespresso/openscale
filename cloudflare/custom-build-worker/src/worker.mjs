@@ -1,5 +1,6 @@
 const hashPattern = /^[0-9a-f]{64}$/;
 const commitPattern = /^[0-9a-f]{40}$/;
+const versionPattern = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?$/;
 const idPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const pathPattern = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 const attemptPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -146,18 +147,21 @@ function githubHeaders(extra = {}) {
   };
 }
 
-async function resolveCommit(env, firmwareRef) {
-  const allowed = new Set((env.ALLOWED_FIRMWARE_REFS || "main").split(",").map(value => value.trim()).filter(Boolean));
-  if (!allowed.has(firmwareRef)) throw new ApiError(400, "unsupported_firmware_ref");
+async function resolveGithubCommit(env, ref, unavailableCode) {
   const repository = env.GITHUB_REPOSITORY || "decentespresso/openscale";
-  const response = await fetch(`https://api.github.com/repos/${repository}/commits/${encodeURIComponent(firmwareRef)}`, {
+  const response = await fetch(`https://api.github.com/repos/${repository}/commits/${encodeURIComponent(ref)}`, {
     headers: githubHeaders(),
     cf: {cacheEverything: true, cacheTtl: 60},
   });
-  if (!response.ok) throw new ApiError(503, "firmware_ref_unavailable");
+  if (!response.ok) throw new ApiError(503, unavailableCode);
   const commit = await response.json();
-  if (!commitPattern.test(commit.sha || "")) throw new ApiError(503, "invalid_firmware_commit");
+  if (!commitPattern.test(commit.sha || "")) throw new ApiError(503, "invalid_github_commit");
   return commit.sha;
+}
+
+function requireAllowedFirmwareRef(env, firmwareRef) {
+  const allowed = new Set((env.ALLOWED_FIRMWARE_REFS || "main").split(",").map(value => value.trim()).filter(Boolean));
+  if (!allowed.has(firmwareRef)) throw new ApiError(400, "unsupported_firmware_ref");
 }
 
 async function serviceCatalog(env, commit) {
@@ -168,7 +172,7 @@ async function serviceCatalog(env, commit) {
   if (!response.ok) throw new ApiError(503, "service_catalog_unavailable");
   const catalog = await response.json();
   if (!Number.isSafeInteger(catalog.schema) || !catalog.features || !catalog.plugins ||
-      !catalog.partition_schema || typeof catalog.platformio_environment !== "string") {
+      !catalog.firmware || typeof catalog.platformio_environment !== "string") {
     throw new ApiError(503, "invalid_service_catalog");
   }
   return catalog;
@@ -197,15 +201,32 @@ function resolveFeatures(catalog, requested, plugins) {
 }
 
 function resolvePlugins(catalog, firmwareRef, selected) {
-  const pluginIds = [...selected].sort();
-  const selectedSet = new Set(pluginIds);
-  return pluginIds.map(id => {
+  const orderedIds = [];
+  const visiting = new Set();
+  const visited = new Set();
+  const visit = id => {
     const plugin = catalog.plugins[id];
     if (!plugin) throw new ApiError(400, "unknown_plugin");
-    if (!plugin.firmware_refs.includes(firmwareRef)) throw new ApiError(400, "unsupported_plugin_ref");
-    if (plugin.conflicts.some(conflict => selectedSet.has(conflict))) {
-      throw new ApiError(400, "plugin_conflict");
+    if (visiting.has(id)) throw new ApiError(503, "invalid_service_catalog");
+    if (visited.has(id)) return;
+    if (!Array.isArray(plugin.firmware_refs) || !Array.isArray(plugin.depends_on) ||
+        !Array.isArray(plugin.conflicts) || !Array.isArray(plugin.requires) ||
+        plugin.depends_on.some(dependency => !idPattern.test(dependency)) ||
+        plugin.depends_on.length !== new Set(plugin.depends_on).size) {
+      throw new ApiError(503, "invalid_service_catalog");
     }
+    if (!plugin.firmware_refs.includes(firmwareRef)) throw new ApiError(400, "unsupported_plugin_ref");
+    visiting.add(id);
+    [...plugin.depends_on].sort().forEach(visit);
+    visiting.delete(id);
+    visited.add(id);
+    orderedIds.push(id);
+  };
+  [...selected].sort().forEach(visit);
+  const selectedSet = new Set(orderedIds);
+  return orderedIds.map(id => {
+    const plugin = catalog.plugins[id];
+    if (plugin.conflicts.some(conflict => selectedSet.has(conflict))) throw new ApiError(400, "plugin_conflict");
     const patch = plugin.patches[firmwareRef];
     if (plugin.assets.some(asset => !pathPattern.test(asset.target) || !hashPattern.test(asset.sha256))) {
       throw new ApiError(503, "invalid_service_catalog");
@@ -223,31 +244,47 @@ function resolvePlugins(catalog, firmwareRef, selected) {
 
 async function resolveSelection(env, selection) {
   const requested = requireSelection(selection);
-  const sourceCommit = await resolveCommit(env, requested.firmware_ref);
-  const catalog = await serviceCatalog(env, sourceCommit);
+  const builderRef = env.BUILDER_REF || "main";
+  requireAllowedFirmwareRef(env, requested.firmware_ref);
+  const builderCommit = await resolveGithubCommit(env, builderRef, "builder_ref_unavailable");
+  const sourceCommit = requested.firmware_ref === builderRef
+    ? builderCommit
+    : await resolveGithubCommit(env, requested.firmware_ref, "firmware_ref_unavailable");
+  const catalog = await serviceCatalog(env, builderCommit);
   if (!catalog.firmware_refs.includes(requested.firmware_ref)) {
     throw new ApiError(400, "unsupported_firmware_ref");
   }
+  const firmware = catalog.firmware[requested.firmware_ref];
+  if (!firmware || !versionPattern.test(firmware.custom_version || "") ||
+      !pathPattern.test(firmware.partition_schema?.path || "") ||
+      !hashPattern.test(firmware.partition_schema?.sha256 || "")) {
+    throw new ApiError(503, "invalid_service_catalog");
+  }
   const plugins = resolvePlugins(catalog, requested.firmware_ref, requested.plugins);
-  const features = resolveFeatures(catalog, requested.features, requested.plugins);
+  const features = resolveFeatures(catalog, requested.features, plugins.map(plugin => plugin.id));
   const identity = {
     schema: catalog.schema,
+    firmware_ref: requested.firmware_ref,
+    firmware_version: firmware.custom_version,
     base_source: sourceCommit,
+    builder_source: builderCommit,
     features,
     plugins,
     platformio_environment: catalog.platformio_environment,
     partition_schema: {
-      path: catalog.partition_schema.path,
-      sha256: catalog.partition_schema.sha256,
+      path: firmware.partition_schema.path,
+      sha256: firmware.partition_schema.sha256,
     },
   };
   return {
     combinationHash: await sha256(canonicalJson(identity)),
+    builderCommit,
+    builderRef,
     sourceCommit,
     configuration: {
       firmware_ref: requested.firmware_ref,
       features,
-      plugins: [...requested.plugins].sort(),
+      plugins: plugins.map(plugin => plugin.id),
     },
   };
 }
@@ -333,11 +370,13 @@ async function dispatchBuild(env, build) {
     method: "POST",
     headers: githubHeaders({Authorization: `Bearer ${token}`, "Content-Type": "application/json"}),
     body: JSON.stringify({
-      ref: "main",
+      ref: build.builderRef,
       inputs: {
         firmware_ref: build.configuration.firmware_ref,
-        features: build.configuration.features.join(",") || ",",
-        plugins: build.configuration.plugins.join(",") || ",",
+        features: build.configuration.features.join(","),
+        plugins: build.configuration.plugins.join(","),
+        builder_ref: build.builderRef,
+        builder_commit: build.builderCommit,
         source_commit: build.sourceCommit,
         combination_hash: build.combinationHash,
         attempt_id: build.attemptId,

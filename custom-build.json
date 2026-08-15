@@ -1,12 +1,9 @@
 {
   "firmware_ref": "main",
   "features": [
-    "wifi",
-    "webserver",
-    "littlefs",
     "pull-ota"
   ],
   "plugins": [
-    "hello-web"
+    "default-web-apps"
   ]
 }

@@ -10,7 +10,7 @@ Selected approved patches are applied reproducibly to an exact firmware commit w
 2. The requested allowed firmware ref is resolved to a commit SHA.
 3. A clean temporary checkout of that commit is created for the build.
 4. Dependencies and declared conflicts are checked before patch application.
-5. Plugins are processed in lexicographic plugin-ID order, independent of request order.
+5. Plugin dependencies are processed before their dependents; independent plugins use lexicographic plugin-ID order.
 6. Each patch is first checked in the already patched temporary checkout with `git apply --check --whitespace=error`, then applied exactly.
 7. Assets are copied to the LittleFS staging directory only after all patches apply successfully.
 8. PlatformIO builds firmware and LittleFS non-interactively in the temporary checkout.

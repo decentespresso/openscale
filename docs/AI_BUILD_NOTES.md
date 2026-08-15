@@ -12,7 +12,7 @@ pio run -e esp32s3 -t upload --upload-port <port>
 pio run -e esp32s3 -t uploadfs --upload-port <port>
 ```
 
-Firmware-only flashing does not update `web_apps/`. Flash LittleFS when the on-device web UI matters.
+Firmware-only flashing does not update `plugins/default-web-apps/assets/`. Flash LittleFS when the on-device web UI matters.
 
 ## Environment Selection
 
@@ -32,19 +32,24 @@ Do not add an environment merely because it exists. Changes limited to ADS1232 b
 - CI records the PlatformIO version and `pio pkg list -e <environment>` in `dependencies.txt` for release and nightly dependency inventories.
 - Every PlatformIO build validates the repository OTA public keys and regenerates `.pio.nosync/generated/include/ota_public_key.h`.
 - Firmware builds require OpenSSL through `OPENSSL`, `PATH`, or Git for Windows with `git.exe` on `PATH`; clean targets do not.
-- `web_apps/` is the LittleFS data directory.
+- `plugins/default-web-apps/assets/` is the default LittleFS data directory.
 - `gzip_web_assets.py` generates deterministic `.gz` siblings before LittleFS image builds.
 - `git_rev_macro.py` injects `GIT_REV`; non-git source trees fall back to `nogit0`.
 - `CONFIG_ASYNC_TCP_RUNNING_CORE=1` pins AsyncTCP to core 1, and `CONFIG_ASYNC_TCP_STACK_SIZE=8192` gives the AsyncTCP task an 8 KiB stack.
 - `ELEGANTOTA_USE_ASYNC_WEBSERVER=1` is set; `ElegantOTA.loop()` runs in `loop()`.
 - `include/hds_features.h` keeps the normal `esp32s3` feature defaults. `esp32s3-custom` reads `custom-build.json` through `tools/configure_custom_build.py` and stages generated headers and filesystem data under `.pio.nosync`.
-- `tools/build_custom_firmware.py` resolves an allowed firmware ref to an exact commit, builds it in a temporary checkout, applies approved patches in plugin-ID order, and publishes firmware, LittleFS, dependency, and provenance artifacts only after the full build succeeds.
-- `tools/build_custom_firmware.py --verify-plugin-environment esp32s3-<plugin-id>` applies one patch plugin in an isolated checkout, runs its matching contract scripts, and builds its dedicated validation environment without publishing artifacts.
+- `tools/build_custom_firmware.py` resolves an allowed firmware ref to an exact commit, verifies the exact trusted builder commit, builds in a temporary checkout, applies plugin dependencies before dependents, and publishes firmware, LittleFS, dependency, and provenance artifacts only after the full build succeeds.
+- `tools/build_custom_firmware.py --verify-plugin-environment esp32s3-<plugin-id>` applies one selected target plugin and its dependencies in an isolated checkout, runs its matching contract scripts, and builds its dedicated validation environment without publishing artifacts.
+- Custom builds inject a version ending in `-custom`. A stable tag such as `v3.1.14` reports `3.1.14-custom`; `main` appends `-custom` to the version declared in `include/config.h`.
 - Custom feature lists are exact. An empty list builds BLE/USB-only firmware; Pull OTA is enabled only when `pull-ota` is selected.
 - WiFi retains the web server so a build requested with only `wifi` serves the inline network and device-name setup page without LittleFS.
 - `HDS_FEATURE_LITTLEFS` controls runtime filesystem mounting and web assets. Pull OTA retains its staged `littlefs.bin` transaction independently of that runtime feature.
 - `check_platform_freshness.py` compares the explicit pioarduino pin with the latest stable release as an advisory pre-build check. It never fails offline builds; set `HDS_SKIP_PLATFORM_CHECK=1` only when the check should be skipped deliberately.
 - `.gitattributes` enforces LF line endings repo-wide.
+
+## Enabling a Stable Custom Base
+
+After a release tag exists, add its `vX.Y.Z` ref to `FIRMWARE_REFS`, add that ref and a tested patch mapping to each compatible plugin manifest, regenerate both custom-build catalogs, and add the ref to the Worker's `ALLOWED_FIRMWARE_REFS`. Deploy the Worker only after the catalog commit reaches the trusted builder branch. The configurator displays `vX.Y.Z` as `X.Y.Z (stable)`, and the resulting firmware reports `X.Y.Z-custom`.
 
 ## Focused Checks
 

@@ -116,6 +116,12 @@
 
     .workflow-link:hover { color: var(--green); }
     .workflow-link svg { width: 18px; height: 18px; }
+    .topbar-links { display: flex; align-items: center; gap: 22px; }
+    .workflow-link.is-next-step { animation: next-step 1s ease-in-out 5; }
+
+    @keyframes next-step {
+      50% { color: white; background: var(--green); box-shadow: 0 0 0 7px var(--green-soft); }
+    }
 
     .page {
       width: min(1180px, calc(100% - 40px));
@@ -275,6 +281,7 @@
     }
 
     .plugin-grid .option-card { min-height: 94px; }
+    .plugin-grid .option-card.has-recommendation { min-height: 132px; }
     .option-card:hover { border-color: #b4c5bc; box-shadow: 0 6px 18px rgba(23, 56, 39, .05); }
     .option-card.is-checked { border-color: var(--green-line); background: #f1f9f5; }
     .option-card.is-required { border-color: #c6ddd2; background: #f5faf7; }
@@ -299,6 +306,7 @@
     }
 
     .native-check:disabled + .check-target { cursor: not-allowed; }
+    .has-recommendation .check-target { padding-bottom: 53px; }
 
     .check-box {
       display: grid;
@@ -385,6 +393,30 @@
       color: var(--amber);
       background: var(--amber-soft);
     }
+
+    .recommend-button {
+      position: absolute;
+      left: 51px;
+      bottom: 14px;
+      min-height: 29px;
+      padding: 0 10px;
+      border: 1px solid var(--green-line);
+      border-radius: 7px;
+      color: var(--green-dark);
+      background: var(--green-soft);
+      font-size: .68rem;
+      font-weight: 720;
+      cursor: pointer;
+    }
+
+    .recommend-button:hover, .recommend-button:focus-visible {
+      border-color: var(--green);
+      background: #e3f4ec;
+      outline: none;
+    }
+
+    .recommend-button:focus-visible { box-shadow: 0 0 0 3px rgba(13, 121, 85, .14); }
+    .recommend-button:disabled { opacity: .55; cursor: not-allowed; }
 
     .info-button {
       position: absolute;
@@ -485,10 +517,12 @@
       box-shadow: 0 0 0 4px var(--green-soft);
     }
 
-    .state-checking::before, .state-queued::before, .state-building::before {
+    .state-checking::before, .state-queued::before, .state-building::before, .state-rate-limited::before {
       background: #b77a20;
       box-shadow: 0 0 0 4px var(--amber-soft);
     }
+
+    .state-rate-limited { color: var(--amber); }
 
     .state-missing::before, .state-unavailable::before {
       background: var(--faint);
@@ -564,6 +598,17 @@
       color: var(--muted);
       font-size: .79rem;
       line-height: 1.55;
+    }
+
+    .pull-ota-warning {
+      margin: 0 0 10px;
+      padding: 8px 10px;
+      border: 1px solid #ecd5a7;
+      border-radius: 7px;
+      color: var(--amber);
+      background: var(--amber-soft);
+      font-size: .72rem;
+      line-height: 1.45;
     }
 
     .downloads {
@@ -715,6 +760,7 @@
       .brand-mark::after { inset: 10px; }
       .workflow-link span { display: none; }
       .workflow-link { width: 36px; height: 36px; justify-content: center; border-radius: 9px; background: var(--green-soft); }
+      .topbar-links { gap: 8px; }
       .page { padding: 29px 0 42px; }
       .intro { margin-bottom: 22px; }
       .intro h2 { font-size: 1.8rem; }
@@ -731,4 +777,5 @@
 
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+      .workflow-link.is-next-step { animation: none; color: white; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
     }

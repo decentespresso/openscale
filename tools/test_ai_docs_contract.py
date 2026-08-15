@@ -140,7 +140,7 @@ def main():
         "src/",
         "docs/",
         "tools/",
-        "web_apps/",
+        "plugins/",
         ".github/",
         "Hardware/",
         "Scale Case/",
@@ -149,6 +149,7 @@ def main():
         reference
         for reference in references
         if "*" not in reference
+        and "<" not in reference
         and (reference.startswith(path_prefixes) or reference in {"platformio.ini", "README.md"})
     }
     missing = sorted(path for path in paths if not (ROOT / path).exists())

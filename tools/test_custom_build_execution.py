@@ -49,7 +49,7 @@ def writeConfig(root, plugins, firmwareRef="main", name="custom-build.json"):
     return path
 
 
-def writePlugin(root, pluginId, patchText=None, conflicts=None, firmwareRefs=None):
+def writePlugin(root, pluginId, patchText=None, conflicts=None, firmwareRefs=None, dependsOn=None):
     firmwareRefs = firmwareRefs or ["main"]
     pluginDir = root / "plugins" / pluginId
     pluginDir.mkdir(parents=True, exist_ok=True)
@@ -74,7 +74,9 @@ def writePlugin(root, pluginId, patchText=None, conflicts=None, firmwareRefs=Non
         "version": "1.0.0",
         "firmware_refs": firmwareRefs,
         "requires": ["littlefs"] if assets else [],
+        "depends_on": dependsOn or [],
         "conflicts": conflicts or [],
+        "recommends": {"features": [], "plugins": []},
         "patches": patches,
         "assets": assets,
         "budget": {
@@ -94,8 +96,10 @@ def createSourceRepository(root):
     runGit(sourceRoot, "config", "user.name", "Custom Build Test")
     (sourceRoot / "a.txt").write_text("base a\n", encoding="utf-8")
     (sourceRoot / "b.txt").write_text("base b\n", encoding="utf-8")
-    (sourceRoot / "web_apps").mkdir()
-    (sourceRoot / "web_apps" / "base.html").write_text("base asset", encoding="utf-8")
+    (sourceRoot / "include").mkdir()
+    (sourceRoot / "include" / "config.h").write_text(
+        '#define HDS_FIRMWARE_VERSION "3.1.13-dev"\n', encoding="utf-8"
+    )
     partition = sourceRoot / "partitions" / "test.csv"
     partition.parent.mkdir()
     partition.write_text("# test partition\n", encoding="utf-8")
@@ -136,16 +140,21 @@ def main():
         root = Path(temporaryDirectory)
         catalogRoot = root / "catalog"
         catalogRoot.mkdir()
-        (catalogRoot / "web_apps").mkdir()
         writePlugin(catalogRoot, "asset-only")
-        writePlugin(catalogRoot, "patch-a", PATCHES["patch-a"])
+        writePlugin(catalogRoot, "dependency")
+        writePlugin(catalogRoot, "patch-a", PATCHES["patch-a"], dependsOn=["dependency"])
         writePlugin(catalogRoot, "patch-b", PATCHES["patch-b"])
         configPath = writeConfig(catalogRoot, ["patch-b", "asset-only", "patch-a"])
         sourceRoot, sourceCommit = createSourceRepository(root)
+        runGit(sourceRoot, "tag", "v1.2.3")
+        with patch.object(customBuild, "ROOT", sourceRoot):
+            stableFirmware = customBuild.firmwareMetadata("v1.2.3", sourceRoot)
+        assert stableFirmware["custom_version"] == "1.2.3-custom"
+        assert stableFirmware["partition_schema"]["path"] == "partitions/test.csv"
         with patch.object(customBuild, "ROOT", catalogRoot), patch.object(customRunner, "ROOT", sourceRoot):
             configuration = customBuild.resolveConfiguration(configPath)
             assert [plugin["id"] for plugin in configuration["plugins"]] == [
-                "asset-only", "patch-a", "patch-b",
+                "asset-only", "dependency", "patch-a", "patch-b",
             ]
             assert [pluginId for pluginId, _ in configuration["patches"]] == ["patch-a", "patch-b"]
             assert customRunner.resolveFirmwareCommit(sourceRoot, "main") == sourceCommit
@@ -205,8 +214,8 @@ def main():
             assert (checkoutRoot / "a.txt").read_text(encoding="utf-8") == "patched a\n"
             assert (checkoutRoot / "b.txt").read_text(encoding="utf-8") == "patched b\n"
             stageRoot = root / "staged-assets"
-            customBuild.stageAssets(configuration, stageRoot, sourceRoot)
-            assert (stageRoot / "base.html").is_file()
+            customBuild.stageAssets(configuration, stageRoot)
+            assert not (stageRoot / "base.html").exists()
             assert (stageRoot / "plugins" / "asset" / "index.html").is_file()
             buildDir = root / "build"
             buildDir.mkdir()
@@ -233,6 +242,8 @@ def main():
             second = json.loads(secondManifest.read_text(encoding="utf-8"))
             assert first == second
             assert first["base_source"] == sourceCommit
+            assert first["builder_source"] == sourceCommit
+            assert first["firmware_version"] == "3.1.13-dev-custom"
             assert first["combination_hash"] == customBuild.combinationHash(first["combination_input"])
             assert first["partition_schema"]["path"] == "partitions/test.csv"
             assert list(first["binaries"]) == sorted(customBuild.PUBLIC_BINARIES)
@@ -278,6 +289,10 @@ def main():
 
             changedIdentity = customBuild.combinationInput(configuration, "0" * 40, sourceRoot)
             assert customBuild.combinationHash(changedIdentity) != combinationHash
+            changedIdentity = customBuild.combinationInput(
+                configuration, sourceCommit, sourceRoot, "9" * 40
+            )
+            assert customBuild.combinationHash(changedIdentity) != combinationHash
             assetPath = catalogRoot / "plugins" / "asset-only" / "assets" / "index.html"
             assetPath.write_text("changed asset plugin", encoding="utf-8")
             changedIdentity = customBuild.combinationInput(configuration, sourceCommit, sourceRoot)
@@ -316,6 +331,7 @@ def main():
     assert "python tools/publish_custom_build.py" in workflow
     assert "steps.custom_build.outputs.combination_hash" in workflow
     assert '--source-commit "${{ inputs.source_commit }}"' in workflow
+    assert '--builder-commit "${{ inputs.builder_commit }}"' in workflow
     assert '--expected-hash "${{ inputs.combination_hash }}"' in workflow
     assert '--attempt-id "${{ inputs.attempt_id }}"' in workflow
     assert "python tools/update_custom_build_status.py" in workflow
@@ -328,8 +344,12 @@ def main():
     assert '"plugins": [os.environ["PLUGIN_ID"]]' in workflow
     assert "verify-pressensor:" not in workflow
     assert "compile-matrix:" not in workflow
-    assert "hello-web" in workflow
+    assert "default-web-apps" in workflow
     assert "pio run -e esp32s3-custom" not in workflow
+    for path in ('"*.py"', '"keys/**"', '"partitions/**"', '"requirements-platformio.txt"', '"tools/**"'):
+        assert path in workflow
+    assert "github.workflow_sha == inputs.builder_commit" in workflow
+    assert 'ref: ${{ inputs.builder_commit || github.sha }}' in workflow
     configurator = (customBuild.SCRIPT_ROOT / "docs" / "custom-build" / "app.js").read_text(
         encoding="utf-8"
     )

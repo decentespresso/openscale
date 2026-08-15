@@ -53,7 +53,7 @@ These web applications serve two main goals:
 
 ### For Developers: Technical Deep Dive
 
-* **All codes are available at**[ openscale repo. ](https://github.com/decentespresso/openscale/tree/main/web_apps)
+* **All codes are available at**[ openscale repo. ](https://github.com/decentespresso/openscale/tree/main/plugins/default-web-apps/assets)
 * **Foundation**: Built with standard HTML, CSS, and JavaScript.
 * **Styling**: [Tailwind CSS](https://tailwindcss.com/) is used for a utility-first approach to styling, ensuring a responsive and modern interface. (Note: While Tailwind is a CSS framework, the core logic remains in plain JavaScript, avoiding heavy JS frameworks.)
 * **Connectivity**:
@@ -88,7 +88,7 @@ To get a local copy up and running, follow these simple steps:
 
 **Clone the repository:**
 
-`git clone https://github.com/decentespresso/openscale/tree/main/web_apps/`
+`git clone https://github.com/decentespresso/openscale.git`
 
 **Navigate into the project directory:**
 

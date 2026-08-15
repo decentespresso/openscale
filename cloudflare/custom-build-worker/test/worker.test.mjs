@@ -117,23 +117,43 @@ async function api(env, path, method = "GET", body) {
 
 test("publishes immutable cache entries and deduplicates public builds", async () => {
   const commit = "1".repeat(40);
+  const stableCommit = "5".repeat(40);
   const serviceCatalog = {
-    schema: 1,
-    firmware_refs: ["main"],
+    schema: 2,
+    firmware_refs: ["main", "v1.2.3"],
     platformio_environment: "esp32s3-custom",
-    partition_schema: {path: "partitions/default.csv", sha256: "2".repeat(64)},
+    firmware: {
+      main: {
+        custom_version: "3.1.13-dev-custom",
+        partition_schema: {path: "partitions/default.csv", sha256: "2".repeat(64)},
+      },
+      "v1.2.3": {
+        custom_version: "1.2.3-custom",
+        partition_schema: {path: "partitions/default.csv", sha256: "2".repeat(64)},
+      },
+    },
     features: {wifi: [], mdns: [], webserver: [], littlefs: []},
     plugins: {
       "asset-sort": {
         version: "1.0.0",
         firmware_refs: ["main"],
         requires: [],
+        depends_on: ["base-plugin"],
         conflicts: [],
         patches: {},
         assets: [
           {target: "plugins/z.txt", sha256: "3".repeat(64)},
           {target: "Plugins/A.txt", sha256: "4".repeat(64)},
         ],
+      },
+      "base-plugin": {
+        version: "1.0.0",
+        firmware_refs: ["main"],
+        requires: ["wifi"],
+        depends_on: [],
+        conflicts: [],
+        patches: {},
+        assets: [],
       },
     },
   };
@@ -145,7 +165,8 @@ test("publishes immutable cache entries and deduplicates public builds", async (
   const privateKey = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
   const env = {
     ALLOWED_ORIGIN: origin,
-    ALLOWED_FIRMWARE_REFS: "main",
+    ALLOWED_FIRMWARE_REFS: "main,v1.2.3",
+    BUILDER_REF: "main",
     BUILDS: new Bucket(),
     GITHUB_APP_ID: "123",
     GITHUB_APP_INSTALLATION_ID: "456",
@@ -162,16 +183,20 @@ test("publishes immutable cache entries and deduplicates public builds", async (
   globalThis.fetch = async (url, options = {}) => {
     const target = String(url);
     if (target.includes("/commits/main")) return Response.json({sha: commit});
+    if (target.includes("/commits/v1.2.3")) return Response.json({sha: stableCommit});
     if (target.includes("raw.githubusercontent.com")) return Response.json(serviceCatalog);
     if (target.includes("/access_tokens")) return Response.json({token: "installation-token"});
     if (target.includes("/dispatches")) {
       dispatches += 1;
       const request = JSON.parse(options.body);
+      assert.equal(request.ref, "main");
+      assert.equal(request.inputs.builder_ref, "main");
+      assert.equal(request.inputs.builder_commit, commit);
       assert.equal(request.inputs.source_commit, commit);
       if (dispatches === 1) {
-        assert.equal(request.inputs.combination_hash, "e4bbbdaf4217d914bcb374b66567902893da2584daf0b4c04f5cca0bfb69816a");
-        assert.equal(request.inputs.features, ",");
-        assert.equal(request.inputs.plugins, ",");
+        assert.equal(request.inputs.combination_hash, "280d0fb981fa56f7753846b33b91a5b053145d41360551f8c27c0b38e7ee955c");
+        assert.equal(request.inputs.features, "");
+        assert.equal(request.inputs.plugins, "");
       }
       return new Response(null, {status: 204});
     }
@@ -183,13 +208,19 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     assert.equal(missing.status, 200);
     const missingStatus = await missing.json();
     const hash = missingStatus.combination_hash;
-    assert.equal(hash, "e4bbbdaf4217d914bcb374b66567902893da2584daf0b4c04f5cca0bfb69816a");
+    assert.equal(hash, "280d0fb981fa56f7753846b33b91a5b053145d41360551f8c27c0b38e7ee955c");
     assert.equal(missingStatus.state, "missing");
+
+    const stable = await api(env, "/api/v1/status", "POST", {
+      firmware_ref: "v1.2.3", features: [], plugins: [],
+    });
+    assert.equal(stable.status, 200);
+    assert.notEqual((await stable.json()).combination_hash, hash);
 
     const sortedAssets = await api(env, "/api/v1/status", "POST", {
       firmware_ref: "main", features: [], plugins: ["asset-sort"],
     });
-    assert.equal((await sortedAssets.json()).combination_hash, "162a3fac8038130b982980aa9c320de19151ae044a5455784ff0476664391609");
+    assert.equal((await sortedAssets.json()).combination_hash, "b4cb18df073d1db707c1e1bd7a0ce723af1bb04071cc09d93ef410a8b543d708");
 
     const unknown = await api(env, "/api/v1/status", "POST", {
       firmware_ref: "main", features: ["unknown"], plugins: [],

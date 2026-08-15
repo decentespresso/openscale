@@ -106,6 +106,16 @@ def main():
     )
     if result.returncode != 0 or '-DHDS_FIRMWARE_VERSION="9.8.7"' not in result.stdout:
         raise AssertionError("build metadata did not emit the firmware version macro")
+    environment["HDS_FIRMWARE_VERSION"] = "9.8.7-custom"
+    result = subprocess.run(
+        [sys.executable, str(BUILD_METADATA)],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or '-DHDS_FIRMWARE_VERSION="9.8.7-custom"' not in result.stdout:
+        raise AssertionError("build metadata did not accept the custom firmware suffix")
     environment["HDS_FIRMWARE_VERSION"] = "v9.8.7"
     result = subprocess.run(
         [sys.executable, str(BUILD_METADATA)],

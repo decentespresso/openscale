@@ -17,7 +17,7 @@ The selected package is applied only in a temporary checkout. Its implementation
 
 Use these references for different purposes:
 
-- `plugins/hello-web/` shows an asset-only plugin with WiFi, WebServer, and runtime LittleFS dependencies.
+- `plugins/default-web-apps/` shows an asset-only plugin with WiFi, WebServer, WebSocket, and runtime LittleFS dependencies.
 - `plugins/grind-by-weight/` shows how an existing built-in feature appears in the plugin catalog without a patch.
 - The package layout below defines version-specific firmware patches and their dedicated compile environments.
 
@@ -49,7 +49,9 @@ Example manifest:
   "version": "1.0.0",
   "firmware_refs": ["main"],
   "requires": [],
+  "depends_on": [],
   "conflicts": [],
+  "recommends": {"features": [], "plugins": []},
   "patches": {
     "main": "patches/main.patch"
   },
@@ -132,7 +134,7 @@ Use `requires` for existing compile-time features:
 
 The custom ZIP always contains `littlefs.bin`. That does not mean the plugin requires runtime LittleFS. OTA replacement of the LittleFS partition and runtime filesystem use are separate mechanisms.
 
-Use `conflicts` for plugin IDs that cannot safely be applied or operated together. Patch application order is deterministic by plugin ID, but overlapping patches should be redesigned rather than relying on order.
+Use `depends_on` for plugin IDs that must be applied first. Dependencies are resolved transitively, cycles are rejected, and dependency patches are applied before their dependents. Use `recommends` for a complete combination that maintainers have tested together; choosing it replaces the user's current selection. Use `conflicts` for plugin IDs that cannot safely be applied or operated together. Overlapping patches should be redesigned rather than relying on order.
 
 ## Validate Before Review
 
@@ -160,7 +162,7 @@ python tools/build_custom_firmware.py --config .pio.nosync/plugin-build.json --v
 python tools/build_custom_firmware.py --config .pio.nosync/plugin-build.json --output .pio.nosync/custom-output
 ```
 
-The first PlatformIO build proves the normal firmware still compiles. The verification command applies exactly one patch plugin, runs matching `tools/test_my_plugin_*.py` files from the patch, and builds its dedicated environment. Pull-request CI performs this verification for every changed patch plugin and every firmware ref mapped by that package; it does not rebuild unrelated or asset-only plugins. The final command verifies the same package through the production `esp32s3-custom` compositor and creates the four-file ZIP.
+The first PlatformIO build proves the normal firmware still compiles. The verification command applies the selected target plugin and its dependencies, runs matching `tools/test_my_plugin_*.py` files from the patch, and builds its dedicated environment. Pull-request CI performs this verification for every changed patch plugin and every firmware ref mapped by that package; it does not rebuild unrelated or asset-only plugins. The final command verifies the same package through the production `esp32s3-custom` compositor and creates the four-file ZIP.
 
 Hardware testing must state what was actually available. A build and menu smoke test do not prove sensor communication, electrical behavior, calibration, or radio coexistence.
 
@@ -187,7 +189,7 @@ Work in decentespresso/openscale as a lazy senior developer.
 
 First read AGENTS.md, docs/AI_REPO_MAP.md, docs/AI_PLUGIN_NOTES.md,
 docs/AI_BUILD_NOTES.md, and docs/plugin-development.md. Inspect Grind by weight only as
-the built-in compile-gating reference and plugins/hello-web as the asset-plugin
+the built-in compile-gating reference and plugins/default-web-apps as the asset-plugin
 reference. Reuse existing build and catalog tools.
 
 Turn <implementation PR, branch, or description> into the approved patch plugin

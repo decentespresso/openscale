@@ -86,7 +86,7 @@ To explore, modify, or contribute to this application:
 2.  **Navigate to the folder** in your terminal:
 
     ```bash
-    cd openscale/web_apps/dosing_assistant
+    cd openscale/plugins/default-web-apps/assets/dosing_assistant
     ```
 
 3.  **Serve the files locally over HTTP/HTTPS:**
