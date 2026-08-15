@@ -118,6 +118,15 @@ async function api(env, path, method = "GET", body) {
 test("publishes immutable cache entries and deduplicates public builds", async () => {
   const commit = "1".repeat(40);
   const stableCommit = "5".repeat(40);
+  const dependencyPlugin = (depends_on = []) => ({
+    version: "1.0.0",
+    firmware_refs: ["main"],
+    requires: [],
+    depends_on,
+    conflicts: [],
+    patches: {},
+    assets: [],
+  });
   const serviceCatalog = {
     schema: 2,
     firmware_refs: ["main", "v1.2.3"],
@@ -155,6 +164,10 @@ test("publishes immutable cache entries and deduplicates public builds", async (
         patches: {},
         assets: [],
       },
+      alpha: dependencyPlugin(),
+      bravo: dependencyPlugin(["delta"]),
+      charlie: dependencyPlugin(["alpha"]),
+      delta: dependencyPlugin(),
     },
   };
   const keyPair = await crypto.subtle.generateKey(
@@ -221,6 +234,17 @@ test("publishes immutable cache entries and deduplicates public builds", async (
       firmware_ref: "main", features: [], plugins: ["asset-sort"],
     });
     assert.equal((await sortedAssets.json()).combination_hash, "b4cb18df073d1db707c1e1bd7a0ce723af1bb04071cc09d93ef410a8b543d708");
+
+    const dependencyRoots = await api(env, "/api/v1/status", "POST", {
+      firmware_ref: "main", features: [], plugins: ["bravo", "charlie"],
+    });
+    const dependencyClosure = await api(env, "/api/v1/status", "POST", {
+      firmware_ref: "main", features: [], plugins: ["alpha", "bravo", "charlie", "delta"],
+    });
+    assert.equal(
+      (await dependencyRoots.json()).combination_hash,
+      (await dependencyClosure.json()).combination_hash,
+    );
 
     const unknown = await api(env, "/api/v1/status", "POST", {
       firmware_ref: "main", features: ["unknown"], plugins: [],

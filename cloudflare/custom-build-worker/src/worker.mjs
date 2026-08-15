@@ -201,20 +201,29 @@ function resolveFeatures(catalog, requested, plugins) {
 }
 
 function resolvePlugins(catalog, firmwareRef, selected) {
-  const orderedIds = [];
-  const visiting = new Set();
-  const visited = new Set();
-  const visit = id => {
+  const closure = new Set();
+  const pending = [...selected];
+  while (pending.length) {
+    const id = pending.pop();
+    if (closure.has(id)) continue;
     const plugin = catalog.plugins[id];
     if (!plugin) throw new ApiError(400, "unknown_plugin");
-    if (visiting.has(id)) throw new ApiError(503, "invalid_service_catalog");
-    if (visited.has(id)) return;
     if (!Array.isArray(plugin.firmware_refs) || !Array.isArray(plugin.depends_on) ||
         !Array.isArray(plugin.conflicts) || !Array.isArray(plugin.requires) ||
         plugin.depends_on.some(dependency => !idPattern.test(dependency)) ||
         plugin.depends_on.length !== new Set(plugin.depends_on).size) {
       throw new ApiError(503, "invalid_service_catalog");
     }
+    closure.add(id);
+    pending.push(...plugin.depends_on);
+  }
+  const orderedIds = [];
+  const visiting = new Set();
+  const visited = new Set();
+  const visit = id => {
+    const plugin = catalog.plugins[id];
+    if (visiting.has(id)) throw new ApiError(503, "invalid_service_catalog");
+    if (visited.has(id)) return;
     if (!plugin.firmware_refs.includes(firmwareRef)) throw new ApiError(400, "unsupported_plugin_ref");
     visiting.add(id);
     [...plugin.depends_on].sort().forEach(visit);
@@ -222,7 +231,7 @@ function resolvePlugins(catalog, firmwareRef, selected) {
     visited.add(id);
     orderedIds.push(id);
   };
-  [...selected].sort().forEach(visit);
+  [...closure].sort().forEach(visit);
   const selectedSet = new Set(orderedIds);
   return orderedIds.map(id => {
     const plugin = catalog.plugins[id];

@@ -87,6 +87,22 @@ def testTemporaryPluginValidation():
             assert [plugin["id"] for plugin in resolved["plugins"]] == [
                 "dependency", "code-plugin",
             ]
+            writePlugin(root, pluginManifest(pluginId="alpha"))
+            writePlugin(root, pluginManifest(pluginId="bravo", depends_on=["delta"]))
+            writePlugin(root, pluginManifest(pluginId="charlie", depends_on=["alpha"]))
+            writePlugin(root, pluginManifest(pluginId="delta"))
+            roots = customBuild.resolveConfiguration(
+                writeConfig(root, [], ["bravo", "charlie"])
+            )
+            closure = customBuild.resolveConfiguration(
+                writeConfig(root, [], ["alpha", "bravo", "charlie", "delta"])
+            )
+            assert [plugin["id"] for plugin in roots["plugins"]] == [
+                "alpha", "delta", "bravo", "charlie",
+            ]
+            assert [plugin["id"] for plugin in roots["plugins"]] == [
+                plugin["id"] for plugin in closure["plugins"]
+            ]
             writePlugin(root, pluginManifest(depends_on=["dependency"]))
             writePlugin(root, pluginManifest(pluginId="dependency", depends_on=["code-plugin"]))
             assertRejected(customBuild.loadPluginCatalog)
