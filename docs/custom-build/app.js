@@ -143,7 +143,7 @@
       failed: result.retryable ? "The build did not complete. One retry is available." :
         "The build did not complete after two attempts.",
       unavailable: "The build service is currently unavailable.",
-      "rate-limited": "The daily build limit has been reached. Existing cached builds remain available.",
+      "rate-limited": "The weekly build limit has been reached. Existing cached builds remain available.",
       checking: "Checking the build cache."
     };
     buildState.className = `ready state-${result.state}`;
@@ -340,7 +340,7 @@
       if (error.name === "AbortError" || generation !== selectionGeneration) return;
       if (error.status === 429) {
         setStatus({state: "rate-limited"}, generation);
-        showToast("Daily build limit reached");
+        showToast("Weekly build limit reached");
       } else if (error.result?.state === "failed") {
         setStatus(error.result, generation);
         showToast("Retry limit reached");

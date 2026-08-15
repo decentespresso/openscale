@@ -20,7 +20,7 @@ The Phase 4 API, Durable Object coordinator, trusted service catalog, exact sour
 
 The GitHub App installation currently covers the organization because the installer is not the organization owner. Restricting it to `decentespresso/openscale` remains the target least-privilege configuration. The Worker still fixes dispatches to `decentespresso/openscale`; the wider installation is documented security hardening, not a functional deployment blocker.
 
-The initial server limits are three new builds per client per day, twenty new builds globally per day, and two attempts per combination. Duplicate requests do not consume another build slot. Client rate-limit hashes expire after 24 hours, while GitHub controls runner concurrency.
+The server limits are twenty-one new builds per client per UTC week, one hundred forty new builds globally per UTC week, and two attempts per combination. Duplicate requests do not consume another build slot. Client rate-limit hashes expire at the next Monday 00:00 UTC, while GitHub controls runner concurrency.
 
 Each attempt has a two-hour lease and a UUID fencing token. The Durable Object alarm marks an expired `queued` or `building` attempt as failed, and late callbacks from an older attempt are rejected. Status responses include `attempts`, `max_attempts`, and `retryable`; a build request after the second failure returns HTTP 409.
 
@@ -50,7 +50,7 @@ Cloudflare Worker
 2. Resolve and restrict the allowed firmware ref server-side.
 3. Return status and downloads immediately for an existing cache entry.
 4. Deduplicate concurrent requests for the same combination.
-5. Enforce per-client and global daily limits.
+5. Enforce per-client and global weekly limits.
 6. Trigger GitHub with a minimally privileged server-side GitHub App or installation token.
 7. Never expose GitHub credentials through the browser, logs, or artifacts.
 8. Provide the simple states `missing`, `queued`, `building`, `ready`, and `failed`.

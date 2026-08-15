@@ -183,7 +183,7 @@ def main():
     pageRoot = customBuild.ROOT / "docs" / "custom-build"
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
-    assert 'src="app.js?v=6"' in indexPage
+    assert 'src="app.js?v=7"' in indexPage
     assert 'href="styles.css?v=6"' in indexPage
     assert 'id="request-build"' in indexPage
     assert "catalog-data" not in indexPage
@@ -192,6 +192,8 @@ def main():
     assert "catalog.features.filter(item => !item.hidden)" in appScript
     assert "Usually ready in about 5 minutes" in appScript
     assert "error.status === 429" in appScript
+    assert "weekly build limit" in appScript.lower()
+    assert "daily build limit" not in appScript.lower()
     assert "state.requested = new Set(plugin.recommends.features)" in appScript
     assert '`${ref.replace(/^v/, "")} (stable)`' in appScript
     grinderFeature = next(feature for feature in generatedCatalog["features"] if feature["id"] == "grinder")

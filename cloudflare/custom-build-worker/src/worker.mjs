@@ -14,8 +14,11 @@ const binaries = ["firmware.bin", "bootloader.bin", "partitions.bin", "littlefs.
 const buildStates = new Set(["building", "ready", "failed"]);
 const maxEntryBytes = 4 * 1024 * 1024;
 const maxApiBytes = 4096;
-const clientBuildsPerDay = 3;
-const globalBuildsPerDay = 20;
+const dayMs = 86400000;
+const weekMs = 7 * dayMs;
+const utcWeekOffsetMs = 3 * dayMs;
+const clientBuildsPerWeek = 21;
+const globalBuildsPerWeek = 140;
 const maxAttempts = 2;
 const buildLeaseMs = 2 * 60 * 60 * 1000;
 
@@ -25,6 +28,11 @@ class ApiError extends Error {
     this.status = status;
     this.code = code;
   }
+}
+
+function utcWeekWindow(now) {
+  const week = Math.floor((now + utcWeekOffsetMs) / weekMs);
+  return {week, expiresAt: (week + 1) * weekMs - utcWeekOffsetMs};
 }
 
 function route(pathname, prefix) {
@@ -568,8 +576,7 @@ export class BuildCoordinator {
     }
     const build = await request.json();
     const now = Date.now();
-    const day = new Date(now).toISOString().slice(0, 10);
-    const rateExpiresAt = Date.parse(`${day}T00:00:00.000Z`) + 86400000;
+    const rateWindow = utcWeekWindow(now);
     const reservation = await this.state.storage.transaction(async transaction => {
       const recordKey = `build:${hash}`;
       const [current, storedPending] = await Promise.all([
@@ -599,11 +606,16 @@ export class BuildCoordinator {
         return {record: effectiveCurrent, terminal: true};
       }
       const storedRates = await transaction.get("rates");
-      const rates = storedRates?.day === day ? storedRates : {
-        day, global: 0, clients: {}, expires_at: rateExpiresAt,
+      const rates = storedRates?.week === rateWindow.week ? storedRates : {
+        week: rateWindow.week, global: 0, clients: {}, expires_at: rateWindow.expiresAt,
       };
       const clientCount = rates.clients[build.clientKey] || 0;
-      if (clientCount >= clientBuildsPerDay || rates.global >= globalBuildsPerDay) return {rateLimited: true};
+      if (clientCount >= clientBuildsPerWeek || rates.global >= globalBuildsPerWeek) {
+        return {
+          rateLimited: true,
+          retryAfter: Math.max(1, Math.ceil((rates.expires_at - now) / 1000)),
+        };
+      }
       const attemptId = crypto.randomUUID();
       const leaseExpiresAt = now + buildLeaseMs;
       const record = {
@@ -622,7 +634,7 @@ export class BuildCoordinator {
         [recordKey]: record,
         pending,
         rates: {
-          day,
+          week: rateWindow.week,
           global: rates.global + 1,
           clients: {...rates.clients, [build.clientKey]: clientCount + 1},
           expires_at: rates.expires_at,
@@ -631,7 +643,10 @@ export class BuildCoordinator {
       return {record, dispatch: true};
     });
     if (reservation.rateLimited) {
-      return Response.json({error: "rate_limited"}, {status: 429, headers: {"Retry-After": "86400"}});
+      return Response.json(
+        {error: "rate_limited"},
+        {status: 429, headers: {"Retry-After": String(reservation.retryAfter)}},
+      );
     }
     if (reservation.terminal) return Response.json(reservation.record, {status: 409});
     if (!reservation.dispatch) return Response.json(reservation.record);
