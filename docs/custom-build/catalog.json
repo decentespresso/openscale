@@ -6,9 +6,11 @@
     {
       "id": "wifi",
       "name": "WiFi",
-      "description": "Wireless networking support for connected features.",
-      "tooltip": "Provides the WiFi stack used by OTA updates, discovery, web tools, and connected plugins.",
-      "requires": []
+      "description": "Wireless networking with inline configuration support.",
+      "tooltip": "Provides WiFi and the embedded web server used to configure the network and device name.",
+      "requires": [
+        "webserver"
+      ]
     },
     {
       "id": "mdns",

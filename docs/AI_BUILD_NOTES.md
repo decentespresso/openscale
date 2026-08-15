@@ -41,6 +41,7 @@ Do not add an environment merely because it exists. Changes limited to ADS1232 b
 - `tools/build_custom_firmware.py` resolves an allowed firmware ref to an exact commit, builds it in a temporary checkout, applies approved patches in plugin-ID order, and publishes firmware, LittleFS, dependency, and provenance artifacts only after the full build succeeds.
 - `tools/build_custom_firmware.py --verify-plugin-environment esp32s3-<plugin-id>` applies one patch plugin in an isolated checkout, runs its matching contract scripts, and builds its dedicated validation environment without publishing artifacts.
 - Custom feature lists are exact. An empty list builds BLE/USB-only firmware; Pull OTA is enabled only when `pull-ota` is selected.
+- WiFi retains the web server so a build requested with only `wifi` serves the inline network and device-name setup page without LittleFS.
 - `HDS_FEATURE_LITTLEFS` controls runtime filesystem mounting and web assets. Pull OTA retains its staged `littlefs.bin` transaction independently of that runtime feature.
 - `check_platform_freshness.py` compares the explicit pioarduino pin with the latest stable release as an advisory pre-build check. It never fails offline builds; set `HDS_SKIP_PLATFORM_CHECK=1` only when the check should be skipped deliberately.
 - `.gitattributes` enforces LF line endings repo-wide.

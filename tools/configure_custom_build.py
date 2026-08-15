@@ -15,7 +15,7 @@ ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 PATH_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 FIRMWARE_REFS = ("main",)
 FEATURES = {
-    "wifi": ("HDS_FEATURE_WIFI", ()),
+    "wifi": ("HDS_FEATURE_WIFI", ("webserver",)),
     "mdns": ("HDS_FEATURE_MDNS", ("wifi",)),
     "webserver": ("HDS_FEATURE_WEBSERVER", ("wifi",)),
     "websocket": ("HDS_FEATURE_WEBSOCKET", ("wifi", "webserver")),
@@ -27,8 +27,8 @@ FEATURES = {
 FEATURE_PRESENTATION = {
     "wifi": (
         "WiFi",
-        "Wireless networking support for connected features.",
-        "Provides the WiFi stack used by OTA updates, discovery, web tools, and connected plugins.",
+        "Wireless networking with inline configuration support.",
+        "Provides WiFi and the embedded web server used to configure the network and device name.",
     ),
     "mdns": (
         "mDNS",
