@@ -41,12 +41,25 @@ def changedPluginIds(paths):
     return sorted(pluginIds)
 
 
-def changedPluginMatrix(paths):
+def affectedPluginIds(pluginCatalog, changedIds):
+    affected = set(changedIds) & set(pluginCatalog)
+    while True:
+        expanded = affected | {
+            pluginId
+            for pluginId, (manifest, _, _) in pluginCatalog.items()
+            if set(manifest["depends_on"]) & affected
+        }
+        if expanded == affected:
+            return sorted(affected)
+        affected = expanded
+
+
+def changedPluginMatrix(paths, pluginCatalog=None):
+    if pluginCatalog is None:
+        pluginCatalog = customBuild.loadPluginCatalog()
     matrix = []
-    for pluginId in changedPluginIds(paths):
-        if not (customBuild.ROOT / "plugins" / pluginId / "plugin.json").is_file():
-            continue
-        _, _, patches = customBuild.loadPlugin(pluginId)
+    for pluginId in affectedPluginIds(pluginCatalog, changedPluginIds(paths)):
+        _, _, patches = pluginCatalog[pluginId]
         matrix.extend(
             {"plugin": pluginId, "firmware_ref": firmwareRef}
             for firmwareRef in sorted(patches)

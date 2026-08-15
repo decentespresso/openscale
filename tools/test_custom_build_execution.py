@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import zipfile
@@ -103,9 +104,17 @@ def createSourceRepository(root):
     partition = sourceRoot / "partitions" / "test.csv"
     partition.parent.mkdir()
     partition.write_text("# test partition\n", encoding="utf-8")
+    tools = sourceRoot / "tools"
+    tools.mkdir()
+    (tools / "configure_custom_build.py").write_text("source configurator\n", encoding="utf-8")
+    (sourceRoot / "git_rev_macro.py").write_text("source version generator\n", encoding="utf-8")
     (sourceRoot / "platformio.ini").write_text(
-        "[env:esp32s3]\nboard_build.partitions = partitions/test.csv\n"
-        "[env:esp32s3-custom]\nextends = env:esp32s3\n",
+        "[env:esp32s3]\n"
+        "board_build.partitions = partitions/test.csv\n"
+        "build_flags = !python3 git_rev_macro.py\n"
+        "[env:esp32s3-custom]\n"
+        "extends = env:esp32s3\n"
+        "extra_scripts = pre:tools/configure_custom_build.py\n",
         encoding="utf-8",
     )
     runGit(sourceRoot, "add", ".")
@@ -140,6 +149,10 @@ def main():
         root = Path(temporaryDirectory)
         catalogRoot = root / "catalog"
         catalogRoot.mkdir()
+        builderTools = catalogRoot / "tools"
+        builderTools.mkdir()
+        shutil.copy2(customBuild.SCRIPT_ROOT / "tools" / "configure_custom_build.py", builderTools)
+        shutil.copy2(customBuild.SCRIPT_ROOT / "git_rev_macro.py", catalogRoot)
         writePlugin(catalogRoot, "asset-only")
         writePlugin(catalogRoot, "dependency")
         writePlugin(catalogRoot, "patch-a", PATCHES["patch-a"], dependsOn=["dependency"])
@@ -201,7 +214,7 @@ def main():
             customRunner.cloneSource(sourceRoot, sourceCommit, checkoutRoot)
             assert customRunner.sourceDateEpoch(checkoutRoot) == runGit(sourceRoot, "show", "-s", "--format=%ct", "HEAD")
             customRunner.applyPatches(configuration, checkoutRoot)
-            customRunner.configureReproducibleBuild(checkoutRoot)
+            customRunner.prepareBuildCheckout(checkoutRoot, catalogRoot)
             reproducibleScript = checkoutRoot / ".pio.nosync" / "reproducible_build.py"
             reproducibleCompiler = reproducibleScript.read_text(encoding="utf-8")
             assert "-ffile-prefix-map=" in reproducibleCompiler
@@ -211,6 +224,27 @@ def main():
             platformioConfiguration = (checkoutRoot / "platformio.ini").read_text(encoding="utf-8")
             assert "pre:.pio.nosync/reproducible_build.py" in platformioConfiguration
             assert "post:.pio.nosync/reproducible_filesystem.py" in platformioConfiguration
+            assert "pre:.pio.nosync/builder-tools/configure_custom_build.py" in platformioConfiguration
+            assert "!python3 .pio.nosync/builder-tools/git_rev_macro.py" in platformioConfiguration
+            trustedTools = checkoutRoot / ".pio.nosync" / "builder-tools"
+            assert (trustedTools / "configure_custom_build.py").read_bytes() == (
+                catalogRoot / "tools" / "configure_custom_build.py"
+            ).read_bytes()
+            assert (trustedTools / "git_rev_macro.py").read_bytes() == (
+                catalogRoot / "git_rev_macro.py"
+            ).read_bytes()
+            incompatibleCheckout = root / "incompatible-checkout"
+            customRunner.cloneSource(sourceRoot, sourceCommit, incompatibleCheckout)
+            incompatiblePlatformio = incompatibleCheckout / "platformio.ini"
+            incompatiblePlatformio.write_text(
+                incompatiblePlatformio.read_text(encoding="utf-8").replace(
+                    "pre:tools/configure_custom_build.py", ""
+                ),
+                encoding="utf-8",
+            )
+            assertRejected(
+                lambda: customRunner.prepareBuildCheckout(incompatibleCheckout, catalogRoot)
+            )
             assert (checkoutRoot / "a.txt").read_text(encoding="utf-8") == "patched a\n"
             assert (checkoutRoot / "b.txt").read_text(encoding="utf-8") == "patched b\n"
             stageRoot = root / "staged-assets"
@@ -338,6 +372,7 @@ def main():
     assert "inputs.combination_hash || github.run_id" in workflow
     assert "detect_plugins:" in workflow
     assert "verify_plugins:" in workflow
+    assert "compile_custom:" in workflow
     assert "tools/list_changed_patch_plugins.py" in workflow
     assert "fromJSON(needs.detect_plugins.outputs.matrix)" in workflow
     assert '--verify-plugin-environment "esp32s3-$PLUGIN_ID"' in workflow

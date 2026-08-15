@@ -93,7 +93,7 @@ For a moving `main`, update `patches/main.patch` whenever upstream changes make 
 
 ## CI Contract
 
-Patch-plugin pull requests compile the normal `esp32s3` environment and every changed patch plugin as `esp32s3-<plugin-id>`. The custom-build workflow derives a small matrix from plugin packages changed across the complete pull request and verifies every mapped firmware ref. Asset-only plugins are covered by the package and catalog contracts without an unnecessary firmware build. The plugin environment activates its own gate and any environment-level requirements. Do not add a permanent full feature matrix or duplicate the normal build in OTA contracts.
+Patch-plugin pull requests compile the normal `esp32s3` environment and every changed or transitively affected patch plugin as `esp32s3-<plugin-id>`. The custom-build workflow derives a small reverse-dependency matrix from plugin packages changed across the complete pull request and verifies every mapped firmware ref. It also builds one minimal `esp32s3-custom` selection to cover generated feature configuration, builder-tool injection, empty filesystem staging, and the WiFi-disabled firmware. Asset-only plugins do not receive their own dedicated firmware build. The plugin environment activates its own gate and any environment-level requirements. Do not add a permanent full feature matrix or duplicate the normal build in OTA contracts.
 
 `tools/build_custom_firmware.py --verify-plugin-environment esp32s3-<plugin-id>` requires one selected target plugin, resolves its dependencies, enforces the environment naming convention, applies the trusted patches in an isolated checkout, runs matching `tools/test_<plugin-id>_*.py` files from the applied patch, and compiles the plugin environment.
 
