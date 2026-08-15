@@ -141,7 +141,7 @@ test("publishes immutable cache entries and deduplicates public builds", async (
         partition_schema: {path: "partitions/default.csv", sha256: "2".repeat(64)},
       },
     },
-    features: {wifi: [], mdns: [], webserver: [], littlefs: []},
+    features: {wifi: [], mdns: [], webserver: [], littlefs: [], "elegant-ota": []},
     plugins: {
       "asset-sort": {
         version: "1.0.0",
@@ -356,10 +356,41 @@ test("publishes immutable cache entries and deduplicates public builds", async (
       retryable: false,
       updated_at: (await env.COORDINATOR.coordinator.state.storage.get(`build:${retryHash}`)).updated_at,
     });
+    const burstFeatures = ["wifi", "mdns", "webserver", "littlefs", "elegant-ota"];
+    const burstSelections = Array.from({length: 31}, (_, index) =>
+      burstFeatures.filter((_, bit) => (index + 1) & (1 << bit)),
+    ).filter(features => ![["mdns"], ["webserver"]].some(skip =>
+      skip.length === features.length && skip.every((feature, index) => feature === features[index]),
+    ));
+    for (const features of burstSelections.slice(0, 18)) {
+      assert.equal((await api(env, "/api/v1/build", "POST", {
+        firmware_ref: "main", features, plugins: [],
+      })).status, 202);
+    }
     const limited = await api(env, "/api/v1/build", "POST", {
       firmware_ref: "main", features: ["webserver"], plugins: [],
     });
     assert.equal(limited.status, 429);
+    assert.ok(Number(limited.headers.get("Retry-After")) <= 7 * 24 * 60 * 60);
+    const rates = await env.COORDINATOR.coordinator.state.storage.get("rates");
+    assert.equal(rates.global, 21);
+    assert.deepEqual(Object.values(rates.clients), [21]);
+    assert.equal(Object.hasOwn(rates, "day"), false);
+    assert.equal(new Date(rates.expires_at).getUTCDay(), 1);
+    assert.equal(new Date(rates.expires_at).toISOString().slice(11), "00:00:00.000Z");
+    await env.COORDINATOR.coordinator.state.storage.put("rates", {
+      ...rates, global: 140, clients: {},
+    });
+    const globallyLimited = await api(env, "/api/v1/build", "POST", {
+      firmware_ref: "main", features: ["webserver"], plugins: [],
+    });
+    assert.equal(globallyLimited.status, 429);
+    await env.COORDINATOR.coordinator.state.storage.put("rates", {
+      ...rates, week: rates.week - 1, global: 140, clients: {},
+    });
+    assert.equal((await api(env, "/api/v1/build", "POST", {
+      firmware_ref: "main", features: ["webserver"], plugins: [],
+    })).status, 202);
 
     const rejectedOrigin = await worker.fetch(new Request("https://example.test/api/v1/status", {
       method: "POST",
