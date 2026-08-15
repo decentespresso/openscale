@@ -14,9 +14,7 @@
     }
   },
   "features": {
-    "wifi": [
-      "webserver"
-    ],
+    "wifi": [],
     "mdns": [
       "wifi"
     ],
