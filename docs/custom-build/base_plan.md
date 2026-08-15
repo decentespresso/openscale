@@ -17,13 +17,14 @@ Phases 1 through 4 were implemented, deployed, and production-validated on 2026-
 - Pull OTA, ElegantOTA, and the web server are separate features.
 - Pull OTA requires WiFi, but neither the web server nor the runtime `littlefs` feature.
 - The existing Pull OTA flow still installs the mandatory `firmware.bin` and `littlefs.bin` assets to separate partitions.
-- `hello-web` is an approved asset plugin without a firmware patch.
+- `default-web-apps` is the approved asset plugin containing the bundled web interface.
 - The GitHub Pages configurator uses the deployed Phase 4 status/build API at `openscale-custom-builds.odevstudio.workers.dev`.
 - The custom workflow resolves an allowed firmware ref to an exact commit and applies approved patches only in a temporary checkout.
 - Custom artifacts use a canonical combination hash and a complete local cache entry. Actions artifacts remain time-limited.
 - The only user-facing custom-build download is one ZIP containing the four flashable BIN images. Its manifest and dependency inventory remain service metadata.
 - The private R2 Standard cache and read gateway are provisioned at `openscale-custom-builds.odevstudio.workers.dev`, with 180-day artifact retention. The Worker and GitHub Actions share an encrypted upload token.
-- The build service resolves `main` to an exact commit and derives the combination hash from the trusted service catalog at that commit.
+- The build service resolves the firmware source and trusted builder refs independently to exact commits. Both commits, the custom firmware version, ordered plugin packages, features, environment, and source partition schema are part of the combination hash.
+- Stable custom builds report `X.Y.Z-custom`; development builds append `-custom` to the version declared by the selected source.
 - A production BLE/USB-only request completed from cache miss through public download, and its ZIP contained exactly the four required flash images.
 
 ## Invariants

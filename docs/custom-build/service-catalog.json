@@ -1,12 +1,17 @@
 {
-  "schema": 1,
+  "schema": 2,
   "firmware_refs": [
     "main"
   ],
   "platformio_environment": "esp32s3-custom",
-  "partition_schema": {
-    "path": "partitions/default_8MB.csv",
-    "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"
+  "firmware": {
+    "main": {
+      "custom_version": "3.1.13-dev-custom",
+      "partition_schema": {
+        "path": "partitions/default_8MB.csv",
+        "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"
+      }
+    }
   },
   "features": {
     "wifi": [
@@ -36,6 +41,125 @@
     ]
   },
   "plugins": {
+    "default-web-apps": {
+      "version": "1.0.0",
+      "firmware_refs": [
+        "main"
+      ],
+      "requires": [
+        "littlefs",
+        "websocket"
+      ],
+      "depends_on": [],
+      "conflicts": [],
+      "recommends": {
+        "features": [],
+        "plugins": []
+      },
+      "patches": {},
+      "assets": [
+        {
+          "target": "Quality_Control_Assistant/README.md",
+          "sha256": "ba113023ee216058bbac3ad33b93625abe234dd403fc822a6526ae76c39cf91e"
+        },
+        {
+          "target": "Quality_Control_Assistant/quality_control.html",
+          "sha256": "81be8c8aeed23eb1fb206de4292757f3bce8a80643d1d03ef0db626930c7ca78"
+        },
+        {
+          "target": "Quality_Control_Assistant/quality_control.js",
+          "sha256": "0d379f761bb01b0d5c54447ead3ccd22d3657870e04ff85f16d15a1c3fcd8b23"
+        },
+        {
+          "target": "README.md",
+          "sha256": "18e8f0e2e09290889dd772ad3b654fe35c35bb7ef5d745d4cae48d6589344581"
+        },
+        {
+          "target": "Weigh_Save/README.md",
+          "sha256": "3726af16064b3ee68965d8fab16e7e7fb04265cf4aa3da562bbf0df89d0470d0"
+        },
+        {
+          "target": "Weigh_Save/main.js",
+          "sha256": "dfa01ab05aee1982d528b7e792c1409138cc928db4740773b04e682a09dfa5e2"
+        },
+        {
+          "target": "Weigh_Save/modules/export.js",
+          "sha256": "0d4d782f7969d213ee9b78b338cce8be42be3f151b636aef3025bed6158cbf40"
+        },
+        {
+          "target": "Weigh_Save/modules/scale.js",
+          "sha256": "1e62729e3023cdfbdb1d0ea592425721393087432ce4654e24d2dfc17f54ef56"
+        },
+        {
+          "target": "Weigh_Save/modules/timer.js",
+          "sha256": "c0e34753a7d30ba84bf9e88cd39f42d5bd9c90b0cf307399afc798a763d16b8e"
+        },
+        {
+          "target": "Weigh_Save/modules/ui-controller.js",
+          "sha256": "504011412b577137e9380ba3223bdb8ed68c5d3fafb208529be21657d7a9b195"
+        },
+        {
+          "target": "Weigh_Save/weigh_save.html",
+          "sha256": "400c598562273d787d2fa2871e9c12dbe4f85217dc00b426b7f846438703951d"
+        },
+        {
+          "target": "dosing_assistant/README.md",
+          "sha256": "a6a317049e669bc0e6160d5d636fdac660e8cfe7e2fa5cc7a084e0f70a5d8735"
+        },
+        {
+          "target": "dosing_assistant/dosing_assistant.html",
+          "sha256": "7eb4d77fc4ea1cefc73db4a68fec937a97b366472be44053b88cade4ece06a19"
+        },
+        {
+          "target": "dosing_assistant/dosing_assistant.md",
+          "sha256": "c5004b59495095924a7e35fd48f248ea430c20ff3dd7e662c9d99a52a3faafe2"
+        },
+        {
+          "target": "dosing_assistant/main.js",
+          "sha256": "ea97ded784ae50f310ecfb5180b81495a87a511257b765cee5166e858034426f"
+        },
+        {
+          "target": "dosing_assistant/modules/constants.js",
+          "sha256": "7eaa950028ecfc79c3dcb0d2473e7a4a9bdae8c2873d93c09e63d9764e86f40b"
+        },
+        {
+          "target": "dosing_assistant/modules/export.js",
+          "sha256": "9bc045b21668a7720b871fe98d0d9f3dd697880aa5a7f9a5be3d70c45ae04400"
+        },
+        {
+          "target": "dosing_assistant/modules/scale.js",
+          "sha256": "b38fbbb51838e08eeb247556f5f364345af7076a225c154465ea8e1471eb6f0a"
+        },
+        {
+          "target": "dosing_assistant/modules/state-machine.js",
+          "sha256": "574fe9d6dccda2ce5f448a65d6d5263993f0d3b8185e147ea6fe1d88d1773180"
+        },
+        {
+          "target": "dosing_assistant/modules/ui-controller.js",
+          "sha256": "940f8301f28072603181838e3df96dea9f7d707ec38965172544de51f920136d"
+        },
+        {
+          "target": "index.html",
+          "sha256": "16fb127298f343dfc2e4d4fb54a5f58c9ab1dd5830f179b84b642f6b6f88e7b6"
+        },
+        {
+          "target": "shared/app.css",
+          "sha256": "66bca44bc6f90f4e2629f99e02e390804e3c21cc8acadec0cd91a88c228a6c85"
+        },
+        {
+          "target": "shared/modules/download-file.js",
+          "sha256": "2fdf7bbaf8279fa506d531bee04efa12819702fab33ef5ee6d10337ab2463d05"
+        },
+        {
+          "target": "shared/modules/presets.js",
+          "sha256": "42532e2c2f0419132f26b464d99a4843ef694ef440685246bde20a662f9ed753"
+        },
+        {
+          "target": "shared/reconnecting-websocket.js",
+          "sha256": "99ff83e53ac31edc4686d6f0fe6013d917bc4600eebbc01699e3d4ddcd46d3e9"
+        }
+      ]
+    },
     "grind-by-weight": {
       "version": "1.0.0",
       "firmware_refs": [
@@ -44,28 +168,18 @@
       "requires": [
         "grinder"
       ],
+      "depends_on": [],
       "conflicts": [],
+      "recommends": {
+        "features": [
+          "pull-ota"
+        ],
+        "plugins": [
+          "default-web-apps"
+        ]
+      },
       "patches": {},
       "assets": []
-    },
-    "hello-web": {
-      "version": "1.0.0",
-      "firmware_refs": [
-        "main"
-      ],
-      "requires": [
-        "wifi",
-        "webserver",
-        "littlefs"
-      ],
-      "conflicts": [],
-      "patches": {},
-      "assets": [
-        {
-          "target": "plugins/hello/index.html",
-          "sha256": "0c56f012349a72135471b5fe3c09a44ddd19ce1b2d2c2d12e1ded6fe0606edc2"
-        }
-      ]
     },
     "pressensor": {
       "version": "1.0.0",
@@ -73,7 +187,12 @@
         "main"
       ],
       "requires": [],
+      "depends_on": [],
       "conflicts": [],
+      "recommends": {
+        "features": [],
+        "plugins": []
+      },
       "patches": {
         "main": {
           "sha256": "315403d91c5082628f3afc85523178a16d6f23897b2a864a64b12301ed6343c0"

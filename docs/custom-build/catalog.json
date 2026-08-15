@@ -59,9 +59,9 @@
     },
     {
       "id": "pull-ota",
-      "name": "OLED Pull OTA",
-      "description": "Install official releases from the scale display.",
-      "tooltip": "Downloads signed firmware and LittleFS release assets over WiFi from the OLED update flow.",
+      "name": "Wifi Pull OTA",
+      "description": "Install official releases from the scale display. Updates replace custom builds.",
+      "tooltip": "Downloads signed firmware and LittleFS release assets over WiFi. Installing an official release replaces the custom build.",
       "requires": [
         "wifi"
       ],
@@ -69,9 +69,9 @@
     },
     {
       "id": "grinder",
-      "name": "Grind by weight",
-      "description": "Stop a supported grinder automatically at the target dose.",
-      "tooltip": "Controls a supported grinder plug and includes WiFi and mDNS.",
+      "name": "Grind by weight core",
+      "description": "Enable the built-in grinder integration.",
+      "tooltip": "Internal compile gate selected by the Grind by weight plugin.",
       "requires": [
         "wifi",
         "mdns"
@@ -81,10 +81,30 @@
   ],
   "plugins": [
     {
+      "id": "default-web-apps",
+      "name": "Default web apps",
+      "description": "Install the bundled on-device dashboard and scale tools.",
+      "tooltip": "Adds the dashboard, Weigh Save, Dosing Assistant, and Quality Control Assistant. LittleFS, WebSocket, the web server, and WiFi are included automatically.",
+      "version": "1.0.0",
+      "firmware_refs": [
+        "main"
+      ],
+      "requires": [
+        "littlefs",
+        "websocket"
+      ],
+      "depends_on": [],
+      "conflicts": [],
+      "recommends": {
+        "features": [],
+        "plugins": []
+      }
+    },
+    {
       "id": "grind-by-weight",
       "name": "Grind by weight",
       "description": "Stop a supported grinder automatically at the target dose.",
-      "tooltip": "Controls a supported Tasmota grinder plug over the local network and includes WiFi and mDNS.",
+      "tooltip": "Enables the built-in grind-by-weight integration. Its recommended setup also selects Wifi Pull OTA and the default web apps.",
       "version": "1.0.0",
       "firmware_refs": [
         "main"
@@ -92,23 +112,16 @@
       "requires": [
         "grinder"
       ],
-      "conflicts": []
-    },
-    {
-      "id": "hello-web",
-      "name": "Hello Web",
-      "description": "Example web plugin with bundled runtime assets.",
-      "tooltip": "Approved example plugin requiring WiFi, the web server, and runtime LittleFS files.",
-      "version": "1.0.0",
-      "firmware_refs": [
-        "main"
-      ],
-      "requires": [
-        "wifi",
-        "webserver",
-        "littlefs"
-      ],
-      "conflicts": []
+      "depends_on": [],
+      "conflicts": [],
+      "recommends": {
+        "features": [
+          "pull-ota"
+        ],
+        "plugins": [
+          "default-web-apps"
+        ]
+      }
     },
     {
       "id": "pressensor",
@@ -120,7 +133,12 @@
         "main"
       ],
       "requires": [],
-      "conflicts": []
+      "depends_on": [],
+      "conflicts": [],
+      "recommends": {
+        "features": [],
+        "plugins": []
+      }
     }
   ]
 }

@@ -54,7 +54,7 @@ def main():
         "plugins/pressensor/patches/main.patch"
     ]) == [{"plugin": "pressensor", "firmware_ref": "main"}]
     assert changedPlugins.changedPluginMatrix([
-        "plugins/hello-web/hello.html"
+        "plugins/default-web-apps/assets/index.html"
     ]) == []
     subprocess.run(
         ["git", "apply", "--check", "--whitespace=error", str(patchPath)],

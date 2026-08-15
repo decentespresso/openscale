@@ -6,6 +6,7 @@ workers_dev = true
 [vars]
 ALLOWED_ORIGIN = "https://decentespresso.github.io"
 ALLOWED_FIRMWARE_REFS = "main"
+BUILDER_REF = "main"
 GITHUB_REPOSITORY = "decentespresso/openscale"
 GITHUB_WORKFLOW = "custom-build.yml"
 PUBLIC_BASE_URL = "https://openscale-custom-builds.odevstudio.workers.dev"

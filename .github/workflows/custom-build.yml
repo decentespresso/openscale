@@ -4,23 +4,18 @@ on:
   pull_request:
     paths:
       - ".github/workflows/custom-build.yml"
+      - "*.py"
       - "custom-build.json"
-      - "docs/custom-build/catalog.json"
-      - "docs/custom-build/service-catalog.json"
+      - "docs/custom-build/**"
       - "include/**"
+      - "keys/**"
+      - "partitions/**"
       - "platformio.ini"
       - "plugins/**"
+      - "requirements-platformio.txt"
       - "src/**"
       - "cloudflare/custom-build-worker/**"
-      - "tools/build_custom_firmware.py"
-      - "tools/configure_custom_build.py"
-      - "tools/list_changed_patch_plugins.py"
-      - "tools/publish_custom_build.py"
-      - "tools/test_custom_cache_transport.py"
-      - "tools/test_custom_build_execution.py"
-      - "tools/test_plugin_catalog.py"
-      - "tools/test_plugin_ci_contract.py"
-      - "tools/update_custom_build_status.py"
+      - "tools/**"
   workflow_dispatch:
     inputs:
       firmware_ref:
@@ -30,11 +25,19 @@ on:
       features:
         description: Comma-separated feature IDs
         required: false
-        default: wifi,webserver,littlefs,pull-ota
+        default: pull-ota
       plugins:
         description: Comma-separated plugin IDs
         required: false
-        default: hello-web
+        default: default-web-apps
+      builder_ref:
+        description: Trusted builder ref supplied by the build service
+        required: false
+        default: ""
+      builder_commit:
+        description: Exact builder commit supplied by the build service
+        required: false
+        default: ""
       source_commit:
         description: Exact source commit supplied by the build service
         required: false
@@ -145,8 +148,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.builder_commit || github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini', 'requirements-platformio.txt') }}
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
@@ -170,6 +180,18 @@ jobs:
               "plugins": split(os.environ["PLUGINS"]),
           }, indent=2) + "\n", encoding="utf-8")
           PY
+      - name: Verify trusted builder checkout
+        if: inputs.combination_hash != ''
+        env:
+          BUILDER_REF: ${{ inputs.builder_ref }}
+          BUILDER_COMMIT: ${{ inputs.builder_commit }}
+          WORKFLOW_COMMIT: ${{ github.workflow_sha }}
+        run: |
+          test -n "$BUILDER_REF"
+          test -n "$BUILDER_COMMIT"
+          test "$WORKFLOW_COMMIT" = "$BUILDER_COMMIT"
+          test "$(git rev-parse HEAD)" = "$BUILDER_COMMIT"
+          test "$GITHUB_REF" = "refs/heads/$BUILDER_REF" || test "$GITHUB_REF" = "refs/tags/$BUILDER_REF"
       - name: Validate custom build contracts
         run: |
           python tools/test_plugin_catalog.py
@@ -179,7 +201,9 @@ jobs:
       - name: Mark custom build as running
         if: >-
           github.event_name == 'workflow_dispatch' &&
-          github.ref == 'refs/heads/main' &&
+          inputs.builder_ref != '' &&
+          inputs.builder_commit != '' &&
+          inputs.source_commit != '' &&
           inputs.combination_hash != '' &&
           inputs.attempt_id != ''
         env:
@@ -196,6 +220,7 @@ jobs:
           python tools/build_custom_firmware.py
           --cache-url https://openscale-custom-builds.odevstudio.workers.dev
           --github-output "$GITHUB_OUTPUT"
+          --builder-commit "${{ inputs.builder_commit }}"
           --source-commit "${{ inputs.source_commit }}"
           --expected-hash "${{ inputs.combination_hash }}"
       - name: Upload custom build
@@ -208,7 +233,12 @@ jobs:
       - name: Publish custom build
         if: >-
           github.event_name == 'workflow_dispatch' &&
-          github.ref == 'refs/heads/main' &&
+          inputs.builder_ref != '' &&
+          inputs.builder_commit != '' &&
+          inputs.source_commit != '' &&
+          github.workflow_sha == inputs.builder_commit &&
+          inputs.combination_hash != '' &&
+          inputs.attempt_id != '' &&
           steps.custom_build.outputs.cache_hit != 'true'
         env:
           CUSTOM_BUILD_UPLOAD_TOKEN: ${{ secrets.CUSTOM_BUILD_UPLOAD_TOKEN }}
@@ -219,7 +249,10 @@ jobs:
       - name: Mark custom build as ready
         if: >-
           github.event_name == 'workflow_dispatch' &&
-          github.ref == 'refs/heads/main' &&
+          inputs.builder_ref != '' &&
+          inputs.builder_commit != '' &&
+          inputs.source_commit != '' &&
+          github.workflow_sha == inputs.builder_commit &&
           inputs.combination_hash != '' &&
           inputs.attempt_id != ''
         env:
@@ -234,7 +267,9 @@ jobs:
         if: >-
           failure() &&
           github.event_name == 'workflow_dispatch' &&
-          github.ref == 'refs/heads/main' &&
+          inputs.builder_ref != '' &&
+          inputs.builder_commit != '' &&
+          inputs.source_commit != '' &&
           inputs.combination_hash != '' &&
           inputs.attempt_id != ''
         env:
