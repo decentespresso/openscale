@@ -120,9 +120,20 @@ def sourceDateEpoch(checkoutRoot):
     ).stdout.strip()
 
 
-def configureReproducibleBuild(checkoutRoot):
+def replaceRequired(value, source, replacement, name):
+    if source not in value:
+        raise ValueError(f"selected firmware has incompatible {name}")
+    return value.replace(source, replacement)
+
+
+def prepareBuildCheckout(checkoutRoot, builderRoot=None):
+    builderRoot = (builderRoot or ROOT).resolve()
     workspace = checkoutRoot / ".pio.nosync"
     workspace.mkdir(parents=True, exist_ok=True)
+    builderTools = workspace / "builder-tools"
+    builderTools.mkdir()
+    shutil.copy2(builderRoot / "tools" / "configure_custom_build.py", builderTools)
+    shutil.copy2(builderRoot / "git_rev_macro.py", builderTools)
     compilerScript = workspace / "reproducible_build.py"
     compilerScript.write_text(
         "from pathlib import Path\n"
@@ -153,6 +164,23 @@ def configureReproducibleBuild(checkoutRoot):
         raise ValueError("selected firmware has no platformio.ini")
     section = "env:esp32s3-custom"
     scripts = config.get(section, "extra_scripts", fallback="")
+    scripts = replaceRequired(
+        scripts,
+        "pre:tools/configure_custom_build.py",
+        "pre:.pio.nosync/builder-tools/configure_custom_build.py",
+        "custom build configurator",
+    )
+    buildFlags = config.get("env:esp32s3", "build_flags", fallback="")
+    config.set(
+        "env:esp32s3",
+        "build_flags",
+        replaceRequired(
+            buildFlags,
+            "!python3 git_rev_macro.py",
+            "!python3 .pio.nosync/builder-tools/git_rev_macro.py",
+            "firmware version generator",
+        ),
+    )
     config.set(
         section,
         "extra_scripts",
@@ -343,7 +371,7 @@ def buildCustomFirmware(
                 "output": str(outputDir),
             }
         applyPatches(configuration, checkoutRoot)
-        configureReproducibleBuild(checkoutRoot)
+        prepareBuildCheckout(checkoutRoot)
         sourceEpoch = sourceDateEpoch(checkoutRoot)
         environment = {
             **os.environ,

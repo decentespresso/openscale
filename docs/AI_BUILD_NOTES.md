@@ -38,7 +38,7 @@ Do not add an environment merely because it exists. Changes limited to ADS1232 b
 - `CONFIG_ASYNC_TCP_RUNNING_CORE=1` pins AsyncTCP to core 1, and `CONFIG_ASYNC_TCP_STACK_SIZE=8192` gives the AsyncTCP task an 8 KiB stack.
 - `ELEGANTOTA_USE_ASYNC_WEBSERVER=1` is set; `ElegantOTA.loop()` runs in `loop()`.
 - `include/hds_features.h` keeps the normal `esp32s3` feature defaults. `esp32s3-custom` reads `custom-build.json` through `tools/configure_custom_build.py` and stages generated headers and filesystem data under `.pio.nosync`.
-- `tools/build_custom_firmware.py` resolves an allowed firmware ref to an exact commit, verifies the exact trusted builder commit, builds in a temporary checkout, applies plugin dependencies before dependents, and publishes firmware, LittleFS, dependency, and provenance artifacts only after the full build succeeds.
+- `tools/build_custom_firmware.py` resolves an allowed firmware ref to an exact commit, verifies the exact trusted builder commit, builds in a temporary checkout, applies plugin dependencies before dependents, and publishes firmware, LittleFS, dependency, and provenance artifacts only after the full build succeeds. It injects the trusted builder's custom configurator and version generator into the source checkout and rejects source revisions without the compatible `esp32s3-custom` hooks.
 - `tools/build_custom_firmware.py --verify-plugin-environment esp32s3-<plugin-id>` applies one selected target plugin and its dependencies in an isolated checkout, runs its matching contract scripts, and builds its dedicated validation environment without publishing artifacts.
 - Custom builds inject a version ending in `-custom`. A stable tag such as `v3.1.14` reports `3.1.14-custom`; `main` appends `-custom` to the version declared in `include/config.h`.
 - Custom feature lists are exact. An empty list builds BLE/USB-only firmware; Pull OTA is enabled only when `pull-ota` is selected.
@@ -49,7 +49,7 @@ Do not add an environment merely because it exists. Changes limited to ADS1232 b
 
 ## Enabling a Stable Custom Base
 
-After a release tag exists, add its `vX.Y.Z` ref to `FIRMWARE_REFS`, add that ref and a tested patch mapping to each compatible plugin manifest, regenerate both custom-build catalogs, and add the ref to the Worker's `ALLOWED_FIRMWARE_REFS`. Deploy the Worker only after the catalog commit reaches the trusted builder branch. The configurator displays `vX.Y.Z` as `X.Y.Z (stable)`, and the resulting firmware reports `X.Y.Z-custom`.
+After a release tag exists, verify that it contains the compatible `esp32s3-custom` hooks, add its `vX.Y.Z` ref to `FIRMWARE_REFS`, add that ref and a tested patch mapping to each compatible plugin manifest, regenerate both custom-build catalogs, and add the ref to the Worker's `ALLOWED_FIRMWARE_REFS`. Deploy the Worker only after the catalog commit reaches the trusted builder branch. The configurator displays `vX.Y.Z` as `X.Y.Z (stable)`, and the resulting firmware reports `X.Y.Z-custom`.
 
 ## Focused Checks
 

@@ -56,6 +56,28 @@ def main():
     assert changedPlugins.changedPluginMatrix([
         "plugins/default-web-apps/assets/index.html"
     ]) == []
+    dependencyCatalog = {
+        "base": ({"depends_on": []}, [], {}),
+        "dependent": ({"depends_on": ["base"]}, [], {"main": Path("dependent.patch")}),
+        "transitive": ({"depends_on": ["dependent"]}, [], {
+            "main": Path("transitive.patch"),
+            "v1.2.3": Path("transitive-stable.patch"),
+        }),
+        "unrelated": ({"depends_on": []}, [], {"main": Path("unrelated.patch")}),
+    }
+    assert changedPlugins.changedPluginMatrix(
+        ["plugins/base/plugin.json"], dependencyCatalog
+    ) == [
+        {"plugin": "dependent", "firmware_ref": "main"},
+        {"plugin": "transitive", "firmware_ref": "main"},
+        {"plugin": "transitive", "firmware_ref": "v1.2.3"},
+    ]
+    compileCustom = customWorkflow.split("\n  compile_custom:\n", 1)[1].split("\n  build:\n", 1)[0]
+    assert compileCustom.lstrip().startswith("if: github.event_name == 'pull_request'")
+    assert '"features": []' in compileCustom
+    assert '"plugins": []' in compileCustom
+    assert "--config .pio.nosync/pr-ci.json" in compileCustom
+    assert '--source-commit "${{ github.sha }}"' in compileCustom
     subprocess.run(
         ["git", "apply", "--check", "--whitespace=error", str(patchPath)],
         cwd=ROOT,
