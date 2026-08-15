@@ -7,10 +7,8 @@
       "id": "wifi",
       "name": "WiFi",
       "description": "Wireless networking with inline configuration support.",
-      "tooltip": "Provides WiFi and the embedded web server used to configure the network and device name.",
-      "requires": [
-        "webserver"
-      ]
+      "tooltip": "Provides WiFi and a minimal setup server for network and device-name configuration.",
+      "requires": []
     },
     {
       "id": "mdns",

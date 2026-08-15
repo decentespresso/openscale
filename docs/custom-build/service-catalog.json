@@ -9,9 +9,7 @@
     "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"
   },
   "features": {
-    "wifi": [
-      "webserver"
-    ],
+    "wifi": [],
     "mdns": [
       "wifi"
     ],
