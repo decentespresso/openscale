@@ -201,6 +201,17 @@ def loadPlugin(pluginId, firmwareRef=None):
 
 
 def pluginOrder(pluginCatalog, requestedIds):
+    closure = set()
+    pending = list(requestedIds)
+    while pending:
+        pluginId = pending.pop()
+        if pluginId in closure:
+            continue
+        if pluginId not in pluginCatalog:
+            raise ValueError(f"unknown plugin dependency: {pluginId}")
+        closure.add(pluginId)
+        pending.extend(pluginCatalog[pluginId][0]["depends_on"])
+
     ordered = []
     visiting = set()
     visited = set()
@@ -219,7 +230,7 @@ def pluginOrder(pluginCatalog, requestedIds):
         visited.add(pluginId)
         ordered.append(pluginId)
 
-    for pluginId in sorted(requestedIds):
+    for pluginId in sorted(closure):
         visit(pluginId)
     return ordered
 
