@@ -15,7 +15,7 @@ plugins/<plugin-id>/
 `-- assets/
 ```
 
-The `patches` and `assets` directories are optional. The existing `hello-web` package remains a valid asset-only plugin without a patch.
+The `patches` and `assets` directories are optional. The `default-web-apps` package is the asset-only reference without a patch.
 
 ## Manifest
 
@@ -46,7 +46,7 @@ A build request must never provide patch contents, a URL, or an external reposit
 
 ## Acceptance Criteria
 
-- `hello-web` continues to work unchanged as an asset-only plugin.
+- `default-web-apps` remains the asset-only plugin for the bundled web interface.
 - A test manifest with a valid version-specific patch is accepted.
 - Unknown IDs, unknown firmware refs, and unsafe paths are rejected.
 - The catalog and plugin manifests cannot silently expose different dependencies.

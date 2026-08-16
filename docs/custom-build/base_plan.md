@@ -4,7 +4,11 @@
 
 OpenScale should build reproducible custom firmware from an unchanged firmware revision, compile-time features, and approved plugin packages. Plugins may contain version-specific patch files and LittleFS assets, but they are applied only in a temporary build checkout. The normal firmware source tree contains no activated plugin code.
 
-The existing configurator will later become the shared interface for existing downloads and new build requests. Unknown plugin sources, uploaded ZIP files, and arbitrary patch URLs remain excluded.
+The existing configurator is the shared interface for existing downloads and new build requests. Unknown plugin sources, uploaded ZIP files, and arbitrary patch URLs remain excluded.
+
+## Status
+
+Phases 1 through 4 were implemented, deployed, and production-validated on 2026-08-11. The remaining GitHub App repository-scope restriction is tracked as least-privilege hardening rather than a new implementation phase.
 
 ## Current State
 
@@ -13,13 +17,15 @@ The existing configurator will later become the shared interface for existing do
 - Pull OTA, ElegantOTA, and the web server are separate features.
 - Pull OTA requires WiFi, but neither the web server nor the runtime `littlefs` feature.
 - The existing Pull OTA flow still installs the mandatory `firmware.bin` and `littlefs.bin` assets to separate partitions.
-- `hello-web` is an approved asset plugin without a firmware patch.
-- The configurator now uses the local Phase 4 status/build API contract. Production deployment remains pending.
+- `default-web-apps` is the approved asset plugin containing the bundled web interface.
+- The GitHub Pages configurator uses the deployed Phase 4 status/build API at `openscale-custom-builds.odevstudio.workers.dev`.
 - The custom workflow resolves an allowed firmware ref to an exact commit and applies approved patches only in a temporary checkout.
 - Custom artifacts use a canonical combination hash and a complete local cache entry. Actions artifacts remain time-limited.
 - The only user-facing custom-build download is one ZIP containing the four flashable BIN images. Its manifest and dependency inventory remain service metadata.
 - The private R2 Standard cache and read gateway are provisioned at `openscale-custom-builds.odevstudio.workers.dev`, with 180-day artifact retention. The Worker and GitHub Actions share an encrypted upload token.
-- The build service resolves `main` to an exact commit and derives the combination hash from the trusted service catalog at that commit.
+- The build service resolves the firmware source and trusted builder refs independently to exact commits. Both commits, the custom firmware version, ordered plugin packages, features, environment, and source partition schema are part of the combination hash.
+- Stable custom builds report `X.Y.Z-custom`; development builds append `-custom` to the version declared by the selected source.
+- A production BLE/USB-only request completed from cache miss through public download, and its ZIP contained exactly the four required flash images.
 
 ## Invariants
 

@@ -199,6 +199,7 @@ public:
   void (*setTrackingUpdateInterval)(float);
   void (*buttonSquare_Pressed)();
   void (*buttonCircle_Pressed)();
+  void (*toggleTimer)();
 
   static const size_t USB_RX_BUFFER_SIZE = 160;
   static const unsigned long USB_RX_FRAME_TIMEOUT_MS = 30;
@@ -254,6 +255,7 @@ public:
 
   void processUsbRxBuffer(bool allowTimeout) {
     while (usbRxLen > 0) {
+      if (b_ota) return;
       bool timedOut = allowTimeout && usbRxTimedOut();
 
       if (usbRxBuffer[0] == 0x03) {
@@ -318,11 +320,7 @@ public:
     Serial.println(" ");
 
     if (data[0] != 0x03) {
-      String input;
-      input.reserve(len);
-      for (size_t i = 0; i < len; i++) {
-        input += (char)data[i];
-      }
+      String input((const char *)data, len);
       handleStringCommand(input);
       return;
     }
@@ -454,7 +452,7 @@ public:
     }
 
     if (inputString.startsWith("cal0")) {
-      b_menu = false;
+      leaveMenu();
       i_cal_weight = 0;
       i_button_cal_status = 1;
       b_calibration = true;
@@ -462,7 +460,7 @@ public:
     }
 
     if (inputString.startsWith("cal1")) {
-      b_menu = false;
+      leaveMenu();
       i_cal_weight = 0;
       i_button_cal_status = 1;
       b_calibration = true;
@@ -470,14 +468,18 @@ public:
     }
 
     if (inputString.startsWith("tare")) {
-      if (buttonCircle_Pressed != NULL) {
+      if ((b_menu || b_calibration || b_showChargingUI) && buttonCircle_Pressed != NULL) {
         buttonCircle_Pressed();
+      } else {
+        requestRemoteTare();
       }
     }
 
     if (inputString.startsWith("set")) {
-      if (buttonSquare_Pressed != NULL) {
+      if ((b_menu || b_calibration || b_showChargingUI) && buttonSquare_Pressed != NULL) {
         buttonSquare_Pressed();
+      } else if (toggleTimer != NULL) {
+        toggleTimer();
       }
     }
 

@@ -32,6 +32,8 @@ void stopWifi();
 #endif
 #if HDS_FEATURE_WEBSERVER
 void stopWebServer();
+#elif HDS_FEATURE_WIFI
+static void stopWifiConfigServer();
 #endif
 #if HDS_ENABLE_GRINDER
 void beforeDeepSleepFlush();
@@ -62,6 +64,8 @@ void reset() {
   bleShutdown();
 #if HDS_FEATURE_WEBSERVER
   stopWebServer();
+#elif HDS_FEATURE_WIFI
+  stopWifiConfigServer();
 #endif
 #if HDS_FEATURE_WIFI
   stopWifi();
@@ -178,6 +182,8 @@ void esp32_sleep() {
   bleShutdown();
 #if HDS_FEATURE_WEBSERVER
   stopWebServer();
+#elif HDS_FEATURE_WIFI
+  stopWifiConfigServer();
 #endif
 #if HDS_FEATURE_WIFI
   stopWifi();
@@ -273,8 +279,8 @@ void shut_down_low_battery(float voltage) {
       b_power_off = 1;
       updateEspnow(1);
     }
-    sendBlePowerOff(3);
 #endif
+    sendBlePowerOff(3);
 #if HDS_FEATURE_WEBSOCKET
     sendWebsocketPowerOff(3);
 #endif
@@ -333,6 +339,7 @@ void updateBattery(int batteryPin){
     float correctedVoltage = batteryVoltage * f_batteryCalibrationFactor;
     f_batteryVoltage = correctedVoltage;
   }
+  t_batteryRefresh = millis();
 #if HDS_ENABLE_ENERGY_MENU
   energyRuntime.batterySampleSequence++;
 #endif
@@ -466,7 +473,24 @@ void power_off(double sec) {
   }
 #else
   if (!b_is_charging) {
-    if (processLegacyLowBattery()) return;
+    if (!b_softSleep) {
+      if (f_batteryVoltage < lowBatteryThreshold) {
+        updateBattery(BATTERY_PIN);
+      }
+      if (f_batteryVoltage > lowBatteryThreshold) {
+        i_lowBatteryCount = 0;
+      }
+
+      if (f_batteryVoltage < lowBatteryThreshold) {
+        i_lowBatteryCount++;
+        i_lowBatteryCountTotal++;
+      }
+
+      if (i_lowBatteryCount > 50) {
+        shut_down_low_battery(f_batteryVoltage);
+        return;
+      }
+    }
 
     if (sec == -1) {
       t_power_off = millis();

@@ -72,7 +72,10 @@ void onOTAStart() {
   recordEnergyActivity();
 #endif
   Serial.println("OTA update started!");
+  std::lock_guard<std::mutex> otaDispatchLock(otaDispatchMutex);
+  portENTER_CRITICAL(&wsPendingMux);
   b_ota = true;
+  portEXIT_CRITICAL(&wsPendingMux);
 }
 
 void onOTAProgress(size_t current, size_t final) {
@@ -91,7 +94,7 @@ void onOTAEnd(bool success) {
   if (success) {
     Serial.println("OTA update finished successfully!");
     queueOtaDisplay(OTA_DISPLAY_SUCCESS);
-    remoteQueueResetAt(millis() + OTA_RESTART_DELAY_MS);
+    remoteQueueOtaResetAt(millis() + OTA_RESTART_DELAY_MS);
   } else {
     Serial.println("There was an error during OTA update!");
     queueOtaDisplay(OTA_DISPLAY_FAILURE);

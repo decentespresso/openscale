@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 HDS_SOURCE = ROOT / "src" / "hds.ino"
 MENU_HEADER = ROOT / "include" / "menu.h"
 PULL_OTA_HEADER = ROOT / "include" / "pull_ota.h"
-OTA_STAGE_MARKER = ROOT / "web_apps" / ("ota-stage-" + "test.txt")
+OTA_STAGE_MARKER = ROOT / "plugins" / "default-web-apps" / "assets" / ("ota-stage-" + "test.txt")
 
 
 def assert_contains(path, text):

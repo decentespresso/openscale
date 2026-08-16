@@ -1,4 +1,4 @@
-# HDS Tasmota Grinder Mode
+# HDS Grind by weight
 
 HDS support for using a Tasmota smart plug as a grinder power switch.
 
@@ -26,11 +26,11 @@ Install the linked plug firmware on the Tasmota plug, then connect the plug to t
 
 ## Scale Setup
 
-1. Flash firmware with grinder support to the HDS scale.
+1. Build firmware with the `Grind by weight` plugin and flash it to the HDS scale.
 2. Connect the scale to WiFi.
 3. Open the HDS OLED menu.
-4. Open `Grinder Plug`.
-5. Select `Grinder On`.
+4. Open `Grind by weight`.
+5. Select `Enable`.
 6. Select `Select Plug`.
 7. Choose the plug MAC address.
 8. Adjust the grinder settings if needed.
@@ -53,12 +53,12 @@ Only enable the grinder's physical switch after this dry test works reliably.
 
 ## Settings
 
-From the normal weight view, hold both buttons for 500 ms to open the `Grinder Plug` menu when grinder mode is on. Use `Target g` there for quick target changes.
+From the normal weight view, hold both buttons for 500 ms to open the `Grind by weight` menu when the feature is enabled. Use `Target g` there for quick target changes.
 
 Defaults:
 
 ```text
-Grinder: Off
+Grind by weight: disabled
 Target: 15.0 g
 Safety: 2.0 g
 Zero range: -1.0 g to 1.0 g
@@ -66,7 +66,7 @@ Zero hold: 1000 ms
 Target tolerance: 0.5 g
 ```
 
-`Grinder On` forces WiFi on boot.
+`Enable` forces WiFi on boot.
 
 Entering the grinder menu while the plug is armed sends OFF first. The TCP connection is kept alive where possible, and leaving the menu rearms only after stable zero.
 
@@ -90,9 +90,9 @@ The earlier cutoff allows for grounds that continue falling after power is remov
 
 ## Normal Use
 
-1. Turn grinder mode on and select a plug.
+1. Enable Grind by weight and select a plug.
 2. Put the empty dosing cup on the scale.
-3. On the first plug connection after grinder mode starts, the display shows `Tare to arm`.
+3. On the first plug connection after Grind by weight starts, the display shows `Tare to arm`.
 4. Tare the scale.
 5. Wait until the cup is stable inside the zero range.
 6. The display shows `Ready` and the scale sends `ON` to the plug.
@@ -122,7 +122,7 @@ After `Ready` appears, only ground coffee should add weight. Slowly placing anot
 | `Await zero` | Waiting for the empty cup to return | Return the empty cup and leave it stable |
 | `Tare cup` | Weight rose too quickly to be a plausible grind | Return to zero or tare the changed setup |
 | `Busy` | Another scale/client owns the plug connection | Disconnect the other client or restart the plug |
-| `Grinder error` | Fail-safe stopped grinder control | Check the plug and reconnect grinder mode |
+| `Error` | Fail-safe stopped Grind by weight | Check the plug and reconnect Grind by weight |
 
 `Grinding` is a display indication, not the cutoff authority. It appears after at least 750 ms, 1.0 g rise, three positive steps, and an average rise no faster than 6 g/s.
 
@@ -232,9 +232,9 @@ Another scale or client is already connected to the plug. Disconnect the other c
 
 The TCP server answered with a MAC different from the selected plug MAC. This usually means the cached IP points to another device. Run `Select Plug` again.
 
-### Scale Shows Grinder Error
+### Scale Shows an Error
 
-The scale entered fail-safe grinder error.
+The scale entered the Grind by weight fail-safe state.
 
 Common causes:
 
@@ -267,7 +267,7 @@ Default zero hold is 1000 ms.
 
 ## Serial Debug
 
-Grinder debug logs are printed on USB serial. Useful prefixes:
+Grind by weight debug logs are printed on USB serial. The internal prefix remains:
 
 ```text
 [grinder] connect

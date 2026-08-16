@@ -18,6 +18,7 @@
   const pluginById = new Map(catalog.plugins.map(item => [item.id, item]));
   const buildButton = document.querySelector("#request-build");
   let toastTimer;
+  let updaterTimer;
   let statusTimer;
   let pollTimer;
   let pollRemaining = 0;
@@ -33,7 +34,9 @@
     const wrapper = document.createElement("div");
     const inputId = `${kind}-${item.id}`;
     const tooltipId = `${inputId}-tooltip`;
-    wrapper.className = "option-card";
+    const hasRecommendation = kind === "plugin" &&
+      (item.recommends?.features.length || item.recommends?.plugins.length);
+    wrapper.className = `option-card${hasRecommendation ? " has-recommendation" : ""}`;
     wrapper.dataset.id = item.id;
     wrapper.innerHTML = `
       <input class="native-check" id="${escapeHtml(inputId)}" type="checkbox" data-kind="${kind}" value="${escapeHtml(item.id)}">
@@ -45,18 +48,32 @@
           <span class="status-badge"></span>
         </span>
       </label>
+      ${hasRecommendation ? `<button class="recommend-button" type="button" data-recommend-plugin="${escapeHtml(item.id)}">Recommended</button>` : ""}
       <button class="info-button" type="button" aria-label="More information about ${escapeHtml(item.name)}" aria-describedby="${tooltipId}">${icons.info}</button>
       <span class="tooltip" id="${tooltipId}" role="tooltip">${escapeHtml(item.tooltip || item.description || "More information")}</span>`;
     return wrapper;
   };
 
-  catalog.firmware_refs.forEach(ref => refSelect.add(new Option(ref, ref)));
-  catalog.features.forEach(item => featureRoot.append(makeOption(item, "feature")));
+  const refLabel = ref => /^v?\d+\.\d+\.\d+$/.test(ref) ?
+    `${ref.replace(/^v/, "")} (stable)` : `${ref} (development)`;
+  catalog.firmware_refs.forEach(ref => refSelect.add(new Option(refLabel(ref), ref)));
+  catalog.features.filter(item => !item.hidden).forEach(item => featureRoot.append(makeOption(item, "feature")));
   catalog.plugins.forEach(item => pluginRoot.append(makeOption(item, "plugin")));
 
-  const resolveSelection = () => {
+  const resolvePlugins = () => {
+    const resolved = new Set();
+    const visit = id => {
+      if (resolved.has(id)) return;
+      pluginById.get(id)?.depends_on.forEach(visit);
+      resolved.add(id);
+    };
+    [...state.plugins].sort().forEach(visit);
+    return resolved;
+  };
+
+  const resolveSelection = resolvedPlugins => {
     const resolved = new Set(state.requested);
-    state.plugins.forEach(id => pluginById.get(id)?.requires.forEach(feature => resolved.add(feature)));
+    resolvedPlugins.forEach(id => pluginById.get(id)?.requires.forEach(feature => resolved.add(feature)));
     let previousSize = -1;
     while (resolved.size !== previousSize) {
       previousSize = resolved.size;
@@ -65,9 +82,9 @@
     return resolved;
   };
 
-  const requirementReason = (featureId, resolved) => {
+  const requirementReason = (featureId, resolved, resolvedPlugins) => {
     const reasons = [];
-    state.plugins.forEach(id => {
+    resolvedPlugins.forEach(id => {
       const plugin = pluginById.get(id);
       if (plugin?.requires.includes(featureId)) reasons.push(plugin.name);
     });
@@ -80,9 +97,17 @@
     return unique.length ? `Required by ${unique.join(", ")}` : "Included as a dependency";
   };
 
-  const pluginAvailability = plugin => {
+  const pluginRequirementReason = (pluginId, resolvedPlugins) => {
+    const reasons = [...resolvedPlugins]
+      .map(id => pluginById.get(id))
+      .filter(plugin => plugin?.depends_on.includes(pluginId))
+      .map(plugin => plugin.name);
+    return reasons.length ? `Required by ${reasons.join(", ")}` : "Included as a dependency";
+  };
+
+  const pluginAvailability = (plugin, resolvedPlugins) => {
     if (!plugin.firmware_refs.includes(refSelect.value)) return `Unavailable for ${refSelect.value}`;
-    const conflicting = [...state.plugins].find(selectedId => {
+    const conflicting = [...resolvedPlugins].find(selectedId => {
       if (selectedId === plugin.id) return false;
       const selected = pluginById.get(selectedId);
       return plugin.conflicts.includes(selectedId) || selected?.conflicts.includes(plugin.id);
@@ -98,6 +123,14 @@
     toastTimer = setTimeout(() => toast.classList.remove("is-visible"), 2200);
   };
 
+  const buildEstimate = result => {
+    if (result.state === "queued") return "Usually ready in about 5 minutes.";
+    if (result.state !== "building" || !result.updated_at) return "";
+    const elapsedMinutes = Math.max(0, (Date.now() - Date.parse(result.updated_at)) / 60000);
+    const remaining = Math.ceil(5 - elapsedMinutes);
+    return remaining > 0 ? `Usually ready in about ${remaining} minute${remaining === 1 ? "" : "s"}.` : "Finishing up.";
+  };
+
   const setStatus = (result, generation = selectionGeneration) => {
     if (generation !== selectionGeneration) return;
     const buildState = document.querySelector("#build-state");
@@ -110,12 +143,14 @@
       failed: result.retryable ? "The build did not complete. One retry is available." :
         "The build did not complete after two attempts.",
       unavailable: "The build service is currently unavailable.",
+      "rate-limited": "The weekly build limit has been reached. Existing cached builds remain available.",
       checking: "Checking the build cache."
     };
     buildState.className = `ready state-${result.state}`;
     buildState.textContent = result.state[0].toUpperCase() + result.state.slice(1);
     document.querySelector("#combination-hash").textContent = combinationHash ? combinationHash.slice(0, 12) : "";
-    document.querySelector("#status-message").textContent = messages[result.state] || messages.unavailable;
+    document.querySelector("#status-message").textContent =
+      [messages[result.state] || messages.unavailable, buildEstimate(result)].filter(Boolean).join(" ");
     buildButton.disabled = result.state !== "missing" && !(result.state === "failed" && result.retryable);
     const downloads = document.querySelector("#downloads");
     downloads.replaceChildren();
@@ -124,6 +159,13 @@
         const link = document.createElement("a");
         link.href = href;
         link.textContent = name;
+        link.addEventListener("click", () => {
+          const updaterLink = document.querySelector("#hds-updater-link");
+          clearTimeout(updaterTimer);
+          updaterLink.classList.remove("is-next-step");
+          requestAnimationFrame(() => updaterLink.classList.add("is-next-step"));
+          updaterTimer = setTimeout(() => updaterLink.classList.remove("is-next-step"), 6000);
+        });
         downloads.append(link);
       });
     }
@@ -141,6 +183,7 @@
     if (!apiResponse.ok) {
       const error = new Error(result.error || `request failed: ${apiResponse.status}`);
       error.result = result;
+      error.status = apiResponse.status;
       throw error;
     }
     return result;
@@ -184,7 +227,8 @@
     catalog.plugins.forEach(plugin => {
       if (!plugin.firmware_refs.includes(refSelect.value)) state.plugins.delete(plugin.id);
     });
-    const resolved = resolveSelection();
+    const resolvedPlugins = resolvePlugins();
+    const resolved = resolveSelection(resolvedPlugins);
     document.querySelectorAll('[data-kind="feature"]').forEach(input => {
       const id = input.value;
       const card = input.closest(".option-card");
@@ -196,25 +240,34 @@
       card.classList.toggle("is-checked", isResolved);
       card.classList.toggle("is-required", isRequired);
       card.classList.toggle("is-disabled", isRequired);
-      card.querySelector(".status-badge").textContent = isRequired ? requirementReason(id, resolved) : "";
+      card.querySelector(".status-badge").textContent = isRequired ?
+        requirementReason(id, resolved, resolvedPlugins) : "";
     });
     document.querySelectorAll('[data-kind="plugin"]').forEach(input => {
       const plugin = pluginById.get(input.value);
       const card = input.closest(".option-card");
-      const unavailableReason = pluginAvailability(plugin);
-      input.checked = state.plugins.has(plugin.id);
-      input.disabled = Boolean(unavailableReason) && !input.checked;
-      card.classList.toggle("is-checked", input.checked);
+      const isRequested = state.plugins.has(plugin.id);
+      const isResolved = resolvedPlugins.has(plugin.id);
+      const isRequired = isResolved && !isRequested;
+      const unavailableReason = pluginAvailability(plugin, resolvedPlugins);
+      input.checked = isResolved;
+      input.disabled = isRequired || Boolean(unavailableReason) && !isResolved;
+      card.classList.toggle("is-checked", isResolved);
+      card.classList.toggle("is-required", isRequired);
       card.classList.toggle("is-disabled", input.disabled);
-      card.classList.toggle("is-unavailable", input.disabled);
-      card.querySelector(".status-badge").textContent = input.disabled ? unavailableReason : "";
+      card.classList.toggle("is-unavailable", Boolean(unavailableReason));
+      card.querySelector(".status-badge").textContent = isRequired ?
+        pluginRequirementReason(plugin.id, resolvedPlugins) : unavailableReason;
+      const recommendationButton = card.querySelector(".recommend-button");
+      if (recommendationButton) recommendationButton.disabled = Boolean(unavailableReason);
     });
     const features = [...resolved].sort();
-    const plugins = [...state.plugins].sort();
+    const visibleFeatures = features.filter(id => !featureById.get(id)?.hidden);
+    const plugins = [...resolvedPlugins].sort();
     const resolvedRoot = document.querySelector("#resolved");
     resolvedRoot.replaceChildren();
-    if (features.length) {
-      features.forEach(id => {
+    if (visibleFeatures.length) {
+      visibleFeatures.forEach(id => {
         const chip = document.createElement("span");
         chip.className = "resolved-chip";
         chip.textContent = id;
@@ -226,10 +279,11 @@
       empty.textContent = "No features selected";
       resolvedRoot.append(empty);
     }
-    document.querySelector("#feature-count").textContent = `${features.length} selected`;
+    document.querySelector("#feature-count").textContent = `${visibleFeatures.length} selected`;
     document.querySelector("#plugin-count").textContent = `${plugins.length} selected`;
-    document.querySelector("#summary-ref").textContent = refSelect.value;
+    document.querySelector("#summary-ref").textContent = refLabel(refSelect.value);
     document.querySelector("#summary-plugins").textContent = plugins.length || "None";
+    document.querySelector("#pull-ota-warning").hidden = !resolved.has("pull-ota");
     selectionGeneration += 1;
     selectionController?.abort();
     selectionController = new AbortController();
@@ -244,6 +298,16 @@
     clearTimeout(pollTimer);
     statusTimer = setTimeout(() => checkStatus(selection, generation), 350);
   };
+
+  document.addEventListener("click", event => {
+    const button = event.target.closest("[data-recommend-plugin]");
+    if (!button) return;
+    const plugin = pluginById.get(button.dataset.recommendPlugin);
+    state.requested = new Set(plugin.recommends.features);
+    state.plugins = new Set([plugin.id, ...plugin.recommends.plugins]);
+    render();
+    showToast(`Recommended setup for ${plugin.name} selected`);
+  });
 
   document.addEventListener("change", event => {
     const input = event.target;
@@ -274,7 +338,10 @@
       setStatus(result, generation);
     } catch (error) {
       if (error.name === "AbortError" || generation !== selectionGeneration) return;
-      if (error.result?.state === "failed") {
+      if (error.status === 429) {
+        setStatus({state: "rate-limited"}, generation);
+        showToast("Weekly build limit reached");
+      } else if (error.result?.state === "failed") {
         setStatus(error.result, generation);
         showToast("Retry limit reached");
       } else {

@@ -4,21 +4,18 @@ on:
   pull_request:
     paths:
       - ".github/workflows/custom-build.yml"
+      - "*.py"
       - "custom-build.json"
-      - "docs/custom-build/catalog.json"
-      - "docs/custom-build/service-catalog.json"
+      - "docs/custom-build/**"
       - "include/**"
+      - "keys/**"
+      - "partitions/**"
       - "platformio.ini"
       - "plugins/**"
+      - "requirements-platformio.txt"
       - "src/**"
       - "cloudflare/custom-build-worker/**"
-      - "tools/build_custom_firmware.py"
-      - "tools/configure_custom_build.py"
-      - "tools/publish_custom_build.py"
-      - "tools/test_custom_cache_transport.py"
-      - "tools/test_custom_build_execution.py"
-      - "tools/test_plugin_catalog.py"
-      - "tools/update_custom_build_status.py"
+      - "tools/**"
   workflow_dispatch:
     inputs:
       firmware_ref:
@@ -28,11 +25,19 @@ on:
       features:
         description: Comma-separated feature IDs
         required: false
-        default: wifi,webserver,littlefs,pull-ota
+        default: pull-ota
       plugins:
         description: Comma-separated plugin IDs
         required: false
-        default: hello-web
+        default: default-web-apps
+      builder_ref:
+        description: Trusted builder ref supplied by the build service
+        required: false
+        default: ""
+      builder_commit:
+        description: Exact builder commit supplied by the build service
+        required: false
+        default: ""
       source_commit:
         description: Exact source commit supplied by the build service
         required: false
@@ -54,61 +59,145 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  compile-matrix:
+  detect_plugins:
     if: github.event_name == 'pull_request'
-    name: compile (${{ matrix.name }})
+    name: detect changed plugins
+    runs-on: ubuntu-latest
+    outputs:
+      count: ${{ steps.plugins.outputs.count }}
+      matrix: ${{ steps.plugins.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Validate custom build contracts
+        run: |
+          python tools/test_plugin_catalog.py
+          python tools/test_custom_build_execution.py
+          python tools/test_custom_cache_transport.py
+          python tools/test_plugin_ci_contract.py
+          node --test cloudflare/custom-build-worker/test/worker.test.mjs
+      - name: Detect changed patch plugins
+        id: plugins
+        run: >-
+          python tools/list_changed_patch_plugins.py
+          --base "${{ github.event.pull_request.base.sha }}"
+          --head "${{ github.event.pull_request.head.sha }}"
+          --github-output "$GITHUB_OUTPUT"
+
+  verify_plugins:
+    if: needs.detect_plugins.outputs.count != '0'
+    needs: detect_plugins
+    name: plugin (${{ matrix.plugin }}, ${{ matrix.firmware_ref }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: no-optional-features
-            configuration: '{"firmware_ref":"main","features":[],"plugins":[]}'
-          - name: wifi-only
-            configuration: '{"firmware_ref":"main","features":["wifi"],"plugins":[]}'
-          - name: webserver-without-littlefs
-            configuration: '{"firmware_ref":"main","features":["webserver"],"plugins":[]}'
-          - name: websocket
-            configuration: '{"firmware_ref":"main","features":["websocket"],"plugins":[]}'
-          - name: elegant-ota
-            configuration: '{"firmware_ref":"main","features":["elegant-ota"],"plugins":[]}'
-          - name: pull-ota
-            configuration: '{"firmware_ref":"main","features":["pull-ota"],"plugins":[]}'
-          - name: grinder
-            configuration: '{"firmware_ref":"main","features":["grinder"],"plugins":[]}'
+        include: ${{ fromJSON(needs.detect_plugins.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini', 'requirements-platformio.txt') }}
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install PlatformIO Core
         run: python -m pip install --requirement requirements-platformio.txt
-      - name: Configure selection
+      - name: Configure plugin selection
         env:
-          CUSTOM_BUILD_CONFIGURATION: ${{ matrix.configuration }}
-        run: >-
-          python -c "import os; from pathlib import Path;
-          Path('custom-build-matrix.json').write_text(
-          os.environ['CUSTOM_BUILD_CONFIGURATION'] + '\n', encoding='utf-8')"
-      - name: Build isolated custom firmware and filesystem
+          FIRMWARE_REF: ${{ matrix.firmware_ref }}
+          PLUGIN_ID: ${{ matrix.plugin }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          path = Path(".pio.nosync/plugin-ci.json")
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(json.dumps({
+              "firmware_ref": os.environ["FIRMWARE_REF"],
+              "features": [],
+              "plugins": [os.environ["PLUGIN_ID"]],
+          }) + "\n", encoding="utf-8")
+          PY
+      - name: Build plugin environment
+        env:
+          PLUGIN_ID: ${{ matrix.plugin }}
         run: >-
           python tools/build_custom_firmware.py
-          --config custom-build-matrix.json
-          --output .pio.nosync/custom-matrix-output
+          --config .pio.nosync/plugin-ci.json
+          --source-commit "${{ github.sha }}"
+          --verify-plugin-environment "esp32s3-$PLUGIN_ID"
 
-  build:
+  compile_custom:
+    if: github.event_name == 'pull_request'
+    name: custom firmware (minimal)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini', 'requirements-platformio.txt') }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Install PlatformIO Core
+        run: python -m pip install --requirement requirements-platformio.txt
+      - name: Configure minimal selection
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path(".pio.nosync/pr-ci.json")
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(json.dumps({
+              "firmware_ref": "main",
+              "features": [],
+              "plugins": [],
+          }) + "\n", encoding="utf-8")
+          PY
+      - name: Build minimal custom firmware and filesystem
+        run: >-
+          python tools/build_custom_firmware.py
+          --config .pio.nosync/pr-ci.json
+          --source-commit "${{ github.sha }}"
+
+  build:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.builder_commit || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini', 'requirements-platformio.txt') }}
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install PlatformIO Core
@@ -131,6 +220,18 @@ jobs:
               "plugins": split(os.environ["PLUGINS"]),
           }, indent=2) + "\n", encoding="utf-8")
           PY
+      - name: Verify trusted builder checkout
+        if: inputs.combination_hash != ''
+        env:
+          BUILDER_REF: ${{ inputs.builder_ref }}
+          BUILDER_COMMIT: ${{ inputs.builder_commit }}
+          WORKFLOW_COMMIT: ${{ github.workflow_sha }}
+        run: |
+          test -n "$BUILDER_REF"
+          test -n "$BUILDER_COMMIT"
+          test "$WORKFLOW_COMMIT" = "$BUILDER_COMMIT"
+          test "$(git rev-parse HEAD)" = "$BUILDER_COMMIT"
+          test "$GITHUB_REF" = "refs/heads/$BUILDER_REF" || test "$GITHUB_REF" = "refs/tags/$BUILDER_REF"
       - name: Validate custom build contracts
         run: |
           python tools/test_plugin_catalog.py
@@ -140,7 +241,9 @@ jobs:
       - name: Mark custom build as running
         if: >-
           github.event_name == 'workflow_dispatch' &&
-          github.ref == 'refs/heads/main' &&
+          inputs.builder_ref != '' &&
+          inputs.builder_commit != '' &&
+          inputs.source_commit != '' &&
           inputs.combination_hash != '' &&
           inputs.attempt_id != ''
         env:
@@ -151,20 +254,18 @@ jobs:
           --combination-hash "${{ inputs.combination_hash }}"
           --attempt-id "${{ inputs.attempt_id }}"
           --state building
-      - name: Build standard firmware
-        if: github.event_name == 'pull_request'
-        run: pio run -e esp32s3
       - name: Build isolated custom firmware and filesystem
         id: custom_build
         run: >-
           python tools/build_custom_firmware.py
           --cache-url https://openscale-custom-builds.odevstudio.workers.dev
           --github-output "$GITHUB_OUTPUT"
+          --builder-commit "${{ inputs.builder_commit }}"
           --source-commit "${{ inputs.source_commit }}"
           --expected-hash "${{ inputs.combination_hash }}"
       - name: Upload custom build
         if: steps.custom_build.outputs.cache_hit != 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: openscale-custom-${{ steps.custom_build.outputs.combination_hash }}
           path: ${{ steps.custom_build.outputs.output }}/*
@@ -172,7 +273,12 @@ jobs:
       - name: Publish custom build
         if: >-
           github.event_name == 'workflow_dispatch' &&
-          github.ref == 'refs/heads/main' &&
+          inputs.builder_ref != '' &&
+          inputs.builder_commit != '' &&
+          inputs.source_commit != '' &&
+          github.workflow_sha == inputs.builder_commit &&
+          inputs.combination_hash != '' &&
+          inputs.attempt_id != '' &&
           steps.custom_build.outputs.cache_hit != 'true'
         env:
           CUSTOM_BUILD_UPLOAD_TOKEN: ${{ secrets.CUSTOM_BUILD_UPLOAD_TOKEN }}
@@ -183,7 +289,10 @@ jobs:
       - name: Mark custom build as ready
         if: >-
           github.event_name == 'workflow_dispatch' &&
-          github.ref == 'refs/heads/main' &&
+          inputs.builder_ref != '' &&
+          inputs.builder_commit != '' &&
+          inputs.source_commit != '' &&
+          github.workflow_sha == inputs.builder_commit &&
           inputs.combination_hash != '' &&
           inputs.attempt_id != ''
         env:
@@ -198,7 +307,9 @@ jobs:
         if: >-
           failure() &&
           github.event_name == 'workflow_dispatch' &&
-          github.ref == 'refs/heads/main' &&
+          inputs.builder_ref != '' &&
+          inputs.builder_commit != '' &&
+          inputs.source_commit != '' &&
           inputs.combination_hash != '' &&
           inputs.attempt_id != ''
         env:

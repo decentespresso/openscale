@@ -21,6 +21,8 @@ void applyEnergyAccRailState();
 #endif
 #if HDS_FEATURE_WEBSERVER
 #include "webserver.h"
+#elif HDS_FEATURE_WIFI
+#include "wifi_config_server.h"
 #endif
 #include "websocket.h"
 #if HDS_FEATURE_ELEGANT_OTA
@@ -488,11 +490,11 @@ void setup() {
   usbCallbacks.setTrackingUpdateInterval = setTrackingUpdateInterval;
   usbCallbacks.buttonSquare_Pressed = buttonSquare_Pressed;
   usbCallbacks.buttonCircle_Pressed = buttonCircle_Pressed;
+  usbCallbacks.toggleTimer = scaleTimer;
 #ifdef ESP32
   releaseWakePinsFromRtcMode();
 #endif
   button_init();
-  linkSubmenus();
   pinMode(BATTERY_CHARGING, INPUT_PULLUP);
 #if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
   pinMode(USB_DET, INPUT_PULLUP);
@@ -651,10 +653,6 @@ void setup() {
   u8g2.setContrast(255);
   u8g2.setFont(FONT_M);
   power_off(15);
-#ifdef WELCOME
-  str_welcome = storageGetString(KEY_WELCOME, String(WELCOME1));
-  str_welcome.trim();
-#endif
   b_screenFlipped = storageGetBool(KEY_SCREEN_FLIP, false);
   if (b_screenFlipped)
     u8g2.setDisplayRotation(U8G2_R0);
@@ -807,15 +805,23 @@ void setup() {
   Serial.println(digitalRead(BUTTON_CIRCLE));
 #endif
 
-  Serial.print("Welcome: ");
-  if (str_welcome.length() == 127)
-    Serial.print(WELCOME1);
-  else
-    Serial.print(str_welcome);
-  Serial.print("\t");
-  Serial.print(WELCOME2);
-  Serial.print("\t");
-  Serial.println(WELCOME3);
+  {
+#ifdef WELCOME
+    String welcome = storageGetString(KEY_WELCOME, String(WELCOME1));
+    welcome.trim();
+#else
+    String welcome = "welcome";
+#endif
+    Serial.print("Welcome: ");
+    if (welcome.length() == 127)
+      Serial.print(WELCOME1);
+    else
+      Serial.print(welcome);
+    Serial.print("\t");
+    Serial.print(WELCOME2);
+    Serial.print("\t");
+    Serial.println(WELCOME3);
+  }
   Serial.print("Info: ");
   Serial.print(LINE1);
   Serial.print("\t");
@@ -1726,6 +1732,7 @@ void serviceEnergyHousekeeping(unsigned long now) {
 void loop() {
   processWsPendingCmds();
   processBleStatusResponse();
+  processBleVoltageResponse();
 #if HDS_ENABLE_ENERGY_MENU
   serviceEnergyHousekeeping(millis());
 #endif
@@ -1735,11 +1742,14 @@ void loop() {
     return;
   }
 
-  if (bleHasLiveClient() && b_requireHeartBeat && millis() - t_firstConnect > HEARTBEAT_TIMEOUT) {
-    if (millis() - t_heartBeat > HEARTBEAT_TIMEOUT) {
-      disconnectBLE();
-      t_heartBeat = millis() + 10000;
-    }
+  const unsigned long now = millis();
+  if (bleHasLiveClient()
+      && b_requireHeartBeat
+      && now - t_firstConnect > HEARTBEAT_TIMEOUT
+      && now - t_heartBeat > HEARTBEAT_TIMEOUT
+      && (t_lastDisconnectAttempt == 0
+          || now - t_lastDisconnectAttempt >= HEARTBEAT_DISCONNECT_RETRY_INTERVAL)) {
+    disconnectBLE();
   }
 #ifdef HEARTBEATICON
   if (millis() - t_heartBeat < 500)
@@ -1747,7 +1757,7 @@ void loop() {
   else
     b_heartBeatIcon = false;
 #endif
-  if (bleHasLiveClient()
+  if (b_ota || bleHasLiveClient()
 #if HDS_FEATURE_WEBSOCKET
       || (b_wifiEnabled && websocket.count() > 0)
 #endif
@@ -1759,7 +1769,7 @@ void loop() {
   } else {
     power_off(15);
   }
-  if (Serial.available()) {
+  if (!b_ota && Serial.available()) {
     uint8_t data[32];
     size_t len = 0;
     while (Serial.available() && len < sizeof(data)) {
@@ -1767,9 +1777,12 @@ void loop() {
     }
     usbCallbacks.onStream(data, len);
   }
-  usbCallbacks.poll();
+  if (!b_ota) {
+    usbCallbacks.poll();
+  }
 
-  if (!buttonChecksSuppressedUntilRelease()
+  if (!b_ota
+      && !buttonChecksSuppressedUntilRelease()
 #if HDS_ENABLE_GRINDER
       && !handleGrinderMenuChord()
 #endif
@@ -1781,6 +1794,9 @@ void loop() {
   buzzer.check();
 #endif
 
+  if (b_ota && b_softSleep) {
+    wakeScaleFromSoftSleep("OTA wake");
+  }
   if (!b_softSleep) {
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
     if (b_gyroEnabled) {
@@ -1800,7 +1816,6 @@ void loop() {
 #endif  //DEBUG
     if (millis() - t_batteryRefresh > i_batteryRefreshTareInterval){
       updateBattery(BATTERY_PIN);
-      t_batteryRefresh = millis();
     }
 #if HDS_ENABLE_ENERGY_MENU
     const bool powerCadenceEnabled = energyPolicy.featureEnabled(EnergyFeature::PowerCadence);
@@ -1822,6 +1837,9 @@ void loop() {
 #if HDS_FEATURE_WIFI
       if (b_wifiEnabled) {
         wifiSupervise();
+#if !HDS_FEATURE_WEBSERVER
+        wifiConfigServerPoll();
+#endif
       }
 #endif
 #if HDS_ENABLE_GRINDER
@@ -1868,6 +1886,9 @@ void loop() {
 #if HDS_FEATURE_WIFI
         if (b_wifiEnabled) {
           wifiSupervise();
+#if !HDS_FEATURE_WEBSERVER
+          wifiConfigServerPoll();
+#endif
 #if HDS_FEATURE_WEBSOCKET
           websocket.cleanupClients(4);
 #endif

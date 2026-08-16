@@ -33,12 +33,12 @@ A successful combination stores these objects under its hash:
 
 ## Implementation
 
-1. Generate the canonical input and combination hash in the existing Python tool. Implemented locally.
-2. Calculate the hash before building and use it in the workflow, artifact name, and build manifest. Implemented locally.
-3. Before compilation, check whether a complete successful entry already exists. Implemented for complete local entries.
-4. On a hit, return the existing download metadata without rebuilding. Implemented against the trusted Worker manifest endpoint.
-5. Publish successful files atomically under the hash. Implemented locally.
-6. Never mark failed or incomplete uploads as cache hits. Implemented locally.
+1. Generate the canonical input and combination hash in the existing Python tool.
+2. Calculate the hash before building and use it in the workflow, artifact name, and build manifest.
+3. Before compilation, check whether a complete successful entry already exists.
+4. On a hit, return the existing download metadata without rebuilding.
+5. Publish successful files atomically under the hash.
+6. Never mark failed or incomplete uploads as cache hits.
 7. Expire every `v1/` cache entry after 180 days. A later request rebuilds it under the same hash.
 
 ## Storage Decision

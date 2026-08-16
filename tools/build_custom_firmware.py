@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import urllib.error
 import urllib.parse
@@ -71,6 +72,16 @@ def verifySourceCommit(repositoryRoot, sourceCommit):
     return verifiedCommit(repositoryRoot, sourceCommit)
 
 
+def verifyBuilderCommit(repositoryRoot, expectedCommit=None):
+    actualCommit = verifiedCommit(repositoryRoot, "HEAD")
+    if expectedCommit:
+        if not SHA_PATTERN.fullmatch(expectedCommit):
+            raise ValueError("builder commit must be a full lowercase SHA-1")
+        if actualCommit != expectedCommit:
+            raise ValueError("builder checkout does not match the expected commit")
+    return actualCommit
+
+
 def pullRequestCommit():
     if os.environ.get("GITHUB_EVENT_NAME") != "pull_request":
         return None
@@ -78,6 +89,10 @@ def pullRequestCommit():
     if not sourceCommit:
         raise ValueError("pull request build has no GITHUB_SHA")
     return sourceCommit
+
+
+def requestedSourceCommit(sourceCommit, verifyPluginEnvironment):
+    return sourceCommit or (None if verifyPluginEnvironment else pullRequestCommit())
 
 
 def cloneSource(repositoryRoot, commitSha, checkoutRoot):
@@ -105,9 +120,20 @@ def sourceDateEpoch(checkoutRoot):
     ).stdout.strip()
 
 
-def configureReproducibleBuild(checkoutRoot):
+def replaceRequired(value, source, replacement, name):
+    if source not in value:
+        raise ValueError(f"selected firmware has incompatible {name}")
+    return value.replace(source, replacement)
+
+
+def prepareBuildCheckout(checkoutRoot, builderRoot=None):
+    builderRoot = (builderRoot or ROOT).resolve()
     workspace = checkoutRoot / ".pio.nosync"
     workspace.mkdir(parents=True, exist_ok=True)
+    builderTools = workspace / "builder-tools"
+    builderTools.mkdir()
+    shutil.copy2(builderRoot / "tools" / "configure_custom_build.py", builderTools)
+    shutil.copy2(builderRoot / "git_rev_macro.py", builderTools)
     compilerScript = workspace / "reproducible_build.py"
     compilerScript.write_text(
         "from pathlib import Path\n"
@@ -138,6 +164,23 @@ def configureReproducibleBuild(checkoutRoot):
         raise ValueError("selected firmware has no platformio.ini")
     section = "env:esp32s3-custom"
     scripts = config.get(section, "extra_scripts", fallback="")
+    scripts = replaceRequired(
+        scripts,
+        "pre:tools/configure_custom_build.py",
+        "pre:.pio.nosync/builder-tools/configure_custom_build.py",
+        "custom build configurator",
+    )
+    buildFlags = config.get("env:esp32s3", "build_flags", fallback="")
+    config.set(
+        "env:esp32s3",
+        "build_flags",
+        replaceRequired(
+            buildFlags,
+            "!python3 git_rev_macro.py",
+            "!python3 .pio.nosync/builder-tools/git_rev_macro.py",
+            "firmware version generator",
+        ),
+    )
     config.set(
         section,
         "extra_scripts",
@@ -252,12 +295,48 @@ def publishArtifacts(buildDir, outputDir):
         ready.replace(outputDir)
 
 
+def verifyPluginEnvironment(configPath, platformioEnvironment, sourceCommit=None):
+    configuration = customBuild.resolveConfiguration(configPath)
+    if not platformioEnvironment.startswith("esp32s3-"):
+        raise ValueError("invalid plugin environment")
+    pluginId = platformioEnvironment.removeprefix("esp32s3-")
+    if configuration["requested_plugins"] != [pluginId]:
+        raise ValueError("plugin verification requires one selected target plugin")
+    pluginIds = [plugin["id"] for plugin in configuration["plugins"]]
+    if pluginId not in pluginIds:
+        raise ValueError("plugin environment does not match the selected plugin")
+    if pluginId not in [patchPluginId for patchPluginId, _ in configuration["patches"]]:
+        raise ValueError("plugin verification target has no matching patch")
+    commitSha = (
+        verifySourceCommit(ROOT, sourceCommit)
+        if sourceCommit
+        else resolveFirmwareCommit(ROOT, configuration["firmware_ref"])
+    )
+    with tempfile.TemporaryDirectory(prefix="openscale-plugin-") as temporaryDirectory:
+        checkoutRoot = Path(temporaryDirectory) / "source"
+        cloneSource(ROOT, commitSha, checkoutRoot)
+        applyPatches(configuration, checkoutRoot)
+        testPattern = f"test_{pluginId.replace('-', '_')}_*.py"
+        tests = sorted((checkoutRoot / "tools").glob(testPattern))
+        for testPath in tests:
+            runCommand([sys.executable, str(testPath)], checkoutRoot)
+        runCommand(["pio", "run", "-e", platformioEnvironment], checkoutRoot)
+    return {
+        "base_source": commitSha,
+        "environment": platformioEnvironment,
+        "plugin": pluginId,
+        "tests": [path.name for path in tests],
+    }
+
+
 def buildCustomFirmware(
-    configPath, outputRoot, sourceCommit=None, cacheUrl=None, expectedHash=None
+    configPath, outputRoot, sourceCommit=None, cacheUrl=None, expectedHash=None,
+    builderCommit=None,
 ):
     configuration = customBuild.resolveConfiguration(configPath)
     if expectedHash is not None and not HASH_PATTERN.fullmatch(expectedHash):
         raise ValueError("expected combination hash must be 64 lowercase hex characters")
+    builderSha = verifyBuilderCommit(ROOT, builderCommit)
     commitSha = (
         verifySourceCommit(ROOT, sourceCommit)
         if sourceCommit
@@ -266,7 +345,9 @@ def buildCustomFirmware(
     with tempfile.TemporaryDirectory(prefix="openscale-custom-") as temporaryDirectory:
         checkoutRoot = Path(temporaryDirectory) / "source"
         cloneSource(ROOT, commitSha, checkoutRoot)
-        identity = customBuild.combinationInput(configuration, commitSha, checkoutRoot)
+        identity = customBuild.combinationInput(
+            configuration, commitSha, checkoutRoot, builderSha
+        )
         combinationHash = customBuild.combinationHash(identity)
         if expectedHash is not None and combinationHash != expectedHash:
             raise ValueError("build selection does not match the expected combination hash")
@@ -274,6 +355,7 @@ def buildCustomFirmware(
         if completeCacheEntry(outputDir, combinationHash, identity):
             return {
                 "base_source": commitSha,
+                "builder_source": builderSha,
                 "cache_hit": True,
                 "combination_hash": combinationHash,
                 "output": str(outputDir),
@@ -283,17 +365,19 @@ def buildCustomFirmware(
         if cacheUrl and remoteCacheHit(cacheUrl, combinationHash, identity):
             return {
                 "base_source": commitSha,
+                "builder_source": builderSha,
                 "cache_hit": True,
                 "combination_hash": combinationHash,
                 "output": str(outputDir),
             }
         applyPatches(configuration, checkoutRoot)
-        configureReproducibleBuild(checkoutRoot)
+        prepareBuildCheckout(checkoutRoot)
         sourceEpoch = sourceDateEpoch(checkoutRoot)
         environment = {
             **os.environ,
             "HDS_CUSTOM_BUILD_CATALOG_ROOT": str(ROOT),
             "HDS_CUSTOM_BUILD_CONFIG": str(configPath),
+            "HDS_FIRMWARE_VERSION": identity["firmware_version"],
             "SOURCE_DATE_EPOCH": sourceEpoch,
         }
         runCommand(["pio", "run", "-e", "esp32s3-custom"], checkoutRoot, environment=environment)
@@ -317,6 +401,7 @@ def buildCustomFirmware(
         publishArtifacts(buildDir, outputDir)
     return {
         "base_source": commitSha,
+        "builder_source": builderSha,
         "cache_hit": False,
         "combination_hash": combinationHash,
         "output": str(outputDir),
@@ -335,17 +420,28 @@ def main():
     parser.add_argument("--output", type=Path, default=ROOT / ".pio.nosync" / "custom-output")
     parser.add_argument("--github-output", type=Path)
     parser.add_argument("--cache-url")
+    parser.add_argument("--builder-commit")
     parser.add_argument("--source-commit")
     parser.add_argument("--expected-hash")
+    parser.add_argument("--verify-plugin-environment")
     args = parser.parse_args()
+    sourceCommit = requestedSourceCommit(args.source_commit, args.verify_plugin_environment)
+    if args.verify_plugin_environment and any((args.github_output, args.cache_url, args.expected_hash)):
+        parser.error("plugin verification does not publish or use the artifact cache")
     try:
-        result = buildCustomFirmware(
-            args.config.resolve(),
-            args.output.resolve(),
-            args.source_commit or pullRequestCommit(),
-            args.cache_url,
-            args.expected_hash or None,
-        )
+        if args.verify_plugin_environment:
+            result = verifyPluginEnvironment(
+                args.config.resolve(), args.verify_plugin_environment, sourceCommit
+            )
+        else:
+            result = buildCustomFirmware(
+                args.config.resolve(),
+                args.output.resolve(),
+                sourceCommit,
+                args.cache_url,
+                args.expected_hash or None,
+                args.builder_commit or None,
+            )
     except (ValueError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"custom build failed: {error}\n")
     if args.github_output:

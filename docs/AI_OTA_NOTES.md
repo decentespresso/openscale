@@ -55,8 +55,8 @@ Flow:
 
 1. Current firmware stores both manifests, writes `firmware.bin` to the inactive app slot, and reboots.
 2. The new firmware calls `hdsOtaRollbackBegin()`, detects pending LittleFS work, and runs `pullOtaResumePendingLittleFs()` before application validity marking.
-3. The target filesystem gets at most two attempts. Each attempt is recorded before network or write work; `fs_dirty` is recorded before `Update.begin()` can modify the partition.
-4. A successful target write passes size/schema, raw SHA-256, and mount checks. Pending state is then cleared, the new application is marked valid, and the device reboots.
+3. Recovery first accepts an already-written filesystem that passes size/schema, raw SHA-256, and mount checks. Otherwise, the target filesystem gets at most two attempts. Each attempt is recorded before network or write work; `fs_dirty` is recorded before `Update.begin()` can modify the partition.
+4. A successful target write passes the same checks. The new application is then marked valid before pending state is cleared, and the device reboots.
 5. If both attempts fail before filesystem writing begins, `setup()` calls `hdsOtaRollback("LittleFS update")`; the previous application remains paired with its unchanged filesystem.
 6. If writing may have begun, recovery first replaces pending state with the previous application's matching signed filesystem asset, then rolls the application back. The previous application gets one recorded restore attempt.
 7. A failed restore stops at `UPDATE ERROR`. A successful restore clears pending state and reboots.
@@ -71,11 +71,13 @@ The single LittleFS partition has no independent rollback slot. Do not weaken si
 
 `include/ota_rollback.h` overrides Arduino's weak `verifyRollbackLater()` so `ESP_OTA_IMG_PENDING_VERIFY` images are not auto-marked valid during `initArduino()`.
 
-`setup()` calls `hdsOtaRollbackBegin()` after reset-reason capture. Without pending filesystem work it calls `hdsOtaRollbackMarkValid()` after setup validation. With pending work, validity is deferred until target recovery succeeds and pending state is cleared.
+`setup()` calls `hdsOtaRollbackBegin()` after reset-reason capture. Without pending filesystem work it calls `hdsOtaRollbackMarkValid()` after setup validation. With pending work, validity is deferred until target recovery succeeds; recovery metadata is cleared only after application validity marking succeeds.
 
 ## Reboot Routing
 
-ElegantOTA auto-reboot stays disabled with `ElegantOTA.setAutoReboot(false)`. Successful ElegantOTA and pull OTA paths call `remoteQueueResetAt()` so the main loop owns the reset and normal teardown instead of a task or callback calling `ESP.restart()` directly.
+ElegantOTA auto-reboot stays disabled with `ElegantOTA.setAutoReboot(false)`. Successful ElegantOTA and pull OTA paths call `remoteQueueOtaResetAt()` so their reset remains distinguishable from ordinary remote resets during an active update. Other scheduled main-loop resets use `remoteQueueResetAt()`; neither path should call `ESP.restart()` directly.
+
+ElegantOTA start and main-loop remote action dispatch share `otaDispatchMutex`. Hold it across the complete extracted action batch so `onOTAStart()` cannot publish active OTA until in-flight hardware work finishes. If OTA starts first, restore extracted actions without overwriting newer pending members of the display, low-power, soft-sleep, or timer replacement groups.
 
 The rollback path withdraws WiFi and mDNS with `stopWifi()` before `esp_ota_mark_app_invalid_rollback_and_reboot()`. Do not bypass this routing: a direct reboot can leave the service advertised until resolver caches expire.
 

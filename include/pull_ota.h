@@ -1288,7 +1288,7 @@ bool pullOtaInstall(
   }
   pullOtaDraw("Firmware done", "Restarting", "Web UI next");
   delay(1500);
-  remoteQueueResetAt(millis());
+  remoteQueueOtaResetAt(millis());
   return true;
 }
 
@@ -1346,8 +1346,8 @@ bool pullOtaResumePendingLittleFs() {
   uint8_t maxAttempts = pending.restore ? 1 : 2;
   uint8_t attempts = pending.restore ? 0 : pending.targetAttempts;
   bool filesystemWriteStarted = pending.filesystemDirty;
-  bool updated = false;
-  while (attempts < maxAttempts) {
+  bool updated = pullOtaVerifyPendingLittleFs(pending);
+  while (!updated && attempts < maxAttempts) {
     attempts++;
     bool attemptRecorded = pending.restore
         ? !pending.restoreAttempted && pullOtaBeginRollbackLittleFsAttempt()
@@ -1372,14 +1372,14 @@ bool pullOtaResumePendingLittleFs() {
     }
     return false;
   }
+  hdsOtaRollbackMarkValid();
   if (!pullOtaClearPendingLittleFs()) {
     pullOtaFail("FS state failed");
     pullOtaRecoveryError();
   }
-  hdsOtaRollbackMarkValid();
   pullOtaDraw("Update done", "Restarting");
   delay(1500);
-  remoteQueueResetAt(millis());
+  remoteQueueOtaResetAt(millis());
   return true;
 }
 

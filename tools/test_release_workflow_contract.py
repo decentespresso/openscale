@@ -106,6 +106,16 @@ def main():
     )
     if result.returncode != 0 or '-DHDS_FIRMWARE_VERSION="9.8.7"' not in result.stdout:
         raise AssertionError("build metadata did not emit the firmware version macro")
+    environment["HDS_FIRMWARE_VERSION"] = "9.8.7-custom"
+    result = subprocess.run(
+        [sys.executable, str(BUILD_METADATA)],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or '-DHDS_FIRMWARE_VERSION="9.8.7-custom"' not in result.stdout:
+        raise AssertionError("build metadata did not accept the custom firmware suffix")
     environment["HDS_FIRMWARE_VERSION"] = "v9.8.7"
     result = subprocess.run(
         [sys.executable, str(BUILD_METADATA)],
@@ -166,19 +176,14 @@ def main():
         assert_not_contains(workflow, "pip install --upgrade platformio")
     assert_contains(ota, '- "platformio.ini"')
     assert_contains(ota, '- "requirements-platformio.txt"')
-    for command in (
-        "- run: python -m pip install --requirement requirements-platformio.txt",
-        "- run: pio run -e esp32s3\n",
-        "- run: pio run -e esp32s3 -t buildfs",
-        "- run: pio pkg list -e esp32s3",
-    ):
-        assert_contains(ota, command)
+    assert_not_contains(ota, "pio run -e")
+    assert_not_contains(ota, "python -m pip install --requirement requirements-platformio.txt")
     snapshotArtifact = nightly.split("name: HDS-snapshot-", 1)[1].split("- name: Save dependency inventory", 1)[0]
     for filename in ("firmware.bin", "bootloader.bin", "partitions.bin", "littlefs.bin"):
         assert_contains(snapshotArtifact, filename)
     assert_not_contains(snapshotArtifact, "dependencies.txt")
     assert_contains(nightly, "name: HDS-dependencies-")
-    assert_contains(nightly, ".pio.nosync/build/${{ matrix.board }}/dependencies.txt")
+    assert_contains(nightly, ".pio.nosync/build/esp32s3/dependencies.txt")
     requirements = PLATFORMIO_REQUIREMENTS.read_text(encoding="utf-8").splitlines()
     if requirements != ["platformio==6.1.19"]:
         raise AssertionError("PlatformIO Core must be pinned exactly")

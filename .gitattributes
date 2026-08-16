@@ -4,3 +4,4 @@
 # Binary files — never apply line-ending conversion.
 *.png binary
 *.step binary
+plugins/*/patches/*.patch -whitespace

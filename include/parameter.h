@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <math.h>
+#include <mutex>
 #include "calibration_validation.h"
 #if HDS_ENABLE_ENERGY_MENU
 #include "energy_policy.h"
@@ -76,6 +77,7 @@ inline void invalidateEnergyOledFrame() {}
 volatile bool b_ble_enabled = false;
 volatile uint16_t bleFff4SubscriptionHandle = 0xFFFF;
 volatile uint16_t bleStatusResponsesPending = 0;
+volatile uint16_t bleVoltageResponsesPending = 0;
 volatile unsigned long bleStatusRequestAt = 0;
 volatile bool bleNotifyFailureLogged = false;
 volatile uint32_t bleFff4ConnectionGeneration = 0;
@@ -127,10 +129,13 @@ const uint32_t WSP_SET_SAMPLES = 1u << 10;
 const uint32_t WSP_WIFI_UPDATE = 1u << 11;
 const uint32_t WSP_RESET       = 1u << 12;
 const uint32_t WSP_BLE_GYRO    = 1u << 13;
+const uint32_t WSP_OTA_RESET   = 1u << 14;
 portMUX_TYPE wsPendingMux = portMUX_INITIALIZER_UNLOCKED;
 volatile uint32_t wsPendingMask = 0;
 volatile uint8_t pendingSamplesInUse = 0;
 volatile unsigned long pendingResetAt = 0;
+volatile unsigned long pendingOtaResetAt = 0;
+std::mutex otaDispatchMutex;
 
 const uint8_t OTA_DISPLAY_NONE = 0;
 const uint8_t OTA_DISPLAY_PROGRESS = 1;
@@ -144,6 +149,13 @@ inline void remoteQueueResetAt(unsigned long resetAt) {
   portENTER_CRITICAL(&wsPendingMux);
   pendingResetAt = resetAt;
   wsPendingMask |= WSP_RESET;
+  portEXIT_CRITICAL(&wsPendingMux);
+}
+
+inline void remoteQueueOtaResetAt(unsigned long resetAt) {
+  portENTER_CRITICAL(&wsPendingMux);
+  pendingOtaResetAt = resetAt;
+  wsPendingMask |= WSP_OTA_RESET;
   portEXIT_CRITICAL(&wsPendingMux);
 }
 
@@ -175,7 +187,6 @@ bool b_debug = false;
 
 unsigned long t_batteryIcon = 0;
 bool b_showBatteryIcon = true;
-// volatile: now also written from the AsyncTCP task (WS soft-sleep command).
 volatile bool b_softSleep = false;
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 bool b_gyroEnabled = true;
@@ -197,7 +208,6 @@ bool b_grinderMenuDirectEntry = false;
 float INPUTCOFFEEPOUROVER = 20.0;
 float INPUTCOFFEEESPRESSO = 20.0;
 float f_batteryCalibrationFactor = 0.66;
-String str_welcome = "welcome";
 float f_calibration_value = CALIBRATION_VALUE_DEFAULT;   //称重单元校准值
 bool b_calibrationInvalid = false;
 char c_calibrationStatus[32] = "ok";
@@ -443,7 +453,25 @@ bool b_extraction = false;  //萃取模式标识
 int b_mode = 0;             //0 = pourover; 1 = espresso;
 
 bool b_menu = false;
+volatile bool b_menuRestartRequired = false;
 unsigned long t_menuExitTime = 0;
+
+inline void markMenuRestartRequired() {
+  portENTER_CRITICAL(&wsPendingMux);
+  b_menuRestartRequired = true;
+  portEXIT_CRITICAL(&wsPendingMux);
+}
+
+inline void leaveMenu() {
+  b_menu = false;
+  portENTER_CRITICAL(&wsPendingMux);
+  const bool restartRequired = b_menuRestartRequired;
+  b_menuRestartRequired = false;
+  portEXIT_CRITICAL(&wsPendingMux);
+  if (restartRequired) {
+    remoteQueueResetAt(millis());
+  }
+}
 // Timestamp recording when the menu exit process started
 // Used to implement a protection period preventing unintended operations
 

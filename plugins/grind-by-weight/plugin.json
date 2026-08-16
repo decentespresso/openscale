@@ -1,0 +1,23 @@
+{
+  "schema": 2,
+  "id": "grind-by-weight",
+  "name": "Grind by weight",
+  "description": "Stop a supported grinder automatically at the target dose.",
+  "tooltip": "Enables the built-in grind-by-weight integration. Its recommended setup also selects Wifi Pull OTA and the default web apps.",
+  "version": "1.0.0",
+  "firmware_refs": ["main"],
+  "requires": ["grinder"],
+  "depends_on": [],
+  "conflicts": [],
+  "recommends": {
+    "features": ["pull-ota"],
+    "plugins": ["default-web-apps"]
+  },
+  "patches": {},
+  "assets": [],
+  "budget": {
+    "firmware_flash_bytes": 65536,
+    "static_ram_bytes": 4096,
+    "littlefs_bytes": 0
+  }
+}

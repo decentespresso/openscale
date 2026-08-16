@@ -81,6 +81,41 @@ def testTemporaryPluginValidation():
                 writeConfig(root, [], [], "v9.0.0")
             ))
 
+            writePlugin(root, pluginManifest(pluginId="dependency"))
+            writePlugin(root, pluginManifest(depends_on=["dependency"]))
+            resolved = customBuild.resolveConfiguration(writeConfig(root, [], ["code-plugin"]))
+            assert [plugin["id"] for plugin in resolved["plugins"]] == [
+                "dependency", "code-plugin",
+            ]
+            writePlugin(root, pluginManifest(pluginId="alpha"))
+            writePlugin(root, pluginManifest(pluginId="bravo", depends_on=["delta"]))
+            writePlugin(root, pluginManifest(pluginId="charlie", depends_on=["alpha"]))
+            writePlugin(root, pluginManifest(pluginId="delta"))
+            roots = customBuild.resolveConfiguration(
+                writeConfig(root, [], ["bravo", "charlie"])
+            )
+            closure = customBuild.resolveConfiguration(
+                writeConfig(root, [], ["alpha", "bravo", "charlie", "delta"])
+            )
+            assert [plugin["id"] for plugin in roots["plugins"]] == [
+                "alpha", "delta", "bravo", "charlie",
+            ]
+            assert [plugin["id"] for plugin in roots["plugins"]] == [
+                plugin["id"] for plugin in closure["plugins"]
+            ]
+            writePlugin(root, pluginManifest(depends_on=["dependency"]))
+            writePlugin(root, pluginManifest(pluginId="dependency", depends_on=["code-plugin"]))
+            assertRejected(customBuild.loadPluginCatalog)
+            writePlugin(root, pluginManifest(pluginId="dependency"))
+            writePlugin(root, pluginManifest(recommends={
+                "features": [], "plugins": ["missing-plugin"],
+            }))
+            assertRejected(customBuild.loadPluginCatalog)
+            writePlugin(root, pluginManifest(
+                firmware_refs=["v3.1.13"], depends_on=["dependency"],
+            ))
+            assertRejected(customBuild.loadPluginCatalog)
+
             writePlugin(root, pluginManifest(patches={"main": "../escape.patch"}))
             assertRejected(lambda: customBuild.loadPlugin("code-plugin", "main"))
 
@@ -139,24 +174,55 @@ def main():
         "--service-catalog-output docs/custom-build/service-catalog.json"
     )
     assert serviceCatalog == customBuild.buildServiceCatalog()
+    assert {
+        feature["id"] for feature in generatedCatalog["features"] if feature.get("default")
+    } == set(customBuild.FEATURES) - customBuild.HIDDEN_FEATURES
+    assert [
+        plugin["id"] for plugin in generatedCatalog["plugins"] if plugin.get("default")
+    ] == ["default-web-apps"]
     pageRoot = customBuild.ROOT / "docs" / "custom-build"
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
-    assert 'src="app.js?v=3"' in indexPage
-    assert 'href="styles.css?v=3"' in indexPage
+    assert 'src="app.js?v=7"' in indexPage
+    assert 'href="styles.css?v=6"' in indexPage
     assert 'id="request-build"' in indexPage
     assert "catalog-data" not in indexPage
     assert 'fetch("catalog.json"' in appScript
     assert "openscale-custom-builds.odevstudio.workers.dev" in appScript
+    assert "catalog.features.filter(item => !item.hidden)" in appScript
+    assert "Usually ready in about 5 minutes" in appScript
+    assert "error.status === 429" in appScript
+    assert "weekly build limit" in appScript.lower()
+    assert "daily build limit" not in appScript.lower()
+    assert "state.requested = new Set(plugin.recommends.features)" in appScript
+    assert '`${ref.replace(/^v/, "")} (stable)`' in appScript
+    grinderFeature = next(feature for feature in generatedCatalog["features"] if feature["id"] == "grinder")
+    grindByWeight = next(plugin for plugin in generatedCatalog["plugins"] if plugin["id"] == "grind-by-weight")
+    assert grinderFeature["name"] == "Grind by weight core"
+    assert grinderFeature["hidden"] is True
+    assert grindByWeight["name"] == "Grind by weight"
+    assert grindByWeight["requires"] == ["grinder"]
+    assert grindByWeight["recommends"] == {
+        "features": ["pull-ota"],
+        "plugins": ["default-web-apps"],
+    }
+    assert customBuild.customFirmwareVersion("v3.1.14", "") == "3.1.14-custom"
+    assert customBuild.customFirmwareVersion(
+        "main", '#define HDS_FIRMWARE_VERSION "3.1.13-dev"'
+    ) == "3.1.13-dev-custom"
     with tempfile.TemporaryDirectory() as temporaryDirectory:
         configuration = customBuild.resolveConfiguration(
-            writeConfig(Path(temporaryDirectory), ["pull-ota"], ["hello-web"])
+            writeConfig(Path(temporaryDirectory), ["pull-ota"], ["default-web-apps"])
         )
         assert set(customBuild.FEATURES) >= {"wifi", "webserver", "littlefs", "pull-ota"}
-        hello = next(plugin for plugin in configuration["plugins"] if plugin["id"] == "hello-web")
-        assert set(hello["requires"]) == {"wifi", "webserver", "littlefs"}
-        assert hello["patches"] == {}
-        assert {"wifi", "webserver", "littlefs", "pull-ota"}.issubset(configuration["features"])
+        webApps = next(
+            plugin for plugin in configuration["plugins"] if plugin["id"] == "default-web-apps"
+        )
+        assert set(webApps["requires"]) == {"littlefs", "websocket"}
+        assert webApps["patches"] == {}
+        assert {"wifi", "webserver", "websocket", "littlefs", "pull-ota"}.issubset(
+            configuration["features"]
+        )
         assert all(source.is_file() for source, _ in configuration["assets"])
         assert all(not target.is_absolute() and ".." not in target.parts for _, target in configuration["assets"])
     with tempfile.TemporaryDirectory() as temporaryDirectory:
@@ -173,8 +239,10 @@ def main():
         assert "littlefs" not in pullOnly["features"]
         assert "webserver" not in pullOnly["features"]
         assertRejected(lambda: customBuild.resolveConfiguration(writeConfig(root, [], ["../bad"])))
-        resolved = customBuild.resolveConfiguration(writeConfig(root, [], ["hello-web"]))
-        assert "littlefs" in resolved["features"]
+        resolved = customBuild.resolveConfiguration(writeConfig(root, [], ["default-web-apps"]))
+        assert {"littlefs", "wifi", "webserver", "websocket"}.issubset(resolved["features"])
+        grindByWeight = customBuild.resolveConfiguration(writeConfig(root, [], ["grind-by-weight"]))
+        assert {"grinder", "wifi", "mdns"}.issubset(grindByWeight["features"])
     testTemporaryPluginValidation()
     print("plugin catalog tests passed")
 
