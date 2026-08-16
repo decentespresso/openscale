@@ -2,6 +2,7 @@
 #define PARAMETER_H
 //declaration
 #include <Arduino.h>
+#include <atomic>
 #include <Preferences.h>
 #include <math.h>
 #include <mutex>
@@ -100,6 +101,11 @@ const unsigned long WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS = WEBSOCKET_2HZ_NOTIFY_
 volatile unsigned long weightWebsocketNotifyInterval = WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS;
 volatile bool b_websocketEventsEnabled = false;
 volatile bool b_websocketLowPowerEnabled = false;
+std::atomic<uint8_t> g_websocketClientCount{0};
+
+inline bool websocketHasClients() {
+  return g_websocketClientCount.load(std::memory_order_relaxed) > 0;
+}
 
 // Snapshot of the stopWatch state, refreshed once per main-loop iteration. The
 // WS status frame is built on the AsyncTCP task (response to {"command":"status"}

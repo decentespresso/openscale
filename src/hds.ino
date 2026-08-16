@@ -41,12 +41,15 @@ void applyEnergyAccRailState();
 #include "ble.h"
 #include "usbcomm.h"
 #include "finger_detection.h"
+#include "timing.h"
 
 #if HDS_ENABLE_GRINDER
 #ifndef GRINDER_MENU_CHORD_HOLD_MS
 #define GRINDER_MENU_CHORD_HOLD_MS 500
 #endif
 #endif
+
+constexpr unsigned long BUTTON_POLL_INTERVAL_MS = 2;
 
 bool anyScaleButtonPressed() {
   return digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW;
@@ -373,6 +376,7 @@ bool handleGrinderMenuChord() {
     return true;
   }
   b_menu = true;
+  invalidateMenuFrame();
   b_grinderMenuDirectEntry = true;
   b_buttonChordSuppressUntilRelease = true;
   currentMenu = grinderMenu;
@@ -405,14 +409,14 @@ void button_init() {
 void _wifi_init(void *args) {
   b_wifiEnabled = true;
   setupWifi();
+#if HDS_FEATURE_WEBSOCKET
+  setupWebsocketEvents();
+#endif
 #if HDS_FEATURE_WEBSERVER
   startWebServer();
 #endif
 #if HDS_FEATURE_ELEGANT_OTA
   wifiOta();
-#endif
-#if HDS_FEATURE_WEBSOCKET
-  setupWebsocketEvents();
 #endif
   vTaskDelete(NULL);
 }
@@ -789,6 +793,7 @@ void setup() {
 #endif
   if (digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW) {
     b_menu = true;
+    invalidateMenuFrame();
     b_buttonChordSuppressUntilRelease = true;
 #if HDS_ENABLE_GRINDER
     b_grinderMenuDirectEntry = false;
@@ -1759,7 +1764,7 @@ void loop() {
 #endif
   if (b_ota || bleHasLiveClient()
 #if HDS_FEATURE_WEBSOCKET
-      || (b_wifiEnabled && websocket.count() > 0)
+      || (b_wifiEnabled && websocketHasClients())
 #endif
 #if HDS_ENABLE_GRINDER
       || grinderRuntimeKeepsAwake()
@@ -1787,8 +1792,13 @@ void loop() {
       && !handleGrinderMenuChord()
 #endif
   ) {
-    buttonCircle.check();
-    buttonSquare.check();
+    static unsigned long lastButtonPoll = 0;
+    const unsigned long buttonNow = millis();
+    if (hdsIntervalElapsed(buttonNow, lastButtonPoll, BUTTON_POLL_INTERVAL_MS)) {
+      lastButtonPoll = buttonNow;
+      buttonCircle.check();
+      buttonSquare.check();
+    }
   }
 #ifdef BUZZER
   buzzer.check();
@@ -1888,9 +1898,6 @@ void loop() {
           wifiSupervise();
 #if !HDS_FEATURE_WEBSERVER
           wifiConfigServerPoll();
-#endif
-#if HDS_FEATURE_WEBSOCKET
-          websocket.cleanupClients(4);
 #endif
 #if HDS_FEATURE_ELEGANT_OTA
           ElegantOTA.loop();

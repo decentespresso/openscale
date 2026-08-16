@@ -140,6 +140,7 @@ inline void wsReplacePending(uint32_t setBits, uint32_t clearBits) {
 }
 
 void processWsPendingCmds() {
+  if (wsPendingMask == 0) return;
   portENTER_CRITICAL(&wsPendingMux);
   uint32_t mask = b_ota ? (wsPendingMask & WSP_OTA_RESET) : wsPendingMask;
   uint8_t samplesInUse = pendingSamplesInUse;
@@ -316,7 +317,7 @@ static inline bool wsClientHeapOk() {
 }
 
 void sendWebsocketButton(int buttonNumber, int buttonShortPress) {
-  if (!b_wifiEnabled || !b_websocketEventsEnabled || websocket.count() == 0) return;
+  if (!b_wifiEnabled || !b_websocketEventsEnabled || !websocketHasClients()) return;
   if (!wsBroadcastHeapOk()) return;
   websocket.printfAll("{\"type\":\"button\",\"button\":\"%s\",\"button_number\":%d,\"press\":\"%s\",\"press_code\":%d,\"ms\":%lu}",
                       websocketButtonName(buttonNumber),
@@ -327,7 +328,7 @@ void sendWebsocketButton(int buttonNumber, int buttonShortPress) {
 }
 
 void sendWebsocketPowerOff(int i_reason) {
-  if (!b_wifiEnabled || !b_websocketEventsEnabled || websocket.count() == 0) return;
+  if (!b_wifiEnabled || !b_websocketEventsEnabled || !websocketHasClients()) return;
   if (!wsBroadcastHeapOk()) return;
   websocket.printfAll("{\"type\":\"power\",\"event\":\"power_off\",\"reason\":\"%s\",\"reason_code\":%d,\"ms\":%lu}",
                       websocketPowerOffReason(i_reason),
@@ -393,7 +394,7 @@ void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
 }
 
 void sendWebsocketWeightAll(float grams, unsigned long ms) {
-  if (!b_wifiEnabled || websocket.count() == 0) return;
+  if (!b_wifiEnabled || !websocketHasClients()) return;
   if (!wsBroadcastHeapOk()) return;
   char message[96];
   int messageLength = snprintf(message, sizeof(message),
@@ -751,12 +752,18 @@ void setupWebsocketEvents() {
 #if HDS_ENABLE_ENERGY_MENU
       recordEnergyActivity();
 #endif
+      server->cleanupClients(4);
+      if (server->count() > 4) {
+        client->close();
+      }
+      g_websocketClientCount.store(server->count(), std::memory_order_relaxed);
       Serial.printf("Client %u connected\n", client->id());
       client->setCloseClientOnQueueFull(false);
       client->client()->setAckTimeout(30000);
     } else if (type == WS_EVT_DISCONNECT) {
       Serial.printf("Client %u disconnected\n", client->id());
-      if (server->count() == 0) {
+      g_websocketClientCount.store(server->count(), std::memory_order_relaxed);
+      if (!websocketHasClients()) {
         weightWebsocketNotifyInterval = WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS;
         b_websocketEventsEnabled = false;
       }

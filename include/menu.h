@@ -3,6 +3,7 @@
 
 #include "esp32-hal.h"
 #include "parameter.h"
+#include "timing.h"
 #if HDS_FEATURE_WIFI
 #include "mdns_name.h"
 #include "wifi_setup.h"
@@ -22,6 +23,27 @@ String actionMessage = "Default";
 String actionMessage2 = "Default";
 unsigned long t_actionMessage = 0;
 int t_actionMessageDelay = 1000;
+constexpr unsigned long MENU_SAFETY_REFRESH_INTERVAL_MS = 100;
+bool menuFrameDirty = true;
+bool menuFrameShowsActionMessage = false;
+unsigned long lastMenuFrameRender = 0;
+
+inline void invalidateMenuFrame() {
+  menuFrameDirty = true;
+}
+
+inline bool menuFrameNeedsRender(unsigned long now) {
+  const bool actionMessageVisible = now - t_actionMessage < t_actionMessageDelay;
+  return menuFrameDirty
+      || hdsIntervalElapsed(now, lastMenuFrameRender, MENU_SAFETY_REFRESH_INTERVAL_MS)
+      || (menuFrameShowsActionMessage && !actionMessageVisible);
+}
+
+inline void menuActionMessageChanged() {
+  t_actionMessage = millis();
+  invalidateMenuFrame();
+}
+
 template<typename T> int getMenuSize(T &menu) {
   return sizeof(menu) / sizeof(menu[0]);
 }
@@ -251,6 +273,7 @@ int currentPage = 0;
 int totalPages = currentMenuSize / linesPerPage + 1;
 
 void exitMenu() {
+  invalidateMenuFrame();
   u8g2.setFont(FONT_M);
   invalidateEnergyOledFrame();
   u8g2.firstPage();
@@ -282,7 +305,7 @@ void buzzerOn() {
     buzzer.beep(1, BUZZER_DURATION);
   }
   actionMessage = "Buzzer on";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutInt(KEY_BEEP, b_beep);
   Serial.println("Buzzer On stored in NVS.");
@@ -291,7 +314,7 @@ void buzzerOn() {
 void buzzerOff() {
   b_beep = false;
   actionMessage = "Buzzer off";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutInt(KEY_BEEP, b_beep);
   Serial.println("Buzzer off stored in NVS.");
@@ -310,7 +333,7 @@ void toggleWifiOn() {
 #endif
   actionMessage = "WiFi Enabled";
   actionMessage2 = "Restart on exit";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_WIFI_BOOT, true);
   markMenuRestartRequired();
@@ -325,7 +348,7 @@ void toggleWifiOff() {
     grinderSaveSettings();
     actionMessage = "Grind by weight";
     actionMessage2 = "Needs WiFi";
-    t_actionMessage = millis();
+    menuActionMessageChanged();
     t_actionMessageDelay = 1500;
     Serial.println("WiFi Off deferred until Grind by weight is disabled.");
     return;
@@ -334,7 +357,7 @@ void toggleWifiOff() {
   b_wifiOnBoot = false;
   actionMessage = "WiFi Disabled";
   actionMessage2 = "Restart on exit";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_WIFI_BOOT, false);
   markMenuRestartRequired();
@@ -457,7 +480,7 @@ void resetWifi() {
   saveCredentials("", "");
   actionMessage = "WiFi Reset";
   actionMessage2 = "Restart on exit";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   markMenuRestartRequired();
 }
@@ -466,7 +489,7 @@ void resetWifi() {
 void heartbeatOn() {
   b_requireHeartBeat = true;
   actionMessage = "Heartbeat On";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_HEARTBEAT, b_requireHeartBeat);
   Serial.println("Heartbeat detection...On");
@@ -475,7 +498,7 @@ void heartbeatOn() {
 void heartbeatOff() {
   b_requireHeartBeat = false;
   actionMessage = "Heartbeat Off";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_HEARTBEAT, b_requireHeartBeat);
   Serial.println("Heartbeat detection...Off");
@@ -484,7 +507,7 @@ void heartbeatOff() {
 void flipScreenOn() {
   b_screenFlipped = true;
   actionMessage = "Flip On";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_SCREEN_FLIP, b_screenFlipped);
   u8g2.setDisplayRotation(U8G2_R0);
@@ -494,7 +517,7 @@ void flipScreenOn() {
 void flipScreenOff() {
   b_screenFlipped = false;
   actionMessage = "Flip Off";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_SCREEN_FLIP, b_screenFlipped);
   u8g2.setDisplayRotation(U8G2_R2);
@@ -504,7 +527,7 @@ void flipScreenOff() {
 void timeOnTopOn() {
   b_timeOnTop = true;
   actionMessage = "Time On Top";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_TIME_ON_TOP, b_timeOnTop);
   Serial.println("Time On Top");
@@ -513,7 +536,7 @@ void timeOnTopOn() {
 void timeOnTopOff() {
   b_timeOnTop = false;
   actionMessage = "Weight On Top";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_TIME_ON_TOP, b_timeOnTop);
   Serial.println("Weight On Top");
@@ -522,7 +545,7 @@ void timeOnTopOff() {
 void btnFuncWhileConnectedOn() {
   b_btnFuncWhileConnected = true;
   actionMessage = "BLE Btns On";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_BTN_CONN, b_btnFuncWhileConnected);
   Serial.println("BLE Btns On");
@@ -531,7 +554,7 @@ void btnFuncWhileConnectedOn() {
 void btnFuncWhileConnectedOff() {
   b_btnFuncWhileConnected = false;
   actionMessage = "BLE Btns Off";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_BTN_CONN, b_btnFuncWhileConnected);
   Serial.println("BLE Btns Off");
@@ -540,7 +563,7 @@ void btnFuncWhileConnectedOff() {
 void autoSleepOn() {
   b_autoSleep = true;
   actionMessage = "Autosleep On";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_AUTO_SLEEP, b_autoSleep);
   Serial.println("Autosleep on stored in NVS.");
@@ -549,7 +572,7 @@ void autoSleepOn() {
 void autoSleepOff() {
   b_autoSleep = false;
   actionMessage = "Autosleep Off";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_AUTO_SLEEP, b_autoSleep);
   Serial.println("Autosleep off stored in NVS.");
@@ -558,7 +581,7 @@ void autoSleepOff() {
 void quickBootOn() {
   b_quickBoot = true;
   actionMessage = "Quick Boot On";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_QUICK_BOOT, b_quickBoot);
   Serial.println("Quick boot on stored in NVS.");
@@ -567,7 +590,7 @@ void quickBootOn() {
 void quickBootOff() {
   b_quickBoot = false;
   actionMessage = "Quick Boot Off";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_QUICK_BOOT, b_quickBoot);
   Serial.println("Quick boot off stored in NVS.");
@@ -576,7 +599,7 @@ void quickBootOff() {
 void driftCompOff() {
   f_maxDriftCompensation = 0.0;
   actionMessage = "Drift Comp Off";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
   Serial.println("Drift Comp Off stored in NVS.");
@@ -585,7 +608,7 @@ void driftCompOff() {
 void driftComp0050() {
   f_maxDriftCompensation = 0.05;
   actionMessage = "Drift Comp 0.05g";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
   Serial.println("Drift Comp 0.05g stored in NVS.");
@@ -594,7 +617,7 @@ void driftComp0050() {
 void driftComp0075() {
   f_maxDriftCompensation = 0.075;
   actionMessage = "Drift Comp 0.075g";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
   Serial.println("Drift Comp 0.075g stored in NVS.");
@@ -603,7 +626,7 @@ void driftComp0075() {
 void driftComp0100() {
   f_maxDriftCompensation = 0.1;
   actionMessage = "Drift Comp 0.1g";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
   Serial.println("Drift Comp 0.1g stored in NVS.");
@@ -612,7 +635,7 @@ void driftComp0100() {
 void driftComp0200() {
   f_maxDriftCompensation = 0.2;
   actionMessage = "Drift Comp 0.2g";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
   Serial.println("Drift Comp 0.2g stored in NVS.");
@@ -622,7 +645,7 @@ void driftComp0200() {
 void grinderSetActionMessage(const char *line1, const char *line2 = nullptr) {
   actionMessage = line1;
   actionMessage2 = line2 == nullptr ? "Default" : line2;
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1500;
 }
 
@@ -941,6 +964,7 @@ void calibrationFinish(bool returnToMenu) {
   calibrationRestoreSampleWindow();
   if (returnToMenu) {
     b_menu = true;
+    invalidateMenuFrame();
   }
 }
 
@@ -1621,7 +1645,7 @@ void enableDebug() {
 
 void calibrateVoltage() {
   actionMessage = "Calibrate 4.2v";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   const int numReadings = 50;
   long adcSum = 0;
@@ -1648,6 +1672,7 @@ void navigateMenu(int direction) {
   recordEnergyActivity();
   currentIndex = (currentIndex + direction + currentMenuSize) % currentMenuSize;
   currentSelection = currentMenu[currentIndex];
+  invalidateMenuFrame();
   Serial.print("currentIndex ");
   Serial.println(currentIndex);
 }
@@ -1656,6 +1681,7 @@ void selectMenu() {
 #if HDS_ENABLE_ENERGY_MENU
   recordEnergyActivity();
 #endif
+  invalidateMenuFrame();
   if (currentSelection->subMenu) {
 #ifdef BUZZER
     if (currentSelection == &menuBuzzer) {
@@ -1723,6 +1749,9 @@ void selectMenu() {
 }
 
 void showMenu() {
+  const unsigned long now = millis();
+  if (!menuFrameNeedsRender(now)) return;
+  const bool actionMessageVisible = now - t_actionMessage < t_actionMessageDelay;
   if (b_screenFlipped)
     u8g2.setDisplayRotation(U8G2_R0);
   else
@@ -1732,7 +1761,7 @@ void showMenu() {
   invalidateEnergyOledFrame();
   u8g2.firstPage();
   do {
-    if (millis() - t_actionMessage < t_actionMessageDelay) {
+    if (actionMessageVisible) {
       u8g2.setFont(FONT_M);
       if (AC(actionMessage.c_str()) < 0)
         u8g2.setFont(FONT_S);
@@ -1764,6 +1793,9 @@ void showMenu() {
       }
     }
   } while (u8g2.nextPage());
+  lastMenuFrameRender = now;
+  menuFrameShowsActionMessage = actionMessageVisible;
+  menuFrameDirty = false;
 }
 
 #endif
