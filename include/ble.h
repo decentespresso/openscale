@@ -414,6 +414,7 @@ void queueBleStatusResponse() {
 }
 
 void processBleStatusResponse() {
+  if (bleStatusResponsesPending == 0) return;
   const unsigned long now = millis();
   bool sendStatus = false;
   bool disconnectCurrent = false;
