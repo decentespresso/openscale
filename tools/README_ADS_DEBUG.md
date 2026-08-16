@@ -161,7 +161,6 @@ Flags:
 ### SPS (Samples Per Second)
 Should be around:
 - **10 SPS** - Normal mode (default)
-- **80 SPS** - Fast mode (if configured)
 
 If SPS is unstable or incorrect, check SCK timing and communication.
 

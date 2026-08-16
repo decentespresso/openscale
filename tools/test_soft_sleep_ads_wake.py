@@ -54,9 +54,6 @@ def main():
         helper,
         [
             "digitalWrite(PWR_CTRL, HIGH);",
-            "#if HDS_ENABLE_ENERGY_MENU",
-            "applyEnergyAccRailState();",
-            "#else",
             "digitalWrite(ACC_PWR_CTRL, HIGH);",
             "scale.powerUp();",
             "b_softSleep = false;",

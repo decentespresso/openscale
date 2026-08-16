@@ -9,19 +9,19 @@
 #include "calibration_validation.h"
 #if HDS_ENABLE_ENERGY_MENU
 #include "energy_policy.h"
+#include "energy_power_management.h"
 #include "energy_runtime_policy.h"
 #endif
 
 Preferences settingsPreferences;
 #if HDS_ENABLE_ENERGY_MENU
 EnergyPolicy energyPolicy;
+EnergyPowerManagement energyPowerManagement;
 struct EnergyRuntimeState {
   OledFrameGate oledFrames;
-  MotionSampleGate motionSamples;
   BatterySampleGate batterySamples;
   EnergyRuntimeSchedule schedule;
   DisplayIdleMode displayMode = DisplayIdleMode::Active;
-  double cachedMotionZ = 0.0;
   volatile bool explicitDisplayOff = false;
   volatile uint8_t requestedDisplayContrast = 255;
   uint32_t batterySampleSequence = 0;

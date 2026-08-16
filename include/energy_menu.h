@@ -6,10 +6,7 @@ void toggleEnergyPowerCadence();
 void toggleEnergyOledRedraw();
 void toggleEnergyOledIdle();
 void toggleEnergyOledStatic();
-void toggleEnergyMotionPoll();
-#if defined(ACC_PWR_CTRL) && defined(V8_1) && !defined(ACC_MPU6050) && !defined(ACC_BMA400)
-void toggleEnergyAccRailOff();
-#endif
+void toggleEnergyLightSleep();
 
 extern Menu menuEnergy;
 Menu menuEnergyBack = { "Back", NULL, NULL, &menuEnergy };
@@ -19,32 +16,23 @@ char menuEnergyPowerCadenceLabel[] = "Power Cadence o";
 char menuEnergyOledRedrawLabel[] = "OLED Redraw o";
 char menuEnergyOledIdleLabel[] = "OLED Idle o";
 char menuEnergyOledStaticLabel[] = "OLED Static o";
-char menuEnergyMotionPollLabel[] = "Motion Poll o";
-#if defined(ACC_PWR_CTRL) && defined(V8_1) && !defined(ACC_MPU6050) && !defined(ACC_BMA400)
-char menuEnergyAccRailOffLabel[] = "ACC Rail Off o";
-#endif
+char menuEnergyLightSleepLabel[] = "Light Sleep o";
 
-Menu menuEnergySerialQuiet = { menuEnergySerialQuietLabel, toggleEnergySerialQuiet, NULL, &menuEnergy };
-Menu menuEnergyPowerCadence = { menuEnergyPowerCadenceLabel, toggleEnergyPowerCadence, NULL, &menuEnergy };
-Menu menuEnergyOledRedraw = { menuEnergyOledRedrawLabel, toggleEnergyOledRedraw, NULL, &menuEnergy };
-Menu menuEnergyOledIdle = { menuEnergyOledIdleLabel, toggleEnergyOledIdle, NULL, &menuEnergy };
-Menu menuEnergyOledStatic = { menuEnergyOledStaticLabel, toggleEnergyOledStatic, NULL, &menuEnergy };
-Menu menuEnergyMotionPoll = { menuEnergyMotionPollLabel, toggleEnergyMotionPoll, NULL, &menuEnergy };
-#if defined(ACC_PWR_CTRL) && defined(V8_1) && !defined(ACC_MPU6050) && !defined(ACC_BMA400)
-Menu menuEnergyAccRailOff = { menuEnergyAccRailOffLabel, toggleEnergyAccRailOff, NULL, &menuEnergy };
-#endif
+const Menu menuEnergySerialQuiet = { menuEnergySerialQuietLabel, toggleEnergySerialQuiet, NULL, &menuEnergy };
+const Menu menuEnergyPowerCadence = { menuEnergyPowerCadenceLabel, toggleEnergyPowerCadence, NULL, &menuEnergy };
+const Menu menuEnergyOledRedraw = { menuEnergyOledRedrawLabel, toggleEnergyOledRedraw, NULL, &menuEnergy };
+const Menu menuEnergyOledIdle = { menuEnergyOledIdleLabel, toggleEnergyOledIdle, NULL, &menuEnergy };
+const Menu menuEnergyOledStatic = { menuEnergyOledStaticLabel, toggleEnergyOledStatic, NULL, &menuEnergy };
+const Menu menuEnergyLightSleep = { menuEnergyLightSleepLabel, toggleEnergyLightSleep, NULL, &menuEnergy };
 
-Menu *energyMenu[] = {
+const Menu *const energyMenu[] = {
   &menuEnergyBack,
   &menuEnergySerialQuiet,
   &menuEnergyPowerCadence,
   &menuEnergyOledRedraw,
   &menuEnergyOledIdle,
   &menuEnergyOledStatic,
-  &menuEnergyMotionPoll,
-#if defined(ACC_PWR_CTRL) && defined(V8_1) && !defined(ACC_MPU6050) && !defined(ACC_BMA400)
-  &menuEnergyAccRailOff,
-#endif
+  &menuEnergyLightSleep,
 };
 
 char *energyFeatureRows[] = {
@@ -53,10 +41,7 @@ char *energyFeatureRows[] = {
   menuEnergyOledRedrawLabel,
   menuEnergyOledIdleLabel,
   menuEnergyOledStaticLabel,
-  menuEnergyMotionPollLabel,
-#if defined(ACC_PWR_CTRL) && defined(V8_1) && !defined(ACC_MPU6050) && !defined(ACC_BMA400)
-  menuEnergyAccRailOffLabel,
-#endif
+  menuEnergyLightSleepLabel,
 };
 static_assert(sizeof(energyFeatureRows) / sizeof(energyFeatureRows[0]) ==
               static_cast<size_t>(EnergyFeature::Count));
@@ -79,6 +64,7 @@ inline void showEnergyAction(const char *label, bool enabled, bool stored) {
   actionMessage2 = stored ? (enabled ? "ON" : "OFF") : String(label);
   t_actionMessage = millis();
   t_actionMessageDelay = 1000;
+  invalidateMenuFrame();
 }
 
 inline void toggleEnergyFeature(EnergyFeature feature, const char *label) {
@@ -98,9 +84,6 @@ void toggleEnergyPowerCadence() { toggleEnergyFeature(EnergyFeature::PowerCadenc
 void toggleEnergyOledRedraw() { toggleEnergyFeature(EnergyFeature::OledRedraw, "OLED Redraw"); }
 void toggleEnergyOledIdle() { toggleEnergyFeature(EnergyFeature::OledIdle, "OLED Idle"); }
 void toggleEnergyOledStatic() { toggleEnergyFeature(EnergyFeature::OledStatic, "OLED Static"); }
-void toggleEnergyMotionPoll() { toggleEnergyFeature(EnergyFeature::MotionPoll, "Motion Poll"); }
-#if defined(ACC_PWR_CTRL) && defined(V8_1) && !defined(ACC_MPU6050) && !defined(ACC_BMA400)
-void toggleEnergyAccRailOff() { toggleEnergyFeature(EnergyFeature::AccRailOff, "ACC Rail Off"); }
-#endif
+void toggleEnergyLightSleep() { toggleEnergyFeature(EnergyFeature::LightSleep, "Light Sleep"); }
 
 #endif

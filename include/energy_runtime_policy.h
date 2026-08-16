@@ -64,27 +64,6 @@ struct EnergyRuntimeSchedule {
   CadenceGate oledIdle;
 };
 
-class MotionSampleGate {
-public:
-  bool shouldRead(bool enabled, bool fresh, bool available, uint32_t now) {
-    if (!available) return false;
-    if (!enabled || fresh || !initialized || now - lastReadAt >= 100) {
-      initialized = true;
-      lastReadAt = now;
-      return true;
-    }
-    return false;
-  }
-
-  void reset() {
-    initialized = false;
-  }
-
-private:
-  bool initialized = false;
-  uint32_t lastReadAt = 0;
-};
-
 class BatterySampleGate {
 public:
   bool shouldEvaluate(uint32_t sequence) {

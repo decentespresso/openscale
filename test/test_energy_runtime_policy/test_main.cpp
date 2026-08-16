@@ -47,22 +47,6 @@ void testCadenceDisableRestoresBaselineOnce() {
   TEST_ASSERT_TRUE(gate.shouldRun(true, 14, 100));
 }
 
-void testMotionPollCachesForOneHundredMilliseconds() {
-  MotionSampleGate gate;
-  TEST_ASSERT_FALSE(gate.shouldRead(true, false, false, 0));
-  TEST_ASSERT_TRUE(gate.shouldRead(true, false, true, 0xfffffff0u));
-  TEST_ASSERT_FALSE(gate.shouldRead(true, false, true, 20));
-  TEST_ASSERT_TRUE(gate.shouldRead(true, false, true, 100));
-}
-
-void testExplicitFreshMotionReadBypassesCache() {
-  MotionSampleGate gate;
-  TEST_ASSERT_TRUE(gate.shouldRead(true, false, true, 100));
-  TEST_ASSERT_FALSE(gate.shouldRead(true, false, true, 101));
-  TEST_ASSERT_TRUE(gate.shouldRead(true, true, true, 101));
-  TEST_ASSERT_TRUE(gate.shouldRead(false, false, true, 102));
-}
-
 void testOledIdleTransitionsAndExplicitOffPrecedence() {
   TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(DisplayIdleMode::Active),
                           static_cast<uint8_t>(EnergyRuntimePolicy::displayMode(true, false, false, 29999)));
@@ -118,8 +102,6 @@ int main(int argc, char **argv) {
   RUN_TEST(testOledStaticImpliesGatingAndUsesThirtySeconds);
   RUN_TEST(testCadenceRunsExactlyAtDeadlineAndAcrossRollover);
   RUN_TEST(testCadenceDisableRestoresBaselineOnce);
-  RUN_TEST(testMotionPollCachesForOneHundredMilliseconds);
-  RUN_TEST(testExplicitFreshMotionReadBypassesCache);
   RUN_TEST(testOledIdleTransitionsAndExplicitOffPrecedence);
   RUN_TEST(testBatteryConfirmationUsesDistinctSamples);
   RUN_TEST(testDisabledPowerCadenceKeepsLegacyBatteryThreshold);

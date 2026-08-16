@@ -1,38 +1,15 @@
-# Energy Saving Framework
+# Energy Saving Runtime Policy
 
-The framework is compiled only when `HDS_ENABLE_ENERGY_MENU=1`. Standard firmware remains unchanged; the dedicated PlatformIO environment is `esp32s3-energy-menu`.
+The Energy Saving menu is compiled by `HDS_ENABLE_ENERGY_MENU=1`. The dedicated `esp32s3-energy-menu` environment and custom builds selecting `energy-menu` use the PM-capable environment. Stock `esp32s3` remains unchanged.
 
-## Features
+The menu contains `Back`, `Serial Quiet`, `Power Cadence`, `OLED Redraw`, `OLED Idle`, `OLED Static`, and `Light Sleep`. All settings are persistent, and `Light Sleep` defaults to off.
 
-The `Energy Saving` menu places `Back` first and exposes six independent features:
+Energy schema version 5 preserves the five existing settings, discards the old `Motion Poll` and `ACC Rail Off` values, and creates `Light Sleep` as off. Invalid or missing Boolean values use their safe defaults, and the migration writes its marker only after all writes and removals succeed.
 
-1. Serial Quiet
-2. Power Cadence
-3. OLED Redraw
-4. OLED Idle
-5. OLED Static
-6. Motion Poll
+With `Light Sleep` off, `ESP_PM_CPU_FREQ_MAX` and `ESP_PM_NO_LIGHT_SLEEP` are held. With it on, those global locks are released. ESP-IDF driver locks remain authoritative. OTA is the only current explicit performance-critical state; its CPU lock is managed from the main loop.
 
-On V8.1 builds with `ACC_PWR_CTRL` and no accelerometer, `ACC Rail Off` is available after the six features. There is no master switch or energy status page. All features default off after an energy schema migration.
+The runtime controller creates each PM lock once and updates lock ownership on menu transitions. It does not add a normal-loop delay. The main loop remains polling-based, including the 2 ms button cadence, and the ADS1232 path is unchanged.
 
-## Runtime Dispatch
+The controller keeps a 250 ms no-light-sleep grace period after observed serial activity. It does not enable UART wake because the current live loop does not block for automatic idle sleep; the event-driven ADC and button wake design is a follow-up.
 
-Each feature runs at its existing execution point:
-
-- Serial Quiet is checked only before recurring informational serial output.
-- Power Cadence is checked only by battery, charging, and auto-off scheduling.
-- OLED Redraw and OLED Static are checked only at normal OLED render opportunities.
-- OLED Idle uses 100 ms cadence housekeeping from the OLED path.
-- Motion Poll is checked only when motion data is requested.
-
-Shared OLED Idle housekeeping reads the in-memory feature mask and returns immediately when the mask is empty or OLED Idle is not enabled. No preferences are read from the main loop.
-
-Feature changes are applied immediately. Disabling a feature resets only its own cache or cadence state. Disabling OLED Idle restores Active display behavior unless a protocol command explicitly switched the display off.
-
-## Persistence
-
-The existing `hds` Preferences namespace stores one Boolean for each available feature. Energy schema version 4 initializes current features to off when the schema is old, missing, or unknown.
-
-## Baseline Behavior
-
-With all six features off, normal OLED rendering, motion reads, serial output, battery checks, auto-off behavior, and BLE, USB, and WebSocket transport cadences remain unchanged. Explicit soft-sleep and display protocol commands remain available independently of the energy feature framework.
+Explicit soft sleep and deep sleep retain their existing behavior. Soft sleep does not cause the PM performance lock to remain held.

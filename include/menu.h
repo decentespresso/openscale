@@ -295,6 +295,7 @@ void exitMenu() {
   currentMenuSize = getMenuSize(mainMenu);
   currentIndex = 0;
   currentSelection = currentMenu[currentIndex];
+  invalidateMenuFrame();
   t_menuExitTime = millis();
 }
 

@@ -7,7 +7,10 @@
 void applyEnergyDisplayCommand(bool enabled);
 void applyEnergyLowPowerCommand();
 void applyEnergyFeatureTransition(EnergyFeature feature, bool wasEnabled, bool isEnabled);
-void applyEnergyAccRailState();
+bool initEnergyPowerManagement();
+bool applyEnergyLightSleepSetting(bool enabled);
+bool setEnergyPerformanceCritical(bool required);
+void serviceEnergyPowerManagement();
 #endif
 
 #include "storage.h"
@@ -477,6 +480,13 @@ void setup() {
       delay(1000);
     }
   }
+  if (!initEnergyPowerManagement() ||
+      !applyEnergyLightSleepSetting(energyPolicy.featureEnabled(EnergyFeature::LightSleep))) {
+    Serial.println("Energy power management init failed!");
+    while (1) {
+      delay(1000);
+    }
+  }
   energyPolicy.begin(millis());
   refreshEnergyMenuRows();
 #endif
@@ -591,13 +601,7 @@ void setup() {
   gpio_hold_dis((gpio_num_t)ACC_PWR_CTRL);
 #endif
   gpio_deep_sleep_hold_dis();
-#if HDS_ENABLE_ENERGY_MENU
-  applyEnergyAccRailState();
-  Serial.println(digitalRead(ACC_PWR_CTRL) == LOW ? "ACC_PWR_CTRL = LOW"
-                                                 : "ACC_PWR_CTRL = HIGH");
-#else
   Serial.println("ACC_PWR_CTRL = HIGH");
-#endif
 #ifdef ESP32
   Wire.begin(I2C_SDA, I2C_SCL);
 #endif
@@ -1237,11 +1241,7 @@ void resetStableOutput() {
 
 bool wakeScaleFromSoftSleep(const char *context) {
   digitalWrite(PWR_CTRL, HIGH);
-#if HDS_ENABLE_ENERGY_MENU
-  applyEnergyAccRailState();
-#else
   digitalWrite(ACC_PWR_CTRL, HIGH);
-#endif
   delay(5);
   scale.powerUp();
 #if HDS_ENABLE_ENERGY_MENU
@@ -1667,13 +1667,24 @@ void applyEnergyLowPowerCommand() {
   energyRuntime.oledFrames.invalidate();
 }
 
-void applyEnergyAccRailState() {
-#if defined(ACC_PWR_CTRL) && defined(V8_1) && !defined(ACC_MPU6050) && !defined(ACC_BMA400)
-  digitalWrite(ACC_PWR_CTRL,
-               energyPolicy.featureEnabled(EnergyFeature::AccRailOff) ? LOW : HIGH);
-#else
-  digitalWrite(ACC_PWR_CTRL, HIGH);
-#endif
+bool initEnergyPowerManagement() {
+  return energyPowerManagement.begin();
+}
+
+bool applyEnergyLightSleepSetting(bool enabled) {
+  return energyPowerManagement.applyLightSleepSetting(enabled);
+}
+
+bool setEnergyPerformanceCritical(bool required) {
+  return energyPowerManagement.setPerformanceCritical(required);
+}
+
+void serviceEnergyPowerManagement() {
+  setEnergyPerformanceCritical(b_ota || b_pullOtaRunning);
+  if (Serial.available()) {
+    energyPowerManagement.noteSerialActivity(millis());
+  }
+  energyPowerManagement.service(millis());
 }
 
 void applyEnergyDisplayIdle(unsigned long now) {
@@ -1702,12 +1713,8 @@ void applyEnergyFeatureTransition(EnergyFeature feature, bool wasEnabled, bool i
       applyEnergyDisplayMode(energyRuntime.explicitDisplayOff ? DisplayIdleMode::Off
                                                              : DisplayIdleMode::Active);
     }
-  } else if (feature == EnergyFeature::MotionPoll) {
-    energyRuntime.motionSamples.reset();
-#if defined(ACC_PWR_CTRL) && defined(V8_1) && !defined(ACC_MPU6050) && !defined(ACC_BMA400)
-  } else if (feature == EnergyFeature::AccRailOff) {
-    applyEnergyAccRailState();
-#endif
+  } else if (feature == EnergyFeature::LightSleep) {
+    applyEnergyLightSleepSetting(isEnabled);
   }
 }
 
@@ -1739,6 +1746,7 @@ void loop() {
   processBleStatusResponse();
   processBleVoltageResponse();
 #if HDS_ENABLE_ENERGY_MENU
+  serviceEnergyPowerManagement();
   serviceEnergyHousekeeping(millis());
 #endif
 
