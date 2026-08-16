@@ -87,7 +87,10 @@ class EnergyLightSleepContractTests(unittest.TestCase):
     def test_compile_time_pm_environments_and_custom_build(self):
         self.assertIn("#define HDS_ENABLE_ENERGY_MENU HDS_FEATURE_ENERGY_MENU", HDS_FEATURES)
         self.assertIn("[env:esp32s3-pm-capable]", PLATFORMIO)
-        self.assertIn("board_build.sdkconfig = sdkconfig.energy-menu.defaults", PLATFORMIO)
+        self.assertIn(
+            "custom_sdkconfig = file://sdkconfig.energy-menu.defaults",
+            PLATFORMIO,
+        )
         self.assertIn("extends = env:esp32s3-pm-capable", PLATFORMIO)
         self.assertIn(
             '"energy-menu": ("HDS_FEATURE_ENERGY_MENU", ())',
