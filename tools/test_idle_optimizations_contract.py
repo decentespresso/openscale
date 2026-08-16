@@ -44,6 +44,31 @@ class ClientCount:
         self.count = actual_count
 
 
+class WebSocketChurnModel:
+    CONNECTED = "connected"
+    DISCONNECTING = "disconnecting"
+
+    def __init__(self):
+        self.clients = []
+
+    def connected_count(self):
+        return sum(state == self.CONNECTED for state in self.clients)
+
+    def cleanup_clients(self, maximum):
+        if self.connected_count() > maximum:
+            if self.clients[0] == self.CONNECTED:
+                self.clients[0] = self.DISCONNECTING
+
+    def connect(self, maximum):
+        self.clients.append(self.CONNECTED)
+        self.cleanup_clients(maximum)
+        if self.connected_count() > maximum:
+            self.clients[-1] = self.DISCONNECTING
+
+    def remove_disconnecting(self):
+        self.clients = [state for state in self.clients if state != self.DISCONNECTING]
+
+
 class IdleOptimizationContractTests(unittest.TestCase):
     def test_websocket_client_cache_and_cleanup_contract(self):
         self.assertIn("std::atomic<uint8_t> g_websocketClientCount{0};", PARAMETER)
@@ -51,9 +76,12 @@ class IdleOptimizationContractTests(unittest.TestCase):
         self.assertIn("inline bool websocketHasClients()", PARAMETER)
         connect = WEBSOCKET[WEBSOCKET.index("if (type == WS_EVT_CONNECT)"):]
         self.assertIn("server->cleanupClients(4);", connect)
+        self.assertIn("if (server->count() > 4)", connect)
+        self.assertIn("client->close();", connect)
         self.assertIn("g_websocketClientCount.store(server->count(), std::memory_order_relaxed);", connect)
+        self.assertLess(connect.index("client->close();"), connect.index("g_websocketClientCount.store"))
         self.assertEqual(WEBSOCKET.count("server->cleanupClients(4);"), 1)
-        self.assertEqual(WEBSOCKET.count("server->count()"), 2)
+        self.assertEqual(WEBSOCKET.count("server->count()"), 3)
         loop = function_body(HDS, "loop")
         self.assertNotIn("websocket.count()", loop)
         self.assertNotIn("cleanupClients", loop)
@@ -65,6 +93,17 @@ class IdleOptimizationContractTests(unittest.TestCase):
         self.assertEqual(cache.count, 1)
         cache.disconnect(0)
         self.assertEqual(cache.count, 0)
+
+        churn = WebSocketChurnModel()
+        for _ in range(4):
+            churn.connect(4)
+        churn.connect(4)
+        self.assertEqual(churn.connected_count(), 4)
+        churn.connect(4)
+        self.assertEqual(churn.connected_count(), 4)
+        self.assertEqual(churn.clients.count(WebSocketChurnModel.DISCONNECTING), 2)
+        churn.remove_disconnecting()
+        self.assertEqual(churn.connected_count(), 4)
 
     def test_wifi_cadence_and_rollover_contract(self):
         self.assertIn("WIFI_SUPERVISE_INTERVAL_MS = 250", WIFI_HEADER)
@@ -101,11 +140,14 @@ class IdleOptimizationContractTests(unittest.TestCase):
     def test_button_poll_cadence_contract(self):
         self.assertIn("BUTTON_POLL_INTERVAL_MS = 2", HDS)
         loop = function_body(HDS, "loop")
-        gate = "hdsIntervalElapsed(now, lastButtonPoll, BUTTON_POLL_INTERVAL_MS)"
+        gate = "hdsIntervalElapsed(buttonNow, lastButtonPoll, BUTTON_POLL_INTERVAL_MS)"
         self.assertIn(gate, loop)
         self.assertLess(loop.index(gate), loop.index("buttonCircle.check();"))
         self.assertLess(loop.index(gate), loop.index("buttonSquare.check();"))
         self.assertLess(loop.index("handleGrinderMenuChord()"), loop.index(gate))
+        self.assertIn("const unsigned long buttonNow = millis();", loop)
+        self.assertIn("hdsIntervalElapsed(buttonNow, lastButtonPoll, BUTTON_POLL_INTERVAL_MS)", loop)
+        self.assertIn("lastButtonPoll = buttonNow;", loop)
         self.assertTrue(elapsed(2, 0, 2))
         self.assertFalse(elapsed(1, 0, 2))
         self.assertTrue(elapsed(0x00000001, 0xFFFFFFFF, 2))

@@ -678,6 +678,9 @@ void setupWebsocketEvents() {
                       AwsEventType type, void *arg, uint8_t *data, size_t len) {
     if (type == WS_EVT_CONNECT) {
       server->cleanupClients(4);
+      if (server->count() > 4) {
+        client->close();
+      }
       g_websocketClientCount.store(server->count(), std::memory_order_relaxed);
       Serial.printf("Client %u connected\n", client->id());
       client->setCloseClientOnQueueFull(false);

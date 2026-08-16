@@ -1510,8 +1510,9 @@ void loop() {
 #endif
   ) {
     static unsigned long lastButtonPoll = 0;
-    if (hdsIntervalElapsed(now, lastButtonPoll, BUTTON_POLL_INTERVAL_MS)) {
-      lastButtonPoll = now;
+    const unsigned long buttonNow = millis();
+    if (hdsIntervalElapsed(buttonNow, lastButtonPoll, BUTTON_POLL_INTERVAL_MS)) {
+      lastButtonPoll = buttonNow;
       buttonCircle.check();
       buttonSquare.check();
     }
