@@ -6,7 +6,9 @@
 #include "esp32-hal.h"
 #include "esp_system.h"  // esp_restart() for the heap watchdog
 #include "mdns_name.h"
+#include "timing.h"
 #include <Arduino.h>
+#include "wifi_setup.h"
 #if HDS_FEATURE_MDNS
 #include <ESPmDNS.h>
 #endif
@@ -240,6 +242,7 @@ void setupWifi() {
 }
 
 void wifiSupervise() {
+  static unsigned long lastRun = 0;
   static unsigned long lastLog = 0;
   static unsigned long downSince = 0;
   static unsigned long lastAttempt = 0;
@@ -247,6 +250,10 @@ void wifiSupervise() {
   static unsigned long lowHeapSince = 0;
   static unsigned long lastDeferLog = 0;
   unsigned long now = millis();
+  if (!hdsIntervalElapsed(now, lastRun, WIFI_SUPERVISE_INTERVAL_MS)) {
+    return;
+  }
+  lastRun = now;
   bool up = WiFi.status() == WL_CONNECTED;
 
 #if HDS_FEATURE_MDNS

@@ -176,7 +176,7 @@ void startWebServer() {
         return;
       }
 #if HDS_FEATURE_WEBSOCKET
-      if (websocket.count() > 0) {
+      if (websocketHasClients()) {
         static int tokens = HTTP_STREAMING_BURST;
         static unsigned long lastRefill = 0;
         static unsigned long lastPageLoadBoost = 0;
