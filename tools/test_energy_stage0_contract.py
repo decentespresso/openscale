@@ -174,6 +174,9 @@ class EnergyContractTests(unittest.TestCase):
 
     def test_disabled_power_cadence_keeps_legacy_low_battery_path(self):
         legacy = body(POWER, "bool processLegacyLowBattery")
+        self.assertIn("if (!b_softSleep)", legacy)
+        self.assertLess(legacy.index("updateBattery(BATTERY_PIN)"),
+                        legacy.index("i_lowBatteryCount++"))
         self.assertIn("lowBatteryConfirmed(i_lowBatteryCount, false)", legacy)
         self.assertIn("shut_down_low_battery(f_batteryVoltage)", legacy)
 
@@ -185,6 +188,11 @@ class EnergyContractTests(unittest.TestCase):
             self.assertIn("featureEnabled(EnergyFeature::PowerCadence)", power_off)
             self.assertIn("cadenceEnabled && processNewBatterySample()", power_off)
             self.assertIn("!cadenceEnabled && !b_is_charging && processLegacyLowBattery()", power_off)
+            stock = power_off.split("#else", 1)[1]
+            self.assertNotIn("processLegacyLowBattery()", stock)
+            self.assertIn("if (!b_softSleep)", stock)
+            self.assertLess(stock.index("updateBattery(BATTERY_PIN)"),
+                            stock.index("i_lowBatteryCount++"))
 
     def test_no_master_or_extra_energy_menu_was_added(self):
         self.assertNotRegex(MENU, r"Experiments|Energy Fast|NVS|Storage|Persistence")

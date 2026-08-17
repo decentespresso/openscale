@@ -354,25 +354,27 @@ float getUsbVoltage(int usbPin) {
 
 int i_lowBatteryCount = 0;
 int i_lowBatteryCountTotal = 0;
-bool processLegacyLowBattery() {
-  if (f_batteryVoltage > lowBatteryThreshold) {
-    i_lowBatteryCount = 0;
-  }
-  if (f_batteryVoltage < lowBatteryThreshold) {
-    i_lowBatteryCount++;
-    i_lowBatteryCountTotal++;
-  }
 #if HDS_ENABLE_ENERGY_MENU
-  const bool confirmed = EnergyRuntimePolicy::lowBatteryConfirmed(i_lowBatteryCount, false);
-#else
-  const bool confirmed = i_lowBatteryCount > 50;
-#endif
-  if (!confirmed) return false;
-  shut_down_low_battery(f_batteryVoltage);
-  return true;
+bool processLegacyLowBattery() {
+  if (!b_softSleep) {
+    if (f_batteryVoltage < lowBatteryThreshold) {
+      updateBattery(BATTERY_PIN);
+    }
+    if (f_batteryVoltage > lowBatteryThreshold) {
+      i_lowBatteryCount = 0;
+    }
+    if (f_batteryVoltage < lowBatteryThreshold) {
+      i_lowBatteryCount++;
+      i_lowBatteryCountTotal++;
+    }
+    const bool confirmed = EnergyRuntimePolicy::lowBatteryConfirmed(i_lowBatteryCount, false);
+    if (!confirmed) return false;
+    shut_down_low_battery(f_batteryVoltage);
+    return true;
+  }
+  return false;
 }
 
-#if HDS_ENABLE_ENERGY_MENU
 bool processNewBatterySample() {
   if (!energyRuntime.batterySamples.shouldEvaluate(energyRuntime.batterySampleSequence)) {
     return false;
@@ -425,7 +427,25 @@ void power_off(int min) {
   }
 #else
   if (!b_is_charging) {
-    if (processLegacyLowBattery()) return;
+    if (!b_softSleep) {
+      if (f_batteryVoltage < lowBatteryThreshold) {
+        updateBattery(BATTERY_PIN);
+      }
+      if (f_batteryVoltage > lowBatteryThreshold) {
+        i_lowBatteryCount = 0;
+      }
+
+      if (f_batteryVoltage < lowBatteryThreshold) {
+        i_lowBatteryCount++;
+        i_lowBatteryCountTotal++;
+      }
+
+      if (i_lowBatteryCount > 50) {
+        shut_down_low_battery(f_batteryVoltage);
+        return;
+      }
+    }
+
     if (min == -1) {
       t_power_off = millis();
     }
