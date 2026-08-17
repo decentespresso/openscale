@@ -11,8 +11,9 @@ void toggleEnergyMotionPoll();
 void toggleEnergyAccRailOff();
 #endif
 
-Menu menuEnergy = { "Energy Saving", NULL, NULL, NULL };
+extern Menu menuEnergy;
 Menu menuEnergyBack = { "Back", NULL, NULL, &menuEnergy };
+Menu menuEnergy = { "Energy Saving", NULL, &menuEnergyBack, NULL };
 char menuEnergySerialQuietLabel[] = "Serial Quiet o";
 char menuEnergyPowerCadenceLabel[] = "Power Cadence o";
 char menuEnergyOledRedrawLabel[] = "OLED Redraw o";
