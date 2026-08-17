@@ -22,10 +22,12 @@ def main():
     manifest = json.loads(read("plugins/pressensor/plugin.json"))
 
     assert firmwareWorkflow.count("pio run -e esp32s3\n") == 1
+    assert "pio run -e esp32s3-energy-menu" in firmwareWorkflow
     assert "pio run -e esp32s3 -t buildfs" in firmwareWorkflow
     assert "esp32s3-grinder" not in firmwareWorkflow
     assert "name: firmware (esp32s3)" in firmwareWorkflow
     assert "python tools/test_plugin_ci_contract.py" in firmwareWorkflow
+    assert "python tools/test_low_battery_debounce_contract.py" in firmwareWorkflow
 
     assert "detect_plugins:" in customWorkflow
     assert "verify_plugins:" in customWorkflow

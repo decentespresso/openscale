@@ -24,6 +24,7 @@ jobs:
       - run: python tools/test_ota_reboot_routing_contract.py
       - run: python tools/test_grinder_feature_flag_contract.py
       - run: python tools/test_plugin_ci_contract.py
+      - run: python tools/test_low_battery_debounce_contract.py
       - run: python tools/test_energy_stage0_contract.py
 
   native-tests:
@@ -79,6 +80,7 @@ jobs:
       - name: Build PlatformIO Project
         run: |
           pio run -e esp32s3
+          pio run -e esp32s3-energy-menu
           pio run -e esp32s3 -t buildfs
           pio --version > .pio.nosync/build/esp32s3/dependencies.txt
           pio pkg list -e esp32s3 >> .pio.nosync/build/esp32s3/dependencies.txt
