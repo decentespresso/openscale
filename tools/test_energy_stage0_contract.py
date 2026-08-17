@@ -11,6 +11,7 @@ POWER = (ROOT / "include" / "energy_power_management.h").read_text(encoding="utf
 FIRMWARE = (ROOT / "src" / "hds.ino").read_text(encoding="utf-8")
 HDS_FEATURES = (ROOT / "include" / "hds_features.h").read_text(encoding="utf-8")
 PLATFORMIO = (ROOT / "platformio.ini").read_text(encoding="utf-8")
+SDKCONFIG = (ROOT / "sdkconfig.energy-menu.defaults").read_text(encoding="utf-8")
 DOCS = (ROOT / "docs" / "energy-saving-stage-0.md").read_text(encoding="utf-8")
 
 
@@ -101,6 +102,10 @@ class EnergyLightSleepContractTests(unittest.TestCase):
             '"energy-menu": ("HDS_FEATURE_ENERGY_MENU", ())',
             (ROOT / "tools" / "configure_custom_build.py").read_text(encoding="utf-8"),
         )
+        self.assertIn("CONFIG_BT_CTRL_LPCLK_SEL_MAIN_XTAL=y", SDKCONFIG)
+        self.assertIn("# CONFIG_BT_CTRL_LPCLK_SEL_RTC_SLOW is not set", SDKCONFIG)
+        self.assertIn("CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y", SDKCONFIG)
+        self.assertNotIn("CONFIG_BT_CTRL_LPCLK_SEL_RTC_SLOW=y", SDKCONFIG)
 
     def test_documented_scope(self):
         self.assertIn("defaults to off", DOCS)
