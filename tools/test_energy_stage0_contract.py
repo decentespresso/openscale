@@ -8,6 +8,7 @@ POLICY = (ROOT / "include" / "energy_policy.h").read_text(encoding="utf-8")
 MENU = (ROOT / "include" / "energy_menu.h").read_text(encoding="utf-8")
 STORAGE = (ROOT / "include" / "storage.h").read_text(encoding="utf-8")
 POWER = (ROOT / "include" / "energy_power_management.h").read_text(encoding="utf-8")
+SHUTDOWN = (ROOT / "include" / "power.h").read_text(encoding="utf-8")
 FIRMWARE = (ROOT / "src" / "hds.ino").read_text(encoding="utf-8")
 HDS_FEATURES = (ROOT / "include" / "hds_features.h").read_text(encoding="utf-8")
 PLATFORMIO = (ROOT / "platformio.ini").read_text(encoding="utf-8")
@@ -74,6 +75,15 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertIn("config.light_sleep_enable = true", POWER)
         self.assertEqual(POWER.count("esp_pm_lock_create("), 4)
         self.assertEqual(POWER.count("esp_pm_lock_delete("), 1)
+        deep_sleep = body(SHUTDOWN, "void esp32_sleep()")
+        self.assertLess(
+            deep_sleep.index("applyEnergyLightSleepSetting(false)"),
+            deep_sleep.index("esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER)"),
+        )
+        self.assertLess(
+            deep_sleep.index("esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER)"),
+            deep_sleep.index("esp_sleep_enable_ext1_wakeup_io"),
+        )
 
     def test_no_loop_sleep_or_adc_threading_change(self):
         loop = body(FIRMWARE, "void loop()")

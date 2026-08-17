@@ -176,6 +176,10 @@ void print_wakeup_reason() {
 
 
 void esp32_sleep() {
+#if HDS_ENABLE_ENERGY_MENU
+  applyEnergyLightSleepSetting(false);
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+#endif
 #if HDS_ENABLE_GRINDER
   beforeDeepSleepFlush();
 #endif
