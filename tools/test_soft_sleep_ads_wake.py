@@ -46,6 +46,13 @@ def assert_ordered(body, snippets):
         cursor = index + len(snippet)
 
 
+def energy_and_stock_branches(body):
+    start = body.index("#if HDS_ENABLE_ENERGY_MENU")
+    divider = body.index("#else", start)
+    end = body.index("#endif", divider)
+    return body[start:divider], body[divider:end]
+
+
 def main():
     assert_contains(PARAMETER_HEADER, "bool wakeScaleFromSoftSleep")
 
@@ -105,14 +112,27 @@ def main():
     assert_ordered(ble_soft_on, ["remoteReplacePending(WSP_SLEEP_ON, WSP_SLEEP_OFF);"])
 
     ble_soft_off = method_body(BLE_HEADER, "softSleepOff")
+    ble_energy_wake, ble_stock_wake = energy_and_stock_branches(ble_soft_off)
     assert_ordered(
-        ble_soft_off,
+        ble_energy_wake,
         [
             "remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);",
         ],
     )
-    if "b_softSleep = false;" in ble_soft_off or "b_u8g2Sleep = false;" in ble_soft_off:
+    if "b_softSleep = false;" in ble_energy_wake or "b_u8g2Sleep = false;" in ble_energy_wake:
         raise AssertionError("BLE wake publishes state before main-loop recovery")
+    assert_ordered(
+        ble_stock_wake,
+        [
+            "const bool wasSoftSleep = b_softSleep;",
+            "b_softSleep = false;",
+            "b_u8g2Sleep = false;",
+            "if (wasSoftSleep)",
+            "remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);",
+            "else",
+            "remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);",
+        ],
+    )
 
     ble_disconnect_display = method_body(BLE_HEADER, "restoreDisplayAfterBleDisconnect")
     assert_ordered(
@@ -130,6 +150,7 @@ def main():
     ws_wake_start = ws_handler.index('if (action == "off" || action == "wake")')
     ws_wake_end = ws_handler.index('sendWebsocketStatus(client, "ok");', ws_wake_start)
     ws_wake = ws_handler[ws_wake_start:ws_wake_end]
+    ws_energy_wake, ws_stock_wake = energy_and_stock_branches(ws_wake)
     ws_sleep_start = ws_handler.index('if (action == "on")', ws_handler.index('if (command == "sleep"'))
     ws_sleep_end = ws_handler.index('sendWebsocketStatus(client, "ok");', ws_sleep_start)
     ws_sleep = ws_handler[ws_sleep_start:ws_sleep_end]
@@ -137,14 +158,25 @@ def main():
         raise AssertionError("WebSocket sleep publishes state before main-loop rail shutdown")
     assert_ordered(ws_sleep, ["wsReplacePending(WSP_SLEEP_ON, WSP_SLEEP_OFF);"])
     assert_ordered(
-        ws_wake,
+        ws_energy_wake,
         [
-            'if (action == "off" || action == "wake")',
             "wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);",
         ],
     )
-    if "b_softSleep = false;" in ws_wake or "b_u8g2Sleep = false;" in ws_wake:
+    if "b_softSleep = false;" in ws_energy_wake or "b_u8g2Sleep = false;" in ws_energy_wake:
         raise AssertionError("WebSocket wake publishes state before main-loop recovery")
+    assert_ordered(
+        ws_stock_wake,
+        [
+            "const bool wasSoftSleep = b_softSleep;",
+            "b_softSleep = false;",
+            "b_u8g2Sleep = false;",
+            "if (wasSoftSleep)",
+            "wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);",
+            "else",
+            "wsReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);",
+        ],
+    )
 
     ws_pending = method_body(WEBSOCKET_HEADER, "processWsPendingCmds")
     assert_ordered(ws_pending, ['wakeScaleFromSoftSleep("remote soft wake")'])

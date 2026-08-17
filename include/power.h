@@ -497,7 +497,25 @@ void power_off(double sec) {
   }
 #else
   if (!b_is_charging) {
-    if (processLegacyLowBattery()) return;
+    if (!b_softSleep) {
+      if (f_batteryVoltage < lowBatteryThreshold) {
+        updateBattery(BATTERY_PIN);
+      }
+      if (f_batteryVoltage > lowBatteryThreshold) {
+        i_lowBatteryCount = 0;
+      }
+
+      if (f_batteryVoltage < lowBatteryThreshold) {
+        i_lowBatteryCount++;
+        i_lowBatteryCountTotal++;
+      }
+
+      if (i_lowBatteryCount > 50) {
+        shut_down_low_battery(f_batteryVoltage);
+        return;
+      }
+    }
+
     if (sec == -1) {
       t_power_off = millis();
     }

@@ -36,13 +36,8 @@ def assert_fresh_low_samples(body, signature):
 
 def main():
     power = POWER_HEADER.read_text(encoding="utf-8")
-    assert_fresh_low_samples(
-        block_body(power, "bool processLegacyLowBattery()"),
-        "processLegacyLowBattery",
-    )
     for signature in ("void power_off(int min)", "void power_off(double sec)"):
-        if "processLegacyLowBattery()" not in block_body(power, signature):
-            raise AssertionError(f"{signature} bypasses the shared low-battery debounce")
+        assert_fresh_low_samples(block_body(power, signature), signature)
 
     print("low-battery debounce contract tests passed")
 

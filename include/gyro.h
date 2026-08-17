@@ -95,6 +95,7 @@ void ACC_init() {
   delay(100);
 }
 
+#if HDS_ENABLE_ENERGY_MENU
 double readGyroZPhysical() {
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
@@ -118,6 +119,16 @@ double gyro_z(bool fresh = false) {
   }
   return readGyroZPhysical();
 }
+#else
+double gyro_z() {
+  if (b_gyroEnabled) {
+    sensors_event_t a, g, temp;
+    mpu.getEvent(&a, &g, &temp);
+    return (double)a.acceleration.z;
+  }
+  return 0.0;
+}
+#endif
 
 // float gyro_temp() {
 //   sensors_event_t temp;
@@ -166,6 +177,7 @@ void ACC_init() {
   delay(100);
 }
 
+#if HDS_ENABLE_ENERGY_MENU
 double readGyroZPhysical() {
   acc.getSensorData();
   return (double)(acc.data.accelZ * 10);
@@ -178,6 +190,15 @@ double gyro_z(bool fresh = false) {
   }
   return readGyroZPhysical();
 }
+#else
+double gyro_z() {
+  if (b_gyroEnabled) {
+    acc.getSensorData();
+    return (double)(acc.data.accelZ * 10);
+  }
+  return 0.0;
+}
+#endif
 
 #endif
 
