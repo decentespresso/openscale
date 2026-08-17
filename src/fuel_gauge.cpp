@@ -166,6 +166,8 @@ bool fuelGaugeSetCapacity(uint16_t mAh) {
 // Called periodically from the main loop. Serial-notify once when the SOC
 // drops below 10 %. With battery protection enabled, CHRG_CTRL gates the
 // charger: cut off at 80 %, resume at 75 % (hysteresis).
+// CHRG_CTRL polarity: 9.0.5 hardware inverts the pin through Q15 (S8050 NPN)
+// before the TP4056 CE, so LOW = charging enabled, HIGH = disabled.
 void fuelGaugeLoop() {
   if (!s_present) {
     return;
@@ -181,17 +183,17 @@ void fuelGaugeLoop() {
   }
   if (!b_batteryProtect) {
     if (!s_chrgEnabled) {
-      digitalWrite(CHRG_CTRL, HIGH);
+      digitalWrite(CHRG_CTRL, LOW);
       s_chrgEnabled = true;
     }
     return;
   }
   if (soc >= PROTECT_CHARGE_LIMIT && s_chrgEnabled) {
-    digitalWrite(CHRG_CTRL, LOW);
+    digitalWrite(CHRG_CTRL, HIGH);
     s_chrgEnabled = false;
     Serial.printf("fuelGauge: protect, charge cut off at %u%%\n", soc);
   } else if (soc <= PROTECT_CHARGE_RESUME && !s_chrgEnabled) {
-    digitalWrite(CHRG_CTRL, HIGH);
+    digitalWrite(CHRG_CTRL, LOW);
     s_chrgEnabled = true;
     Serial.printf("fuelGauge: protect, charge resumed at %u%%\n", soc);
   }
@@ -200,7 +202,7 @@ void fuelGaugeLoop() {
 void fuelGaugeProtectSet(bool enable) {
   b_batteryProtect = enable;
   if (!b_batteryProtect) {
-    digitalWrite(CHRG_CTRL, HIGH);
+    digitalWrite(CHRG_CTRL, LOW);
     s_chrgEnabled = true;
   }
 }
@@ -230,7 +232,7 @@ bool fuelGaugeBegin() {
     }
     fixCcGainSign();
     pinMode(CHRG_CTRL, OUTPUT);
-    digitalWrite(CHRG_CTRL, HIGH);
+    digitalWrite(CHRG_CTRL, LOW);  // 9.0.5: inverted by Q15, LOW = enable
     s_chrgEnabled = true;
     pinMode(GPOUT, INPUT);
     Serial.printf("fuelGauge: FCC %u mAh, design %u mAh\n",

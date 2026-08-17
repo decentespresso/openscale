@@ -101,8 +101,10 @@
 
 // HDS 9.0.5 shares the 8.1 pinout; the differences are runtime-selected by
 // fuel gauge detection (fuelGaugeBegin): GPIO6 is the battery ADC input on
-// 8.x boards and CHRG_CTRL (charge enable, low = disabled) on 9.0.5, and
-// GPIO14 is the gauge's GPOUT line.
+// 8.x boards and CHRG_CTRL on 9.0.5, and GPIO14 is the gauge's GPOUT line.
+// NOTE: on the 9.0.5 PCB, CHRG_CTRL is inverted by Q15 (S8050 NPN) before the
+// TP4056 CE pin: LOW = charging enabled, HIGH = charging disabled. The
+// schematic annotation "HIGH = enabled" describes the intent, not the circuit.
 #define CHRG_CTRL 6
 #define GPOUT 14
 

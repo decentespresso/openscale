@@ -85,9 +85,11 @@ https://github.com/edreanernst/BQ27427_Arduino_Library)
 
 ### 3. Battery Protect (9.0.5, off by default, persisted in NVS)
 
-Menu on/off. When enabled, SOC >= 80 % pulls CHRG_CTRL low to cut off the
-charger; charging resumes at 75 % (hysteresis). Verified on hardware
-(cutoff triggered at 97 % on a nearly-full battery).
+Menu on/off. When enabled, SOC >= 80 % pulls CHRG_CTRL high to cut off the
+charger; charging resumes at 75 % (hysteresis). Note: CHRG_CTRL is inverted
+by Q15 (S8050 NPN) on the 9.0.5 PCB — LOW = charging enabled, HIGH =
+disabled. Verified on hardware (cutoff triggered at 97 % on a nearly-full
+battery).
 
 ### 4. Low-SOC notify
 
