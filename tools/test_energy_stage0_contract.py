@@ -140,6 +140,16 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         )
         self.assertIn("esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_EXT1", sleep_exit)
         self.assertIn("xTaskNotifyGive(mainTask)", sleep_exit)
+        for pin in ["SCALE_DOUT", "BUTTON_CIRCLE", "BUTTON_SQUARE", "USB_DET"]:
+            hold = f"rtc_gpio_hold_dis((gpio_num_t){pin})"
+            deinit = f"rtc_gpio_deinit((gpio_num_t){pin})"
+            self.assertIn(hold, sleep_exit)
+            self.assertIn(deinit, sleep_exit)
+            self.assertLess(sleep_exit.index(hold), sleep_exit.index(deinit))
+            self.assertLess(
+                sleep_exit.index(deinit),
+                sleep_exit.index("esp_sleep_get_wakeup_cause()"),
+            )
         self.assertIn("esp_pm_light_sleep_register_cbs", ENERGY_IDLE_WAKE)
         self.assertIn("esp_sleep_enable_ext1_wakeup_io", ENERGY_IDLE_WAKE)
         self.assertIn("esp_sleep_disable_ext1_wakeup_io", ENERGY_IDLE_WAKE)

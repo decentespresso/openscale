@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <driver/rtc_io.h>
 #include <esp_pm.h>
 #include <esp_sleep.h>
 
@@ -24,6 +25,16 @@ static void IRAM_ATTR energyMainLoopWakeIsr(void *context) {
 }
 
 static esp_err_t IRAM_ATTR energyMainLoopWakeAfterLightSleep(int64_t, void *context) {
+  ESP_ERROR_CHECK(rtc_gpio_hold_dis((gpio_num_t)SCALE_DOUT));
+  ESP_ERROR_CHECK(rtc_gpio_deinit((gpio_num_t)SCALE_DOUT));
+  ESP_ERROR_CHECK(rtc_gpio_hold_dis((gpio_num_t)BUTTON_CIRCLE));
+  ESP_ERROR_CHECK(rtc_gpio_deinit((gpio_num_t)BUTTON_CIRCLE));
+  ESP_ERROR_CHECK(rtc_gpio_hold_dis((gpio_num_t)BUTTON_SQUARE));
+  ESP_ERROR_CHECK(rtc_gpio_deinit((gpio_num_t)BUTTON_SQUARE));
+#ifdef USB_DET
+  ESP_ERROR_CHECK(rtc_gpio_hold_dis((gpio_num_t)USB_DET));
+  ESP_ERROR_CHECK(rtc_gpio_deinit((gpio_num_t)USB_DET));
+#endif
   if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_EXT1) return ESP_OK;
   TaskHandle_t mainTask = static_cast<TaskHandle_t>(context);
   if (mainTask != nullptr) xTaskNotifyGive(mainTask);
