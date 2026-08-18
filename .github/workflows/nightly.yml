@@ -79,7 +79,6 @@ jobs:
       - name: Build PlatformIO Project
         run: |
           pio run -e esp32s3
-          pio run -e esp32s3-energy-menu
           pio run -e esp32s3 -t buildfs
           pio --version > .pio.nosync/build/esp32s3/dependencies.txt
           pio pkg list -e esp32s3 >> .pio.nosync/build/esp32s3/dependencies.txt
@@ -117,3 +116,26 @@ jobs:
         with:
           name: HDS-dependencies-esp32s3-${{ steps.slugify.outputs.sha }}
           path: .pio.nosync/build/esp32s3/dependencies.txt
+
+  energy-build:
+    name: firmware (esp32s3-energy-menu)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini', 'requirements-platformio.txt') }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO Core
+        run: python -m pip install --requirement requirements-platformio.txt
+
+      - name: Build Energy Menu firmware
+        run: pio run -e esp32s3-energy-menu
