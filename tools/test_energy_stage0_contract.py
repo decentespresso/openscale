@@ -237,6 +237,15 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         wait = body(FIRMWARE, "unsigned long energyMainLoopWaitMs(unsigned long now)")
         self.assertIn("scale.getConversionTime()", wait)
         self.assertIn("ADS1232_DEFAULT_CONVERSION_MS", wait)
+        scale_fallback = wait[
+            wait.index("if (!b_softSleep && energyIdle.scaleWakeFallback)"):
+            wait.index("if (energyIdle.circleButtonWakeFallback")
+        ]
+        self.assertRegex(
+            scale_fallback,
+            r"timeUntil\(\s*now,\s*energyIdle\.lastScaleData,\s*max\(1UL, scalePollMs\)\)",
+        )
+        self.assertNotIn("earlier(waitMs, max(1UL, scalePollMs))", scale_fallback)
         self.assertIn("BUTTON_POLL_INTERVAL_MS", wait)
         self.assertIn("ENERGY_USB_FALLBACK_POLL_MS", wait)
         self.assertIn("waitMs = EnergyRuntimePolicy::earlier", wait)

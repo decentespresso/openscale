@@ -272,7 +272,9 @@ unsigned long energyMainLoopWaitMs(unsigned long now) {
     const unsigned long scalePollMs = isfinite(conversionMs) && conversionMs >= 1.0f
       ? static_cast<unsigned long>(ceilf(conversionMs))
       : ADS1232_DEFAULT_CONVERSION_MS;
-    waitMs = EnergyRuntimePolicy::earlier(waitMs, max(1UL, scalePollMs));
+    waitMs = EnergyRuntimePolicy::earlier(
+      waitMs, EnergyRuntimePolicy::timeUntil(
+        now, energyIdle.lastScaleData, max(1UL, scalePollMs)));
   }
 
   if (energyIdle.circleButtonWakeFallback ||
