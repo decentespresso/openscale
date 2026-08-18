@@ -36,17 +36,14 @@ public:
     return updateLocks();
   }
 
-  void noteSerialActivity(uint32_t now) {
-    serialActivityAt = now;
-    serialActivityActive = true;
+  void setSerialTransportActive(bool active) {
+    serialTransportActive = active;
   }
 
-  bool service(uint32_t now) {
+  bool service(uint32_t) {
     if (!initialized) return false;
-    const bool serialGraceActive = serialActivityActive && now - serialActivityAt < 250;
-    if (!serialGraceActive) serialActivityActive = false;
     return setLockHeld(serialNoLightSleepLock, serialNoLightSleepHeld,
-                       lightSleepEnabled && serialGraceActive);
+                       lightSleepEnabled && serialTransportActive);
   }
 
   bool ready() const {
@@ -94,19 +91,21 @@ private:
       setLockHeld(stockNoLightSleepLock, stockNoLightSleepHeld, !lightSleepEnabled);
     const bool performanceOk =
       setLockHeld(performanceLock, performanceHeld, performanceCritical);
-    return stockLocksOk && performanceOk;
+    const bool serialOk =
+      setLockHeld(serialNoLightSleepLock, serialNoLightSleepHeld,
+                  lightSleepEnabled && serialTransportActive);
+    return stockLocksOk && performanceOk && serialOk;
   }
 
   bool initialized = false;
   bool configured = false;
   bool lightSleepEnabled = false;
   bool performanceCritical = false;
-  bool serialActivityActive = false;
+  bool serialTransportActive = false;
   bool stockCpuMaxHeld = false;
   bool stockNoLightSleepHeld = false;
   bool performanceHeld = false;
   bool serialNoLightSleepHeld = false;
-  uint32_t serialActivityAt = 0;
   esp_pm_lock_handle_t stockCpuMaxLock = nullptr;
   esp_pm_lock_handle_t stockNoLightSleepLock = nullptr;
   esp_pm_lock_handle_t performanceLock = nullptr;
@@ -118,7 +117,7 @@ public:
   bool begin() { return true; }
   bool applyLightSleepSetting(bool) { return true; }
   bool setPerformanceCritical(bool) { return true; }
-  void noteSerialActivity(uint32_t) {}
+  void setSerialTransportActive(bool) {}
   bool service(uint32_t) { return true; }
   bool ready() const { return true; }
 };

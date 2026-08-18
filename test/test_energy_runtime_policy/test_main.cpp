@@ -96,6 +96,17 @@ void testSharedDispatchSkipsEmptyAndUnrelatedMasks() {
   TEST_ASSERT_TRUE(EnergyRuntimePolicy::shouldServiceFeature(oledIdleBit, oledIdleBit));
 }
 
+void testIdleDeadlineUsesElapsedTimeAndHandlesRollover() {
+  TEST_ASSERT_EQUAL_UINT32(75, EnergyRuntimePolicy::timeUntil(125, 100, 100));
+  TEST_ASSERT_EQUAL_UINT32(0, EnergyRuntimePolicy::timeUntil(200, 100, 100));
+  TEST_ASSERT_EQUAL_UINT32(50, EnergyRuntimePolicy::timeUntil(0x22u, 0xfffffff0u, 100));
+}
+
+void testIdleDeadlineSelectsEarlierWork() {
+  TEST_ASSERT_EQUAL_UINT32(25, EnergyRuntimePolicy::earlier(100, 25));
+  TEST_ASSERT_EQUAL_UINT32(25, EnergyRuntimePolicy::earlier(25, 100));
+}
+
 int main(int argc, char **argv) {
   UNITY_BEGIN();
   RUN_TEST(testOledRedrawSkipsUnchangedFrames);
@@ -107,5 +118,7 @@ int main(int argc, char **argv) {
   RUN_TEST(testDisabledPowerCadenceKeepsLegacyBatteryThreshold);
   RUN_TEST(testOledIdleIsSuspendedDuringSoftSleep);
   RUN_TEST(testSharedDispatchSkipsEmptyAndUnrelatedMasks);
+  RUN_TEST(testIdleDeadlineUsesElapsedTimeAndHandlesRollover);
+  RUN_TEST(testIdleDeadlineSelectsEarlierWork);
   return UNITY_END();
 }

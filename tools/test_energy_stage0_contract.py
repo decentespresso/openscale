@@ -17,6 +17,7 @@ SDKCONFIG = (ROOT / "sdkconfig.energy-menu.defaults").read_text(encoding="utf-8"
 DOCS = (ROOT / "docs" / "energy-saving-stage-0.md").read_text(encoding="utf-8")
 MENU_INTEGRATION = (ROOT / "include" / "menu.h").read_text(encoding="utf-8")
 PARAMETER = (ROOT / "include" / "parameter.h").read_text(encoding="utf-8")
+ENERGY_IDLE_WAKE = (ROOT / "include" / "energy_idle_wake.h").read_text(encoding="utf-8")
 BLE = (ROOT / "include" / "ble.h").read_text(encoding="utf-8")
 WEBSOCKET = (ROOT / "include" / "websocket.h").read_text(encoding="utf-8")
 GYRO = (ROOT / "include" / "gyro.h").read_text(encoding="utf-8")
@@ -24,7 +25,7 @@ CUSTOM_BUILD = (ROOT / "tools" / "configure_custom_build.py").read_text(encoding
 
 
 def body(source, signature):
-    start = source.index(signature)
+    start = source.rindex(signature)
     opening = source.index("{", start)
     depth = 0
     for index in range(opening, len(source)):
@@ -107,15 +108,56 @@ class EnergyLightSleepContractTests(unittest.TestCase):
             deep_sleep.index("esp_sleep_enable_ext1_wakeup_io"),
         )
 
-    def test_no_loop_sleep_or_adc_threading_change(self):
+    def test_event_driven_loop_wait(self):
         loop = body(FIRMWARE, "void loop()")
         self.assertNotIn("vTaskDelay", loop)
         self.assertNotIn("delay(10)", loop)
         self.assertNotIn("scale.beginTask", FIRMWARE)
         self.assertIn("scale.update()", FIRMWARE)
         self.assertIn("BUTTON_POLL_INTERVAL_MS = 2", FIRMWARE)
-        self.assertIn("hdsIntervalElapsed(buttonNow, lastButtonPoll, BUTTON_POLL_INTERVAL_MS)", loop)
+        self.assertIn("ulTaskNotifyTake(pdTRUE, waitTicks)", FIRMWARE)
+        self.assertIn("digitalRead(SCALE_DOUT) == LOW", FIRMWARE)
+        self.assertIn("serviceEnergyButtonGesture(buttonNow)", loop)
+        self.assertIn("hdsIntervalElapsed(buttonNow, energyIdle.lastButtonPoll, BUTTON_POLL_INTERVAL_MS)", loop)
         self.assertNotIn("websocket.count()", loop)
+
+    def test_light_sleep_off_keeps_polling_and_on_uses_wake_sources(self):
+        buttons = body(FIRMWARE, "bool serviceEnergyButtonGesture(unsigned long now)")
+        self.assertIn("if (!energyPolicy.featureEnabled(EnergyFeature::LightSleep)) return true", buttons)
+        can_block = body(FIRMWARE, "bool energyMainLoopCanBlock()")
+        self.assertIn("!energyPolicy.featureEnabled(EnergyFeature::LightSleep)", can_block)
+        self.assertIn("energySerialTransportActive()", can_block)
+        wake_isr = body(ENERGY_IDLE_WAKE, "static void IRAM_ATTR energyMainLoopWakeIsr(void *context)")
+        self.assertIn("vTaskNotifyGiveFromISR", wake_isr)
+        self.assertNotIn("scale.", wake_isr)
+        self.assertIn(
+            "attachInterruptArg(digitalPinToInterrupt(SCALE_DOUT), energyMainLoopWakeIsr",
+            FIRMWARE,
+        )
+        self.assertIn("attachInterruptArg(digitalPinToInterrupt(BUTTON_CIRCLE)", FIRMWARE)
+        self.assertIn("attachInterruptArg(digitalPinToInterrupt(BUTTON_SQUARE)", FIRMWARE)
+
+    def test_deferred_work_wakes_main_loop(self):
+        for signature in [
+            "inline void remoteQueuePending(uint32_t bits)",
+            "inline void remoteReplacePending(uint32_t setBits, uint32_t clearBits)",
+            "inline void remoteQueueSamplesInUse(uint8_t samplesInUse)",
+        ]:
+            self.assertIn("notifyEnergyMainLoop()", body(WEBSOCKET, signature))
+        self.assertIn("notifyEnergyMainLoop()", body(PARAMETER, "void requestRemoteTare()"))
+        self.assertIn("notifyEnergyMainLoop()", body(BLE, "void queueBleStatusResponse()"))
+        self.assertIn("notifyEnergyMainLoop()", body(BLE, "void queueBleVoltageResponse()"))
+
+    def test_adc_recovery_and_serial_policy_remain_reachable(self):
+        wait = body(FIRMWARE, "unsigned long energyMainLoopWaitMs(unsigned long now)")
+        self.assertIn("ENERGY_ADC_SIGNAL_TIMEOUT_MS", wait)
+        self.assertIn("ENERGY_ADC_RECOVERY_START_MS", wait)
+        self.assertIn("ENERGY_ADC_RECOVERY_RETRY_MS", wait)
+        self.assertIn("setSerialTransportActive(energySerialTransportActive())", FIRMWARE)
+        self.assertIn("lightSleepEnabled && serialTransportActive", POWER)
+        self.assertNotIn("esp_sleep_enable_uart_wakeup", FIRMWARE + POWER)
+        self.assertNotIn("uart_set_wakeup_threshold", FIRMWARE + POWER)
+        self.assertNotIn("80-SPS", FIRMWARE + DOCS)
 
     def test_compile_time_pm_environments_and_custom_build(self):
         self.assertIn("#define HDS_FEATURE_ENERGY_MENU 0", HDS_FEATURES)
@@ -155,6 +197,9 @@ class EnergyLightSleepContractTests(unittest.TestCase):
             (FIRMWARE, "energyPowerManagement.service("),
             (FIRMWARE, "energyPolicy.featureEnabled("),
             (FIRMWARE, "applyEnergyLightSleepSetting("),
+            (FIRMWARE, "waitForEnergyMainLoopWork();"),
+            (FIRMWARE, "ulTaskNotifyTake(pdTRUE, waitTicks);"),
+            (PARAMETER, "EnergyIdleState energyIdle"),
             (SHUTDOWN, "energyPolicy.featureEnabled("),
             (SHUTDOWN, "esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);"),
             (BLE, "remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);"),
@@ -195,8 +240,9 @@ class EnergyLightSleepContractTests(unittest.TestCase):
 
     def test_documented_scope(self):
         self.assertIn("defaults to off", DOCS)
-        self.assertIn("does not add a normal-loop delay", DOCS)
-        self.assertIn("event-driven ADC and button wake design is a follow-up", DOCS)
+        self.assertIn("does not add a fixed normal-loop delay", DOCS)
+        self.assertIn("blocks until ADS1232 data ready", DOCS)
+        self.assertIn("first serial byte", DOCS)
         self.assertNotIn("80-SPS", DOCS)
 
 

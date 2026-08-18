@@ -4,6 +4,7 @@
 
 #include "parameter.h"
 #if HDS_ENABLE_ENERGY_MENU
+#include "energy_idle_wake.h"
 void applyEnergyDisplayCommand(bool enabled);
 void applyEnergyLowPowerCommand();
 void applyEnergyFeatureTransition(EnergyFeature feature, bool wasEnabled, bool isEnabled);
@@ -11,6 +12,8 @@ bool initEnergyPowerManagement();
 bool applyEnergyLightSleepSetting(bool enabled);
 bool setEnergyPerformanceCritical(bool required);
 void serviceEnergyPowerManagement();
+void setEnergyIdleWakeEnabled(bool enabled);
+void waitForEnergyMainLoopWork();
 #endif
 
 #include "storage.h"
@@ -67,6 +70,160 @@ bool buttonChecksSuppressedUntilRelease() {
   }
   return true;
 }
+
+#if HDS_ENABLE_ENERGY_MENU
+constexpr unsigned long ENERGY_ADC_SIGNAL_TIMEOUT_MS = 301;
+constexpr unsigned long ENERGY_ADC_RECOVERY_START_MS = 1501;
+constexpr unsigned long ENERGY_ADC_RECOVERY_RETRY_MS = 5001;
+constexpr unsigned long ENERGY_DISPLAY_DEADLINE_MS = 500;
+
+bool energySerialTransportActive() {
+#ifdef USB_DET
+  return b_usbLinked || digitalRead(USB_DET) == LOW;
+#else
+  return true;
+#endif
+}
+
+void setEnergyIdleWakeEnabled(bool enabled) {
+  if (enabled == energyIdle.wakeInterruptsAttached) return;
+  if (enabled) {
+    attachInterruptArg(digitalPinToInterrupt(SCALE_DOUT), energyMainLoopWakeIsr,
+                       energyIdle.mainTask, FALLING);
+    attachInterruptArg(digitalPinToInterrupt(BUTTON_CIRCLE), energyMainLoopWakeIsr,
+                       energyIdle.mainTask, FALLING);
+    attachInterruptArg(digitalPinToInterrupt(BUTTON_SQUARE), energyMainLoopWakeIsr,
+                       energyIdle.mainTask, FALLING);
+#ifdef USB_DET
+    attachInterruptArg(digitalPinToInterrupt(USB_DET), energyMainLoopWakeIsr,
+                       energyIdle.mainTask, FALLING);
+#endif
+  } else {
+    detachInterrupt(digitalPinToInterrupt(SCALE_DOUT));
+    detachInterrupt(digitalPinToInterrupt(BUTTON_CIRCLE));
+    detachInterrupt(digitalPinToInterrupt(BUTTON_SQUARE));
+#ifdef USB_DET
+    detachInterrupt(digitalPinToInterrupt(USB_DET));
+#endif
+  }
+  energyIdle.wakeInterruptsAttached = enabled;
+}
+
+void initEnergyIdleWake() {
+  setEnergyIdleWakeEnabled(energyPolicy.featureEnabled(EnergyFeature::LightSleep));
+}
+
+bool serviceEnergyButtonGesture(unsigned long now) {
+  if (!energyPolicy.featureEnabled(EnergyFeature::LightSleep)) return true;
+  if (anyScaleButtonPressed()) {
+    energyIdle.buttonGestureActive = true;
+    energyIdle.lastButtonActivityAt = now;
+  } else if (energyIdle.buttonGestureActive &&
+             now - energyIdle.lastButtonActivityAt > DOUBLECLICK_DELAY) {
+    energyIdle.buttonGestureActive = false;
+  }
+  return energyIdle.buttonGestureActive;
+}
+
+bool energyMainLoopHasPendingWork() {
+  if (digitalRead(SCALE_DOUT) == LOW || wsPendingMask != 0 ||
+      bleStatusResponsesPending != 0 || bleVoltageResponsesPending != 0 ||
+      otaDisplayState != OTA_DISPLAY_NONE || b_powerOff) {
+    return true;
+  }
+  return hasRemoteTareRequest();
+}
+
+bool energyMainLoopCanBlock() {
+  if (!energyPolicy.featureEnabled(EnergyFeature::LightSleep) ||
+      b_softSleep || b_ota || b_pullOtaRunning || b_menu || b_calibration ||
+      b_showChargingUI || b_is_charging || GPIO_power_on_with == BATTERY_CHARGING ||
+      energySerialTransportActive()) {
+    return false;
+  }
+#if HDS_ENABLE_GRINDER
+  if (grinderRuntimeKeepsAwake()) return false;
+#endif
+#if HDS_FEATURE_WIFI && !HDS_FEATURE_WEBSERVER
+  if (b_wifiEnabled) return false;
+#endif
+  return true;
+}
+
+unsigned long energyMainLoopWaitMs(unsigned long now) {
+  unsigned long waitMs;
+  if (scale.getSignalTimeoutFlag()) {
+    const unsigned long dataWait = EnergyRuntimePolicy::timeUntil(
+      now, energyIdle.lastScaleData, ENERGY_ADC_RECOVERY_START_MS);
+    const unsigned long recoveryWait = EnergyRuntimePolicy::timeUntil(
+      now, energyIdle.lastScaleRecovery, ENERGY_ADC_RECOVERY_RETRY_MS);
+    waitMs = max(dataWait, recoveryWait);
+  } else {
+    waitMs = EnergyRuntimePolicy::timeUntil(
+      now, energyIdle.lastScaleData, ENERGY_ADC_SIGNAL_TIMEOUT_MS);
+  }
+
+  if (anyScaleButtonPressed() || energyIdle.buttonGestureActive) {
+    waitMs = EnergyRuntimePolicy::earlier(
+      waitMs, EnergyRuntimePolicy::timeUntil(
+        now, energyIdle.lastButtonPoll, BUTTON_POLL_INTERVAL_MS));
+  }
+
+  const bool weightOutputActive = b_weight_in_serial || b_usbweight_enabled ||
+                                  bleHasLiveClient()
+#if HDS_FEATURE_WEBSOCKET
+                                  || (b_wifiEnabled && websocketHasClients())
+#endif
+                                  ;
+  if (weightOutputActive) {
+    waitMs = EnergyRuntimePolicy::earlier(
+      waitMs, EnergyRuntimePolicy::timeUntil(
+        now, energyIdle.lastWeightTick, WEIGHT_BASE_INTERVAL_MS));
+  }
+
+  if (stopWatch.isRunning()) {
+    waitMs = EnergyRuntimePolicy::earlier(waitMs, 1000);
+  }
+  if (!b_u8g2Sleep) {
+    waitMs = EnergyRuntimePolicy::earlier(waitMs, ENERGY_DISPLAY_DEADLINE_MS);
+  }
+  if (energyPolicy.featureEnabled(EnergyFeature::PowerCadence)) {
+    waitMs = EnergyRuntimePolicy::earlier(waitMs, 200);
+  }
+  waitMs = EnergyRuntimePolicy::earlier(
+    waitMs, EnergyRuntimePolicy::timeUntil(
+      now, t_batteryRefresh, i_batteryRefreshTareInterval));
+
+#if HDS_FEATURE_WIFI
+  if (b_wifiEnabled) {
+    waitMs = EnergyRuntimePolicy::earlier(waitMs, WIFI_SUPERVISE_INTERVAL_MS);
+  }
+#endif
+
+  if (bleHasLiveClient() && b_requireHeartBeat) {
+    unsigned long heartbeatWait = max(
+      EnergyRuntimePolicy::timeUntil(now, t_firstConnect, HEARTBEAT_TIMEOUT + 1),
+      EnergyRuntimePolicy::timeUntil(now, t_heartBeat, HEARTBEAT_TIMEOUT + 1));
+    if (t_lastDisconnectAttempt != 0) {
+      heartbeatWait = max(
+        heartbeatWait,
+        EnergyRuntimePolicy::timeUntil(
+          now, t_lastDisconnectAttempt, HEARTBEAT_DISCONNECT_RETRY_INTERVAL));
+    }
+    waitMs = EnergyRuntimePolicy::earlier(waitMs, heartbeatWait);
+  }
+  return waitMs;
+}
+
+void waitForEnergyMainLoopWork() {
+  if (!energyMainLoopCanBlock() || energyMainLoopHasPendingWork()) return;
+  const unsigned long waitMs = energyMainLoopWaitMs(millis());
+  if (waitMs == 0) return;
+  TickType_t waitTicks = pdMS_TO_TICKS(waitMs);
+  if (waitTicks == 0) waitTicks = 1;
+  ulTaskNotifyTake(pdTRUE, waitTicks);
+}
+#endif
 
 void adsDebugCallback(const ADS1232DebugInfo& info) {
   static unsigned long lastDebugPrint = 0;
@@ -456,6 +613,9 @@ void beforeDeepSleepFlush() {
 #endif
 
 void setup() {
+#if HDS_ENABLE_ENERGY_MENU
+  energyIdle.mainTask = xTaskGetCurrentTaskHandle();
+#endif
   Serial.begin(115200);
   while (!Serial)
     ;
@@ -908,6 +1068,9 @@ void setup() {
     hdsOtaRollbackMarkValid();
   }
 #endif
+#if HDS_ENABLE_ENERGY_MENU
+  initEnergyIdleWake();
+#endif
 }
 
 void updateAdaptiveTracking(float current_weight) {
@@ -1032,8 +1195,13 @@ void pureScale() {
 #if HDS_ENABLE_ENERGY_MENU
   static float f_last_displayed = 0.0;
 #endif
+#if HDS_ENABLE_ENERGY_MENU
+  unsigned long &t_lastScaleData = energyIdle.lastScaleData;
+  unsigned long &t_lastScaleRecovery = energyIdle.lastScaleRecovery;
+#else
   static unsigned long t_lastScaleData = 0;
   static unsigned long t_lastScaleRecovery = 0;
+#endif
   static unsigned long t_zeroDisplayMismatch = 0;
   static int f_similar_diff_count = 0;
   static float f_last_diff = 0.0;
@@ -1681,9 +1849,7 @@ bool setEnergyPerformanceCritical(bool required) {
 
 void serviceEnergyPowerManagement() {
   setEnergyPerformanceCritical(b_ota || b_pullOtaRunning);
-  if (Serial.available()) {
-    energyPowerManagement.noteSerialActivity(millis());
-  }
+  energyPowerManagement.setSerialTransportActive(energySerialTransportActive());
   energyPowerManagement.service(millis());
 }
 
@@ -1715,6 +1881,7 @@ void applyEnergyFeatureTransition(EnergyFeature feature, bool wasEnabled, bool i
     }
   } else if (feature == EnergyFeature::LightSleep) {
     applyEnergyLightSleepSetting(isEnabled);
+    setEnergyIdleWakeEnabled(isEnabled);
   }
 }
 
@@ -1800,10 +1967,18 @@ void loop() {
       && !handleGrinderMenuChord()
 #endif
   ) {
-    static unsigned long lastButtonPoll = 0;
     const unsigned long buttonNow = millis();
-    if (hdsIntervalElapsed(buttonNow, lastButtonPoll, BUTTON_POLL_INTERVAL_MS)) {
-      lastButtonPoll = buttonNow;
+#if HDS_ENABLE_ENERGY_MENU
+    const bool buttonPollDue = serviceEnergyButtonGesture(buttonNow) &&
+      hdsIntervalElapsed(buttonNow, energyIdle.lastButtonPoll, BUTTON_POLL_INTERVAL_MS);
+    if (buttonPollDue) energyIdle.lastButtonPoll = buttonNow;
+#else
+    static unsigned long lastButtonPoll = 0;
+    const bool buttonPollDue =
+      hdsIntervalElapsed(buttonNow, lastButtonPoll, BUTTON_POLL_INTERVAL_MS);
+    if (buttonPollDue) lastButtonPoll = buttonNow;
+#endif
+    if (buttonPollDue) {
       buttonCircle.check();
       buttonSquare.check();
     }
@@ -1918,7 +2093,11 @@ void loop() {
         g_timerElapsed = (unsigned long)stopWatch.elapsed();
 
         if (!b_adc_recovery_active) {
+#if HDS_ENABLE_ENERGY_MENU
+          unsigned long &t_weightTick = energyIdle.lastWeightTick;
+#else
           static unsigned long t_weightTick = 0;
+#endif
           static unsigned long weightTickCount = 0;
           unsigned long nowMs = millis();
           if (nowMs - t_weightTick >= WEIGHT_BASE_INTERVAL_MS) {
@@ -1988,6 +2167,9 @@ void loop() {
       }
     }
   }
+#if HDS_ENABLE_ENERGY_MENU
+  waitForEnergyMainLoopWork();
+#endif
 }
 
 

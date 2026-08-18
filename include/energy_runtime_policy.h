@@ -83,6 +83,15 @@ private:
 struct EnergyRuntimePolicy {
   static constexpr uint8_t lowBatteryConfirmationSamples = 2;
 
+  static uint32_t timeUntil(uint32_t now, uint32_t last, uint32_t interval) {
+    const uint32_t elapsed = now - last;
+    return elapsed >= interval ? 0 : interval - elapsed;
+  }
+
+  static uint32_t earlier(uint32_t current, uint32_t candidate) {
+    return candidate < current ? candidate : current;
+  }
+
   static bool lowBatteryConfirmed(uint32_t samples, bool cadenceEnabled) {
     return samples >= (cadenceEnabled ? lowBatteryConfirmationSamples : 51);
   }

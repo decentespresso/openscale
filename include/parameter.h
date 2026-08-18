@@ -27,8 +27,26 @@ struct EnergyRuntimeState {
   uint32_t batterySampleSequence = 0;
 };
 EnergyRuntimeState energyRuntime;
+struct EnergyIdleState {
+  TaskHandle_t mainTask = nullptr;
+  bool wakeInterruptsAttached = false;
+  bool buttonGestureActive = false;
+  unsigned long lastButtonActivityAt = 0;
+  unsigned long lastButtonPoll = 0;
+  unsigned long lastScaleData = 0;
+  unsigned long lastScaleRecovery = 0;
+  unsigned long lastWeightTick = 0;
+};
+EnergyIdleState energyIdle;
 portMUX_TYPE energyActivityMux = portMUX_INITIALIZER_UNLOCKED;
 volatile bool energyActivityPending = false;
+
+inline void notifyEnergyMainLoop() {
+  TaskHandle_t mainTask = energyIdle.mainTask;
+  if (mainTask != nullptr) {
+    xTaskNotifyGive(mainTask);
+  }
+}
 
 inline void clearPendingEnergyActivity() {
   portENTER_CRITICAL(&energyActivityMux);
@@ -156,6 +174,9 @@ inline void remoteQueueResetAt(unsigned long resetAt) {
   pendingResetAt = resetAt;
   wsPendingMask |= WSP_RESET;
   portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 inline void remoteQueueOtaResetAt(unsigned long resetAt) {
@@ -163,6 +184,9 @@ inline void remoteQueueOtaResetAt(unsigned long resetAt) {
   pendingOtaResetAt = resetAt;
   wsPendingMask |= WSP_OTA_RESET;
   portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 int i_onWrite_counter = 0;
@@ -293,6 +317,7 @@ void requestRemoteTare() {
   t_tareByBle = now;
   portEXIT_CRITICAL(&remoteTareMux);
 #if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
   recordEnergyActivity();
 #endif
 }

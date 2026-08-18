@@ -116,12 +116,18 @@ inline void remoteQueuePending(uint32_t bits) {
   }
   wsPendingMask |= bits;
   portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 inline void remoteReplacePending(uint32_t setBits, uint32_t clearBits) {
   portENTER_CRITICAL(&wsPendingMux);
   wsPendingMask = (wsPendingMask & ~clearBits) | setBits;
   portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 inline void remoteQueueSamplesInUse(uint8_t samplesInUse) {
@@ -129,6 +135,9 @@ inline void remoteQueueSamplesInUse(uint8_t samplesInUse) {
   pendingSamplesInUse = samplesInUse;
   wsPendingMask |= WSP_SET_SAMPLES;
   portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 inline void wsQueuePending(uint32_t bits) {
