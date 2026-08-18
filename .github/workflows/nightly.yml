@@ -23,6 +23,7 @@ jobs:
       - run: python tools/test_mdns_name_contract.py
       - run: python tools/test_ota_reboot_routing_contract.py
       - run: python tools/test_grinder_feature_flag_contract.py
+      - run: python tools/test_finger_detection_memory_contract.py
       - run: python tools/test_plugin_ci_contract.py
 
   native-tests:

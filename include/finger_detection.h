@@ -10,7 +10,7 @@
 void sendWebsocketButton(int buttonNumber, int buttonShortPress);
 #endif
 #define TOTAL_SAMPLES 50           // Total samples per button
-static_assert(TOTAL_SAMPLES < 255);
+static_assert(TOTAL_SAMPLES < UINT8_MAX);
 bool b_fingerDetectionSerialOutput = false;
 
 #define CIRCLE_POST_RELEASE_DURATION 500      // Circle button post-release sampling duration(ms)
@@ -27,31 +27,44 @@ bool b_fingerDetectionSerialOutput = false;
 #define SQUARE_FINGER_PRESS_MAX_PRESS_TIME 800 // Square button maximum press time(ms)
 #define SQUARE_FINGER_PRESS_MIN_TOTAL_TIME 300 // Square button minimum total time(ms)
 
-enum SamplingPhase {
-  PHASE_IDLE = 0,
-  PHASE_PRESSING,
-  PHASE_RECOVERING
+enum class SamplingPhase : uint8_t {
+  Idle,
+  Pressing,
+  Recovering
 };
-
-struct PressSample {
-  float weight;
-};
-
-static_assert(sizeof(PressSample) == 4);
 
 struct ButtonPressData {
-  PressSample samples[TOTAL_SAMPLES];
-  int sample_index;
-  SamplingPhase current_phase;
-  unsigned long press_start_time;
-  unsigned long release_time;
-  unsigned long last_sample_real_time;
-  uint8_t release_index;
-  bool is_active;
+  float startWeight;
+  float lastWeight;
+  float peakWeight;
+  uint32_t pressStartTime;
+  uint32_t releaseTime;
+  uint32_t lastSampleTime;
+  uint8_t sampleCount;
+  uint8_t releaseIndex;
+  uint8_t peakIndex;
+  SamplingPhase phase;
+  bool active;
 };
+
+static_assert(sizeof(ButtonPressData) <= 36);
 
 ButtonPressData circle_press_data = {0};
 ButtonPressData square_press_data = {0};
+
+static inline void addPressSample(ButtonPressData& data, float weight) {
+  if (data.sampleCount >= TOTAL_SAMPLES) return;
+  if (data.sampleCount == 0) {
+    data.startWeight = weight;
+    data.peakWeight = weight;
+    data.peakIndex = 0;
+  } else if (weight > data.peakWeight) {
+    data.peakWeight = weight;
+    data.peakIndex = data.sampleCount;
+  }
+  data.lastWeight = weight;
+  ++data.sampleCount;
+}
 
 ButtonPressData* getButtonPressData(int button);
 bool isFingerPress(int button);
@@ -94,30 +107,23 @@ bool isFingerPress(int button) {
   ButtonPressData* data = getButtonPressData(button);
   if (!data) return false;
 
-  if (data->sample_index < 5) {
+  if (data->sampleCount < 5) {
     return isQuickTap(button);
   }
 
-  int release_index = data->release_index;
-  float start_weight = data->samples[0].weight;
-  float peak_weight = start_weight;
-  int peak_index = 0;
+  int release_index = data->releaseIndex;
+  float start_weight = data->startWeight;
+  float peak_weight = data->peakWeight;
+  int peak_index = data->peakIndex;
 
-  for (int i = 0; i < data->sample_index; i++) {
-    if (data->samples[i].weight > peak_weight) {
-      peak_weight = data->samples[i].weight;
-      peak_index = i;
-    }
-  }
+  if (release_index >= data->sampleCount) release_index = data->sampleCount - 1;
 
-  if (release_index >= data->sample_index) release_index = data->sample_index - 1;
+  float final_weight = data->lastWeight;
 
-  float final_weight = data->samples[data->sample_index-1].weight;
-
-  const unsigned long press_sample_time = data->release_index < data->sample_index ? data->release_time : data->last_sample_real_time;
-  const unsigned long final_sample_time = data->release_index == data->sample_index - 1 ? data->release_time : data->last_sample_real_time;
-  unsigned long press_duration = press_sample_time - data->press_start_time;
-  unsigned long total_duration = final_sample_time - data->press_start_time;
+  const unsigned long press_sample_time = data->releaseIndex < data->sampleCount ? data->releaseTime : data->lastSampleTime;
+  const unsigned long final_sample_time = data->releaseIndex == data->sampleCount - 1 ? data->releaseTime : data->lastSampleTime;
+  unsigned long press_duration = press_sample_time - data->pressStartTime;
+  unsigned long total_duration = final_sample_time - data->pressStartTime;
 
   float peak_change = peak_weight - start_weight;
   float net_change = final_weight - start_weight;
@@ -151,7 +157,7 @@ bool isFingerPress(int button) {
     Serial.print(button == BUTTON_CIRCLE ? "Circle" : "Square");
     Serial.println(" Button Finger Press Analysis:");
     Serial.print("Samples: ");
-    Serial.println(data->sample_index);
+    Serial.println(data->sampleCount);
     Serial.print("Peak change: ");
     Serial.print(peak_change, 2);
     Serial.print("g (min=");
@@ -230,10 +236,10 @@ bool isFingerPress(int button) {
 
 bool isQuickTap(int button) {
   ButtonPressData* data = getButtonPressData(button);
-  if (!data || data->sample_index < 2) return false;
+  if (!data || data->sampleCount < 2) return false;
 
-  float start_weight = data->samples[0].weight;
-  float final_weight = data->samples[data->sample_index-1].weight;
+  float start_weight = data->startWeight;
+  float final_weight = data->lastWeight;
   float net_change = final_weight - start_weight;
 
   bool is_quick = (fabs(net_change) < 1.5);
@@ -251,7 +257,7 @@ bool isQuickTap(int button) {
 
 void analyzeCompletePressData(int button) {
   ButtonPressData* data = getButtonPressData(button);
-  if (!data || data->sample_index <= 3) {
+  if (!data || data->sampleCount <= 3) {
     if (b_fingerDetectionSerialOutput) Serial.println("Samples <= 3, likely hand press");
     return;
   }
@@ -263,33 +269,26 @@ void analyzeCompletePressData(int button) {
     Serial.println(String(70, '='));
   }
 
-  int release_index = data->release_index;
-  float start_weight = data->samples[0].weight;
-  float peak_weight = start_weight;
-  int peak_index = 0;
+  int release_index = data->releaseIndex;
+  float start_weight = data->startWeight;
+  float peak_weight = data->peakWeight;
+  int peak_index = data->peakIndex;
 
-  for (int i = 0; i < data->sample_index; i++) {
-    if (data->samples[i].weight > peak_weight) {
-      peak_weight = data->samples[i].weight;
-      peak_index = i;
-    }
-  }
+  if (release_index >= data->sampleCount) release_index = data->sampleCount - 1;
 
-  if (release_index >= data->sample_index) release_index = data->sample_index - 1;
+  float final_weight = data->lastWeight;
 
-  float final_weight = data->samples[data->sample_index-1].weight;
-
-  const unsigned long press_sample_time = data->release_index < data->sample_index ? data->release_time : data->last_sample_real_time;
-  const unsigned long final_sample_time = data->release_index == data->sample_index - 1 ? data->release_time : data->last_sample_real_time;
-  const unsigned long total_duration_ms = final_sample_time - data->press_start_time;
+  const unsigned long press_sample_time = data->releaseIndex < data->sampleCount ? data->releaseTime : data->lastSampleTime;
+  const unsigned long final_sample_time = data->releaseIndex == data->sampleCount - 1 ? data->releaseTime : data->lastSampleTime;
+  const unsigned long total_duration_ms = final_sample_time - data->pressStartTime;
   float avg_interval = 0;
-  if (data->sample_index > 1) {
-    avg_interval = total_duration_ms / (float)(data->sample_index-1);
+  if (data->sampleCount > 1) {
+    avg_interval = total_duration_ms / (float)(data->sampleCount-1);
   }
 
   if (b_fingerDetectionSerialOutput) {
     Serial.print("Samples: ");
-    Serial.print(data->sample_index);
+    Serial.print(data->sampleCount);
     Serial.print(" | Avg interval: ");
     Serial.print(avg_interval, 1);
     Serial.println("ms");
@@ -297,7 +296,7 @@ void analyzeCompletePressData(int button) {
     Serial.println("\n--- KEY METRICS ---");
   }
 
-  float press_duration = press_sample_time - data->press_start_time;
+  float press_duration = press_sample_time - data->pressStartTime;
   float total_duration = total_duration_ms;
   float recovery_duration = total_duration - press_duration;
 
@@ -346,7 +345,7 @@ void startPressSampling(int button) {
   ButtonPressData* data = getButtonPressData(button);
   if (!data) return;
 
-  if (data->is_active) {
+  if (data->active) {
     if (b_fingerDetectionSerialOutput) {
       Serial.print(button == BUTTON_CIRCLE ? "Circle" : "Square");
       Serial.println(" button already sampling, ignore new press");
@@ -354,17 +353,14 @@ void startPressSampling(int button) {
     return;
   }
 
-  data->current_phase = PHASE_PRESSING;
-  data->sample_index = 0;
-  data->press_start_time = millis();
-  data->last_sample_real_time = data->press_start_time;
-  data->release_index = TOTAL_SAMPLES;
-  data->is_active = true;
+  data->phase = SamplingPhase::Pressing;
+  data->sampleCount = 0;
+  data->pressStartTime = millis();
+  data->lastSampleTime = data->pressStartTime;
+  data->releaseIndex = TOTAL_SAMPLES;
+  data->active = true;
 
-  if (data->sample_index < TOTAL_SAMPLES) {
-    data->samples[data->sample_index].weight = f_current_raw_value;
-    data->sample_index++;
-  }
+  addPressSample(*data, f_current_raw_value);
   if (b_fingerDetectionSerialOutput) {
     Serial.print("=== ");
     Serial.print(button == BUTTON_CIRCLE ? "Circle" : "Square");
@@ -376,15 +372,14 @@ void startPressSampling(int button) {
 
 void onButtonReleased(int button) {
   ButtonPressData* data = getButtonPressData(button);
-  if (!data || data->current_phase != PHASE_PRESSING) return;
+  if (!data || data->phase != SamplingPhase::Pressing) return;
 
-  data->release_time = millis();
-  data->current_phase = PHASE_RECOVERING;
+  data->releaseTime = millis();
+  data->phase = SamplingPhase::Recovering;
 
-  if (data->sample_index < TOTAL_SAMPLES) {
-    data->release_index = data->sample_index;
-    data->samples[data->sample_index].weight = f_current_raw_value;
-    data->sample_index++;
+  if (data->sampleCount < TOTAL_SAMPLES) {
+    data->releaseIndex = data->sampleCount;
+    addPressSample(*data, f_current_raw_value);
   }
   if (b_fingerDetectionSerialOutput) {
     Serial.print("=== ");
@@ -398,53 +393,51 @@ void updatePressSampling() {
     int button = static_cast<int>(i);
     ButtonPressData* data = getButtonPressData(button);
 
-    if (!data || !data->is_active) continue;
+    if (!data || !data->active) continue;
 
-    if (data->current_phase == PHASE_IDLE) {
-      data->is_active = false;
+    if (data->phase == SamplingPhase::Idle) {
+      data->active = false;
       continue;
     }
 
     unsigned long current_time = millis();
 
-    if (current_time - data->last_sample_real_time < 10) continue;
+    if (current_time - data->lastSampleTime < 10) continue;
 
-    if (data->current_phase == PHASE_PRESSING) {
-      if (current_time - data->press_start_time > 2000) {
+    if (data->phase == SamplingPhase::Pressing) {
+      if (current_time - data->pressStartTime > 2000) {
         if (b_fingerDetectionSerialOutput) {
           Serial.print(button == BUTTON_CIRCLE ? "Circle" : "Square");
           Serial.println(" button press phase timeout");
         }
-        data->current_phase = PHASE_IDLE;
-        data->is_active = false;
+        data->phase = SamplingPhase::Idle;
+        data->active = false;
         continue;
       }
-    } else if (data->current_phase == PHASE_RECOVERING) {
+    } else if (data->phase == SamplingPhase::Recovering) {
       unsigned long post_release_duration = (button == BUTTON_CIRCLE) ?
                                            CIRCLE_POST_RELEASE_DURATION :
                                            SQUARE_POST_RELEASE_DURATION;
-      if (current_time - data->release_time > post_release_duration) {
-        data->current_phase = PHASE_IDLE;
-        data->is_active = false;
+      if (current_time - data->releaseTime > post_release_duration) {
+        data->phase = SamplingPhase::Idle;
+        data->active = false;
         analyzeCompletePressData(button);
         continue;
       }
     }
 
-    if (data->sample_index < TOTAL_SAMPLES) {
+    if (data->sampleCount < TOTAL_SAMPLES) {
       float current_weight = f_current_raw_value;
 
-      data->samples[data->sample_index].weight = current_weight;
-
-      data->sample_index++;
-      data->last_sample_real_time = current_time;
+      addPressSample(*data, current_weight);
+      data->lastSampleTime = current_time;
     } else {
       if (b_fingerDetectionSerialOutput) {
         Serial.print(button == BUTTON_CIRCLE ? "Circle" : "Square");
         Serial.println(" button sampling buffer full");
       }
-      data->current_phase = PHASE_IDLE;
-      data->is_active = false;
+      data->phase = SamplingPhase::Idle;
+      data->active = false;
     }
   }
 }
