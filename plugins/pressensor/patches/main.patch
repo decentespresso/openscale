@@ -1546,9 +1546,9 @@ index c473fa7..cac7fed 100644
 +}
 +#endif
 +
- void drawBattery() {
-   if (millis() - t_batteryIcon >= 500) {
-     t_batteryIcon = millis();
+ void drawBattery(unsigned long now) {
+ #if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
+   if (digitalRead(USB_DET) == LOW) {
 diff --git a/tools/test_pressensor_ble_contract.py b/tools/test_pressensor_ble_contract.py
 new file mode 100644
 index 0000000..4fbf212
