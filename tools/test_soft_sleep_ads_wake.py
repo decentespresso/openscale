@@ -64,8 +64,6 @@ def main():
             "digitalWrite(ACC_PWR_CTRL, HIGH);",
             "scale.powerUp();",
             "b_softSleep = false;",
-            "clearPendingEnergyActivity();",
-            "energyPolicy.recordActivity(millis());",
             "applyEnergyDisplayCommand(!energyRuntime.explicitDisplayOff);",
             "refreshScaleDatasetAfterDiscontinuity(context)",
             "resetScaleOutputAfterAdcDiscontinuity();",

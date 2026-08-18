@@ -81,9 +81,6 @@ class MyServerCallbacks : public BLEServerCallbacks {
     t_heartBeat = millis();
     bleState = CONNECTED;
     deviceConnected = true;
-#if HDS_ENABLE_ENERGY_MENU
-    recordEnergyActivity();
-#endif
 #ifdef BUZZER
     b_beep = false;
 #endif
@@ -118,9 +115,6 @@ class MyServerCallbacks : public BLEServerCallbacks {
     t_heartBeat = millis();
     bleState = CONNECTED;
     deviceConnected = true;
-#if HDS_ENABLE_ENERGY_MENU
-    recordEnergyActivity();
-#endif
 #ifdef BUZZER
     b_beep = false;
 #endif

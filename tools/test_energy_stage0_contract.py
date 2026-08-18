@@ -56,31 +56,50 @@ class EnergyLightSleepContractTests(unittest.TestCase):
 
     def test_feature_count_and_menu_order(self):
         self.assertEqual(
-            ["SerialQuiet", "PowerCadence", "OledRedraw", "OledIdle", "OledStatic", "LightSleep"],
+            ["SerialQuiet", "OledRedraw", "OledStatic", "LightSleep"],
             re.findall(r"^  (\w+),$", POLICY, re.MULTILINE),
         )
         self.assertEqual(
             [
-                "Serial Quiet o", "Power Cadence o", "OLED Redraw o",
-                "OLED Idle o", "OLED Static o", "Light Sleep o",
+                "Serial Quiet o", "OLED Redraw o", "OLED Static o", "Light Sleep o",
             ],
             re.findall(r'char menuEnergy\w+Label\[\] = "([^"]+)";', MENU),
         )
         self.assertNotIn("Motion Poll", MENU)
         self.assertNotIn("ACC Rail Off", MENU)
+        self.assertNotIn("Power Cadence", MENU)
+        self.assertNotIn("OLED Idle", MENU)
         self.assertIn("static_cast<size_t>(EnergyFeature::Count)", MENU)
 
     def test_storage_migration_preserves_retained_features(self):
-        self.assertIn("ENERGY_SCHEMA_VERSION = 5", STORAGE)
+        self.assertIn("ENERGY_SCHEMA_VERSION = 6", STORAGE)
         self.assertIn('"e_light_sleep"', STORAGE)
         self.assertIn("KEY_ENERGY_MOTION_POLL", STORAGE)
         self.assertIn("KEY_ENERGY_ACC_RAIL_OFF", STORAGE)
         migration = body(STORAGE, "inline bool energyLoadSettings")
-        self.assertIn("for (uint8_t index = 0; index < 5; ++index)", migration)
-        self.assertIn("storagePutBool(ENERGY_FEATURE_KEYS[5], false)", migration)
         self.assertIn("storageRemoveIfPresent(KEY_ENERGY_MOTION_POLL)", migration)
         self.assertIn("storageRemoveIfPresent(KEY_ENERGY_ACC_RAIL_OFF)", migration)
+        self.assertIn("storageRemoveIfPresent(KEY_ENERGY_POWER_CADENCE)", migration)
+        self.assertIn("storageRemoveIfPresent(KEY_ENERGY_OLED_IDLE)", migration)
         self.assertIn("getType(key) == PT_U8", STORAGE)
+
+    def test_power_cadence_is_always_enabled(self):
+        self.assertNotIn("EnergyFeature::PowerCadence", FIRMWARE + SHUTDOWN)
+        self.assertNotIn("processLegacyLowBattery", SHUTDOWN)
+        self.assertIn("PowerCadenceState powerCadence", PARAMETER)
+        cadence_offset = PARAMETER.index("PowerCadenceState powerCadence")
+        self.assertFalse(is_guarded_at(PARAMETER, cadence_offset, "HDS_ENABLE_ENERGY_MENU"))
+        battery = body(SHUTDOWN, "bool processNewBatterySample()")
+        self.assertIn("powerCadence.batterySamples.shouldEvaluate", battery)
+        self.assertIn("lowBatteryConfirmationSamples = 2", (ROOT / "include" / "energy_runtime_policy.h").read_text(encoding="utf-8"))
+        loop = body(FIRMWARE, "void loop()")
+        self.assertIn("powerCadence.chargeCheck.shouldRun(millis(), 200)", loop)
+        wait = body(FIRMWARE, "unsigned long energyMainLoopWaitMs(unsigned long now)")
+        self.assertIn("earlier(waitMs, 200)", wait)
+        for signature in ["void power_off(int min)", "void power_off(double sec)"]:
+            power_off = body(SHUTDOWN, signature)
+            self.assertIn("processNewBatterySample()", power_off)
+            self.assertNotIn("#if HDS_ENABLE_ENERGY_MENU", power_off)
 
     def test_runtime_transition_is_centralized(self):
         transition = body(FIRMWARE, "void applyEnergyFeatureTransition(EnergyFeature feature, bool wasEnabled, bool isEnabled) {")
@@ -173,6 +192,34 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertIn("notifyEnergyMainLoop()", body(BLE, "void queueBleStatusResponse()"))
         self.assertIn("notifyEnergyMainLoop()", body(BLE, "void queueBleVoltageResponse()"))
 
+    def test_oled_redraw_signature_matches_rendering(self):
+        signature = body(FIRMWARE, "uint32_t energyDisplaySignature(unsigned long now)")
+        self.assertIn("stopWatch.elapsed()", signature)
+        self.assertNotIn("stopWatch.elapsed() / 1000", signature)
+        self.assertIn("EnergyRuntimePolicy::batteryDisplayBucket(batteryPercent)", signature)
+        self.assertNotIn("static_cast<uint32_t>(batteryPercent)", signature)
+        self.assertIn("WiFi.getMode()", signature)
+        self.assertIn("f_displayedValue > OVER_WEIGHT", signature)
+        self.assertIn("f_displayedValue <= -1000.0f", signature)
+        self.assertIn("const bool bleConnected = bleHasLiveClient()", signature)
+        self.assertNotIn("deviceConnected", signature)
+
+        draw_ble = body(FIRMWARE, "void drawBle(unsigned long now)")
+        self.assertIn("(now / 1000) & 1", draw_ble)
+        battery_start = FIRMWARE.index("void drawBattery(unsigned long now)")
+        draw_battery = FIRMWARE[battery_start:FIRMWARE.index("void drawAbout()", battery_start)]
+        self.assertIn("(now / 500) & 1", draw_battery)
+        self.assertIn("EnergyRuntimePolicy::batteryDisplayBucket", draw_battery)
+        self.assertNotIn("b_drawBle", FIRMWARE)
+        self.assertNotIn("t_ble_box", FIRMWARE)
+        self.assertNotIn("b_showBatteryIcon", FIRMWARE + PARAMETER)
+        self.assertNotIn("t_batteryIcon", FIRMWARE + PARAMETER)
+
+        update = body(FIRMWARE, "void updateOled()")
+        self.assertIn("energyDisplaySignature(frameNow)", update)
+        self.assertIn("drawBattery(frameNow)", update)
+        self.assertIn("drawBle(frameNow)", update)
+
     def test_adc_recovery_and_serial_policy_remain_reachable(self):
         wait = body(FIRMWARE, "unsigned long energyMainLoopWaitMs(unsigned long now)")
         self.assertIn("ENERGY_ADC_SIGNAL_TIMEOUT_MS", wait)
@@ -231,7 +278,6 @@ class EnergyLightSleepContractTests(unittest.TestCase):
             (BLE, "remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);"),
             (WEBSOCKET, "wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);"),
             (GYRO, "double readGyroZPhysical()"),
-            (SHUTDOWN, "bool processLegacyLowBattery()"),
         ]:
             self.assert_guarded(source, text)
 
@@ -250,16 +296,10 @@ class EnergyLightSleepContractTests(unittest.TestCase):
 
         self.assertEqual(2, GYRO.count("#else\ndouble gyro_z()"))
 
-        legacy = body(SHUTDOWN, "bool processLegacyLowBattery()")
-        self.assertIn("if (!b_softSleep)", legacy)
-        self.assertLess(legacy.index("updateBattery(BATTERY_PIN)"),
-                        legacy.index("i_lowBatteryCount++"))
         for signature in ["void power_off(int min)", "void power_off(double sec)"]:
-            _, stock = energy_and_stock_branches(body(SHUTDOWN, signature))
-            self.assertNotIn("processLegacyLowBattery()", stock)
-            self.assertIn("if (!b_softSleep)", stock)
-            self.assertLess(stock.index("updateBattery(BATTERY_PIN)"),
-                            stock.index("i_lowBatteryCount++"))
+            power_off = body(SHUTDOWN, signature)
+            self.assertNotIn("#if HDS_ENABLE_ENERGY_MENU", power_off)
+            self.assertIn("processNewBatterySample()", power_off)
 
         exit_menu = body(MENU_INTEGRATION, "void exitMenu() {")
         self.assertEqual(1, exit_menu.count("invalidateMenuFrame();"))
@@ -269,6 +309,7 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertIn("does not add a fixed normal-loop delay", DOCS)
         self.assertIn("blocks until ADS1232 data ready", DOCS)
         self.assertIn("first serial byte", DOCS)
+        self.assertIn("Power cadence is always active", DOCS)
         self.assertNotIn("80-SPS", DOCS)
 
 

@@ -105,23 +105,14 @@ struct UsbDecentCommandSink {
   void timerStart() {
     stopWatch.reset();
     stopWatch.start();
-#if HDS_ENABLE_ENERGY_MENU
-    recordEnergyActivity();
-#endif
   }
 
   void timerStop() {
     stopWatch.stop();
-#if HDS_ENABLE_ENERGY_MENU
-    recordEnergyActivity();
-#endif
   }
 
   void timerZero() {
     stopWatch.reset();
-#if HDS_ENABLE_ENERGY_MENU
-    recordEnergyActivity();
-#endif
   }
 
   void wifiUpdate() {

@@ -189,9 +189,7 @@ unsigned long energyMainLoopWaitMs(unsigned long now) {
   if (!b_u8g2Sleep) {
     waitMs = EnergyRuntimePolicy::earlier(waitMs, ENERGY_DISPLAY_DEADLINE_MS);
   }
-  if (energyPolicy.featureEnabled(EnergyFeature::PowerCadence)) {
-    waitMs = EnergyRuntimePolicy::earlier(waitMs, 200);
-  }
+  waitMs = EnergyRuntimePolicy::earlier(waitMs, 200);
   waitMs = EnergyRuntimePolicy::earlier(
     waitMs, EnergyRuntimePolicy::timeUntil(
       now, t_batteryRefresh, i_batteryRefreshTareInterval));
@@ -332,17 +330,14 @@ void scaleTimer() {
   if (stopWatch.isRunning() == false) {
     if (stopWatch.elapsed() == 0) {
       stopWatch.start();
-      recordEnergyActivity();
       Serial.println("Timer Start");
     }
     if (stopWatch.elapsed() > 0) {
       stopWatch.reset();
-      recordEnergyActivity();
       Serial.println("Timer Reset");
     }
   } else {
     stopWatch.stop();
-    recordEnergyActivity();
     Serial.println("Timer Stop");
   }
 }
@@ -371,7 +366,6 @@ void buttonCircle_Released() {
 }
 
 void buttonCircle_Pressed() {
-  recordEnergyActivity();
   if (b_showChargingUI && i_buttonBootDelay == 0) {
     wakeFromChargingUi(BUTTON_CIRCLE);
   }
@@ -380,7 +374,6 @@ void buttonCircle_Pressed() {
     navigateMenu(1);
   }
   if (b_calibration) {
-    recordEnergyActivity();
     i_cal_weight++;
     Serial.print("i_cal_weight = ");
     Serial.println(i_cal_weight);
@@ -399,7 +392,6 @@ void buttonSquare_Released() {
 }
 
 void buttonSquare_Pressed() {
-  recordEnergyActivity();
   if (b_showChargingUI && i_buttonBootDelay == 0) {
     wakeFromChargingUi(BUTTON_SQUARE);
   }
@@ -407,7 +399,6 @@ void buttonSquare_Pressed() {
     selectMenu();
   }
   if (b_calibration) {
-    recordEnergyActivity();
     i_button_cal_status++;
     Serial.print("i_button_cal_status:");
     Serial.println(i_button_cal_status);
@@ -649,7 +640,6 @@ void setup() {
       delay(1000);
     }
   }
-  energyPolicy.begin(millis());
   refreshEnergyMenuRows();
 #endif
 #if HDS_ENABLE_GRINDER
@@ -1195,9 +1185,6 @@ float applyStableOutput(float current_value) {
 void pureScale() {
   static bool b_newDataReady = 0;
 #if HDS_ENABLE_ENERGY_MENU
-  static float f_last_displayed = 0.0;
-#endif
-#if HDS_ENABLE_ENERGY_MENU
   unsigned long &t_lastScaleData = energyIdle.lastScaleData;
   unsigned long &t_lastScaleRecovery = energyIdle.lastScaleRecovery;
 #else
@@ -1292,13 +1279,6 @@ void pureScale() {
     } else {
       f_displayedValue = stable_output;
     }
-#if HDS_ENABLE_ENERGY_MENU
-    if (EnergyRuntimePolicy::meaningfulWeightChange(
-          f_last_displayed, f_displayedValue, STABLE_OUTPUT_THRESHOLD)) {
-      recordEnergyActivity();
-      f_last_displayed = f_displayedValue;
-    }
-#endif
     updateAdaptiveTracking(tracking_compensated);
 
     if (!b_bootTare && !b_weight_quick_zero &&
@@ -1416,8 +1396,6 @@ bool wakeScaleFromSoftSleep(const char *context) {
   scale.powerUp();
 #if HDS_ENABLE_ENERGY_MENU
   b_softSleep = false;
-  clearPendingEnergyActivity();
-  energyPolicy.recordActivity(millis());
   applyEnergyDisplayCommand(!energyRuntime.explicitDisplayOff);
 #else
   u8g2.setPowerSave(0);
@@ -1554,9 +1532,6 @@ bool processBootFreshTare() {
 }
 
 bool tareScaleWhenAdcReady(const char *context, bool userRequested) {
-  if (userRequested) {
-    recordEnergyActivity();
-  }
   ADS1232DebugInfo info = scale.getDebugInfo();
   if (info.samplesInUse > 0 && info.validSamples < info.samplesInUse) {
     if (!refreshScaleDatasetAfterDiscontinuity(context)) {
@@ -1703,39 +1678,6 @@ void setManualStableValue(float value) {
 }
 
 #if HDS_ENABLE_ENERGY_MENU
-void recordEnergyStateTransitions() {
-  static bool initialized = false;
-  static bool charging = false;
-  static bool calibrating = false;
-#if HDS_ENABLE_GRINDER
-  static GrinderDosingState grinderState = GRINDER_STATE_DISABLED;
-#endif
-  const bool chargingNow = b_is_charging;
-  if (!initialized) {
-    charging = chargingNow;
-    calibrating = b_calibration;
-#if HDS_ENABLE_GRINDER
-    grinderState = grinderRuntime.state;
-#endif
-    initialized = true;
-    return;
-  }
-  if (charging != chargingNow) {
-    charging = chargingNow;
-    recordEnergyActivity();
-  }
-  if (calibrating != b_calibration) {
-    calibrating = b_calibration;
-    recordEnergyActivity();
-  }
-#if HDS_ENABLE_GRINDER
-  if (grinderState != grinderRuntime.state) {
-    grinderState = grinderRuntime.state;
-    recordEnergyActivity();
-  }
-#endif
-}
-
 uint32_t mixEnergyDisplaySignature(uint32_t signature, uint32_t value) {
   return (signature ^ value) * 16777619u;
 }
@@ -1750,6 +1692,7 @@ uint32_t mixEnergyDisplayText(uint32_t signature, const char *text) {
 
 uint32_t energyDisplaySignature(unsigned long now) {
   uint32_t signature = 2166136261u;
+  const bool bleConnected = bleHasLiveClient();
 #if HDS_FEATURE_WIFI
   const bool wifiBlink = b_wifiEnabled && WiFi.getMode() == WIFI_STA &&
                          WiFi.status() != WL_CONNECTED;
@@ -1763,16 +1706,21 @@ uint32_t energyDisplaySignature(unsigned long now) {
 #ifdef USB_DET
   chargingNow = digitalRead(USB_DET) == LOW;
 #endif
+  const uint8_t batteryBucket = EnergyRuntimePolicy::batteryDisplayBucket(batteryPercent);
+  const uint8_t displayedBattery = chargingNow ? 5 : batteryBucket;
   const bool tareVisible = now - t_tareStatus < 500;
   const bool shutdownWarningVisible = b_shutdownFailBle && now - t_shutdownFailBle < 3000;
   const uint32_t animationPhase =
-    ((wifiBlink || batteryPercent <= 5) ? (now / 500) & 1 : 0) |
-    ((b_ble_enabled && !deviceConnected ? (now / 1000) & 1 : 0) << 1);
+    ((wifiBlink || (!chargingNow && batteryBucket == 0)) ? (now / 500) & 1 : 0) |
+    ((b_ble_enabled && !bleConnected ? (now / 1000) & 1 : 0) << 1);
   signature = mixEnergyDisplaySignature(signature, static_cast<uint32_t>(lroundf(f_displayedValue * 10.0f)));
-  signature = mixEnergyDisplaySignature(signature, stopWatch.elapsed() / 1000);
-  signature = mixEnergyDisplaySignature(signature, static_cast<uint32_t>(batteryPercent));
+  signature = mixEnergyDisplaySignature(signature, (f_displayedValue > OVER_WEIGHT) |
+                                                    ((f_displayedValue <= -1000.0f) << 1));
+  signature = mixEnergyDisplaySignature(signature, stopWatch.elapsed());
+  signature = mixEnergyDisplaySignature(signature, displayedBattery);
 #if HDS_FEATURE_WIFI
   signature = mixEnergyDisplaySignature(signature, static_cast<uint32_t>(WiFi.status()));
+  signature = mixEnergyDisplaySignature(signature, static_cast<uint32_t>(WiFi.getMode()));
 #endif
 #if HDS_ENABLE_GRINDER
   signature = mixEnergyDisplaySignature(signature, static_cast<uint32_t>(grinderRuntime.state));
@@ -1782,10 +1730,9 @@ uint32_t energyDisplaySignature(unsigned long now) {
   signature = mixEnergyDisplaySignature(signature, b_screenFlipped | (b_debug << 1) |
                                                     (b_about << 2) | (b_timeOnTop << 3));
   signature = mixEnergyDisplaySignature(signature, b_adc_recovery_active | (b_heartBeatIcon << 1) |
-                                                    (chargingNow << 2) | (tareVisible << 3) |
-                                                    (shutdownWarningVisible << 4));
+                                                    (tareVisible << 2) | (shutdownWarningVisible << 3));
   signature = mixEnergyDisplaySignature(signature, i_adc_recovery_count);
-  uint32_t connectionState = deviceConnected | (b_ble_enabled << 1);
+  uint32_t connectionState = bleConnected | (b_ble_enabled << 1);
 #if HDS_FEATURE_WIFI
   connectionState |= b_wifiEnabled << 2;
 #endif
@@ -1794,46 +1741,16 @@ uint32_t energyDisplaySignature(unsigned long now) {
   return signature;
 }
 
-bool energyDisplayIdleInhibited() {
-  bool usbPower = b_is_charging || b_showChargingUI;
-#ifdef USB_DET
-  usbPower = usbPower || digitalRead(USB_DET) == LOW;
-#endif
-#if HDS_ENABLE_GRINDER
-  const bool grinderDisplayRequired = grinderSettings.enabled &&
-                                      grinderRuntime.state >= GRINDER_STATE_ARMED;
-#else
-  const bool grinderDisplayRequired = false;
-#endif
-  return usbPower || b_menu || b_calibration || b_ota ||
-         b_adc_recovery_active || stopWatch.isRunning() || grinderDisplayRequired ||
-         b_debug || b_about || b_shutdownFailBle;
-}
-
-void applyEnergyDisplayMode(DisplayIdleMode requested, bool force = false) {
-  if (!force && requested == energyRuntime.displayMode) return;
-  energyRuntime.displayMode = requested;
-  if (requested == DisplayIdleMode::Off) {
-    u8g2.setPowerSave(1);
-    b_u8g2Sleep = true;
-    return;
-  }
-  u8g2.setPowerSave(0);
-  u8g2.setContrast(EnergyRuntimePolicy::displayContrast(
-    energyRuntime.requestedDisplayContrast, requested));
-  b_u8g2Sleep = false;
-  if (requested == DisplayIdleMode::Active) {
-    energyRuntime.oledFrames.invalidate();
-  }
-}
-
 void applyEnergyDisplayCommand(bool enabled) {
-  applyEnergyDisplayMode(enabled ? DisplayIdleMode::Active : DisplayIdleMode::Off, true);
+  u8g2.setPowerSave(enabled ? 0 : 1);
+  b_u8g2Sleep = !enabled;
+  if (!enabled) return;
+  u8g2.setContrast(energyRuntime.requestedDisplayContrast);
+  energyRuntime.oledFrames.invalidate();
 }
 
 void applyEnergyLowPowerCommand() {
-  u8g2.setContrast(EnergyRuntimePolicy::displayContrast(
-    energyRuntime.requestedDisplayContrast, energyRuntime.displayMode));
+  u8g2.setContrast(energyRuntime.requestedDisplayContrast);
   energyRuntime.oledFrames.invalidate();
 }
 
@@ -1855,57 +1772,16 @@ void serviceEnergyPowerManagement() {
   energyPowerManagement.service(millis());
 }
 
-void applyEnergyDisplayIdle(unsigned long now) {
-  if (!EnergyRuntimePolicy::shouldApplyDisplayIdle(b_softSleep)) return;
-  const DisplayIdleMode requested = EnergyRuntimePolicy::displayMode(
-    energyPolicy.featureEnabled(EnergyFeature::OledIdle), energyDisplayIdleInhibited(),
-    energyRuntime.explicitDisplayOff, energyPolicy.inactiveFor(now));
-  applyEnergyDisplayMode(requested);
-}
-
 void applyEnergyFeatureTransition(EnergyFeature feature, bool wasEnabled, bool isEnabled) {
   if (wasEnabled == isEnabled) return;
-  if (feature == EnergyFeature::PowerCadence) {
-    energyRuntime.schedule.autoOff.reset();
-    energyRuntime.schedule.chargeCheck.reset();
-    energyRuntime.batterySamples.reset(energyRuntime.batterySampleSequence);
-  } else if (feature == EnergyFeature::OledRedraw || feature == EnergyFeature::OledStatic) {
+  if (feature == EnergyFeature::OledRedraw || feature == EnergyFeature::OledStatic) {
     energyRuntime.oledFrames.invalidate();
-  } else if (feature == EnergyFeature::OledIdle) {
-    energyRuntime.schedule.oledIdle.reset();
-    clearPendingEnergyActivity();
-    if (isEnabled) {
-      energyPolicy.begin(millis());
-      applyEnergyDisplayIdle(millis());
-    } else {
-      applyEnergyDisplayMode(energyRuntime.explicitDisplayOff ? DisplayIdleMode::Off
-                                                             : DisplayIdleMode::Active);
-    }
   } else if (feature == EnergyFeature::LightSleep) {
     applyEnergyLightSleepSetting(isEnabled);
     setEnergyIdleWakeEnabled(isEnabled);
   }
 }
 
-void serviceEnergyHousekeeping(unsigned long now) {
-  const uint32_t enabledMask = energyPolicy.settings.features;
-  if (enabledMask == 0) {
-    return;
-  }
-  if (b_softSleep) {
-    return;
-  }
-  if (!EnergyRuntimePolicy::shouldServiceFeature(
-        enabledMask, EnergySettings::featureBit(EnergyFeature::OledIdle))) {
-    return;
-  }
-  if (!energyRuntime.schedule.oledIdle.shouldRun(true, now, 100)) {
-    return;
-  }
-  processEnergyActivities(now);
-  recordEnergyStateTransitions();
-  applyEnergyDisplayIdle(now);
-}
 #endif
 
 
@@ -1916,7 +1792,6 @@ void loop() {
   processBleVoltageResponse();
 #if HDS_ENABLE_ENERGY_MENU
   serviceEnergyPowerManagement();
-  serviceEnergyHousekeeping(millis());
 #endif
 
   if (b_powerOff){
@@ -2012,15 +1887,9 @@ void loop() {
     if (millis() - t_batteryRefresh > i_batteryRefreshTareInterval){
       updateBattery(BATTERY_PIN);
     }
-#if HDS_ENABLE_ENERGY_MENU
-    const bool powerCadenceEnabled = energyPolicy.featureEnabled(EnergyFeature::PowerCadence);
-    if (!powerCadenceEnabled ||
-        energyRuntime.schedule.chargeCheck.shouldRun(true, millis(), 200)) {
+    if (powerCadence.chargeCheck.shouldRun(millis(), 200)) {
       checkBattery();
     }
-#else
-    checkBattery();
-#endif
     if (b_ota) {
 #if HDS_FEATURE_ELEGANT_OTA
       ElegantOTA.loop();
@@ -2196,19 +2065,20 @@ void chargingOLED(int perc, float voltage) {
 
 
 void updateOled() {
-  if (millis() - t_oled_refresh >= i_oled_print_interval) {
-    t_oled_refresh = millis();
+  const unsigned long frameNow = millis();
+  if (frameNow - t_oled_refresh >= i_oled_print_interval) {
+    t_oled_refresh = frameNow;
 
 #if HDS_ENABLE_ENERGY_MENU
     const bool oledStatic = energyPolicy.featureEnabled(EnergyFeature::OledStatic);
     const bool oledRedraw = energyPolicy.featureEnabled(EnergyFeature::OledRedraw);
     const bool oledGatingEnabled = oledStatic || oledRedraw;
-    if (energyRuntime.displayMode == DisplayIdleMode::Off) {
+    if (b_u8g2Sleep) {
       return;
     }
     if (oledGatingEnabled) {
       if (!energyRuntime.oledFrames.shouldRender(
-            true, energyDisplaySignature(t_oled_refresh), t_oled_refresh,
+            true, energyDisplaySignature(frameNow), frameNow,
             oledStatic ? 30000 : 1000)) {
         return;
       }
@@ -2233,9 +2103,9 @@ void updateOled() {
       }
       u8g2.setDrawColor(2);
 
-      drawBattery();
+      drawBattery(frameNow);
       drawButton();
-      drawBle();
+      drawBle(frameNow);
       drawHeartBeat();
 #if HDS_ENABLE_GRINDER
       drawGrinder();
@@ -2354,19 +2224,12 @@ void drawButton() {
       u8g2.drawXBM(114, 0, 14, 16, image_square);
 }
 
-unsigned long t_ble_box = 0;
-bool b_drawBle = false;
-void drawBle() {
+void drawBle(unsigned long now) {
   if (b_ble_enabled) {
     if (bleHasLiveClient()) {
       u8g2.drawXBM(3, 51, 5, 13, image_ble_enabled);
-    } else {
-      if (millis() - t_ble_box > 1000) {
-        b_drawBle = !b_drawBle;
-        t_ble_box = millis();
-      }
-      if (b_drawBle)
-        u8g2.drawXBM(3, 51, 5, 13, image_ble_enabled);
+    } else if ((now / 1000) & 1) {
+      u8g2.drawXBM(3, 51, 5, 13, image_ble_enabled);
     }
   } else {
     u8g2.drawXBM(0, 51, 10, 13, image_ble_disabled);
@@ -2390,11 +2253,7 @@ void drawGrinder() {
 }
 #endif
 
-void drawBattery() {
-  if (millis() - t_batteryIcon >= 500) {
-    t_batteryIcon = millis();
-    b_showBatteryIcon = !b_showBatteryIcon;
-  }
+void drawBattery(unsigned long now) {
 #if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
   if (digitalRead(USB_DET) == LOW) {
 #else
@@ -2405,24 +2264,29 @@ void drawBattery() {
   } else {
     b_is_charging = false;
     int i_batteryPercent = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
-    if (i_batteryPercent <= 5) {
-      if (b_showBatteryIcon)
-        u8g2.drawXBM(121, 52, 7, 12, image_battery_0);
-    } else if (i_batteryPercent > 5 && i_batteryPercent <= 25) {
-      u8g2.drawXBM(121, 52, 7, 12, image_battery_1);
-    } else if (i_batteryPercent > 25 && i_batteryPercent <= 50) {
-      u8g2.drawXBM(121, 52, 7, 12, image_battery_2);
-    } else if (i_batteryPercent > 50 && i_batteryPercent <= 75) {
-      u8g2.drawXBM(121, 52, 7, 12, image_battery_3);
-    } else if (i_batteryPercent > 75) {
-      u8g2.drawXBM(121, 52, 7, 12, image_battery_4);
+    switch (EnergyRuntimePolicy::batteryDisplayBucket(i_batteryPercent)) {
+      case 0:
+        if ((now / 500) & 1) u8g2.drawXBM(121, 52, 7, 12, image_battery_0);
+        break;
+      case 1:
+        u8g2.drawXBM(121, 52, 7, 12, image_battery_1);
+        break;
+      case 2:
+        u8g2.drawXBM(121, 52, 7, 12, image_battery_2);
+        break;
+      case 3:
+        u8g2.drawXBM(121, 52, 7, 12, image_battery_3);
+        break;
+      default:
+        u8g2.drawXBM(121, 52, 7, 12, image_battery_4);
+        break;
     }
   }
 
 #if HDS_FEATURE_WIFI
   if (b_wifiEnabled) {
     bool connecting = WiFi.getMode() == WIFI_STA && WiFi.status() != WL_CONNECTED;
-    if (!connecting || (millis() / 500) % 2) {
+    if (!connecting || ((now / 500) & 1)) {
       u8g2.setFont(u8g2_font_open_iconic_www_1x_t);
       int glyph = WiFi.getMode() == WIFI_STA ? 0x004F : 0x0051;
       u8g2.drawGlyph(10, 64, glyph);

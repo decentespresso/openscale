@@ -1,10 +1,12 @@
 # Energy Saving Runtime Policy
 
-The Energy Saving menu is compiled by `HDS_ENABLE_ENERGY_MENU=1`. The dedicated `esp32s3-energy-menu` environment and custom builds selecting `energy-menu` use the PM-capable environment. Stock `esp32s3` remains unchanged.
+The Energy Saving menu is compiled by `HDS_ENABLE_ENERGY_MENU=1`. The dedicated `esp32s3-energy-menu` environment and custom builds selecting `energy-menu` use the PM-capable environment.
 
-The menu contains `Back`, `Serial Quiet`, `Power Cadence`, `OLED Redraw`, `OLED Idle`, `OLED Static`, and `Light Sleep`. All settings are persistent, and `Light Sleep` defaults to off.
+The menu contains `Back`, `Serial Quiet`, `OLED Redraw`, `OLED Static`, and `Light Sleep`. All settings are persistent, and `Light Sleep` defaults to off.
 
-Energy schema version 5 preserves the five existing settings, discards the old `Motion Poll` and `ACC Rail Off` values, and creates `Light Sleep` as off. Invalid or missing Boolean values use their safe defaults, and the migration writes its marker only after all writes and removals succeed.
+Energy schema version 6 preserves the four retained settings and discards the old `Power Cadence`, `OLED Idle`, `Motion Poll`, and `ACC Rail Off` values. Invalid or missing Boolean values use their safe defaults, and the migration writes its marker only after all writes and removals succeed.
+
+Power cadence is always active in stock and Energy Menu builds. Auto-off evaluation runs once per second, charging checks run every 200 ms, and low-battery shutdown requires two distinct battery samples.
 
 With `Light Sleep` off, `ESP_PM_CPU_FREQ_MAX` and `ESP_PM_NO_LIGHT_SLEEP` are held. With it on, those global locks are released. ESP-IDF driver locks remain authoritative. OTA is the only current explicit performance-critical state; its CPU lock is managed from the main loop.
 

@@ -7,24 +7,27 @@
 #include <math.h>
 #include <mutex>
 #include "calibration_validation.h"
+#include "energy_runtime_policy.h"
 #if HDS_ENABLE_ENERGY_MENU
 #include "energy_policy.h"
 #include "energy_power_management.h"
-#include "energy_runtime_policy.h"
 #endif
 
 Preferences settingsPreferences;
+struct PowerCadenceState {
+  CadenceGate autoOff;
+  CadenceGate chargeCheck;
+  BatterySampleGate batterySamples;
+  uint32_t batterySampleSequence = 0;
+};
+PowerCadenceState powerCadence;
 #if HDS_ENABLE_ENERGY_MENU
 EnergyPolicy energyPolicy;
 EnergyPowerManagement energyPowerManagement;
 struct EnergyRuntimeState {
   OledFrameGate oledFrames;
-  BatterySampleGate batterySamples;
-  EnergyRuntimeSchedule schedule;
-  DisplayIdleMode displayMode = DisplayIdleMode::Active;
   volatile bool explicitDisplayOff = false;
   volatile uint8_t requestedDisplayContrast = 255;
-  uint32_t batterySampleSequence = 0;
 };
 EnergyRuntimeState energyRuntime;
 struct EnergyIdleState {
@@ -38,43 +41,11 @@ struct EnergyIdleState {
   unsigned long lastWeightTick = 0;
 };
 EnergyIdleState energyIdle;
-portMUX_TYPE energyActivityMux = portMUX_INITIALIZER_UNLOCKED;
-volatile bool energyActivityPending = false;
 
 inline void notifyEnergyMainLoop() {
   TaskHandle_t mainTask = energyIdle.mainTask;
   if (mainTask != nullptr) {
     xTaskNotifyGive(mainTask);
-  }
-}
-
-inline void clearPendingEnergyActivity() {
-  portENTER_CRITICAL(&energyActivityMux);
-  energyActivityPending = false;
-  portEXIT_CRITICAL(&energyActivityMux);
-}
-
-inline void recordEnergyActivity() {
-  if (!energyPolicy.settings.enabled(EnergyFeature::OledIdle)) {
-    return;
-  }
-  portENTER_CRITICAL(&energyActivityMux);
-  energyActivityPending = true;
-  portEXIT_CRITICAL(&energyActivityMux);
-}
-
-inline void processEnergyActivities(unsigned long now) {
-  const uint32_t enabledMask = energyPolicy.settings.features;
-  if (enabledMask == 0 ||
-      !energyPolicy.settings.enabled(EnergyFeature::OledIdle)) {
-    return;
-  }
-  portENTER_CRITICAL(&energyActivityMux);
-  const bool pending = energyActivityPending;
-  energyActivityPending = false;
-  portEXIT_CRITICAL(&energyActivityMux);
-  if (pending) {
-    energyPolicy.recordActivity(now);
   }
 }
 
@@ -86,7 +57,6 @@ inline void invalidateEnergyOledFrame() {
   energyRuntime.oledFrames.invalidate();
 }
 #else
-inline void recordEnergyActivity() {}
 inline void invalidateEnergyOledFrame() {}
 #endif
 
@@ -215,8 +185,6 @@ int b_beep = 1;
 bool b_about = false;
 bool b_debug = false;
 
-unsigned long t_batteryIcon = 0;
-bool b_showBatteryIcon = true;
 volatile bool b_softSleep = false;
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 bool b_gyroEnabled = true;
@@ -261,19 +229,16 @@ volatile bool b_u8g2Sleep = true;
 inline void requestEnergyDisplay(bool enabled) {
   energyRuntime.explicitDisplayOff = !enabled;
   b_u8g2Sleep = !enabled;
-  recordEnergyActivity();
 }
 
 inline void requestEnergyLowPower(bool enabled) {
   b_websocketLowPowerEnabled = enabled;
   energyRuntime.requestedDisplayContrast = enabled ? 0 : 255;
-  recordEnergyActivity();
 }
 
 inline void requestEnergyContrast(uint8_t contrast) {
   b_websocketLowPowerEnabled = false;
   energyRuntime.requestedDisplayContrast = contrast;
-  recordEnergyActivity();
 }
 #endif
 
@@ -318,7 +283,6 @@ void requestRemoteTare() {
   portEXIT_CRITICAL(&remoteTareMux);
 #if HDS_ENABLE_ENERGY_MENU
   notifyEnergyMainLoop();
-  recordEnergyActivity();
 #endif
 }
 

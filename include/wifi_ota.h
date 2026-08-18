@@ -71,9 +71,6 @@ void processOtaDisplayUpdate() {
 }
 
 void onOTAStart() {
-#if HDS_ENABLE_ENERGY_MENU
-  recordEnergyActivity();
-#endif
   Serial.println("OTA update started!");
   std::lock_guard<std::mutex> otaDispatchLock(otaDispatchMutex);
   portENTER_CRITICAL(&wsPendingMux);

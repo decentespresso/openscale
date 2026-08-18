@@ -5,9 +5,7 @@
 
 enum class EnergyFeature : uint8_t {
   SerialQuiet,
-  PowerCadence,
   OledRedraw,
-  OledIdle,
   OledStatic,
   LightSleep,
   Count
@@ -38,32 +36,9 @@ class EnergyPolicy {
 public:
   EnergySettings settings;
 
-  void begin(uint32_t now) {
-    lastActivityAt = now;
-  }
-
   bool featureEnabled(EnergyFeature feature) const {
     return settings.enabled(feature);
   }
-
-  bool anyFeatureEnabled() const {
-    return settings.features != 0;
-  }
-
-  void recordActivity(uint32_t now) {
-    lastActivityAt = now;
-  }
-
-  uint32_t inactiveFor(uint32_t now) const {
-    return now - lastActivityAt;
-  }
-
-  static bool deadlineReached(uint32_t now, uint32_t startedAt, uint32_t delay) {
-    return now - startedAt >= delay;
-  }
-
-private:
-  uint32_t lastActivityAt = 0;
 };
 
 #endif

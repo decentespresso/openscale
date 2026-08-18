@@ -1525,9 +1525,6 @@ void wifiUpdate() {
   if (b_softSleep) {
     wakeScaleFromSoftSleep("WiFi OTA wake");
   }
-#if HDS_ENABLE_ENERGY_MENU
-  recordEnergyActivity();
-#endif
 #ifdef BUZZER
   buzzer.off();
 #endif
@@ -1669,7 +1666,6 @@ void calibrateVoltage() {
 }
 
 void navigateMenu(int direction) {
-  recordEnergyActivity();
   currentIndex = (currentIndex + direction + currentMenuSize) % currentMenuSize;
   currentSelection = currentMenu[currentIndex];
   invalidateMenuFrame();
@@ -1678,9 +1674,6 @@ void navigateMenu(int direction) {
 }
 
 void selectMenu() {
-#if HDS_ENABLE_ENERGY_MENU
-  recordEnergyActivity();
-#endif
   invalidateMenuFrame();
   if (currentSelection->subMenu) {
 #ifdef BUZZER
