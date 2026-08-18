@@ -3,6 +3,12 @@
 
 #include <stdint.h>
 
+enum class DisplayIdleMode : uint8_t {
+  Active,
+  Dimmed,
+  Off
+};
+
 class OledFrameGate {
 public:
   bool shouldRender(bool enabled, uint32_t signature, uint32_t now,
@@ -70,6 +76,24 @@ struct EnergyRuntimePolicy {
 
   static bool lowBatteryConfirmed(uint32_t samples) {
     return samples >= lowBatteryConfirmationSamples;
+  }
+
+  static bool meaningfulWeightChange(float previous, float current, float threshold) {
+    const float change = current - previous;
+    return change >= threshold || change <= -threshold;
+  }
+
+  static DisplayIdleMode displayMode(bool enabled, bool inhibited, bool explicitlyOff,
+                                     uint32_t inactiveMs) {
+    if (explicitlyOff) return DisplayIdleMode::Off;
+    if (!enabled || inhibited) return DisplayIdleMode::Active;
+    if (inactiveMs >= 120000) return DisplayIdleMode::Off;
+    if (inactiveMs >= 30000) return DisplayIdleMode::Dimmed;
+    return DisplayIdleMode::Active;
+  }
+
+  static uint8_t displayContrast(uint8_t requested, DisplayIdleMode mode) {
+    return mode == DisplayIdleMode::Dimmed && requested > 32 ? 32 : requested;
   }
 
   static uint8_t batteryDisplayBucket(int percent) {

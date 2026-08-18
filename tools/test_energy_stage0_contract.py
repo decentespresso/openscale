@@ -56,23 +56,23 @@ class EnergyLightSleepContractTests(unittest.TestCase):
 
     def test_feature_count_and_menu_order(self):
         self.assertEqual(
-            ["SerialQuiet", "OledRedraw", "OledStatic", "LightSleep"],
+            ["SerialQuiet", "OledRedraw", "OledIdle", "LightSleep"],
             re.findall(r"^  (\w+),$", POLICY, re.MULTILINE),
         )
         self.assertEqual(
             [
-                "Serial Quiet o", "OLED Redraw o", "OLED Static o", "Light Sleep o",
+                "Serial Quiet o", "OLED Redraw o", "OLED Idle o", "Light Sleep o",
             ],
             re.findall(r'char menuEnergy\w+Label\[\] = "([^"]+)";', MENU),
         )
         self.assertNotIn("Motion Poll", MENU)
         self.assertNotIn("ACC Rail Off", MENU)
         self.assertNotIn("Power Cadence", MENU)
-        self.assertNotIn("OLED Idle", MENU)
+        self.assertNotIn("OLED Static", MENU)
         self.assertIn("static_cast<size_t>(EnergyFeature::Count)", MENU)
 
     def test_storage_migration_preserves_retained_features(self):
-        self.assertIn("ENERGY_SCHEMA_VERSION = 6", STORAGE)
+        self.assertIn("ENERGY_SCHEMA_VERSION = 7", STORAGE)
         self.assertIn('"e_light_sleep"', STORAGE)
         self.assertIn("KEY_ENERGY_MOTION_POLL", STORAGE)
         self.assertIn("KEY_ENERGY_ACC_RAIL_OFF", STORAGE)
@@ -80,7 +80,7 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertIn("storageRemoveIfPresent(KEY_ENERGY_MOTION_POLL)", migration)
         self.assertIn("storageRemoveIfPresent(KEY_ENERGY_ACC_RAIL_OFF)", migration)
         self.assertIn("storageRemoveIfPresent(KEY_ENERGY_POWER_CADENCE)", migration)
-        self.assertIn("storageRemoveIfPresent(KEY_ENERGY_OLED_IDLE)", migration)
+        self.assertIn("storageRemoveIfPresent(KEY_ENERGY_OLED_STATIC)", migration)
         self.assertIn("getType(key) == PT_U8", STORAGE)
 
     def test_power_cadence_is_always_enabled(self):
@@ -219,6 +219,18 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertIn("energyDisplaySignature(frameNow)", update)
         self.assertIn("drawBattery(frameNow)", update)
         self.assertIn("drawBle(frameNow)", update)
+        self.assertIn("energyRuntime.displayMode == DisplayIdleMode::Off", update)
+        self.assertNotIn("EnergyFeature::OledStatic", update)
+
+    def test_oled_boot_state_and_idle_policy(self):
+        setup = body(FIRMWARE, "void setup()")
+        oled_begin = setup.index("u8g2.begin()")
+        self.assertLess(oled_begin, setup.index("b_u8g2Sleep = false", oled_begin))
+        self.assertIn("energyPolicy.begin(millis())", setup)
+        housekeeping = body(FIRMWARE, "void serviceEnergyHousekeeping(unsigned long now)")
+        self.assertIn("EnergyFeature::OledIdle", housekeeping)
+        self.assertIn("processEnergyActivities(now)", housekeeping)
+        self.assertNotIn("OledStatic", FIRMWARE + POLICY + MENU)
 
     def test_adc_recovery_and_serial_policy_remain_reachable(self):
         wait = body(FIRMWARE, "unsigned long energyMainLoopWaitMs(unsigned long now)")
@@ -310,6 +322,7 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertIn("blocks until ADS1232 data ready", DOCS)
         self.assertIn("first serial byte", DOCS)
         self.assertIn("Power cadence is always active", DOCS)
+        self.assertIn("OLED Idle", DOCS)
         self.assertNotIn("80-SPS", DOCS)
 
 

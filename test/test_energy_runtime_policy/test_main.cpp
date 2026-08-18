@@ -12,15 +12,17 @@ void testOledRedrawSkipsUnchangedFrames() {
   TEST_ASSERT_TRUE(gate.shouldRender(false, 2, 202));
 }
 
-void testOledStaticImpliesGatingAndUsesThirtySeconds() {
-  OledFrameGate gate;
-  const bool oledRedraw = false;
-  const bool oledStatic = true;
-  const bool gatingEnabled = oledRedraw || oledStatic;
-  TEST_ASSERT_TRUE(gatingEnabled);
-  TEST_ASSERT_TRUE(gate.shouldRender(gatingEnabled, 7, 100, 30000));
-  TEST_ASSERT_FALSE(gate.shouldRender(gatingEnabled, 7, 30099, 30000));
-  TEST_ASSERT_TRUE(gate.shouldRender(gatingEnabled, 7, 30100, 30000));
+void testOledIdleTransitionsAndExplicitOffPrecedence() {
+  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(DisplayIdleMode::Active),
+                          static_cast<uint8_t>(EnergyRuntimePolicy::displayMode(true, false, false, 29999)));
+  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(DisplayIdleMode::Dimmed),
+                          static_cast<uint8_t>(EnergyRuntimePolicy::displayMode(true, false, false, 30000)));
+  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(DisplayIdleMode::Off),
+                          static_cast<uint8_t>(EnergyRuntimePolicy::displayMode(true, false, false, 120000)));
+  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(DisplayIdleMode::Active),
+                          static_cast<uint8_t>(EnergyRuntimePolicy::displayMode(false, false, false, 120000)));
+  TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(DisplayIdleMode::Off),
+                          static_cast<uint8_t>(EnergyRuntimePolicy::displayMode(false, true, true, 0)));
 }
 
 void testCadenceRunsExactlyAtDeadlineAndAcrossRollover() {
@@ -69,7 +71,7 @@ void testIdleDeadlineSelectsEarlierWork() {
 int main(int argc, char **argv) {
   UNITY_BEGIN();
   RUN_TEST(testOledRedrawSkipsUnchangedFrames);
-  RUN_TEST(testOledStaticImpliesGatingAndUsesThirtySeconds);
+  RUN_TEST(testOledIdleTransitionsAndExplicitOffPrecedence);
   RUN_TEST(testCadenceRunsExactlyAtDeadlineAndAcrossRollover);
   RUN_TEST(testBatteryConfirmationUsesDistinctSamples);
   RUN_TEST(testBatteryDisplayUsesVisibleBuckets);

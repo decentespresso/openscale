@@ -26,6 +26,8 @@ EnergyPolicy energyPolicy;
 EnergyPowerManagement energyPowerManagement;
 struct EnergyRuntimeState {
   OledFrameGate oledFrames;
+  CadenceGate oledIdle;
+  DisplayIdleMode displayMode = DisplayIdleMode::Active;
   volatile bool explicitDisplayOff = false;
   volatile uint8_t requestedDisplayContrast = 255;
 };
@@ -41,6 +43,8 @@ struct EnergyIdleState {
   unsigned long lastWeightTick = 0;
 };
 EnergyIdleState energyIdle;
+portMUX_TYPE energyActivityMux = portMUX_INITIALIZER_UNLOCKED;
+volatile bool energyActivityPending = false;
 
 inline void notifyEnergyMainLoop() {
   TaskHandle_t mainTask = energyIdle.mainTask;
@@ -49,14 +53,33 @@ inline void notifyEnergyMainLoop() {
   }
 }
 
+inline void clearPendingEnergyActivity() {
+  portENTER_CRITICAL(&energyActivityMux);
+  energyActivityPending = false;
+  portEXIT_CRITICAL(&energyActivityMux);
+}
+
+inline void recordEnergyActivity() {
+  if (!energyPolicy.settings.enabled(EnergyFeature::OledIdle)) return;
+  portENTER_CRITICAL(&energyActivityMux);
+  energyActivityPending = true;
+  portEXIT_CRITICAL(&energyActivityMux);
+}
+
+inline void processEnergyActivities(unsigned long now) {
+  portENTER_CRITICAL(&energyActivityMux);
+  const bool pending = energyActivityPending;
+  energyActivityPending = false;
+  portEXIT_CRITICAL(&energyActivityMux);
+  if (pending) energyPolicy.recordActivity(now);
+}
+
 inline void invalidateEnergyOledFrame() {
-  if (!energyPolicy.settings.enabled(EnergyFeature::OledRedraw) &&
-      !energyPolicy.settings.enabled(EnergyFeature::OledStatic)) {
-    return;
-  }
+  if (!energyPolicy.settings.enabled(EnergyFeature::OledRedraw)) return;
   energyRuntime.oledFrames.invalidate();
 }
 #else
+inline void recordEnergyActivity() {}
 inline void invalidateEnergyOledFrame() {}
 #endif
 
@@ -229,16 +252,19 @@ volatile bool b_u8g2Sleep = true;
 inline void requestEnergyDisplay(bool enabled) {
   energyRuntime.explicitDisplayOff = !enabled;
   b_u8g2Sleep = !enabled;
+  recordEnergyActivity();
 }
 
 inline void requestEnergyLowPower(bool enabled) {
   b_websocketLowPowerEnabled = enabled;
   energyRuntime.requestedDisplayContrast = enabled ? 0 : 255;
+  recordEnergyActivity();
 }
 
 inline void requestEnergyContrast(uint8_t contrast) {
   b_websocketLowPowerEnabled = false;
   energyRuntime.requestedDisplayContrast = contrast;
+  recordEnergyActivity();
 }
 #endif
 
@@ -283,6 +309,7 @@ void requestRemoteTare() {
   portEXIT_CRITICAL(&remoteTareMux);
 #if HDS_ENABLE_ENERGY_MENU
   notifyEnergyMainLoop();
+  recordEnergyActivity();
 #endif
 }
 

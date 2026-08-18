@@ -29,14 +29,14 @@ constexpr const char *KEY_QUICK_BOOT = "quick_boot";
 constexpr const char *KEY_DRIFT_MAX = "drift_max";
 #if HDS_ENABLE_ENERGY_MENU
 constexpr const char *KEY_ENERGY_SCHEMA = "energy_schema";
-constexpr uint16_t ENERGY_SCHEMA_VERSION = 6;
+constexpr uint16_t ENERGY_SCHEMA_VERSION = 7;
 constexpr const char *KEY_ENERGY_MOTION_POLL = "e_motion";
 constexpr const char *KEY_ENERGY_ACC_RAIL_OFF = "e_acc_rail";
 constexpr const char *KEY_ENERGY_POWER_CADENCE = "e_power_cad";
-constexpr const char *KEY_ENERGY_OLED_IDLE = "e_oled_idle";
+constexpr const char *KEY_ENERGY_OLED_STATIC = "e_oled_static";
 
 constexpr const char *ENERGY_FEATURE_KEYS[] = {
-  "e_serial_quiet", "e_oled_redraw", "e_oled_static", "e_light_sleep"
+  "e_serial_quiet", "e_oled_redraw", "e_oled_idle", "e_light_sleep"
 };
 static_assert(sizeof(ENERGY_FEATURE_KEYS) / sizeof(ENERGY_FEATURE_KEYS[0]) ==
               static_cast<size_t>(EnergyFeature::Count));
@@ -137,7 +137,7 @@ inline bool energyLoadSettings(EnergySettings &settings) {
   loaded = storageRemoveIfPresent(KEY_ENERGY_MOTION_POLL) && loaded;
   loaded = storageRemoveIfPresent(KEY_ENERGY_ACC_RAIL_OFF) && loaded;
   loaded = storageRemoveIfPresent(KEY_ENERGY_POWER_CADENCE) && loaded;
-  loaded = storageRemoveIfPresent(KEY_ENERGY_OLED_IDLE) && loaded;
+  loaded = storageRemoveIfPresent(KEY_ENERGY_OLED_STATIC) && loaded;
   return loaded &&
          settingsPreferences.putUShort(KEY_ENERGY_SCHEMA, ENERGY_SCHEMA_VERSION) == sizeof(uint16_t);
 }

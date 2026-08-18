@@ -252,12 +252,21 @@ void processWsPendingCmds() {
   if (mask & WSP_TIMER_START) {
     stopWatch.reset();
     stopWatch.start();
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
   }
   if (mask & WSP_TIMER_STOP)  {
     stopWatch.stop();
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
   }
   if (mask & WSP_TIMER_ZERO)  {
     stopWatch.reset();
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
   }
   if (mask & WSP_SET_SAMPLES) {
     if (setScaleSamplesInUseWhenReady(samplesInUse, "remote samples")) {
@@ -418,6 +427,9 @@ bool setWebsocketRateFromInterval(AsyncWebSocketClient *client, unsigned long in
     return false;
   }
   weightWebsocketNotifyInterval = intervalMs;
+#if HDS_ENABLE_ENERGY_MENU
+  recordEnergyActivity();
+#endif
   Serial.print("Websocket notify interval set to ");
   Serial.print(weightWebsocketNotifyInterval);
   Serial.println(" ms");
@@ -456,6 +468,24 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
   action.trim();
   command.toLowerCase();
   action.toLowerCase();
+
+#if HDS_ENABLE_ENERGY_MENU
+  const bool onOff = action == "on" || action == "off";
+  const bool eventAction = onOff || action == "enable" || action == "enabled" ||
+                           action == "disable" || action == "disabled";
+  const bool timerAction = action == "start" || action == "stop" ||
+                           action == "zero" || action == "reset";
+  const bool sleepAction = onOff || action == "wake";
+  if (command == "tare" ||
+      (command == "events" && eventAction) ||
+      (command == "timer" && timerAction) ||
+      (command == "display" && onOff) ||
+      (command == "low_power" && onOff) ||
+      ((command == "sleep" || command == "soft_sleep") && sleepAction) ||
+      (command == "power" && action == "off")) {
+    recordEnergyActivity();
+  }
+#endif
 
   if (command == "status" || command == "battery" || command == "info") {
     sendWebsocketStatus(client, "ok");
@@ -723,6 +753,9 @@ void setupWebsocketEvents() {
                       AsyncWebSocket *server, AsyncWebSocketClient *client,
                       AwsEventType type, void *arg, uint8_t *data, size_t len) {
     if (type == WS_EVT_CONNECT) {
+#if HDS_ENABLE_ENERGY_MENU
+      recordEnergyActivity();
+#endif
       server->cleanupClients(4);
       if (server->count() > 4) {
         client->close();

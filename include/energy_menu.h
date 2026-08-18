@@ -3,7 +3,7 @@
 
 void toggleEnergySerialQuiet();
 void toggleEnergyOledRedraw();
-void toggleEnergyOledStatic();
+void toggleEnergyOledIdle();
 void toggleEnergyLightSleep();
 
 extern Menu menuEnergy;
@@ -11,26 +11,26 @@ Menu menuEnergyBack = { "Back", NULL, NULL, &menuEnergy };
 Menu menuEnergy = { "Energy Saving", NULL, &menuEnergyBack, NULL };
 char menuEnergySerialQuietLabel[] = "Serial Quiet o";
 char menuEnergyOledRedrawLabel[] = "OLED Redraw o";
-char menuEnergyOledStaticLabel[] = "OLED Static o";
+char menuEnergyOledIdleLabel[] = "OLED Idle o";
 char menuEnergyLightSleepLabel[] = "Light Sleep o";
 
 const Menu menuEnergySerialQuiet = { menuEnergySerialQuietLabel, toggleEnergySerialQuiet, NULL, &menuEnergy };
 const Menu menuEnergyOledRedraw = { menuEnergyOledRedrawLabel, toggleEnergyOledRedraw, NULL, &menuEnergy };
-const Menu menuEnergyOledStatic = { menuEnergyOledStaticLabel, toggleEnergyOledStatic, NULL, &menuEnergy };
+const Menu menuEnergyOledIdle = { menuEnergyOledIdleLabel, toggleEnergyOledIdle, NULL, &menuEnergy };
 const Menu menuEnergyLightSleep = { menuEnergyLightSleepLabel, toggleEnergyLightSleep, NULL, &menuEnergy };
 
 const Menu *const energyMenu[] = {
   &menuEnergyBack,
   &menuEnergySerialQuiet,
   &menuEnergyOledRedraw,
-  &menuEnergyOledStatic,
+  &menuEnergyOledIdle,
   &menuEnergyLightSleep,
 };
 
 char *energyFeatureRows[] = {
   menuEnergySerialQuietLabel,
   menuEnergyOledRedrawLabel,
-  menuEnergyOledStaticLabel,
+  menuEnergyOledIdleLabel,
   menuEnergyLightSleepLabel,
 };
 static_assert(sizeof(energyFeatureRows) / sizeof(energyFeatureRows[0]) ==
@@ -71,7 +71,7 @@ inline void toggleEnergyFeature(EnergyFeature feature, const char *label) {
 
 void toggleEnergySerialQuiet() { toggleEnergyFeature(EnergyFeature::SerialQuiet, "Serial Quiet"); }
 void toggleEnergyOledRedraw() { toggleEnergyFeature(EnergyFeature::OledRedraw, "OLED Redraw"); }
-void toggleEnergyOledStatic() { toggleEnergyFeature(EnergyFeature::OledStatic, "OLED Static"); }
+void toggleEnergyOledIdle() { toggleEnergyFeature(EnergyFeature::OledIdle, "OLED Idle"); }
 void toggleEnergyLightSleep() { toggleEnergyFeature(EnergyFeature::LightSleep, "Light Sleep"); }
 
 #endif
