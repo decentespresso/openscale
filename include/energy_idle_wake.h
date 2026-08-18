@@ -5,29 +5,37 @@
 #include <esp_pm.h>
 #include <esp_sleep.h>
 
-constexpr uint64_t ENERGY_IDLE_BUTTON_WAKE_PIN_MASK =
-  (1ULL << BUTTON_CIRCLE) |
-  (1ULL << BUTTON_SQUARE);
-constexpr uint64_t ENERGY_IDLE_SCALE_WAKE_PIN_MASK = 1ULL << SCALE_DOUT;
-#ifdef USB_DET
-constexpr uint64_t ENERGY_IDLE_USB_WAKE_PIN_MASK = 1ULL << USB_DET;
-#else
-constexpr uint64_t ENERGY_IDLE_USB_WAKE_PIN_MASK = 0;
-#endif
-constexpr uint64_t ENERGY_IDLE_WAKE_PIN_MASK =
-  ENERGY_IDLE_BUTTON_WAKE_PIN_MASK |
-  ENERGY_IDLE_SCALE_WAKE_PIN_MASK |
-  ENERGY_IDLE_USB_WAKE_PIN_MASK;
+static bool energyLightSleepWakePinSupported(gpio_num_t pin) {
+  return rtc_gpio_is_valid_gpio(pin);
+}
 
-static bool energyLightSleepWakePinsSupported(bool scaleWakeEnabled,
-                                               bool usbWakeEnabled) {
-  return rtc_gpio_is_valid_gpio((gpio_num_t)BUTTON_CIRCLE) &&
-         rtc_gpio_is_valid_gpio((gpio_num_t)BUTTON_SQUARE) &&
-         (!scaleWakeEnabled || rtc_gpio_is_valid_gpio((gpio_num_t)SCALE_DOUT))
+static uint64_t energyLightSleepWakePinMask(gpio_num_t pin) {
+  return energyLightSleepWakePinSupported(pin) ? 1ULL << pin : 0;
+}
+
+static uint64_t energyLightSleepSupportedWakePinMask() {
+  uint64_t mask = energyLightSleepWakePinMask((gpio_num_t)SCALE_DOUT) |
+                  energyLightSleepWakePinMask((gpio_num_t)BUTTON_CIRCLE) |
+                  energyLightSleepWakePinMask((gpio_num_t)BUTTON_SQUARE);
 #ifdef USB_DET
-         && (!usbWakeEnabled || rtc_gpio_is_valid_gpio((gpio_num_t)USB_DET))
+  mask |= energyLightSleepWakePinMask((gpio_num_t)USB_DET);
 #endif
-         ;
+  return mask;
+}
+
+static uint64_t energyLightSleepRequiredWakePinMask(bool scaleWakeEnabled,
+                                                     bool usbWakeEnabled) {
+  uint64_t mask = energyLightSleepWakePinMask((gpio_num_t)BUTTON_CIRCLE) |
+                  energyLightSleepWakePinMask((gpio_num_t)BUTTON_SQUARE);
+  if (scaleWakeEnabled) {
+    mask |= energyLightSleepWakePinMask((gpio_num_t)SCALE_DOUT);
+  }
+#ifdef USB_DET
+  if (usbWakeEnabled) {
+    mask |= energyLightSleepWakePinMask((gpio_num_t)USB_DET);
+  }
+#endif
+  return mask;
 }
 
 static void IRAM_ATTR energyMainLoopWakeIsr(void *context) {
@@ -57,25 +65,33 @@ static bool registerEnergyMainLoopLightSleepCallback(EnergyIdleState *state) {
 
 static bool setEnergyLightSleepWakeSourceEnabled(bool enabled,
                                                  bool scaleWakeEnabled,
-                                                 bool usbWakeEnabled) {
-  if (enabled && !energyLightSleepWakePinsSupported(scaleWakeEnabled, usbWakeEnabled)) {
-    return false;
+                                                 bool usbWakeEnabled,
+                                                 uint64_t *enabledMask) {
+  const uint64_t supportedMask = energyLightSleepSupportedWakePinMask();
+  esp_err_t result = ESP_OK;
+  if (supportedMask != 0) {
+    result = esp_sleep_disable_ext1_wakeup_io(supportedMask);
   }
-  esp_err_t result = esp_sleep_disable_ext1_wakeup_io(ENERGY_IDLE_WAKE_PIN_MASK);
   if (result == ESP_OK && enabled) {
-    const uint64_t wakeMask = ENERGY_IDLE_BUTTON_WAKE_PIN_MASK |
-      (scaleWakeEnabled ? ENERGY_IDLE_SCALE_WAKE_PIN_MASK : 0) |
-      (usbWakeEnabled ? ENERGY_IDLE_USB_WAKE_PIN_MASK : 0);
-    result = esp_sleep_enable_ext1_wakeup_io(wakeMask, ESP_EXT1_WAKEUP_ANY_LOW);
+    const uint64_t wakeMask = energyLightSleepRequiredWakePinMask(
+      scaleWakeEnabled, usbWakeEnabled);
+    if (wakeMask != 0) {
+      result = esp_sleep_enable_ext1_wakeup_io(wakeMask, ESP_EXT1_WAKEUP_ANY_LOW);
+    }
+    if (result == ESP_OK && enabledMask != nullptr) *enabledMask = wakeMask;
+  } else if (result == ESP_OK && enabledMask != nullptr) {
+    *enabledMask = 0;
   }
   if (result != ESP_OK) {
-    esp_sleep_disable_ext1_wakeup_io(ENERGY_IDLE_WAKE_PIN_MASK);
+    const uint64_t wakeMask = energyLightSleepRequiredWakePinMask(
+      scaleWakeEnabled, usbWakeEnabled);
+    if (wakeMask != 0) esp_sleep_disable_ext1_wakeup_io(wakeMask);
     return false;
   }
   return true;
 }
 
-static bool restoreEnergyLightSleepWakePins() {
+static bool restoreEnergyLightSleepWakePins(uint64_t wakeMask) {
   const gpio_num_t pins[] = {
     (gpio_num_t)SCALE_DOUT,
     (gpio_num_t)BUTTON_CIRCLE,
@@ -86,7 +102,7 @@ static bool restoreEnergyLightSleepWakePins() {
   };
   bool restored = true;
   for (const gpio_num_t pin : pins) {
-    if (!rtc_gpio_is_valid_gpio(pin)) continue;
+    if ((wakeMask & energyLightSleepWakePinMask(pin)) == 0) continue;
     const esp_err_t holdResult = rtc_gpio_hold_dis(pin);
     const esp_err_t deinitResult = rtc_gpio_deinit(pin);
     restored = holdResult == ESP_OK && deinitResult == ESP_OK && restored;

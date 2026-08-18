@@ -38,6 +38,11 @@ struct EnergyIdleState {
   bool lightSleepCallbackRegistered = false;
   bool scaleWakeEnabled = true;
   bool usbWakeEnabled = true;
+  bool scaleWakeFallback = false;
+  bool circleButtonWakeFallback = false;
+  bool squareButtonWakeFallback = false;
+  bool usbWakeFallback = false;
+  uint64_t rtcWakeMask = 0;
   volatile bool wakePinsNeedRestore = false;
   bool buttonGestureActive = false;
   unsigned long lastButtonActivityAt = 0;

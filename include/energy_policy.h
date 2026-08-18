@@ -33,6 +33,11 @@ struct EnergySettings {
            (!usbPresent || enabled(EnergyFeature::UsbSleepTest));
   }
 
+  bool usbSleepTestActive() const {
+    return enabled(EnergyFeature::LightSleep) &&
+           enabled(EnergyFeature::UsbSleepTest);
+  }
+
   static constexpr uint32_t featureBit(EnergyFeature feature) {
     return uint32_t(1) << static_cast<uint8_t>(feature);
   }

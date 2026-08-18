@@ -13,13 +13,17 @@ void testFeaturesDefaultOff() {
 void testUsbSleepPolicyCombinations() {
   EnergySettings settings;
   TEST_ASSERT_FALSE(settings.lightSleepAllowed(true));
+  TEST_ASSERT_FALSE(settings.usbSleepTestActive());
   settings.select(EnergyFeature::UsbSleepTest, true);
   TEST_ASSERT_FALSE(settings.lightSleepAllowed(true));
+  TEST_ASSERT_FALSE(settings.usbSleepTestActive());
   settings.select(EnergyFeature::UsbSleepTest, false);
   settings.select(EnergyFeature::LightSleep, true);
   TEST_ASSERT_FALSE(settings.lightSleepAllowed(true));
+  TEST_ASSERT_FALSE(settings.usbSleepTestActive());
   settings.select(EnergyFeature::UsbSleepTest, true);
   TEST_ASSERT_TRUE(settings.lightSleepAllowed(true));
+  TEST_ASSERT_TRUE(settings.usbSleepTestActive());
 }
 
 void testFeaturesAreIndependent() {

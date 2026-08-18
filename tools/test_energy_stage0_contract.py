@@ -130,6 +130,22 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertEqual(POWER.count("esp_pm_lock_delete("), 1)
         self.assertIn("!usbSleepTestEnabled", POWER)
         self.assertIn("setUsbSleepTestEnabled", FIRMWARE)
+        apply_setting = body(POWER, "bool applyLightSleepSetting(bool enabled)")
+        self.assertLess(
+            apply_setting.index("setLockHeld(stockNoLightSleepLock"),
+            apply_setting.index("configure(true)"),
+        )
+        fail_closed = body(POWER, "bool failClosed()")
+        self.assertIn("lightSleepEnabled = false", fail_closed)
+        self.assertIn("setLockHeld(stockNoLightSleepLock", fail_closed)
+        self.assertIn("setLockHeld(serialNoLightSleepLock", fail_closed)
+        self.assertIn("configure(false)", fail_closed)
+        update_locks = body(POWER, "bool updateLocks()")
+        self.assertIn("performanceCritical", update_locks)
+        self.assertLess(
+            update_locks.index("stockSleepAcquireOk"),
+            update_locks.index("stockCpuOk"),
+        )
         deep_sleep = body(SHUTDOWN, "void esp32_sleep()")
         self.assertLess(
             deep_sleep.index("applyEnergyLightSleepSetting(false)"),
@@ -162,7 +178,8 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertIn("if (!energyPolicy.featureEnabled(EnergyFeature::LightSleep)) return true", buttons)
         can_block = body(FIRMWARE, "bool energyMainLoopCanBlock()")
         self.assertIn("!energyLightSleepAllowedByUsbPolicy()", can_block)
-        self.assertIn("EnergyFeature::UsbSleepTest", can_block)
+        self.assertIn("energyUsbSleepTestActive()", can_block)
+        self.assertIn("chargingBlocksSleep", can_block)
         wake_isr = body(ENERGY_IDLE_WAKE, "static void IRAM_ATTR energyMainLoopWakeIsr(void *context)")
         self.assertIn("vTaskNotifyGiveFromISR", wake_isr)
         self.assertNotIn("scale.", wake_isr)
@@ -174,16 +191,17 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertIn("xTaskNotifyGive(state->mainTask)", sleep_exit)
         self.assertNotIn("rtc_gpio_", sleep_exit)
         self.assertNotIn("ESP_ERROR_CHECK", ENERGY_IDLE_WAKE)
-        restore = body(ENERGY_IDLE_WAKE, "static bool restoreEnergyLightSleepWakePins()")
+        restore = body(ENERGY_IDLE_WAKE, "static bool restoreEnergyLightSleepWakePins(uint64_t wakeMask)")
         for pin in ["SCALE_DOUT", "BUTTON_CIRCLE", "BUTTON_SQUARE", "USB_DET"]:
-            hold = f"rtc_gpio_hold_dis((gpio_num_t){pin})"
-            deinit = f"rtc_gpio_deinit((gpio_num_t){pin})"
             self.assertIn(f"(gpio_num_t){pin}", restore)
+        self.assertIn("wakeMask & energyLightSleepWakePinMask(pin)", restore)
         self.assertIn("esp_pm_light_sleep_register_cbs", ENERGY_IDLE_WAKE)
         self.assertIn("esp_sleep_enable_ext1_wakeup_io", ENERGY_IDLE_WAKE)
         self.assertIn("esp_sleep_disable_ext1_wakeup_io", ENERGY_IDLE_WAKE)
         for pin in ["SCALE_DOUT", "BUTTON_CIRCLE", "BUTTON_SQUARE", "USB_DET"]:
-            self.assertIn(f"1ULL << {pin}", ENERGY_IDLE_WAKE)
+            self.assertIn(f"energyLightSleepWakePinMask((gpio_num_t){pin})", ENERGY_IDLE_WAKE)
+        self.assertIn("rtc_gpio_is_valid_gpio(pin)", ENERGY_IDLE_WAKE)
+        self.assertNotIn("energyLightSleepWakePinsSupported", ENERGY_IDLE_WAKE)
         self.assertIn(
             "attachInterruptArg(digitalPinToInterrupt(SCALE_DOUT), energyMainLoopWakeIsr",
             FIRMWARE,
@@ -198,8 +216,36 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertNotIn("b_softSleep ||", can_block)
         self.assertIn("!b_softSleep && digitalRead(SCALE_DOUT) == LOW", pending)
         self.assertIn("const bool scaleWakeEnabled = !b_softSleep", wake_setup)
-        self.assertIn("scaleWakeEnabled ? ENERGY_IDLE_SCALE_WAKE_PIN_MASK : 0", ENERGY_IDLE_WAKE)
+        required_mask = body(
+            ENERGY_IDLE_WAKE,
+            "static uint64_t energyLightSleepRequiredWakePinMask(bool scaleWakeEnabled,",
+        )
+        self.assertIn("if (scaleWakeEnabled)", required_mask)
+        wait = body(FIRMWARE, "unsigned long energyMainLoopWaitMs(unsigned long now)")
+        self.assertIn("!b_softSleep && energyIdle.scaleWakeFallback", wait)
         self.assertIn("refreshEnergyIdleWakeForRuntimeState()", BLE + WEBSOCKET + FIRMWARE)
+
+    def test_unsupported_wake_sources_use_bounded_fallbacks(self):
+        wake_setup = body(FIRMWARE, "bool setEnergyIdleWakeEnabled(bool enabled)")
+        for fallback in [
+            "scaleWakeFallback",
+            "circleButtonWakeFallback",
+            "squareButtonWakeFallback",
+            "usbWakeFallback",
+        ]:
+            self.assertIn(fallback, wake_setup)
+        wait = body(FIRMWARE, "unsigned long energyMainLoopWaitMs(unsigned long now)")
+        self.assertIn("scale.getConversionTime()", wait)
+        self.assertIn("ADS1232_DEFAULT_CONVERSION_MS", wait)
+        self.assertIn("BUTTON_POLL_INTERVAL_MS", wait)
+        self.assertIn("ENERGY_USB_FALLBACK_POLL_MS", wait)
+        self.assertIn("waitMs = EnergyRuntimePolicy::earlier", wait)
+        required_mask = body(
+            ENERGY_IDLE_WAKE,
+            "static uint64_t energyLightSleepRequiredWakePinMask(bool scaleWakeEnabled,",
+        )
+        self.assertIn("energyLightSleepWakePinMask", required_mask)
+        self.assertNotIn("return false", required_mask)
 
     def test_light_sleep_transition_and_boot_fail_closed(self):
         toggle = body(MENU, "void toggleEnergyLightSleep()")
@@ -272,6 +318,10 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertIn("ENERGY_ADC_RECOVERY_RETRY_MS", wait)
         self.assertIn("setSerialTransportActive(energySerialTransportActive())", FIRMWARE)
         self.assertIn("lightSleepEnabled && serialTransportActive && !usbSleepTestEnabled", POWER)
+        service = body(FIRMWARE, "void serviceEnergyPowerManagement()")
+        self.assertIn("setEnergyLightSleepEnabled(false)", service)
+        self.assertIn("energyStoreFeature(EnergyFeature::LightSleep, false)", service)
+        self.assertIn("failureLogged", service)
         self.assertNotIn("esp_sleep_enable_uart_wakeup", FIRMWARE + POWER)
         self.assertNotIn("uart_set_wakeup_threshold", FIRMWARE + POWER)
         self.assertNotIn("80-SPS", FIRMWARE + DOCS)
@@ -358,6 +408,9 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertIn("Power cadence is always active", DOCS)
         self.assertIn("OLED Idle", DOCS)
         self.assertIn("USB Sleep Test", DOCS)
+        self.assertIn("remains effective after a USB power-cycle or reboot", DOCS)
+        self.assertIn("only that source uses bounded polling", DOCS)
+        self.assertIn("SCALE_DOUT is neither an EXT1 source nor a fallback polling requirement", DOCS)
         self.assertNotIn("80-SPS", DOCS)
 
 
