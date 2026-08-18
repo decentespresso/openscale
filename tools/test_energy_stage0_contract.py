@@ -104,6 +104,10 @@ class EnergyLightSleepContractTests(unittest.TestCase):
             deep_sleep.index("esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER)"),
         )
         self.assertLess(
+            deep_sleep.index("setEnergyIdleWakeEnabled(false)"),
+            deep_sleep.index("esp_sleep_enable_ext1_wakeup_io"),
+        )
+        self.assertLess(
             deep_sleep.index("esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER)"),
             deep_sleep.index("esp_sleep_enable_ext1_wakeup_io"),
         )
@@ -130,6 +134,17 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         wake_isr = body(ENERGY_IDLE_WAKE, "static void IRAM_ATTR energyMainLoopWakeIsr(void *context)")
         self.assertIn("vTaskNotifyGiveFromISR", wake_isr)
         self.assertNotIn("scale.", wake_isr)
+        sleep_exit = body(
+            ENERGY_IDLE_WAKE,
+            "static esp_err_t IRAM_ATTR energyMainLoopWakeAfterLightSleep(int64_t, void *context)",
+        )
+        self.assertIn("esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_EXT1", sleep_exit)
+        self.assertIn("xTaskNotifyGive(mainTask)", sleep_exit)
+        self.assertIn("esp_pm_light_sleep_register_cbs", ENERGY_IDLE_WAKE)
+        self.assertIn("esp_sleep_enable_ext1_wakeup_io", ENERGY_IDLE_WAKE)
+        self.assertIn("esp_sleep_disable_ext1_wakeup_io", ENERGY_IDLE_WAKE)
+        for pin in ["SCALE_DOUT", "BUTTON_CIRCLE", "BUTTON_SQUARE", "USB_DET"]:
+            self.assertIn(f"1ULL << {pin}", ENERGY_IDLE_WAKE)
         self.assertIn(
             "attachInterruptArg(digitalPinToInterrupt(SCALE_DOUT), energyMainLoopWakeIsr",
             FIRMWARE,
@@ -182,6 +197,7 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         )
         self.assertIn('DEFAULT_FEATURES = set(FEATURES) - HIDDEN_FEATURES - {"energy-menu"}', CUSTOM_BUILD)
         self.assertIn("CONFIG_BT_CTRL_LPCLK_SEL_MAIN_XTAL=y", SDKCONFIG)
+        self.assertIn("CONFIG_PM_LIGHT_SLEEP_CALLBACKS=y", SDKCONFIG)
         self.assertIn("# CONFIG_BT_CTRL_LPCLK_SEL_RTC_SLOW is not set", SDKCONFIG)
         self.assertIn("CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y", SDKCONFIG)
         self.assertNotIn("CONFIG_BT_CTRL_LPCLK_SEL_RTC_SLOW=y", SDKCONFIG)

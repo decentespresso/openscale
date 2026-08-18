@@ -87,6 +87,7 @@ bool energySerialTransportActive() {
 
 void setEnergyIdleWakeEnabled(bool enabled) {
   if (enabled == energyIdle.wakeInterruptsAttached) return;
+  setEnergyLightSleepWakeSourceEnabled(enabled);
   if (enabled) {
     attachInterruptArg(digitalPinToInterrupt(SCALE_DOUT), energyMainLoopWakeIsr,
                        energyIdle.mainTask, FALLING);
@@ -110,6 +111,7 @@ void setEnergyIdleWakeEnabled(bool enabled) {
 }
 
 void initEnergyIdleWake() {
+  registerEnergyMainLoopLightSleepCallback(energyIdle.mainTask);
   setEnergyIdleWakeEnabled(energyPolicy.featureEnabled(EnergyFeature::LightSleep));
 }
 
