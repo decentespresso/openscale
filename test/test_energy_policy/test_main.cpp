@@ -7,7 +7,19 @@ void tearDown() {}
 void testFeaturesDefaultOff() {
   EnergyPolicy policy;
   TEST_ASSERT_EQUAL_UINT32(0, policy.settings.features);
-  TEST_ASSERT_EQUAL_UINT8(4, static_cast<uint8_t>(EnergyFeature::Count));
+  TEST_ASSERT_EQUAL_UINT8(5, static_cast<uint8_t>(EnergyFeature::Count));
+}
+
+void testUsbSleepPolicyCombinations() {
+  EnergySettings settings;
+  TEST_ASSERT_FALSE(settings.lightSleepAllowed(true));
+  settings.select(EnergyFeature::UsbSleepTest, true);
+  TEST_ASSERT_FALSE(settings.lightSleepAllowed(true));
+  settings.select(EnergyFeature::UsbSleepTest, false);
+  settings.select(EnergyFeature::LightSleep, true);
+  TEST_ASSERT_FALSE(settings.lightSleepAllowed(true));
+  settings.select(EnergyFeature::UsbSleepTest, true);
+  TEST_ASSERT_TRUE(settings.lightSleepAllowed(true));
 }
 
 void testFeaturesAreIndependent() {
@@ -31,6 +43,7 @@ int main(int argc, char **argv) {
   UNITY_BEGIN();
   RUN_TEST(testFeaturesDefaultOff);
   RUN_TEST(testFeaturesAreIndependent);
+  RUN_TEST(testUsbSleepPolicyCombinations);
   RUN_TEST(testActivityTimingHandlesRollover);
   return UNITY_END();
 }

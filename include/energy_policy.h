@@ -8,6 +8,7 @@ enum class EnergyFeature : uint8_t {
   OledRedraw,
   OledIdle,
   LightSleep,
+  UsbSleepTest,
   Count
 };
 
@@ -25,6 +26,11 @@ struct EnergySettings {
   void select(EnergyFeature feature, bool value) {
     const uint32_t bit = featureBit(feature);
     features = value ? features | bit : features & ~bit;
+  }
+
+  bool lightSleepAllowed(bool usbPresent) const {
+    return enabled(EnergyFeature::LightSleep) &&
+           (!usbPresent || enabled(EnergyFeature::UsbSleepTest));
   }
 
   static constexpr uint32_t featureBit(EnergyFeature feature) {

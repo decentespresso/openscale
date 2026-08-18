@@ -10,9 +10,11 @@ void applyEnergyLowPowerCommand();
 void applyEnergyFeatureTransition(EnergyFeature feature, bool wasEnabled, bool isEnabled);
 bool initEnergyPowerManagement();
 bool applyEnergyLightSleepSetting(bool enabled);
+bool setEnergyLightSleepEnabled(bool enabled);
+void refreshEnergyIdleWakeForRuntimeState();
 bool setEnergyPerformanceCritical(bool required);
 void serviceEnergyPowerManagement();
-void setEnergyIdleWakeEnabled(bool enabled);
+bool setEnergyIdleWakeEnabled(bool enabled);
 void waitForEnergyMainLoopWork();
 #endif
 
@@ -85,10 +87,32 @@ bool energySerialTransportActive() {
 #endif
 }
 
-void setEnergyIdleWakeEnabled(bool enabled) {
-  if (enabled == energyIdle.wakeInterruptsAttached) return;
-  setEnergyLightSleepWakeSourceEnabled(enabled);
-  if (enabled) {
+bool energyLightSleepAllowedByUsbPolicy() {
+  return energyPolicy.settings.lightSleepAllowed(energySerialTransportActive());
+}
+
+bool setEnergyIdleWakeEnabled(bool enabled) {
+  const bool scaleWakeEnabled = !b_softSleep;
+  const bool usbWakeEnabled =
+    !energyPolicy.featureEnabled(EnergyFeature::UsbSleepTest);
+  if (enabled == energyIdle.wakeInterruptsAttached &&
+      scaleWakeEnabled == energyIdle.scaleWakeEnabled &&
+      usbWakeEnabled == energyIdle.usbWakeEnabled) return true;
+  if (!setEnergyLightSleepWakeSourceEnabled(
+        enabled, scaleWakeEnabled, usbWakeEnabled)) {
+    if (energyIdle.wakeInterruptsAttached) {
+      detachInterrupt(digitalPinToInterrupt(SCALE_DOUT));
+      detachInterrupt(digitalPinToInterrupt(BUTTON_CIRCLE));
+      detachInterrupt(digitalPinToInterrupt(BUTTON_SQUARE));
+#ifdef USB_DET
+      detachInterrupt(digitalPinToInterrupt(USB_DET));
+#endif
+      energyIdle.wakeInterruptsAttached = false;
+    }
+    return false;
+  }
+  const bool interruptsChanged = enabled != energyIdle.wakeInterruptsAttached;
+  if (interruptsChanged && enabled) {
     attachInterruptArg(digitalPinToInterrupt(SCALE_DOUT), energyMainLoopWakeIsr,
                        energyIdle.mainTask, FALLING);
     attachInterruptArg(digitalPinToInterrupt(BUTTON_CIRCLE), energyMainLoopWakeIsr,
@@ -99,7 +123,7 @@ void setEnergyIdleWakeEnabled(bool enabled) {
     attachInterruptArg(digitalPinToInterrupt(USB_DET), energyMainLoopWakeIsr,
                        energyIdle.mainTask, FALLING);
 #endif
-  } else {
+  } else if (interruptsChanged) {
     detachInterrupt(digitalPinToInterrupt(SCALE_DOUT));
     detachInterrupt(digitalPinToInterrupt(BUTTON_CIRCLE));
     detachInterrupt(digitalPinToInterrupt(BUTTON_SQUARE));
@@ -108,11 +132,62 @@ void setEnergyIdleWakeEnabled(bool enabled) {
 #endif
   }
   energyIdle.wakeInterruptsAttached = enabled;
+  energyIdle.scaleWakeEnabled = scaleWakeEnabled;
+  energyIdle.usbWakeEnabled = usbWakeEnabled;
+  return true;
 }
 
-void initEnergyIdleWake() {
-  registerEnergyMainLoopLightSleepCallback(energyIdle.mainTask);
-  setEnergyIdleWakeEnabled(energyPolicy.featureEnabled(EnergyFeature::LightSleep));
+bool initEnergyIdleWake() {
+  if (energyIdle.lightSleepCallbackRegistered) return true;
+  energyIdle.lightSleepCallbackRegistered =
+    registerEnergyMainLoopLightSleepCallback(&energyIdle);
+  return energyIdle.lightSleepCallbackRegistered;
+}
+
+bool setEnergyLightSleepEnabled(bool enabled) {
+  if (enabled) {
+    if (!energyPowerManagement.ready() ||
+        !energyIdle.lightSleepCallbackRegistered ||
+        !setEnergyIdleWakeEnabled(true)) {
+      setEnergyIdleWakeEnabled(false);
+      applyEnergyLightSleepSetting(false);
+      return false;
+    }
+    if (applyEnergyLightSleepSetting(true)) return true;
+    setEnergyIdleWakeEnabled(false);
+    applyEnergyLightSleepSetting(false);
+    return false;
+  }
+  const bool powerManagementDisabled = applyEnergyLightSleepSetting(false);
+  const bool wakeDisabled = setEnergyIdleWakeEnabled(false);
+  return powerManagementDisabled && wakeDisabled;
+}
+
+void refreshEnergyIdleWakeForRuntimeState() {
+  if (!energyPolicy.featureEnabled(EnergyFeature::LightSleep) ||
+      setEnergyIdleWakeEnabled(true)) return;
+  setEnergyLightSleepEnabled(false);
+  energyPolicy.settings.select(EnergyFeature::LightSleep, false);
+  energyStoreFeature(EnergyFeature::LightSleep, false);
+  updateEnergyMenuRow(EnergyFeature::LightSleep);
+  Serial.println("[energy] Light Sleep disabled after wake source failure");
+}
+
+void serviceEnergyLightSleepWakeRestore() {
+  if (!energyIdle.wakePinsNeedRestore) return;
+  energyIdle.wakePinsNeedRestore = false;
+  const bool restored = restoreEnergyLightSleepWakePins();
+  pinMode(SCALE_DOUT, INPUT);
+  pinMode(BUTTON_CIRCLE, INPUT_PULLUP);
+  pinMode(BUTTON_SQUARE, INPUT_PULLUP);
+#ifdef USB_DET
+  pinMode(USB_DET, INPUT_PULLUP);
+#endif
+  if (restored) return;
+  setEnergyLightSleepEnabled(false);
+  energyPolicy.settings.select(EnergyFeature::LightSleep, false);
+  energyStoreFeature(EnergyFeature::LightSleep, false);
+  Serial.println("[energy] Light Sleep disabled after wake pin restore failure");
 }
 
 bool serviceEnergyButtonGesture(unsigned long now) {
@@ -128,7 +203,7 @@ bool serviceEnergyButtonGesture(unsigned long now) {
 }
 
 bool energyMainLoopHasPendingWork() {
-  if (digitalRead(SCALE_DOUT) == LOW || wsPendingMask != 0 ||
+  if ((!b_softSleep && digitalRead(SCALE_DOUT) == LOW) || wsPendingMask != 0 ||
       bleStatusResponsesPending != 0 || bleVoltageResponsesPending != 0 ||
       otaDisplayState != OTA_DISPLAY_NONE || b_powerOff) {
     return true;
@@ -137,10 +212,12 @@ bool energyMainLoopHasPendingWork() {
 }
 
 bool energyMainLoopCanBlock() {
-  if (!energyPolicy.featureEnabled(EnergyFeature::LightSleep) ||
-      b_softSleep || b_ota || b_pullOtaRunning || b_menu || b_calibration ||
-      b_showChargingUI || b_is_charging || GPIO_power_on_with == BATTERY_CHARGING ||
-      energySerialTransportActive()) {
+  const bool usbSleepTest =
+    energyPolicy.featureEnabled(EnergyFeature::UsbSleepTest);
+  if (!energyLightSleepAllowedByUsbPolicy() ||
+      b_ota || b_pullOtaRunning || b_menu || b_calibration ||
+      b_showChargingUI || (!usbSleepTest && b_is_charging) ||
+      GPIO_power_on_with == BATTERY_CHARGING) {
     return false;
   }
 #if HDS_ENABLE_GRINDER
@@ -153,14 +230,14 @@ bool energyMainLoopCanBlock() {
 }
 
 unsigned long energyMainLoopWaitMs(unsigned long now) {
-  unsigned long waitMs;
-  if (scale.getSignalTimeoutFlag()) {
+  unsigned long waitMs = 200;
+  if (!b_softSleep && scale.getSignalTimeoutFlag()) {
     const unsigned long dataWait = EnergyRuntimePolicy::timeUntil(
       now, energyIdle.lastScaleData, ENERGY_ADC_RECOVERY_START_MS);
     const unsigned long recoveryWait = EnergyRuntimePolicy::timeUntil(
       now, energyIdle.lastScaleRecovery, ENERGY_ADC_RECOVERY_RETRY_MS);
     waitMs = max(dataWait, recoveryWait);
-  } else {
+  } else if (!b_softSleep) {
     waitMs = EnergyRuntimePolicy::timeUntil(
       now, energyIdle.lastScaleData, ENERGY_ADC_SIGNAL_TIMEOUT_MS);
   }
@@ -177,7 +254,7 @@ unsigned long energyMainLoopWaitMs(unsigned long now) {
                                   || (b_wifiEnabled && websocketHasClients())
 #endif
                                   ;
-  if (weightOutputActive) {
+  if (!b_softSleep && weightOutputActive) {
     waitMs = EnergyRuntimePolicy::earlier(
       waitMs, EnergyRuntimePolicy::timeUntil(
         now, energyIdle.lastWeightTick, WEIGHT_BASE_INTERVAL_MS));
@@ -640,12 +717,11 @@ void setup() {
       delay(1000);
     }
   }
-  if (!initEnergyPowerManagement() ||
-      !applyEnergyLightSleepSetting(energyPolicy.featureEnabled(EnergyFeature::LightSleep))) {
-    Serial.println("Energy power management init failed!");
-    while (1) {
-      delay(1000);
-    }
+  if (energyPolicy.featureEnabled(EnergyFeature::UsbSleepTest)) {
+    Serial.println("[energy] USB Sleep Test ON: USB serial reliability not guaranteed");
+  }
+  if (!initEnergyPowerManagement() || !applyEnergyLightSleepSetting(false)) {
+    Serial.println("[energy] Light Sleep unavailable; continuing awake");
   }
   energyPolicy.begin(millis());
   refreshEnergyMenuRows();
@@ -1070,7 +1146,21 @@ void setup() {
   }
 #endif
 #if HDS_ENABLE_ENERGY_MENU
-  initEnergyIdleWake();
+  const bool lightSleepRequested =
+    energyPolicy.featureEnabled(EnergyFeature::LightSleep);
+  const bool lightSleepReady = initEnergyIdleWake();
+  if (lightSleepRequested &&
+      (!lightSleepReady || !setEnergyLightSleepEnabled(true))) {
+    setEnergyLightSleepEnabled(false);
+    energyPolicy.settings.select(EnergyFeature::LightSleep, false);
+    const bool stored = energyStoreFeature(EnergyFeature::LightSleep, false);
+    updateEnergyMenuRow(EnergyFeature::LightSleep);
+    Serial.println(stored
+      ? "[energy] Stored Light Sleep rejected; disabled"
+      : "[energy] Stored Light Sleep rejected; persistence failed");
+  } else if (!lightSleepReady) {
+    Serial.println("[energy] Light Sleep wake setup unavailable; continuing awake");
+  }
 #endif
 }
 
@@ -1415,6 +1505,7 @@ bool wakeScaleFromSoftSleep(const char *context) {
   scale.powerUp();
 #if HDS_ENABLE_ENERGY_MENU
   b_softSleep = false;
+  refreshEnergyIdleWakeForRuntimeState();
   clearPendingEnergyActivity();
   energyPolicy.recordActivity(millis());
   applyEnergyDisplayCommand(!energyRuntime.explicitDisplayOff);
@@ -1850,8 +1941,10 @@ bool setEnergyPerformanceCritical(bool required) {
 }
 
 void serviceEnergyPowerManagement() {
-  setEnergyPerformanceCritical(b_ota || b_pullOtaRunning);
   energyPowerManagement.setSerialTransportActive(energySerialTransportActive());
+  energyPowerManagement.setUsbSleepTestEnabled(
+    energyPolicy.featureEnabled(EnergyFeature::UsbSleepTest));
+  setEnergyPerformanceCritical(b_ota || b_pullOtaRunning);
   energyPowerManagement.service(millis());
 }
 
@@ -1877,8 +1970,10 @@ void applyEnergyFeatureTransition(EnergyFeature feature, bool wasEnabled, bool i
                                                              : DisplayIdleMode::Active);
     }
   } else if (feature == EnergyFeature::LightSleep) {
-    applyEnergyLightSleepSetting(isEnabled);
-    setEnergyIdleWakeEnabled(isEnabled);
+    setEnergyLightSleepEnabled(isEnabled);
+  } else if (feature == EnergyFeature::UsbSleepTest) {
+    refreshEnergyIdleWakeForRuntimeState();
+    serviceEnergyPowerManagement();
   }
 }
 
@@ -1895,6 +1990,9 @@ void serviceEnergyHousekeeping(unsigned long now) {
 
 
 void loop() {
+#if HDS_ENABLE_ENERGY_MENU
+  serviceEnergyLightSleepWakeRestore();
+#endif
   processWsPendingCmds();
   processBleStatusResponse();
   processBleVoltageResponse();

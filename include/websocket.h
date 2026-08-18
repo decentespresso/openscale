@@ -248,6 +248,9 @@ void processWsPendingCmds() {
     u8g2.setPowerSave(1);
     digitalWrite(PWR_CTRL, LOW);
     digitalWrite(ACC_PWR_CTRL, LOW);
+#if HDS_ENABLE_ENERGY_MENU
+    refreshEnergyIdleWakeForRuntimeState();
+#endif
   }
   if (mask & WSP_TIMER_START) {
     stopWatch.reset();

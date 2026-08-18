@@ -2,9 +2,9 @@
 
 The Energy Saving menu is compiled by `HDS_ENABLE_ENERGY_MENU=1`. The dedicated `esp32s3-energy-menu` environment and custom builds selecting `energy-menu` use the PM-capable environment.
 
-The menu contains `Back`, `Serial Quiet`, `OLED Redraw`, `OLED Idle`, and `Light Sleep`. All settings are persistent, and `Light Sleep` defaults to off.
+The menu contains `Back`, `Serial Quiet`, `OLED Redraw`, `OLED Idle`, `Light Sleep`, and `USB Sleep Test`. All settings are persistent and each setting defaults to off.
 
-Energy schema version 7 preserves the four retained settings and discards the old `Power Cadence`, `OLED Static`, `Motion Poll`, and `ACC Rail Off` values. Invalid or missing Boolean values use their safe defaults, and the migration writes its marker only after all writes and removals succeed.
+Energy schema version 8 preserves the five retained settings and discards the old `Power Cadence`, `OLED Static`, `Motion Poll`, and `ACC Rail Off` values. Invalid or missing Boolean values use their safe defaults, and the migration writes its marker only after all writes and removals succeed.
 
 Power cadence is always active in stock and Energy Menu builds. Auto-off evaluation runs once per second, charging checks run every 200 ms, and low-battery shutdown requires two distinct battery samples.
 
@@ -14,6 +14,6 @@ The runtime controller creates each PM lock once and updates lock ownership on m
 
 With `Light Sleep` on during normal live weighing, the Arduino loop task blocks until ADS1232 data ready, a button press, deferred main-loop work, or the next required software deadline. ADC reads and button handling stay in the main-loop task. Active button gestures retain the 2 ms cadence.
 
-USB presence keeps the existing serial PM lock held and disables main-loop blocking. Boards without USB detection use the same conservative policy continuously. UART wake and a wake preamble are not used, so the first serial byte is not exposed to a light-sleep wake threshold.
+USB presence keeps the existing serial PM lock held and disables main-loop blocking. `USB Sleep Test` overrides both safeguards only while `Light Sleep` is on, for diagnostic USB current measurements where serial reliability is not guaranteed. Boards without USB detection use the same conservative policy unless the override is enabled. UART wake and a wake preamble are not used, so the first serial byte is not exposed to a light-sleep wake threshold.
 
 Explicit soft sleep and deep sleep retain their existing behavior. Soft sleep does not cause the PM performance lock to remain held.

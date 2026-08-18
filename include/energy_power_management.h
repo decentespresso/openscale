@@ -11,11 +11,10 @@ public:
   bool begin() {
     if (initialized) return configured;
 
-    esp_pm_config_t config = {};
-    config.max_freq_mhz = 240;
-    config.min_freq_mhz = 80;
-    config.light_sleep_enable = true;
-    if (esp_pm_configure(&config) != ESP_OK) return false;
+    if (!configure(true)) {
+      configure(false);
+      return false;
+    }
 
     if (createLocks()) {
       initialized = true;
@@ -23,12 +22,20 @@ public:
       return true;
     }
     destroyLocks();
+    configure(false);
     return false;
   }
 
   bool applyLightSleepSetting(bool enabled) {
+    if (!initialized) return false;
+    const bool previous = lightSleepEnabled;
     lightSleepEnabled = enabled;
-    return updateLocks();
+    if (updateLocks()) return true;
+    if (enabled) {
+      lightSleepEnabled = previous;
+      updateLocks();
+    }
+    return false;
   }
 
   bool setPerformanceCritical(bool required) {
@@ -40,10 +47,14 @@ public:
     serialTransportActive = active;
   }
 
+  void setUsbSleepTestEnabled(bool enabled) {
+    usbSleepTestEnabled = enabled;
+  }
+
   bool service(uint32_t) {
     if (!initialized) return false;
     return setLockHeld(serialNoLightSleepLock, serialNoLightSleepHeld,
-                       lightSleepEnabled && serialTransportActive);
+                       lightSleepEnabled && serialTransportActive && !usbSleepTestEnabled);
   }
 
   bool ready() const {
@@ -51,6 +62,14 @@ public:
   }
 
 private:
+  static bool configure(bool lightSleepEnabled) {
+    esp_pm_config_t config = {};
+    config.max_freq_mhz = 240;
+    config.min_freq_mhz = lightSleepEnabled ? 80 : 240;
+    config.light_sleep_enable = lightSleepEnabled;
+    return esp_pm_configure(&config) == ESP_OK;
+  }
+
   bool createLocks() {
     return esp_pm_lock_create(ESP_PM_CPU_FREQ_MAX, 0, "energy_cpu_max", &stockCpuMaxLock) == ESP_OK &&
            esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "energy_no_sleep", &stockNoLightSleepLock) == ESP_OK &&
@@ -86,15 +105,16 @@ private:
 
   bool updateLocks() {
     if (!initialized) return false;
-    const bool stockLocksOk =
-      setLockHeld(stockCpuMaxLock, stockCpuMaxHeld, !lightSleepEnabled) &&
+    const bool stockCpuOk =
+      setLockHeld(stockCpuMaxLock, stockCpuMaxHeld, !lightSleepEnabled);
+    const bool stockSleepOk =
       setLockHeld(stockNoLightSleepLock, stockNoLightSleepHeld, !lightSleepEnabled);
     const bool performanceOk =
       setLockHeld(performanceLock, performanceHeld, performanceCritical);
     const bool serialOk =
       setLockHeld(serialNoLightSleepLock, serialNoLightSleepHeld,
-                  lightSleepEnabled && serialTransportActive);
-    return stockLocksOk && performanceOk && serialOk;
+                  lightSleepEnabled && serialTransportActive && !usbSleepTestEnabled);
+    return stockCpuOk && stockSleepOk && performanceOk && serialOk;
   }
 
   bool initialized = false;
@@ -102,6 +122,7 @@ private:
   bool lightSleepEnabled = false;
   bool performanceCritical = false;
   bool serialTransportActive = false;
+  bool usbSleepTestEnabled = false;
   bool stockCpuMaxHeld = false;
   bool stockNoLightSleepHeld = false;
   bool performanceHeld = false;
@@ -118,6 +139,7 @@ public:
   bool applyLightSleepSetting(bool) { return true; }
   bool setPerformanceCritical(bool) { return true; }
   void setSerialTransportActive(bool) {}
+  void setUsbSleepTestEnabled(bool) {}
   bool service(uint32_t) { return true; }
   bool ready() const { return true; }
 };

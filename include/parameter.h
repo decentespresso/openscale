@@ -35,6 +35,10 @@ EnergyRuntimeState energyRuntime;
 struct EnergyIdleState {
   TaskHandle_t mainTask = nullptr;
   bool wakeInterruptsAttached = false;
+  bool lightSleepCallbackRegistered = false;
+  bool scaleWakeEnabled = true;
+  bool usbWakeEnabled = true;
+  volatile bool wakePinsNeedRestore = false;
   bool buttonGestureActive = false;
   unsigned long lastButtonActivityAt = 0;
   unsigned long lastButtonPoll = 0;
