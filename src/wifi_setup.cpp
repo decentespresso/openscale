@@ -1,19 +1,31 @@
-
+#include "hds_features.h"
+#if HDS_FEATURE_WIFI
 #include "NetworkEvents.h"
 #include "WiFiType.h"
 #include "config.h"  // FIRMWARE_VER for the DNS-SD TXT record
 #include "esp32-hal.h"
 #include "esp_system.h"  // esp_restart() for the heap watchdog
 #include "mdns_name.h"
+#include "timing.h"
 #include <Arduino.h>
+#include "wifi_setup.h"
+#if HDS_FEATURE_MDNS
 #include <ESPmDNS.h>
+#endif
 #include <Preferences.h>
 #include <WiFi.h>
+#if HDS_ENABLE_ENERGY_MENU
+#include "energy_policy.h"
+
+extern EnergyPolicy energyPolicy;
+#endif
 
 volatile bool b_wifiEnabled = false;
+#if HDS_FEATURE_MDNS
 static volatile bool g_mdnsAdvertisePending = false;
 static bool g_mdnsReady = false;
 static const unsigned long MDNS_GOODBYE_DRAIN_MS = 60;
+#endif
 extern volatile bool deviceConnected;
 
 const char *wifiPrefsKey = "wifi";
@@ -86,6 +98,7 @@ void connectToWifi() {
   }
 }
 
+#if HDS_FEATURE_MDNS
 static void mdnsWithdraw() {
   if (!g_mdnsReady) {
     return;
@@ -95,6 +108,9 @@ static void mdnsWithdraw() {
   g_mdnsAdvertisePending = false;
   delay(MDNS_GOODBYE_DRAIN_MS);
 }
+#else
+static void mdnsWithdraw() {}
+#endif
 
 void stopWifi() {
   const wifi_mode_t mode = WiFi.getMode();
@@ -119,6 +135,7 @@ static volatile uint32_t g_wifiDisconnects = 0;
 static volatile uint32_t g_wifiReconnects = 0;
 static volatile bool g_wifiInitDone = false;
 
+#if HDS_FEATURE_MDNS
 bool setupMdns() {
   if (WiFi.getMode() != WIFI_AP && WiFi.status() != WL_CONNECTED) {
     Serial.printf("[wifi] MDNS deferred wifi=%d ip=%s\n",
@@ -144,8 +161,10 @@ bool setupMdns() {
   MDNS.addServiceTxt("decentscale", "tcp", "fw", (const char *)FIRMWARE_VER);
   MDNS.addServiceTxt("decentscale", "tcp", "model", "hds");
   MDNS.addServiceTxt("decentscale", "tcp", "name", name);
+#if HDS_FEATURE_WEBSOCKET
   MDNS.addServiceTxt("decentscale", "tcp", "proto", "ws");
   MDNS.addServiceTxt("decentscale", "tcp", "path", "/snapshot");
+#endif
   Serial.printf("DNS-SD: advertised %s.local _decentscale._tcp on port 80\n", name);
   g_mdnsReady = true;
   return true;
@@ -166,6 +185,7 @@ bool wifiEnsureMdnsReadyForSta() {
   g_mdnsReady = false;
   return setupMdns();
 }
+#endif
 
 void onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) {
   switch (event) {
@@ -178,10 +198,14 @@ void onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) {
       Serial.printf("[wifi] GOT_IP %s heap=%lu\n",
                     WiFi.localIP().toString().c_str(),
                     (unsigned long)ESP.getFreeHeap());
+#if HDS_FEATURE_MDNS
       g_mdnsAdvertisePending = true;
+#endif
       break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+#if HDS_FEATURE_MDNS
       g_mdnsReady = false;
+#endif
       g_wifiDisconnects++;
       Serial.printf("[wifi] *** STA DISCONNECTED #%lu reason=%u heap=%lu minheap=%lu uptime=%lu\n",
                     (unsigned long)g_wifiDisconnects,
@@ -214,13 +238,16 @@ void setupWifi() {
   } else {
     Serial.println("no wifi data found, setting up AP");
     setupAP();
+#if HDS_FEATURE_MDNS
     setupMdns();
+#endif
   }
 
   g_wifiInitDone = true;
 }
 
 void wifiSupervise() {
+  static unsigned long lastRun = 0;
   static unsigned long lastLog = 0;
   static unsigned long downSince = 0;
   static unsigned long lastAttempt = 0;
@@ -228,14 +255,20 @@ void wifiSupervise() {
   static unsigned long lowHeapSince = 0;
   static unsigned long lastDeferLog = 0;
   unsigned long now = millis();
+  if (!hdsIntervalElapsed(now, lastRun, WIFI_SUPERVISE_INTERVAL_MS)) {
+    return;
+  }
+  lastRun = now;
   bool up = WiFi.status() == WL_CONNECTED;
 
+#if HDS_FEATURE_MDNS
   if (g_mdnsAdvertisePending) {
     g_mdnsAdvertisePending = false;
     MDNS.end();
     g_mdnsReady = false;
     setupMdns();
   }
+#endif
 
   uint32_t freeHeap = ESP.getFreeHeap();
   const uint32_t HEAP_CRITICAL = 15000;
@@ -267,10 +300,16 @@ void wifiSupervise() {
 
   if (now - lastLog >= 5000) {
     lastLog = now;
-    Serial.printf("[health] uptime=%lu wifi_status=%d rssi=%d heap=%lu minheap=%lu disc=%lu rec=%lu\n",
-                  now, (int)WiFi.status(), up ? (int)WiFi.RSSI() : 0,
-                  (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMinFreeHeap(),
-                  (unsigned long)g_wifiDisconnects, (unsigned long)g_wifiReconnects);
+#if HDS_ENABLE_ENERGY_MENU
+    if (!energyPolicy.featureEnabled(EnergyFeature::SerialQuiet)) {
+#endif
+      Serial.printf("[health] uptime=%lu wifi_status=%d rssi=%d heap=%lu minheap=%lu disc=%lu rec=%lu\n",
+                    now, (int)WiFi.status(), up ? (int)WiFi.RSSI() : 0,
+                    (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMinFreeHeap(),
+                    (unsigned long)g_wifiDisconnects, (unsigned long)g_wifiReconnects);
+#if HDS_ENABLE_ENERGY_MENU
+    }
+#endif
   }
 
   if (g_wifiInitDone && params.hasCredentials() && !up) {
@@ -411,3 +450,5 @@ void WiFiParams::reset() {
   }
   mdnsNameCopyDefault(mdnsName, sizeof(mdnsName));
 }
+
+#endif

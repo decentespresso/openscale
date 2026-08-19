@@ -1,9 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#ifndef HDS_ENABLE_GRINDER
-#define HDS_ENABLE_GRINDER 0
-#endif
+#include "hds_features.h"
 
 
 #define CUUID_DECENTSCALE_READ "fff4"
@@ -14,7 +12,6 @@
 
 
 #define V8_1
-#define WIFIOTA
 
 
 #define TWO_BUTTON

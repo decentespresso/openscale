@@ -38,14 +38,24 @@ struct UsbDecentCommandSink {
   }
 
   void displayOff() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyDisplay(false);
+    applyEnergyDisplayCommand(false);
+#else
     u8g2.setPowerSave(1);
     b_u8g2Sleep = true;
+#endif
     sendUsbLedResponse();
   }
 
   void displayOn() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyDisplay(true);
+    applyEnergyDisplayCommand(true);
+#else
     u8g2.setPowerSave(0);
     b_u8g2Sleep = false;
+#endif
     sendUsbLedResponse();
   }
 
@@ -54,11 +64,21 @@ struct UsbDecentCommandSink {
   }
 
   void lowPowerOn() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyLowPower(true);
+    applyEnergyLowPowerCommand();
+#else
     u8g2.setContrast(0);
+#endif
   }
 
   void lowPowerOff() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyLowPower(false);
+    applyEnergyLowPowerCommand();
+#else
     u8g2.setContrast(255);
+#endif
   }
 
   void softSleepOn() {
@@ -66,33 +86,54 @@ struct UsbDecentCommandSink {
     b_softSleep = true;
     digitalWrite(PWR_CTRL, LOW);
     digitalWrite(ACC_PWR_CTRL, LOW);
+#if HDS_ENABLE_ENERGY_MENU
+    refreshEnergyIdleWakeForRuntimeState();
+#endif
   }
 
   void softSleepOff() {
     if (b_softSleep) {
       wakeScaleFromSoftSleep("USB soft wake");
+#if HDS_ENABLE_ENERGY_MENU
+    } else if (!energyRuntime.explicitDisplayOff) {
+      applyEnergyDisplayCommand(true);
+#else
     } else {
       u8g2.setPowerSave(0);
       b_u8g2Sleep = false;
+#endif
     }
   }
 
   void timerStart() {
     stopWatch.reset();
     stopWatch.start();
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
   }
 
   void timerStop() {
     stopWatch.stop();
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
   }
 
   void timerZero() {
     stopWatch.reset();
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
   }
 
   void wifiUpdate() {
+#if HDS_FEATURE_PULL_OTA
     Serial.println("Start WiFi OTA");
     ::wifiUpdate();
+#else
+    Serial.println("WiFi OTA unavailable.");
+#endif
   }
 
 #ifdef BUZZER
@@ -161,6 +202,7 @@ public:
   void (*setTrackingUpdateInterval)(float);
   void (*buttonSquare_Pressed)();
   void (*buttonCircle_Pressed)();
+  void (*toggleTimer)();
 
   static const size_t USB_RX_BUFFER_SIZE = 160;
   static const unsigned long USB_RX_FRAME_TIMEOUT_MS = 30;
@@ -216,6 +258,7 @@ public:
 
   void processUsbRxBuffer(bool allowTimeout) {
     while (usbRxLen > 0) {
+      if (b_ota) return;
       bool timedOut = allowTimeout && usbRxTimedOut();
 
       if (usbRxBuffer[0] == 0x03) {
@@ -280,11 +323,7 @@ public:
     Serial.println(" ");
 
     if (data[0] != 0x03) {
-      String input;
-      input.reserve(len);
-      for (size_t i = 0; i < len; i++) {
-        input += (char)data[i];
-      }
+      String input((const char *)data, len);
       handleStringCommand(input);
       return;
     }
@@ -383,17 +422,32 @@ public:
 
       i_oled_contrast = constrain(i_oled_contrast, 0, 255);
 
+#if HDS_ENABLE_ENERGY_MENU
+      requestEnergyContrast(static_cast<uint8_t>(i_oled_contrast));
+      applyEnergyLowPowerCommand();
+#else
       u8g2.setContrast(i_oled_contrast);
+#endif
 
       Serial.print("OLED contrast set to ");
       Serial.println(i_oled_contrast);
     }
 
     if (inputString.startsWith("oledon")) {
+#if HDS_ENABLE_ENERGY_MENU
+      requestEnergyDisplay(true);
+      applyEnergyDisplayCommand(true);
+#else
       u8g2.setPowerSave(0);
+#endif
     }
     if (inputString.startsWith("oledoff")) {
+#if HDS_ENABLE_ENERGY_MENU
+      requestEnergyDisplay(false);
+      applyEnergyDisplayCommand(false);
+#else
       u8g2.setPowerSave(1);
+#endif
     }
 
     if (inputString.startsWith("reset")) {
@@ -401,7 +455,7 @@ public:
     }
 
     if (inputString.startsWith("cal0")) {
-      b_menu = false;
+      leaveMenu();
       i_cal_weight = 0;
       i_button_cal_status = 1;
       b_calibration = true;
@@ -409,7 +463,7 @@ public:
     }
 
     if (inputString.startsWith("cal1")) {
-      b_menu = false;
+      leaveMenu();
       i_cal_weight = 0;
       i_button_cal_status = 1;
       b_calibration = true;
@@ -417,14 +471,18 @@ public:
     }
 
     if (inputString.startsWith("tare")) {
-      if (buttonCircle_Pressed != NULL) {
+      if ((b_menu || b_calibration || b_showChargingUI) && buttonCircle_Pressed != NULL) {
         buttonCircle_Pressed();
+      } else {
+        requestRemoteTare();
       }
     }
 
     if (inputString.startsWith("set")) {
-      if (buttonSquare_Pressed != NULL) {
+      if ((b_menu || b_calibration || b_showChargingUI) && buttonSquare_Pressed != NULL) {
         buttonSquare_Pressed();
+      } else if (toggleTimer != NULL) {
+        toggleTimer();
       }
     }
 

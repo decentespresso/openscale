@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 HDS_SOURCE = ROOT / "src" / "hds.ino"
 MENU_HEADER = ROOT / "include" / "menu.h"
 PULL_OTA_HEADER = ROOT / "include" / "pull_ota.h"
-OTA_STAGE_MARKER = ROOT / "web_apps" / ("ota-stage-" + "test.txt")
+OTA_STAGE_MARKER = ROOT / "plugins" / "default-web-apps" / "assets" / ("ota-stage-" + "test.txt")
 
 
 def assert_contains(path, text):
@@ -54,6 +54,7 @@ def main():
     assert_contains(PULL_OTA_HEADER, 'HDS_OTA_MIN_INSTALL_VERSION = "3.1.13"')
     assert_contains(PULL_OTA_HEADER, "pullOtaCompareVersions(manifest.version, HDS_OTA_MIN_INSTALL_VERSION) < 0")
     assert_contains(PULL_OTA_HEADER, "pullOtaBuildSelectableReleases")
+    assert_contains(PULL_OTA_HEADER, "PullOtaReleaseSelection")
     assert_contains(PULL_OTA_HEADER, "currentCompare != 0")
     assert_contains(PULL_OTA_HEADER, "pullOtaHasNewerRelease")
     assert_contains(PULL_OTA_HEADER, '"Newest stable"')
@@ -61,7 +62,10 @@ def main():
     assert_contains(PULL_OTA_HEADER, "pullOtaPickRelease")
     assert_contains(PULL_OTA_HEADER, "pullOtaDrawReleaseChoice")
     assert_contains(PULL_OTA_HEADER, "pullOtaParseManifest(body, catalog)")
-    assert_contains(PULL_OTA_HEADER, "pullOtaBuildSelectableReleases(catalog, releases)")
+    assert_contains(PULL_OTA_HEADER, "pullOtaBuildSelectableReleases(catalog, selection)")
+    assert_contains(PULL_OTA_HEADER, "pullOtaPickRelease(catalog, selection, &selectedCatalogIndex)")
+    assert_contains(PULL_OTA_HEADER, "std::move(catalog.releases[selectedCatalogIndex])")
+    assert_not_contains(PULL_OTA_HEADER, "PullOtaReleaseList releases;")
     assert_contains(PULL_OTA_HEADER, "pullOtaFindCurrentRelease(catalog, rollbackManifest)")
     assert_contains(PULL_OTA_HEADER, "pullOtaFetchCurrentReleaseManifest(rollbackManifest)")
     assert_contains(PULL_OTA_HEADER, "pullOtaReleaseManifestUrl(currentVersion, prefixedTag)")
@@ -73,7 +77,7 @@ def main():
     assert_contains(PULL_OTA_HEADER, "!candidate.littlefs.present || !candidate.littlefs.required")
     assert_before(
         PULL_OTA_HEADER,
-        "if (releases.count == 0)",
+        "if (selection.count == 0)",
         "pullOtaFindCurrentRelease(catalog, rollbackManifest)",
     )
     assert_before(

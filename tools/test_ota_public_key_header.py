@@ -1,4 +1,5 @@
 import importlib.util
+import re
 import runpy
 import subprocess
 import tempfile
@@ -11,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "write_ota_public_key_header.py"
 PLATFORMIO_INI = ROOT / "platformio.ini"
 PREBUILD_SCRIPT = ROOT / "ota_public_key_header.py"
+PULL_OTA_HEADER = ROOT / "include" / "pull_ota.h"
 
 
 def load_module():
@@ -27,6 +29,21 @@ PUBLIC_KEYS = tuple(
 
 
 class OtaPublicKeyHeaderTest(unittest.TestCase):
+    def test_embedded_tls_certificates_are_valid(self):
+        certificates = re.findall(
+            r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----",
+            PULL_OTA_HEADER.read_text(encoding="utf-8"),
+            re.DOTALL,
+        )
+        self.assertEqual(len(certificates), 2)
+        for certificate in certificates:
+            subprocess.run(
+                [load_module().openssl_path(), "x509", "-noout"],
+                input=certificate.encode("ascii"),
+                check=True,
+                capture_output=True,
+            )
+
     def test_writes_three_distinct_public_keys(self):
         module = load_module()
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -1,6 +1,8 @@
 #ifndef SCALE_WEBSERVER_H
 #define SCALE_WEBSERVER_H
 
+#include "config.h"
+#if HDS_FEATURE_WEBSERVER
 #include "esp_system.h"
 #include "mdns_name.h"
 #include "parameter.h"
@@ -9,12 +11,31 @@
 #include <AsyncJson.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#if HDS_FEATURE_LITTLEFS
 #include <LittleFS.h>
+#endif
 #include <WiFi.h>
 #include <string.h>
 
 static AsyncWebServer server(80);
+#if HDS_FEATURE_WEBSOCKET
 static AsyncWebSocket websocket("/snapshot");
+#endif
+
+#if !HDS_FEATURE_LITTLEFS
+static const char HDS_WIFI_SETUP_PAGE[] PROGMEM = R"html(<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenScale setup</title><style>body{font:16px sans-serif;max-width:30rem;margin:2rem auto;padding:0 1rem}label,input,button{display:block;width:100%;box-sizing:border-box;margin:.5rem 0}input,button{padding:.7rem}</style>
+<h1>OpenScale setup</h1>
+<form id="wifi"><label>WiFi name<input name="ssid" required></label><label>Password<input name="pass" type="password"></label><button>Save WiFi</button></form>
+<form id="name"><label>Device name<input name="name" required></label><button>Save name</button></form>
+<p id="status"></p><script>
+const send=(path,data)=>fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>{if(!r.ok)throw Error(r.status);return 'Saved. Restarting.'});
+wifi.onsubmit=e=>{e.preventDefault();send('/setup/wifi',Object.fromEntries(new FormData(wifi))).then(show).catch(show)};
+name.onsubmit=e=>{e.preventDefault();send('/setup/name',Object.fromEntries(new FormData(name))).then(show).catch(show)};
+const show=value=>status.textContent=value;
+</script></html>)html";
+#endif
 
 static const unsigned long HTTP_MIN_INTERVAL_WHILE_STREAMING_MS = 200;
 static const int HTTP_STREAMING_BURST = 24;
@@ -120,8 +141,11 @@ void startWebServer() {
     nameHandler->setMaxContentLength(NAME_SETUP_MAX_JSON_BYTES);
     server.addHandler(nameHandler);
 
+#if HDS_FEATURE_WEBSOCKET
     server.addHandler(&websocket);
+#endif
 
+#if HDS_FEATURE_LITTLEFS
     if (!LittleFS.begin()) {
       Serial.println("LittleFS mount failed -- web UI unavailable");
       server.onNotFound([](AsyncWebServerRequest *request) {
@@ -135,6 +159,11 @@ void startWebServer() {
           .setCacheControl(LITTLEFS_CACHE_CONTROL);
       Serial.println("Serving web-apps");
     }
+#else
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+      request->send(200, "text/html", HDS_WIFI_SETUP_PAGE);
+    });
+#endif
 
     server.addMiddleware([](AsyncWebServerRequest *request, ArMiddlewareNext next) {
       const String &url = request->url();
@@ -146,7 +175,8 @@ void startWebServer() {
         request->send(503, "text/plain", "low memory, retry");
         return;
       }
-      if (websocket.count() > 0) {
+#if HDS_FEATURE_WEBSOCKET
+      if (websocketHasClients()) {
         static int tokens = HTTP_STREAMING_BURST;
         static unsigned long lastRefill = 0;
         static unsigned long lastPageLoadBoost = 0;
@@ -170,6 +200,7 @@ void startWebServer() {
         }
         tokens--;
       }
+#endif
       next();
     });
 
@@ -181,7 +212,10 @@ void startWebServer() {
 }
 
 void stopWebServer() {
+#if HDS_FEATURE_WEBSOCKET
   websocket.closeAll();
+#endif
   server.end();
 }
+#endif
 #endif

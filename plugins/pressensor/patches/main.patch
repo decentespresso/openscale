@@ -1,0 +1,1663 @@
+diff --git a/include/config.h b/include/config.h
+index eb07f10..f16c19a 100644
+--- a/include/config.h
++++ b/include/config.h
+@@ -3,6 +3,13 @@
+ 
+ #include "hds_features.h"
+ 
++#ifndef HDS_ENABLE_PRESSENSOR
++#ifdef HDS_CUSTOM_BUILD
++#define HDS_ENABLE_PRESSENSOR 1
++#else
++#define HDS_ENABLE_PRESSENSOR 0
++#endif
++#endif
+ 
+ #define CUUID_DECENTSCALE_READ "fff4"
+ #define CUUID_DECENTSCALE_WRITE "36f5"
+diff --git a/include/display.h b/include/display.h
+index 80187e8..d238c56 100644
+--- a/include/display.h
++++ b/include/display.h
+@@ -60,6 +60,7 @@ U8G2_SSD1306_128X64_NONAME_1_SW_I2C u8g2(U8G2_R0, /* clock=*/OLED_SCL, /* data=*
+ #define FONT_EXTRACTION u8g2_font_fub14_tr
+ //#define FONT_S FONT_M
+ #define FONT_BATTERY u8g2_font_battery19_tn
++#define FONT_PRESSENSOR_VALUE u8g2_font_logisoso16_tr
+ //macros
+ //文本对齐 AC居中 AR右对齐 AL左对齐 T为要显示的文本
+ #define LCDWidth u8g2.getDisplayWidth()
+diff --git a/include/finger_detection.h b/include/finger_detection.h
+index f751a85..5a6a5e8 100644
+--- a/include/finger_detection.h
++++ b/include/finger_detection.h
+@@ -216,8 +216,17 @@ bool isFingerPress(int button) {
+           sendBleButton(2, 1);
+         }
+         if (!b_menu && !b_calibration && (!bleClientLive || b_btnFuncWhileConnected)) {
+-          if (millis() - t_menuExitTime > 1000)
++          if (millis() - t_menuExitTime > 1000) {
++#if HDS_ENABLE_PRESSENSOR
++            if (pressensorActive()) {
++              pressensorTimerButton(f_displayedValue);
++            } else {
++              scaleTimer();
++            }
++#else
+             scaleTimer();
++#endif
++          }
+         }
+       }
+     }
+diff --git a/include/menu.h b/include/menu.h
+index 8c02f2e..a036e87 100644
+--- a/include/menu.h
++++ b/include/menu.h
+@@ -10,6 +10,9 @@
+ #if HDS_ENABLE_GRINDER
+ #include "grinder_runtime.h"
+ #endif
++#if HDS_ENABLE_PRESSENSOR
++#include "pressensor_runtime.h"
++#endif
+ #include <string.h>
+ const char *const weights[] = { "Exit", "50g", "100g", "200g", "500g", "1000g" };
+ const float weight_values[] = { 0.0, 50.0, 100.0, 200.0, 500.0, 1000.0 };
+@@ -82,6 +85,14 @@ void grinderTargetMenu();
+ void grinderSafetyMenu();
+ void grinderZeroRangeMenu();
+ #endif
++#if HDS_ENABLE_PRESSENSOR
++void pressensorMenuOn();
++void pressensorMenuOff();
++void pressensorSelectSensorMenu();
++void pressensorZeroMenu();
++void pressensorAutoStartToggle();
++void pressensorAutoStopToggle();
++#endif
+ #if HDS_FEATURE_WIFI
+ void wifi_init();
+ #endif
+@@ -103,6 +114,9 @@ extern const Menu menuWiFiUpdateBack;
+ #if HDS_ENABLE_GRINDER
+ extern const Menu menuGrinderBack;
+ #endif
++#if HDS_ENABLE_PRESSENSOR
++extern const Menu menuPressensorBack;
++#endif
+ 
+ const Menu menuExit = { "Exit", exitMenu, NULL, NULL };
+ #ifdef BUZZER
+@@ -126,6 +140,9 @@ const Menu menuDriftComp = { "Drift Comp", NULL, &menuDriftCompBack, NULL };
+ #if HDS_ENABLE_GRINDER
+ const Menu menuGrinder = { "Grind by weight", NULL, &menuGrinderBack, NULL };
+ #endif
++#if HDS_ENABLE_PRESSENSOR
++const Menu menuPressensor = { "Pressensor", NULL, &menuPressensorBack, NULL };
++#endif
+ 
+ 
+ #ifdef BUZZER
+@@ -218,6 +235,16 @@ const Menu menuGrinderZero = { "Zero Range", grinderZeroRangeMenu, NULL, &menuGr
+ const Menu *const grinderMenu[] = { &menuGrinderBack, &menuGrinderOn, &menuGrinderOff, &menuGrinderSelect, &menuGrinderTarget, &menuGrinderSafety, &menuGrinderZero };
+ #endif
+ 
++#if HDS_ENABLE_PRESSENSOR
++const Menu menuPressensorBack = { "Back", NULL, NULL, &menuPressensor };
++const Menu menuPressensorOn = { "Pressensor On", pressensorMenuOn, NULL, &menuPressensor };
++const Menu menuPressensorOff = { "Pressensor Off", pressensorMenuOff, NULL, &menuPressensor };
++const Menu menuPressensorSelect = { "Select Sensor", pressensorSelectSensorMenu, NULL, &menuPressensor };
++const Menu menuPressensorZero = { "Zero Sensor", pressensorZeroMenu, NULL, &menuPressensor };
++const Menu menuPressensorAutoStart = { "Auto Start", pressensorAutoStartToggle, NULL, &menuPressensor };
++const Menu menuPressensorAutoStop = { "Auto Stop", pressensorAutoStopToggle, NULL, &menuPressensor };
++const Menu *const pressensorMenu[] = { &menuPressensorBack, &menuPressensorOn, &menuPressensorOff, &menuPressensorSelect, &menuPressensorZero, &menuPressensorAutoStart, &menuPressensorAutoStop };
++#endif
+ 
+ const Menu *const mainMenu[] = {
+   &menuExit,
+@@ -234,9 +261,12 @@ const Menu *const mainMenu[] = {
+ #if HDS_ENABLE_GRINDER
+   &menuGrinder,
+ #endif
+ #if HDS_ENABLE_ENERGY_MENU
+   &menuEnergy,
+ #endif
++#if HDS_ENABLE_PRESSENSOR
++  &menuPressensor,
++#endif
+ };
+ const Menu *const *currentMenu = mainMenu;
+ const Menu *currentSelection = mainMenu[0];
+@@ -861,6 +891,126 @@ void grinderZeroRangeMenu() {
+ }
+ #endif
+ 
++#if HDS_ENABLE_PRESSENSOR
++void pressensorSetActionMessage(const char *line1, const char *line2 = nullptr) {
++  actionMessage = line1;
++  actionMessage2 = line2 == nullptr ? "Default" : line2;
++  t_actionMessage = millis();
++  t_actionMessageDelay = 1500;
++}
++
++void pressensorMenuOn() {
++  pressensorSetEnabled(true);
++  pressensorSetActionMessage("Pressensor On", pressensorSettings.selectedMac[0] == 0 ? "Select Sensor" : nullptr);
++  Serial.printf("[pressensor] enabled mac=%s\n", pressensorSettings.selectedMac);
++}
++
++void pressensorMenuOff() {
++  pressensorSetEnabled(false);
++  pressensorSetActionMessage("Pressensor Off");
++  Serial.println("[pressensor] disabled");
++}
++
++void pressensorZeroMenu() {
++  if (pressensorZeroNow()) {
++    pressensorSetActionMessage("Sensor Zeroed");
++  } else {
++    pressensorSetActionMessage("No Sensor", "Connected");
++  }
++}
++
++void pressensorAutoStartToggle() {
++  pressensorSettings.autoStart = !pressensorSettings.autoStart;
++  pressensorSaveSettings();
++  pressensorSetActionMessage(pressensorSettings.autoStart ? "Auto Start On" : "Auto Start Off");
++}
++
++void pressensorAutoStopToggle() {
++  pressensorSettings.autoStop = !pressensorSettings.autoStop;
++  pressensorSaveSettings();
++  pressensorSetActionMessage(pressensorSettings.autoStop ? "Auto Stop On" : "Auto Stop Off");
++}
++
++void pressensorWaitForButtonRelease() {
++  while (digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW) {
++    delay(20);
++  }
++}
++
++void pressensorDrawSensorList(uint8_t selected) {
++  const uint8_t total = pressensorScanListCount() + 1;
++  const uint8_t rows = 4;
++  const uint8_t first = (selected / rows) * rows;
++  u8g2.firstPage();
++  do {
++    u8g2.setFont(u8g2_font_5x8_tr);
++    u8g2.drawStr(0, 8, "Select sensor");
++    for (uint8_t row = 0; row < rows; row++) {
++      const uint8_t choice = first + row;
++      if (choice >= total) {
++        break;
++      }
++      const uint8_t y = 20 + row * 11;
++      if (choice == selected) {
++        u8g2.drawStr(0, y, ">");
++      }
++      if (choice == 0) {
++        u8g2.drawStr(8, y, "Back");
++      } else {
++        PressensorScanEntry entry;
++        if (!pressensorCopyScanEntry(choice - 1, &entry)) {
++          break;
++        }
++        char line[26];
++        snprintf(line, sizeof(line), "%.10s %.5s %d", entry.name, entry.mac + 12, entry.rssi);
++        u8g2.drawStr(8, y, line);
++      }
++    }
++  } while (u8g2.nextPage());
++}
++
++void pressensorSelectSensorMenu() {
++  if (!BLEDevice::getInitialized()) {
++    pressensorSetActionMessage("BLE Off");
++    return;
++  }
++  refreshOLED((char *)"Scanning", (char *)"Sensors");
++  const uint8_t count = pressensorBlockingScan();
++  if (count == 0) {
++    pressensorApplyLinkTarget();
++    pressensorSetActionMessage("No Sensor Found");
++    return;
++  }
++  pressensorWaitForButtonRelease();
++  uint8_t selected = 0;
++  bool selecting = true;
++  while (selecting) {
++    power_off(-1);
++    pressensorDrawSensorList(selected);
++    if (digitalRead(BUTTON_CIRCLE) == LOW) {
++      selected = (selected + 1) % (count + 1);
++      pressensorWaitForButtonRelease();
++    }
++    if (digitalRead(BUTTON_SQUARE) == LOW) {
++      if (selected > 0) {
++        PressensorScanEntry entry;
++        if (pressensorCopyScanEntry(selected - 1, &entry)) {
++          snprintf(pressensorSettings.selectedMac, sizeof(pressensorSettings.selectedMac), "%s", entry.mac);
++          snprintf(pressensorSettings.selectedName, sizeof(pressensorSettings.selectedName), "%s", entry.name);
++          pressensorSaveSettings();
++          Serial.printf("[pressensor] selected mac=%s name=%s\n", pressensorSettings.selectedMac, pressensorSettings.selectedName);
++          pressensorSetActionMessage("Sensor Saved", pressensorSettings.enabled ? nullptr : "Turn Mode On");
++        }
++      }
++      selecting = false;
++      pressensorWaitForButtonRelease();
++    }
++    delay(40);
++  }
++  pressensorApplyLinkTarget();
++}
++#endif
++
+ void calibrate() {
+   leaveMenu();
+   b_calibration = true;
+@@ -1656,11 +1806,16 @@ void selectMenu() {
+       b_grinderMenuDirectEntry = false;
+       currentMenu = grinderMenu;
+       currentMenuSize = getMenuSize(grinderMenu);
+ #endif
+ #if HDS_ENABLE_ENERGY_MENU
+     } else if (currentSelection == &menuEnergy) {
+       currentMenu = energyMenu;
+       currentMenuSize = getMenuSize(energyMenu);
+ #endif
++#if HDS_ENABLE_PRESSENSOR
++    } else if (currentSelection == &menuPressensor) {
++      currentMenu = pressensorMenu;
++      currentMenuSize = getMenuSize(pressensorMenu);
++#endif
+     }
+     currentIndex = 0;
+diff --git a/include/parameter.h b/include/parameter.h
+index 9defe9d..934ae5e 100644
+--- a/include/parameter.h
++++ b/include/parameter.h
+@@ -243,6 +243,17 @@ extern GrinderRuntime grinderRuntime;
+ portMUX_TYPE grinderMdnsMux = portMUX_INITIALIZER_UNLOCKED;
+ GrinderMdnsCandidate * volatile grinderMdnsCandidateBuffer = nullptr;
+ #endif
++#if HDS_ENABLE_PRESSENSOR
++struct PressensorLink;
++struct PressensorSettings;
++struct PressensorShot;
++extern PressensorLink pressensorLink;
++extern PressensorSettings pressensorSettings;
++extern PressensorShot pressensorShot;
++extern portMUX_TYPE pressensorMux;
++extern volatile float pressensorBarShared;
++extern volatile unsigned long pressensorNotifyAtShared;
++#endif
+ 
+ //电子秤参数和计时点
+ // Enhanced tracking system global variables
+diff --git a/include/pressensor_ble.h b/include/pressensor_ble.h
+new file mode 100644
+index 0000000..9d54dfc
+--- /dev/null
++++ b/include/pressensor_ble.h
+@@ -0,0 +1,740 @@
++#ifndef PRESSENSOR_BLE_H
++#define PRESSENSOR_BLE_H
++
++#include <Arduino.h>
++#include <BLEAdvertisedDevice.h>
++#include <BLEDevice.h>
++#include <BLEScan.h>
++#include <string.h>
++#if defined(CONFIG_NIMBLE_ENABLED)
++#include <host/ble_gap.h>
++#include <host/ble_gatt.h>
++#include <host/ble_hs.h>
++#endif
++
++#define PRESSENSOR_NAME_MARKER "PRS"
++#define PRESSENSOR_SCAN_SECONDS 5
++#define PRESSENSOR_RESCAN_DELAY_MS 3000
++#define PRESSENSOR_SETTLE_MS 1200
++#define PRESSENSOR_PHASE_TIMEOUT_MS 6000
++#define PRESSENSOR_STALE_MS 4000
++#define PRESSENSOR_SCAN_LIST_MAX 6
++
++enum PressensorLinkState {
++  PRESSENSOR_LINK_OFF,
++  PRESSENSOR_LINK_SCAN_WAIT,
++  PRESSENSOR_LINK_SCANNING,
++  PRESSENSOR_LINK_CONNECTING,
++  PRESSENSOR_LINK_SETTLING,
++  PRESSENSOR_LINK_DISC_SVC,
++  PRESSENSOR_LINK_DISC_CHR,
++  PRESSENSOR_LINK_DISC_DSC,
++  PRESSENSOR_LINK_SUBSCRIBING,
++  PRESSENSOR_LINK_STREAMING
++};
++
++struct PressensorScanEntry {
++  char mac[18] = { 0 };
++  char name[24] = { 0 };
++  int rssi = -127;
++};
++
++struct PressensorLink {
++  PressensorLinkState state = PRESSENSOR_LINK_OFF;
++  PressensorScanEntry scanList[PRESSENSOR_SCAN_LIST_MAX];
++  uint8_t scanListCount = 0;
++  char targetMac[18] = { 0 };
++  unsigned long scanWaitStartedAt = 0;
++  unsigned long scanWaitMs = 0;
++  unsigned long phaseStartedAt = 0;
++  ble_addr_t peerAddr = {};
++  volatile bool scanActive = false;
++  volatile bool matchFound = false;
++  volatile bool scanEnded = false;
++  volatile bool dropped = false;
++  volatile bool phaseDone = false;
++  volatile bool phaseFailed = false;
++  volatile uint32_t generation = 0;
++  volatile uint16_t connHandle = BLE_HS_CONN_HANDLE_NONE;
++  volatile uint16_t svcStartHandle = 0;
++  volatile uint16_t svcEndHandle = 0;
++  volatile uint16_t pressureValHandle = 0;
++  volatile uint16_t zeroValHandle = 0;
++  volatile uint16_t pressureCccdHandle = 0;
++  bool connectedOnce = false;
++};
++
++PressensorLink pressensorLink;
++portMUX_TYPE pressensorMux = portMUX_INITIALIZER_UNLOCKED;
++volatile float pressensorBarShared = 0.0f;
++volatile unsigned long pressensorNotifyAtShared = 0;
++
++static const ble_uuid128_t pressensorSvcUuid = BLE_UUID128_INIT(
++  0xd0, 0xeb, 0xf7, 0x0b, 0x90, 0x9d, 0x39, 0xb5, 0x42, 0x43, 0x5a, 0x4c, 0x2a, 0xe8, 0x3a, 0x87);
++static const ble_uuid128_t pressensorPressureUuid = BLE_UUID128_INIT(
++  0xd0, 0xeb, 0xf7, 0x0b, 0x90, 0x9d, 0x39, 0xb5, 0x42, 0x43, 0x5a, 0x4c, 0x2b, 0xe8, 0x3a, 0x87);
++static const ble_uuid128_t pressensorZeroUuid = BLE_UUID128_INIT(
++  0xd0, 0xeb, 0xf7, 0x0b, 0x90, 0x9d, 0x39, 0xb5, 0x42, 0x43, 0x5a, 0x4c, 0x2c, 0xe8, 0x3a, 0x87);
++
++static inline void *pressensorGenerationArg(uint32_t generation) {
++  return reinterpret_cast<void *>(static_cast<uintptr_t>(generation));
++}
++
++static inline uint32_t pressensorGenerationFromArg(void *arg) {
++  return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(arg));
++}
++
++static inline float pressensorParseBar(const uint8_t *data, size_t length) {
++  if (data == nullptr || length < 2) {
++    return NAN;
++  }
++  const uint16_t encoded = (static_cast<uint16_t>(data[0]) << 8) | data[1];
++  return static_cast<int16_t>(encoded) / 1000.0f;
++}
++
++static inline void pressensorStoreBar(float bar) {
++  const unsigned long now = millis();
++  portENTER_CRITICAL(&pressensorMux);
++  pressensorBarShared = bar;
++  pressensorNotifyAtShared = now;
++  portEXIT_CRITICAL(&pressensorMux);
++}
++
++static inline void pressensorClearBar() {
++  portENTER_CRITICAL(&pressensorMux);
++  pressensorBarShared = 0.0f;
++  pressensorNotifyAtShared = 0;
++  portEXIT_CRITICAL(&pressensorMux);
++}
++
++static inline float pressensorReadBar(unsigned long *notifyAt = nullptr) {
++  portENTER_CRITICAL(&pressensorMux);
++  const float bar = pressensorBarShared;
++  const unsigned long at = pressensorNotifyAtShared;
++  portEXIT_CRITICAL(&pressensorMux);
++  if (notifyAt != nullptr) {
++    *notifyAt = at;
++  }
++  return bar;
++}
++
++static inline PressensorLinkState pressensorGetLinkState() {
++  portENTER_CRITICAL(&pressensorMux);
++  const PressensorLinkState state = pressensorLink.state;
++  portEXIT_CRITICAL(&pressensorMux);
++  return state;
++}
++
++static inline uint8_t pressensorScanListCount() {
++  portENTER_CRITICAL(&pressensorMux);
++  const uint8_t count = pressensorLink.scanListCount;
++  portEXIT_CRITICAL(&pressensorMux);
++  return count;
++}
++
++static inline bool pressensorCopyScanEntry(uint8_t index, PressensorScanEntry *entry) {
++  if (entry == nullptr) {
++    return false;
++  }
++  portENTER_CRITICAL(&pressensorMux);
++  const bool found = index < pressensorLink.scanListCount;
++  if (found) {
++    *entry = pressensorLink.scanList[index];
++  }
++  portEXIT_CRITICAL(&pressensorMux);
++  return found;
++}
++
++static inline bool pressensorNameMatches(const char *name) {
++  if (name == nullptr) {
++    return false;
++  }
++  char upper[32];
++  snprintf(upper, sizeof(upper), "%s", name);
++  for (char *c = upper; *c != 0; c++) {
++    *c = static_cast<char>(toupper(static_cast<unsigned char>(*c)));
++  }
++  return strstr(upper, PRESSENSOR_NAME_MARKER) != nullptr;
++}
++
++static inline bool pressensorMacEquals(const char *a, const char *b) {
++  return a[0] != 0 && b[0] != 0 && strcasecmp(a, b) == 0;
++}
++
++class PressensorScanCallbacks : public BLEAdvertisedDeviceCallbacks {
++  void onResult(BLEAdvertisedDevice advertisedDevice) override {
++    PressensorScanEntry candidate;
++    snprintf(candidate.name, sizeof(candidate.name), "%s", advertisedDevice.getName().c_str());
++    snprintf(candidate.mac, sizeof(candidate.mac), "%s", advertisedDevice.getAddress().toString().c_str());
++    candidate.rssi = advertisedDevice.getRSSI();
++    if (!pressensorNameMatches(candidate.name)) {
++      return;
++    }
++    ble_addr_t peerAddr = {};
++    memcpy(peerAddr.val, advertisedDevice.getAddress().getNative(), 6);
++    peerAddr.type = advertisedDevice.getAddressType();
++
++    bool wanted = false;
++    portENTER_CRITICAL(&pressensorMux);
++    if (pressensorLink.scanActive) {
++      bool known = false;
++      for (uint8_t i = 0; i < pressensorLink.scanListCount; i++) {
++        if (pressensorMacEquals(pressensorLink.scanList[i].mac, candidate.mac)) {
++          known = true;
++          break;
++        }
++      }
++      if (!known && pressensorLink.scanListCount < PRESSENSOR_SCAN_LIST_MAX) {
++        pressensorLink.scanList[pressensorLink.scanListCount] = candidate;
++        pressensorLink.scanListCount++;
++      }
++      wanted = !pressensorLink.matchFound && pressensorMacEquals(pressensorLink.targetMac, candidate.mac);
++      if (wanted) {
++        pressensorLink.peerAddr = peerAddr;
++        pressensorLink.matchFound = true;
++        pressensorLink.scanActive = false;
++      }
++    }
++    portEXIT_CRITICAL(&pressensorMux);
++
++    if (wanted) {
++      advertisedDevice.getScan()->stop();
++    }
++  }
++};
++
++PressensorScanCallbacks pressensorScanCallbacks;
++
++static void pressensorScanComplete(BLEScanResults) {
++  portENTER_CRITICAL(&pressensorMux);
++  if (pressensorLink.scanActive) {
++    pressensorLink.scanActive = false;
++    pressensorLink.scanEnded = true;
++  }
++  portEXIT_CRITICAL(&pressensorMux);
++}
++
++static int pressensorGapEvent(struct ble_gap_event *event, void *arg) {
++  const uint32_t generation = pressensorGenerationFromArg(arg);
++  switch (event->type) {
++    case BLE_GAP_EVENT_CONNECT:
++      portENTER_CRITICAL(&pressensorMux);
++      if (generation == pressensorLink.generation) {
++        if (event->connect.status == 0) {
++          pressensorLink.connHandle = event->connect.conn_handle;
++          pressensorLink.phaseDone = true;
++        } else {
++          pressensorLink.phaseFailed = true;
++        }
++      }
++      portEXIT_CRITICAL(&pressensorMux);
++      return 0;
++    case BLE_GAP_EVENT_DISCONNECT:
++      portENTER_CRITICAL(&pressensorMux);
++      if (generation == pressensorLink.generation &&
++          event->disconnect.conn.conn_handle == pressensorLink.connHandle) {
++        pressensorLink.connHandle = BLE_HS_CONN_HANDLE_NONE;
++        pressensorLink.dropped = true;
++      }
++      portEXIT_CRITICAL(&pressensorMux);
++      return 0;
++    case BLE_GAP_EVENT_NOTIFY_RX: {
++      portENTER_CRITICAL(&pressensorMux);
++      const bool current = generation == pressensorLink.generation &&
++                           event->notify_rx.conn_handle == pressensorLink.connHandle &&
++                           event->notify_rx.attr_handle == pressensorLink.pressureValHandle;
++      portEXIT_CRITICAL(&pressensorMux);
++      if (!current) {
++        return 0;
++      }
++      uint8_t payload[2] = { 0 };
++      const uint16_t length = OS_MBUF_PKTLEN(event->notify_rx.om);
++      if (length >= sizeof(payload) && os_mbuf_copydata(event->notify_rx.om, 0, sizeof(payload), payload) == 0) {
++        const float bar = pressensorParseBar(payload, sizeof(payload));
++        if (!isnan(bar)) {
++          pressensorStoreBar(bar);
++        }
++      }
++      return 0;
++    }
++    default:
++      return 0;
++  }
++}
++
++static int pressensorSvcDiscovered(uint16_t connHandle, const struct ble_gatt_error *error, const struct ble_gatt_svc *service, void *arg) {
++  const uint32_t generation = pressensorGenerationFromArg(arg);
++  portENTER_CRITICAL(&pressensorMux);
++  if (generation == pressensorLink.generation && connHandle == pressensorLink.connHandle) {
++    if (error->status == 0 && service != nullptr) {
++      pressensorLink.svcStartHandle = service->start_handle;
++      pressensorLink.svcEndHandle = service->end_handle;
++    } else if (error->status == BLE_HS_EDONE && pressensorLink.svcStartHandle != 0) {
++      pressensorLink.phaseDone = true;
++    } else {
++      pressensorLink.phaseFailed = true;
++    }
++  }
++  portEXIT_CRITICAL(&pressensorMux);
++  return 0;
++}
++
++static int pressensorChrDiscovered(uint16_t connHandle, const struct ble_gatt_error *error, const struct ble_gatt_chr *characteristic, void *arg) {
++  const uint32_t generation = pressensorGenerationFromArg(arg);
++  portENTER_CRITICAL(&pressensorMux);
++  if (generation == pressensorLink.generation && connHandle == pressensorLink.connHandle) {
++    if (error->status == 0 && characteristic != nullptr) {
++      if (ble_uuid_cmp(&characteristic->uuid.u, &pressensorPressureUuid.u) == 0) {
++        pressensorLink.pressureValHandle = characteristic->val_handle;
++      } else if (ble_uuid_cmp(&characteristic->uuid.u, &pressensorZeroUuid.u) == 0) {
++        pressensorLink.zeroValHandle = characteristic->val_handle;
++      }
++    } else if (error->status == BLE_HS_EDONE && pressensorLink.pressureValHandle != 0 && pressensorLink.zeroValHandle != 0) {
++      pressensorLink.phaseDone = true;
++    } else {
++      pressensorLink.phaseFailed = true;
++    }
++  }
++  portEXIT_CRITICAL(&pressensorMux);
++  return 0;
++}
++
++static int pressensorDscDiscovered(uint16_t connHandle, const struct ble_gatt_error *error, uint16_t chrValHandle, const struct ble_gatt_dsc *descriptor, void *arg) {
++  const uint32_t generation = pressensorGenerationFromArg(arg);
++  portENTER_CRITICAL(&pressensorMux);
++  if (generation == pressensorLink.generation && connHandle == pressensorLink.connHandle) {
++    if (error->status == 0 && descriptor != nullptr) {
++      if (chrValHandle == pressensorLink.pressureValHandle &&
++          descriptor->uuid.u.type == BLE_UUID_TYPE_16 && descriptor->uuid.u16.value == 0x2902) {
++        pressensorLink.pressureCccdHandle = descriptor->handle;
++      }
++    } else if (error->status == BLE_HS_EDONE && pressensorLink.pressureCccdHandle != 0) {
++      pressensorLink.phaseDone = true;
++    } else {
++      pressensorLink.phaseFailed = true;
++    }
++  }
++  portEXIT_CRITICAL(&pressensorMux);
++  return 0;
++}
++
++static int pressensorSubscriptionWritten(uint16_t connHandle, const struct ble_gatt_error *error, struct ble_gatt_attr *, void *arg) {
++  const uint32_t generation = pressensorGenerationFromArg(arg);
++  portENTER_CRITICAL(&pressensorMux);
++  if (generation == pressensorLink.generation && connHandle == pressensorLink.connHandle) {
++    if (error->status == 0) {
++      pressensorLink.phaseDone = true;
++    } else {
++      pressensorLink.phaseFailed = true;
++    }
++  }
++  portEXIT_CRITICAL(&pressensorMux);
++  return 0;
++}
++
++static inline void pressensorEnterPhase(PressensorLinkState state) {
++  const unsigned long now = millis();
++  portENTER_CRITICAL(&pressensorMux);
++  pressensorLink.phaseDone = false;
++  pressensorLink.phaseFailed = false;
++  pressensorLink.phaseStartedAt = now;
++  pressensorLink.state = state;
++  portEXIT_CRITICAL(&pressensorMux);
++}
++
++static inline void pressensorDropLink(unsigned long retryDelayMs) {
++  const unsigned long now = millis();
++  bool cancelConnect;
++  uint16_t handle;
++  portENTER_CRITICAL(&pressensorMux);
++  cancelConnect = pressensorLink.state == PRESSENSOR_LINK_CONNECTING;
++  handle = pressensorLink.connHandle;
++  pressensorLink.generation = pressensorLink.generation + 1;
++  pressensorLink.connHandle = BLE_HS_CONN_HANDLE_NONE;
++  pressensorLink.svcStartHandle = 0;
++  pressensorLink.svcEndHandle = 0;
++  pressensorLink.pressureValHandle = 0;
++  pressensorLink.zeroValHandle = 0;
++  pressensorLink.pressureCccdHandle = 0;
++  pressensorLink.scanActive = false;
++  pressensorLink.dropped = false;
++  pressensorLink.matchFound = false;
++  pressensorLink.phaseDone = false;
++  pressensorLink.phaseFailed = false;
++  pressensorLink.scanWaitStartedAt = now;
++  pressensorLink.scanWaitMs = retryDelayMs;
++  pressensorLink.state = PRESSENSOR_LINK_SCAN_WAIT;
++  portEXIT_CRITICAL(&pressensorMux);
++
++  pressensorClearBar();
++  if (cancelConnect) {
++    ble_gap_conn_cancel();
++  }
++  if (handle != BLE_HS_CONN_HANDLE_NONE) {
++    ble_gap_terminate(handle, BLE_ERR_REM_USER_CONN_TERM);
++  }
++}
++
++static inline void pressensorLinkStop() {
++  bool stopScan;
++  portENTER_CRITICAL(&pressensorMux);
++  stopScan = pressensorLink.state == PRESSENSOR_LINK_SCANNING;
++  pressensorLink.scanActive = false;
++  portEXIT_CRITICAL(&pressensorMux);
++  if (stopScan && BLEDevice::getInitialized()) {
++    BLEDevice::getScan()->stop();
++  }
++  pressensorDropLink(0);
++  portENTER_CRITICAL(&pressensorMux);
++  pressensorLink.scanEnded = false;
++  pressensorLink.state = PRESSENSOR_LINK_OFF;
++  portEXIT_CRITICAL(&pressensorMux);
++}
++
++static inline void pressensorLinkBegin(const char *savedMac) {
++  pressensorLinkStop();
++  const unsigned long now = millis();
++  portENTER_CRITICAL(&pressensorMux);
++  snprintf(pressensorLink.targetMac, sizeof(pressensorLink.targetMac), "%s", savedMac == nullptr ? "" : savedMac);
++  pressensorLink.scanWaitStartedAt = now;
++  pressensorLink.scanWaitMs = 0;
++  pressensorLink.state = pressensorLink.targetMac[0] == 0 ? PRESSENSOR_LINK_OFF : PRESSENSOR_LINK_SCAN_WAIT;
++  portEXIT_CRITICAL(&pressensorMux);
++}
++
++static inline bool pressensorStartScan() {
++  if (!BLEDevice::getInitialized()) {
++    return false;
++  }
++  portENTER_CRITICAL(&pressensorMux);
++  const bool hasTarget = pressensorLink.targetMac[0] != 0;
++  if (hasTarget) {
++    pressensorLink.scanListCount = 0;
++    pressensorLink.matchFound = false;
++    pressensorLink.scanEnded = false;
++    pressensorLink.scanActive = true;
++  }
++  portEXIT_CRITICAL(&pressensorMux);
++  if (!hasTarget) {
++    return false;
++  }
++
++  BLEScan *scan = BLEDevice::getScan();
++  scan->setAdvertisedDeviceCallbacks(&pressensorScanCallbacks, false);
++  scan->setActiveScan(true);
++  scan->setInterval(160);
++  scan->setWindow(80);
++  const bool started = scan->start(PRESSENSOR_SCAN_SECONDS, pressensorScanComplete, false);
++  if (!started) {
++    portENTER_CRITICAL(&pressensorMux);
++    pressensorLink.scanActive = false;
++    portEXIT_CRITICAL(&pressensorMux);
++  }
++  return started;
++}
++
++static inline bool pressensorZeroNow() {
++  uint16_t handle;
++  uint16_t zeroHandle;
++  portENTER_CRITICAL(&pressensorMux);
++  handle = pressensorLink.connHandle;
++  zeroHandle = pressensorLink.zeroValHandle;
++  portEXIT_CRITICAL(&pressensorMux);
++  if (handle == BLE_HS_CONN_HANDLE_NONE || zeroHandle == 0) {
++    return false;
++  }
++  const uint8_t zero = 0x00;
++  return ble_gattc_write_no_rsp_flat(handle, zeroHandle, &zero, 1) == 0;
++}
++
++static inline void pressensorStartConnect() {
++  ble_addr_t peerAddr = {};
++  uint32_t generation;
++  const unsigned long now = millis();
++  portENTER_CRITICAL(&pressensorMux);
++  peerAddr = pressensorLink.peerAddr;
++  pressensorLink.matchFound = false;
++  pressensorLink.scanActive = false;
++  pressensorLink.generation = pressensorLink.generation + 1;
++  generation = pressensorLink.generation;
++  pressensorLink.connHandle = BLE_HS_CONN_HANDLE_NONE;
++  pressensorLink.phaseDone = false;
++  pressensorLink.phaseFailed = false;
++  pressensorLink.phaseStartedAt = now;
++  pressensorLink.state = PRESSENSOR_LINK_CONNECTING;
++  portEXIT_CRITICAL(&pressensorMux);
++
++  if (!BLEDevice::getInitialized()) {
++    pressensorDropLink(PRESSENSOR_RESCAN_DELAY_MS);
++    return;
++  }
++  char addr[18];
++  snprintf(addr, sizeof(addr), "%02x:%02x:%02x:%02x:%02x:%02x",
++           peerAddr.val[5], peerAddr.val[4], peerAddr.val[3], peerAddr.val[2], peerAddr.val[1], peerAddr.val[0]);
++  Serial.printf("[pressensor] connecting %s\n", addr);
++  int rc = ble_gap_connect(BLE_OWN_ADDR_PUBLIC, &peerAddr, 8000, nullptr, pressensorGapEvent, pressensorGenerationArg(generation));
++  if (rc == BLE_HS_EBUSY) {
++    BLEDevice::getScan()->stop();
++    rc = ble_gap_connect(BLE_OWN_ADDR_PUBLIC, &peerAddr, 8000, nullptr, pressensorGapEvent, pressensorGenerationArg(generation));
++  }
++  if (rc != 0) {
++    Serial.printf("[pressensor] connect start failed rc=%d\n", rc);
++    pressensorDropLink(PRESSENSOR_RESCAN_DELAY_MS);
++  }
++}
++
++static inline bool pressensorPhaseComplete() {
++  portENTER_CRITICAL(&pressensorMux);
++  const bool done = pressensorLink.phaseDone;
++  portEXIT_CRITICAL(&pressensorMux);
++  return done;
++}
++
++static inline void pressensorPhaseGuard() {
++  bool failed;
++  unsigned long startedAt;
++  PressensorLinkState state;
++  portENTER_CRITICAL(&pressensorMux);
++  failed = pressensorLink.phaseFailed;
++  startedAt = pressensorLink.phaseStartedAt;
++  state = pressensorLink.state;
++  portEXIT_CRITICAL(&pressensorMux);
++  if (failed || millis() - startedAt > PRESSENSOR_PHASE_TIMEOUT_MS) {
++    Serial.printf("[pressensor] phase %d failed\n", static_cast<int>(state));
++    pressensorDropLink(PRESSENSOR_RESCAN_DELAY_MS);
++  }
++}
++
++static inline void pressensorLinkTick() {
++  PressensorLinkState state;
++  bool dropped;
++  portENTER_CRITICAL(&pressensorMux);
++  state = pressensorLink.state;
++  dropped = pressensorLink.dropped;
++  portEXIT_CRITICAL(&pressensorMux);
++  if (state == PRESSENSOR_LINK_OFF) {
++    return;
++  }
++  if (dropped && state != PRESSENSOR_LINK_SCAN_WAIT && state != PRESSENSOR_LINK_SCANNING) {
++    Serial.println("[pressensor] link lost");
++    pressensorDropLink(PRESSENSOR_RESCAN_DELAY_MS);
++    return;
++  }
++
++  switch (state) {
++    case PRESSENSOR_LINK_SCAN_WAIT: {
++      unsigned long waitStartedAt;
++      unsigned long waitMs;
++      portENTER_CRITICAL(&pressensorMux);
++      waitStartedAt = pressensorLink.scanWaitStartedAt;
++      waitMs = pressensorLink.scanWaitMs;
++      portEXIT_CRITICAL(&pressensorMux);
++      if (millis() - waitStartedAt >= waitMs) {
++        if (pressensorStartScan()) {
++          portENTER_CRITICAL(&pressensorMux);
++          pressensorLink.state = PRESSENSOR_LINK_SCANNING;
++          portEXIT_CRITICAL(&pressensorMux);
++        } else {
++          const unsigned long now = millis();
++          portENTER_CRITICAL(&pressensorMux);
++          pressensorLink.scanWaitStartedAt = now;
++          pressensorLink.scanWaitMs = PRESSENSOR_RESCAN_DELAY_MS;
++          portEXIT_CRITICAL(&pressensorMux);
++        }
++      }
++      break;
++    }
++    case PRESSENSOR_LINK_SCANNING: {
++      bool matchFound;
++      bool scanEnded;
++      portENTER_CRITICAL(&pressensorMux);
++      matchFound = pressensorLink.matchFound;
++      scanEnded = pressensorLink.scanEnded;
++      portEXIT_CRITICAL(&pressensorMux);
++      if (matchFound) {
++        pressensorStartConnect();
++      } else if (scanEnded) {
++        const unsigned long now = millis();
++        portENTER_CRITICAL(&pressensorMux);
++        pressensorLink.scanEnded = false;
++        pressensorLink.scanWaitStartedAt = now;
++        pressensorLink.scanWaitMs = PRESSENSOR_RESCAN_DELAY_MS;
++        pressensorLink.state = PRESSENSOR_LINK_SCAN_WAIT;
++        portEXIT_CRITICAL(&pressensorMux);
++      }
++      break;
++    }
++    case PRESSENSOR_LINK_CONNECTING:
++      if (pressensorPhaseComplete()) {
++        Serial.println("[pressensor] connected");
++        pressensorEnterPhase(PRESSENSOR_LINK_SETTLING);
++      } else {
++        pressensorPhaseGuard();
++      }
++      break;
++    case PRESSENSOR_LINK_SETTLING: {
++      unsigned long startedAt;
++      portENTER_CRITICAL(&pressensorMux);
++      startedAt = pressensorLink.phaseStartedAt;
++      portEXIT_CRITICAL(&pressensorMux);
++      if (millis() - startedAt >= PRESSENSOR_SETTLE_MS) {
++        pressensorEnterPhase(PRESSENSOR_LINK_DISC_SVC);
++        uint16_t handle;
++        uint32_t generation;
++        portENTER_CRITICAL(&pressensorMux);
++        pressensorLink.svcStartHandle = 0;
++        pressensorLink.svcEndHandle = 0;
++        handle = pressensorLink.connHandle;
++        generation = pressensorLink.generation;
++        portEXIT_CRITICAL(&pressensorMux);
++        if (ble_gattc_disc_svc_by_uuid(handle, &pressensorSvcUuid.u, pressensorSvcDiscovered, pressensorGenerationArg(generation)) != 0) {
++          pressensorDropLink(PRESSENSOR_RESCAN_DELAY_MS);
++        }
++      }
++      break;
++    }
++    case PRESSENSOR_LINK_DISC_SVC:
++      if (pressensorPhaseComplete()) {
++        pressensorEnterPhase(PRESSENSOR_LINK_DISC_CHR);
++        uint16_t handle;
++        uint16_t startHandle;
++        uint16_t endHandle;
++        uint32_t generation;
++        portENTER_CRITICAL(&pressensorMux);
++        pressensorLink.pressureValHandle = 0;
++        pressensorLink.zeroValHandle = 0;
++        handle = pressensorLink.connHandle;
++        startHandle = pressensorLink.svcStartHandle;
++        endHandle = pressensorLink.svcEndHandle;
++        generation = pressensorLink.generation;
++        portEXIT_CRITICAL(&pressensorMux);
++        if (ble_gattc_disc_all_chrs(handle, startHandle, endHandle, pressensorChrDiscovered, pressensorGenerationArg(generation)) != 0) {
++          pressensorDropLink(PRESSENSOR_RESCAN_DELAY_MS);
++        }
++      } else {
++        pressensorPhaseGuard();
++      }
++      break;
++    case PRESSENSOR_LINK_DISC_CHR:
++      if (pressensorPhaseComplete()) {
++        pressensorEnterPhase(PRESSENSOR_LINK_DISC_DSC);
++        uint16_t handle;
++        uint16_t valueHandle;
++        uint16_t endHandle;
++        uint32_t generation;
++        portENTER_CRITICAL(&pressensorMux);
++        pressensorLink.pressureCccdHandle = 0;
++        handle = pressensorLink.connHandle;
++        valueHandle = pressensorLink.pressureValHandle;
++        endHandle = pressensorLink.svcEndHandle;
++        generation = pressensorLink.generation;
++        portEXIT_CRITICAL(&pressensorMux);
++        if (ble_gattc_disc_all_dscs(handle, valueHandle, endHandle, pressensorDscDiscovered, pressensorGenerationArg(generation)) != 0) {
++          pressensorDropLink(PRESSENSOR_RESCAN_DELAY_MS);
++        }
++      } else {
++        pressensorPhaseGuard();
++      }
++      break;
++    case PRESSENSOR_LINK_DISC_DSC:
++      if (pressensorPhaseComplete()) {
++        pressensorEnterPhase(PRESSENSOR_LINK_SUBSCRIBING);
++        pressensorClearBar();
++        uint16_t handle;
++        uint16_t cccdHandle;
++        uint32_t generation;
++        portENTER_CRITICAL(&pressensorMux);
++        handle = pressensorLink.connHandle;
++        cccdHandle = pressensorLink.pressureCccdHandle;
++        generation = pressensorLink.generation;
++        portEXIT_CRITICAL(&pressensorMux);
++        const uint8_t enableNotify[2] = { 0x01, 0x00 };
++        if (ble_gattc_write_flat(handle, cccdHandle, enableNotify, sizeof(enableNotify), pressensorSubscriptionWritten,
++                                 pressensorGenerationArg(generation)) != 0) {
++          pressensorDropLink(PRESSENSOR_RESCAN_DELAY_MS);
++        }
++      } else {
++        pressensorPhaseGuard();
++      }
++      break;
++    case PRESSENSOR_LINK_SUBSCRIBING:
++      if (pressensorPhaseComplete()) {
++        bool zeroInitialConnection;
++        portENTER_CRITICAL(&pressensorMux);
++        zeroInitialConnection = !pressensorLink.connectedOnce;
++        pressensorLink.connectedOnce = true;
++        portEXIT_CRITICAL(&pressensorMux);
++        if (zeroInitialConnection) {
++          pressensorZeroNow();
++        }
++        pressensorEnterPhase(PRESSENSOR_LINK_STREAMING);
++        Serial.println("[pressensor] streaming");
++      } else {
++        pressensorPhaseGuard();
++      }
++      break;
++    case PRESSENSOR_LINK_STREAMING: {
++      unsigned long notifyAt = 0;
++      pressensorReadBar(&notifyAt);
++      unsigned long startedAt;
++      portENTER_CRITICAL(&pressensorMux);
++      startedAt = pressensorLink.phaseStartedAt;
++      portEXIT_CRITICAL(&pressensorMux);
++      const unsigned long now = millis();
++      if ((notifyAt == 0 && now - startedAt > PRESSENSOR_PHASE_TIMEOUT_MS) ||
++          (notifyAt != 0 && now - notifyAt >= PRESSENSOR_STALE_MS)) {
++        Serial.println("[pressensor] stream stale");
++        pressensorDropLink(PRESSENSOR_RESCAN_DELAY_MS);
++      }
++      break;
++    }
++    default:
++      break;
++  }
++}
++
++static inline bool pressensorStreaming() {
++  if (pressensorGetLinkState() != PRESSENSOR_LINK_STREAMING) {
++    return false;
++  }
++  unsigned long notifyAt = 0;
++  pressensorReadBar(&notifyAt);
++  return notifyAt != 0 && millis() - notifyAt < PRESSENSOR_STALE_MS;
++}
++
++static inline uint8_t pressensorBlockingScan() {
++  if (!BLEDevice::getInitialized()) {
++    return 0;
++  }
++  pressensorLinkStop();
++  BLEScan *scan = BLEDevice::getScan();
++  scan->setAdvertisedDeviceCallbacks(&pressensorScanCallbacks, false);
++  scan->setActiveScan(true);
++  scan->setInterval(160);
++  scan->setWindow(80);
++  portENTER_CRITICAL(&pressensorMux);
++  pressensorLink.scanListCount = 0;
++  pressensorLink.targetMac[0] = 0;
++  pressensorLink.matchFound = false;
++  pressensorLink.scanEnded = false;
++  pressensorLink.scanActive = true;
++  portEXIT_CRITICAL(&pressensorMux);
++  scan->start(PRESSENSOR_SCAN_SECONDS, false);
++  portENTER_CRITICAL(&pressensorMux);
++  pressensorLink.scanActive = false;
++  for (uint8_t i = 0; i + 1 < pressensorLink.scanListCount; i++) {
++    for (uint8_t j = i + 1; j < pressensorLink.scanListCount; j++) {
++      if (pressensorLink.scanList[j].rssi > pressensorLink.scanList[i].rssi) {
++        const PressensorScanEntry swap = pressensorLink.scanList[i];
++        pressensorLink.scanList[i] = pressensorLink.scanList[j];
++        pressensorLink.scanList[j] = swap;
++      }
++    }
++  }
++  const uint8_t count = pressensorLink.scanListCount;
++  portEXIT_CRITICAL(&pressensorMux);
++  scan->clearResults();
++  return count;
++}
++
++#endif
+diff --git a/include/pressensor_runtime.h b/include/pressensor_runtime.h
+new file mode 100644
+index 0000000..b6a4258
+--- /dev/null
++++ b/include/pressensor_runtime.h
+@@ -0,0 +1,303 @@
++#ifndef PRESSENSOR_RUNTIME_H
++#define PRESSENSOR_RUNTIME_H
++
++#include <Arduino.h>
++#include <Preferences.h>
++#include <math.h>
++#include "pressensor_ble.h"
++
++#define PRESSENSOR_FLOW_SAMPLE_MS 100
++#define PRESSENSOR_FLOW_EMA_ALPHA 0.3f
++#define PRESSENSOR_MAX_FLOW_GPS 8.0f
++#define PRESSENSOR_FLOW_STOP_EPS 0.35f
++#define PRESSENSOR_FLOW_STOP_MS 3000
++#define PRESSENSOR_MIN_STOP_WEIGHT 8.0f
++#define PRESSENSOR_START_BAR_DEFAULT 1.0f
++#define PRESSENSOR_REARM_RATIO 0.6f
++#define PRESSENSOR_FLUSH_MAX_MS 15000
++#define PRESSENSOR_FLUSH_GRACE_MS 3000
++#define PRESSENSOR_BACKSTOP_MS 90000
++#define PRESSENSOR_BACKSTOP_MIN_WEIGHT 1.0f
++
++enum PressensorShotState {
++  PRESSENSOR_SHOT_IDLE,
++  PRESSENSOR_SHOT_RUNNING,
++  PRESSENSOR_SHOT_DONE
++};
++
++struct PressensorSettings {
++  bool enabled = false;
++  char selectedMac[18] = { 0 };
++  char selectedName[24] = { 0 };
++  bool autoStart = true;
++  bool autoStop = true;
++  float startBar = PRESSENSOR_START_BAR_DEFAULT;
++};
++
++struct PressensorShot {
++  PressensorShotState state = PRESSENSOR_SHOT_IDLE;
++  bool startedByPressure = false;
++  bool hasFlowed = false;
++  bool pressureReady = true;
++  uint32_t startMs = 0;
++  uint32_t lastFlowMs = 0;
++  uint32_t shownEndMs = 0;
++  uint32_t flushGraceFrom = 0;
++  uint32_t lastSampleMs = 0;
++  float weightAtStart = 0.0f;
++  float lastSampleWeight = 0.0f;
++  float flowEma = 0.0f;
++  float peakBar = 0.0f;
++  float liveBar = 0.0f;
++};
++
++PressensorSettings pressensorSettings;
++PressensorShot pressensorShot;
++
++static inline float pressensorFlushPeakLimit() {
++  const float limit = pressensorSettings.startBar + 1.0f;
++  return limit > 2.0f ? limit : 2.0f;
++}
++
++static inline void pressensorNormalizeSettings() {
++  if (!isfinite(pressensorSettings.startBar) || pressensorSettings.startBar < 0.1f || pressensorSettings.startBar > 10.0f) {
++    pressensorSettings.startBar = PRESSENSOR_START_BAR_DEFAULT;
++  }
++}
++
++static inline void pressensorLoadSettings() {
++  Preferences preferences;
++  if (!preferences.begin("pressensor", true)) {
++    pressensorNormalizeSettings();
++    return;
++  }
++  pressensorSettings.enabled = preferences.getBool("enabled", false);
++  preferences.getString("mac", pressensorSettings.selectedMac, sizeof(pressensorSettings.selectedMac));
++  preferences.getString("name", pressensorSettings.selectedName, sizeof(pressensorSettings.selectedName));
++  pressensorSettings.autoStart = preferences.getBool("astart", true);
++  pressensorSettings.autoStop = preferences.getBool("astop", true);
++  pressensorSettings.startBar = preferences.getFloat("startbar", PRESSENSOR_START_BAR_DEFAULT);
++  preferences.end();
++  pressensorNormalizeSettings();
++}
++
++static inline void pressensorSaveSettings() {
++  pressensorNormalizeSettings();
++  Preferences preferences;
++  if (!preferences.begin("pressensor", false)) {
++    return;
++  }
++  preferences.putBool("enabled", pressensorSettings.enabled);
++  preferences.putString("mac", pressensorSettings.selectedMac);
++  preferences.putString("name", pressensorSettings.selectedName);
++  preferences.putBool("astart", pressensorSettings.autoStart);
++  preferences.putBool("astop", pressensorSettings.autoStop);
++  preferences.putFloat("startbar", pressensorSettings.startBar);
++  preferences.end();
++}
++
++static inline bool pressensorActive() {
++  return pressensorSettings.enabled;
++}
++
++static inline void pressensorResetShot() {
++  pressensorShot.state = PRESSENSOR_SHOT_IDLE;
++  pressensorShot.startedByPressure = false;
++  pressensorShot.hasFlowed = false;
++  pressensorShot.startMs = 0;
++  pressensorShot.lastFlowMs = 0;
++  pressensorShot.shownEndMs = 0;
++  pressensorShot.flushGraceFrom = 0;
++  pressensorShot.weightAtStart = 0.0f;
++  pressensorShot.flowEma = 0.0f;
++  pressensorShot.peakBar = 0.0f;
++}
++
++static inline void pressensorApplyLinkTarget() {
++  if (pressensorSettings.enabled) {
++    pressensorLinkBegin(pressensorSettings.selectedMac);
++  } else {
++    pressensorLinkStop();
++  }
++}
++
++static inline void pressensorSetEnabled(bool enabled) {
++  pressensorSettings.enabled = enabled;
++  pressensorSaveSettings();
++  pressensorResetShot();
++  pressensorShot.pressureReady = true;
++  pressensorApplyLinkTarget();
++}
++
++static inline uint32_t pressensorShotElapsedMs() {
++  if (pressensorShot.state == PRESSENSOR_SHOT_RUNNING) {
++    return millis() - pressensorShot.startMs;
++  }
++  if (pressensorShot.state == PRESSENSOR_SHOT_DONE) {
++    return pressensorShot.shownEndMs;
++  }
++  return 0;
++}
++
++static inline void pressensorStartShot(bool byPressure, float weight) {
++  pressensorShot.state = PRESSENSOR_SHOT_RUNNING;
++  pressensorShot.startedByPressure = byPressure;
++  pressensorShot.hasFlowed = false;
++  pressensorShot.startMs = millis();
++  pressensorShot.lastFlowMs = pressensorShot.startMs;
++  pressensorShot.shownEndMs = 0;
++  pressensorShot.flushGraceFrom = 0;
++  pressensorShot.weightAtStart = weight;
++  pressensorShot.peakBar = 0.0f;
++  Serial.printf("[pressensor] shot start %s\n", byPressure ? "pressure" : "manual");
++}
++
++static inline void pressensorStopShot(uint32_t endElapsedMs) {
++  pressensorShot.state = PRESSENSOR_SHOT_DONE;
++  pressensorShot.shownEndMs = endElapsedMs;
++  pressensorShot.flushGraceFrom = 0;
++  Serial.printf("[pressensor] shot stop %lus peak=%.1f\n", (unsigned long)(endElapsedMs / 1000), pressensorShot.peakBar);
++}
++
++static inline void pressensorCancelShot(const char *reason) {
++  Serial.printf("[pressensor] shot cancel %s\n", reason);
++  pressensorResetShot();
++}
++
++static inline void pressensorTimerButton(float weight) {
++  if (pressensorShot.state == PRESSENSOR_SHOT_IDLE) {
++    pressensorShot.pressureReady = false;
++    pressensorStartShot(false, weight);
++  } else if (pressensorShot.state == PRESSENSOR_SHOT_RUNNING) {
++    pressensorStopShot(millis() - pressensorShot.startMs);
++  } else {
++    pressensorResetShot();
++  }
++}
++
++static inline float pressensorDrinkWeight(float weight) {
++  const float drink = weight - pressensorShot.weightAtStart;
++  return drink > 0.0f ? drink : 0.0f;
++}
++
++static inline void pressensorUpdateFlow(float weight, uint32_t now) {
++  if (pressensorShot.lastSampleMs == 0) {
++    pressensorShot.lastSampleMs = now;
++    pressensorShot.lastSampleWeight = weight;
++    return;
++  }
++  const uint32_t deltaMs = now - pressensorShot.lastSampleMs;
++  if (deltaMs < PRESSENSOR_FLOW_SAMPLE_MS) {
++    return;
++  }
++  const float instant = (weight - pressensorShot.lastSampleWeight) / (deltaMs / 1000.0f);
++  pressensorShot.flowEma += (instant - pressensorShot.flowEma) * PRESSENSOR_FLOW_EMA_ALPHA;
++  if (pressensorShot.flowEma < 0.0f) {
++    pressensorShot.flowEma = 0.0f;
++  } else if (pressensorShot.flowEma > PRESSENSOR_MAX_FLOW_GPS) {
++    pressensorShot.flowEma = PRESSENSOR_MAX_FLOW_GPS;
++  }
++  pressensorShot.lastSampleMs = now;
++  pressensorShot.lastSampleWeight = weight;
++}
++
++static inline void pressensorAutoStartTick(float bar, float weight) {
++  if (bar < pressensorSettings.startBar * PRESSENSOR_REARM_RATIO) {
++    pressensorShot.pressureReady = true;
++  }
++  if (!pressensorSettings.autoStart || !pressensorStreaming()) {
++    return;
++  }
++  if (pressensorShot.state == PRESSENSOR_SHOT_IDLE && pressensorShot.pressureReady && bar >= pressensorSettings.startBar) {
++    pressensorShot.pressureReady = false;
++    pressensorStartShot(true, weight);
++  }
++}
++
++static inline void pressensorFlushGuardTick(float bar, float drink, uint32_t now) {
++  if (!pressensorShot.startedByPressure) {
++    return;
++  }
++  const uint32_t elapsed = now - pressensorShot.startMs;
++  const bool flushProfile = pressensorShot.peakBar < pressensorFlushPeakLimit();
++  if (bar >= pressensorSettings.startBar) {
++    pressensorShot.flushGraceFrom = 0;
++  } else if (elapsed < PRESSENSOR_FLUSH_MAX_MS && flushProfile) {
++    if (pressensorShot.flushGraceFrom == 0) {
++      pressensorShot.flushGraceFrom = now;
++    } else if (now - pressensorShot.flushGraceFrom >= PRESSENSOR_FLUSH_GRACE_MS) {
++      pressensorCancelShot("flush");
++      return;
++    }
++  }
++  if (elapsed >= PRESSENSOR_BACKSTOP_MS && flushProfile && drink < PRESSENSOR_BACKSTOP_MIN_WEIGHT) {
++    pressensorCancelShot("backstop");
++  }
++}
++
++static inline void pressensorAutoStopTick(float drink, uint32_t now) {
++  if (!pressensorSettings.autoStop) {
++    return;
++  }
++  if (pressensorShot.flowEma > PRESSENSOR_FLOW_STOP_EPS) {
++    pressensorShot.hasFlowed = true;
++    pressensorShot.lastFlowMs = now;
++    return;
++  }
++  if (pressensorShot.hasFlowed && drink >= PRESSENSOR_MIN_STOP_WEIGHT && now - pressensorShot.lastFlowMs >= PRESSENSOR_FLOW_STOP_MS) {
++    pressensorStopShot(pressensorShot.lastFlowMs - pressensorShot.startMs);
++  }
++}
++
++static inline void pressensorRuntimeTick(float weight, bool shotLogicPaused) {
++  if (!pressensorSettings.enabled) {
++    return;
++  }
++  if (pressensorGetLinkState() == PRESSENSOR_LINK_OFF && pressensorSettings.selectedMac[0] != 0) {
++    pressensorApplyLinkTarget();
++  }
++  pressensorLinkTick();
++  const uint32_t now = millis();
++  pressensorUpdateFlow(weight, now);
++  const float bar = pressensorStreaming() ? pressensorReadBar() : 0.0f;
++  pressensorShot.liveBar = bar > 0.0f ? bar : 0.0f;
++  if (shotLogicPaused) {
++    return;
++  }
++  if (pressensorShot.state == PRESSENSOR_SHOT_RUNNING && bar > pressensorShot.peakBar) {
++    pressensorShot.peakBar = bar;
++  }
++  pressensorAutoStartTick(bar, weight);
++  if (pressensorShot.state == PRESSENSOR_SHOT_RUNNING) {
++    const float drink = pressensorDrinkWeight(weight);
++    pressensorFlushGuardTick(bar, drink, now);
++    if (pressensorShot.state == PRESSENSOR_SHOT_RUNNING) {
++      pressensorAutoStopTick(drink, now);
++    }
++  }
++}
++
++static inline bool pressensorKeepsAwake() {
++  return pressensorSettings.enabled && (pressensorShot.state == PRESSENSOR_SHOT_RUNNING || pressensorStreaming());
++}
++
++static inline const char *pressensorStatusText() {
++  if (!pressensorSettings.enabled) {
++    return "off";
++  }
++  if (pressensorShot.state == PRESSENSOR_SHOT_DONE) {
++    return "done";
++  }
++  if (!pressensorStreaming()) {
++    return pressensorSettings.selectedMac[0] == 0 ? "no sensor" : "connecting";
++  }
++  if (pressensorShot.state == PRESSENSOR_SHOT_IDLE) {
++    if (!pressensorSettings.autoStart) {
++      return "[] starts";
++    }
++    return pressensorShot.pressureReady ? "armed" : "rearming";
++  }
++  return "";
++}
++
++#endif
+diff --git a/platformio.ini b/platformio.ini
+index 21fbdcb..623faf1 100644
+--- a/platformio.ini
++++ b/platformio.ini
+@@ -102,6 +102,12 @@ extra_scripts =
+   ${env:esp32s3.extra_scripts}
+   pre:tools/configure_custom_build.py
+ 
++[env:esp32s3-pressensor]
++extends = env:esp32s3
++build_flags =
++  ${env:esp32s3.build_flags}
++  -DHDS_ENABLE_PRESSENSOR=1
++
+ [env:native]
+ platform = native
+ test_build_src = no
+diff --git a/src/hds.ino b/src/hds.ino
+index c473fa7..cac7fed 100644
+--- a/src/hds.ino
++++ b/src/hds.ino
+@@ -22,6 +22,9 @@
+ #if HDS_ENABLE_GRINDER
+ #include "grinder_runtime.h"
+ #endif
++#if HDS_ENABLE_PRESSENSOR
++#include "pressensor_runtime.h"
++#endif
+ #if HDS_FEATURE_PULL_OTA
+ #include "pull_ota.h"
+ #include "ota_rollback.h"
+@@ -438,6 +441,9 @@ void setup() {
+ #if HDS_ENABLE_GRINDER
+   grinderLoadSettings();
+ #endif
++#if HDS_ENABLE_PRESSENSOR
++  pressensorLoadSettings();
++#endif
+ 
+   b_quickBoot = storageGetBool(KEY_QUICK_BOOT, false);
+   i_buttonBootDelay = b_quickBoot ? 0 : 500;
+@@ -1478,6 +1484,9 @@ void loop() {
+ #endif
+ #if HDS_ENABLE_GRINDER
+       || grinderRuntimeKeepsAwake()
++#endif
++#if HDS_ENABLE_PRESSENSOR
++      || pressensorKeepsAwake()
+ #endif
+   ) {
+     power_off(-1);
+@@ -1548,6 +1557,9 @@ void loop() {
+ #endif
+ #if HDS_ENABLE_GRINDER
+       grinderRuntimeTick(f_displayedValue);
++#endif
++#if HDS_ENABLE_PRESSENSOR
++      pressensorRuntimeTick(f_displayedValue, true);
+ #endif
+       showMenu();
+     } else if (GPIO_power_on_with == BATTERY_CHARGING) {
+@@ -1658,7 +1670,16 @@ void loop() {
+           }
+         }
+         pureScale();
++#if HDS_ENABLE_PRESSENSOR
++        pressensorRuntimeTick(f_displayedValue, false);
++        if (pressensorActive()) {
++          updatePressensorOled();
++        } else {
++          updateOled();
++        }
++#else
+         updateOled();
++#endif
+ #if HDS_ENABLE_GRINDER
+         grinderRuntimeTick(f_displayedValue);
+ #endif
+@@ -1866,6 +1887,119 @@ void drawGrinder() {
+ }
+ #endif
+ 
++#if HDS_ENABLE_PRESSENSOR
++void drawPressensorCell(int cellX, int baseline, const char *value, const char *unit) {
++  u8g2.setFont(FONT_PRESSENSOR_VALUE);
++  const int valueWidth = u8g2.getUTF8Width(value);
++  u8g2.setFont(u8g2_font_5x8_tr);
++  const int unitWidth = unit[0] ? u8g2.getUTF8Width(unit) : 0;
++  const int gap = unit[0] ? 3 : 0;
++  int x = cellX + (63 - valueWidth - gap - unitWidth) / 2;
++  if (x < cellX + 1) {
++    x = cellX + 1;
++  }
++  u8g2.setFont(FONT_PRESSENSOR_VALUE);
++  u8g2.drawStr(x, baseline, value);
++  if (unit[0]) {
++    u8g2.setFont(u8g2_font_5x8_tr);
++    u8g2.drawStr(x + valueWidth + gap, baseline, unit);
++  }
++}
++
++void drawPressensorSmall(int cellX, int baseline, const char *text) {
++  u8g2.setFont(u8g2_font_5x8_tr);
++  int x = cellX + (63 - u8g2.getUTF8Width(text)) / 2;
++  if (x < cellX + 1) {
++    x = cellX + 1;
++  }
++  u8g2.drawStr(x, baseline, text);
++}
++
++void updatePressensorOled() {
++  if (millis() - t_oled_refresh < i_oled_print_interval) {
++    return;
++  }
++  t_oled_refresh = millis();
++
++  const float bar = pressensorShot.liveBar;
++  const float weight = f_displayedValue;
++  const float flow = pressensorShot.flowEma;
++  const bool running = pressensorShot.state == PRESSENSOR_SHOT_RUNNING;
++  const bool done = pressensorShot.state == PRESSENSOR_SHOT_DONE;
++  const bool streaming = pressensorStreaming();
++  const uint32_t elapsedMs = pressensorShotElapsedMs();
++  const char *status = pressensorStatusText();
++
++  char barStr[10];
++  char weightStr[12];
++  const char *weightUnit = "g";
++  char flowStr[10];
++  char peakStr[16];
++  char timeStr[10];
++  snprintf(barStr, sizeof(barStr), "%.1f", bar);
++  if (weight > OVER_WEIGHT) {
++    snprintf(weightStr, sizeof(weightStr), "Over");
++    weightUnit = "";
++  } else if (fabsf(weight) >= 999.95f) {
++    snprintf(weightStr, sizeof(weightStr), "%.0f", weight);
++  } else {
++    snprintf(weightStr, sizeof(weightStr), "%.1f", weight);
++  }
++  snprintf(flowStr, sizeof(flowStr), "%.1f", flow);
++  snprintf(peakStr, sizeof(peakStr), "peak %.1f", pressensorShot.peakBar);
++  const uint32_t totalSeconds = elapsedMs / 1000;
++  snprintf(timeStr, sizeof(timeStr), "%lu:%02lu", (unsigned long)(totalSeconds / 60), (unsigned long)(totalSeconds % 60));
++  int fillWidth = (int)(bar / 12.0f * 126.0f);
++  if (fillWidth < 0) {
++    fillWidth = 0;
++  } else if (fillWidth > 126) {
++    fillWidth = 126;
++  }
++
++  u8g2.firstPage();
++  do {
++    if (b_screenFlipped) {
++      u8g2.setDisplayRotation(U8G2_R0);
++    } else {
++      u8g2.setDisplayRotation(U8G2_R2);
++    }
++    u8g2.setFontMode(1);
++    u8g2.setDrawColor(1);
++
++    u8g2.drawVLine(64, 0, 30);
++    u8g2.drawVLine(64, 34, 30);
++    u8g2.drawFrame(0, 30, 128, 4);
++    if (fillWidth > 0) {
++      u8g2.drawBox(1, 31, fillWidth, 2);
++    }
++
++    drawPressensorCell(0, 24, barStr, "bar");
++    drawPressensorCell(65, 24, weightStr, weightUnit);
++    if (running) {
++      drawPressensorCell(0, 58, flowStr, "g/s");
++    } else if (done) {
++      drawPressensorSmall(0, 48, peakStr);
++      drawPressensorSmall(0, 58, "[] resets");
++    } else {
++      drawPressensorSmall(0, 52, status);
++    }
++    drawPressensorCell(65, 58, timeStr, "");
++
++    if (streaming) {
++      u8g2.drawDisc(4, 4, 2);
++    } else {
++      u8g2.drawCircle(4, 4, 2);
++    }
++
++    u8g2.setDrawColor(2);
++    drawTare();
++    drawShutdownFail();
++    drawAbout();
++    drawDebug();
++  } while (u8g2.nextPage());
++}
++#endif
++
+ void drawBattery(unsigned long now) {
+ #if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
+   if (digitalRead(USB_DET) == LOW) {
+diff --git a/tools/test_pressensor_ble_contract.py b/tools/test_pressensor_ble_contract.py
+new file mode 100644
+index 0000000..4fbf212
+--- /dev/null
++++ b/tools/test_pressensor_ble_contract.py
+@@ -0,0 +1,106 @@
++from pathlib import Path
++
++
++ROOT = Path(__file__).resolve().parents[1]
++BLE_HEADER = ROOT / "include" / "pressensor_ble.h"
++PARAMETER_HEADER = ROOT / "include" / "parameter.h"
++
++
++class LinkModel:
++    def __init__(self):
++        self.connected_once = False
++        self.generation = 0
++
++    def subscribe(self):
++        zero = not self.connected_once
++        self.connected_once = True
++        return zero
++
++    def reconnect(self):
++        self.generation += 1
++
++    def accepts(self, generation):
++        return generation == self.generation
++
++
++def function_body(text, name):
++    signature = text.index(name)
++    opening = text.index("{", signature)
++    depth = 0
++    for index in range(opening, len(text)):
++        if text[index] == "{":
++            depth += 1
++        elif text[index] == "}":
++            depth -= 1
++            if depth == 0:
++                return text[opening + 1:index]
++    raise AssertionError(f"unterminated function: {name}")
++
++
++def require(text, *snippets):
++    for snippet in snippets:
++        if snippet not in text:
++            raise AssertionError(f"missing contract: {snippet}")
++
++
++def main():
++    ble = BLE_HEADER.read_text(encoding="utf-8")
++    parameter = PARAMETER_HEADER.read_text(encoding="utf-8")
++    compact = " ".join(ble.split())
++
++    require(
++        parameter,
++        "extern PressensorLink pressensorLink;",
++        "extern portMUX_TYPE pressensorMux;",
++        "extern volatile unsigned long pressensorNotifyAtShared;",
++    )
++    require(
++        ble,
++        "generation == pressensorLink.generation",
++        "event->disconnect.conn.conn_handle == pressensorLink.connHandle",
++        "event->notify_rx.conn_handle == pressensorLink.connHandle",
++        "pressensorLink.generation = pressensorLink.generation + 1;",
++    )
++    if ble.count("portENTER_CRITICAL(&pressensorMux);") < 20:
++        raise AssertionError("Pressensor callback state is not consistently protected")
++    if "matchAnyDevice" in ble:
++        raise AssertionError("an empty selection can still match arbitrary sensors")
++
++    begin = function_body(ble, "pressensorLinkBegin")
++    require(begin, "pressensorLink.targetMac[0] == 0 ? PRESSENSOR_LINK_OFF : PRESSENSOR_LINK_SCAN_WAIT")
++
++    subscription = function_body(ble, "pressensorSubscriptionWritten")
++    require(subscription, "generation == pressensorLink.generation", "error->status == 0", "pressensorLink.phaseDone = true;")
++    require(
++        compact,
++        "ble_gattc_write_flat(handle, cccdHandle, enableNotify, sizeof(enableNotify), pressensorSubscriptionWritten, pressensorGenerationArg(generation))",
++    )
++
++    tick = function_body(ble, "pressensorLinkTick")
++    require(
++        tick,
++        "zeroInitialConnection = !pressensorLink.connectedOnce;",
++        "pressensorLink.connectedOnce = true;",
++        "if (zeroInitialConnection)",
++        "pressensorZeroNow();",
++        "notifyAt == 0 && now - startedAt > PRESSENSOR_PHASE_TIMEOUT_MS",
++        "notifyAt != 0 && now - notifyAt >= PRESSENSOR_STALE_MS",
++        "pressensorDropLink(PRESSENSOR_RESCAN_DELAY_MS);",
++    )
++
++    link = LinkModel()
++    if not link.subscribe():
++        raise AssertionError("first connection did not zero")
++    link.reconnect()
++    if link.subscribe():
++        raise AssertionError("reconnect zeroed the sensor")
++    old_generation = link.generation
++    link.reconnect()
++    if link.accepts(old_generation):
++        raise AssertionError("late callback from an older generation was accepted")
++
++    print("Pressensor BLE contract tests passed")
++
++
++if __name__ == "__main__":
++    main()

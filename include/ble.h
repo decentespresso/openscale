@@ -11,6 +11,7 @@ enum BleState {
 };
 volatile BleState bleState = DISCONNECTED;
 const unsigned long HEARTBEAT_TIMEOUT = 5000;
+const unsigned long HEARTBEAT_DISCONNECT_RETRY_INTERVAL = 10000;
 const unsigned long BLE_STATUS_RESPONSE_TIMEOUT = 2000;
 unsigned long t_lastDisconnectAttempt = 0;
 unsigned long t_lastDisconnectAttemptNotice = 0;
@@ -28,6 +29,8 @@ void sendBleVoltage();
 void sendBleLedResponse();
 void sendAdsDebugInfoBLE();
 void queueBleStatusResponse();
+void queueBleVoltageResponse();
+void processBleVoltageResponse();
 static bool bleHasLiveClient();
 void buildAdsDebugPacket(byte data[41]);
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
@@ -38,6 +41,7 @@ volatile uint16_t connId = 0xFFFF;
 void resetBleFff4StateLocked(uint16_t subscriptionHandle) {
   bleFff4SubscriptionHandle = subscriptionHandle;
   bleStatusResponsesPending = 0;
+  bleVoltageResponsesPending = 0;
   bleStatusRequestAt = 0;
   bleNotifyFailureLogged = false;
 }
@@ -62,6 +66,12 @@ bool clearBleFff4Connection(uint16_t connectionHandle) {
   return isCurrent;
 }
 
+void restoreDisplayAfterBleDisconnect() {
+  if (b_softSleep) return;
+  b_u8g2Sleep = false;
+  remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
+}
+
 
 class MyServerCallbacks : public BLEServerCallbacks {
 #if defined(CONFIG_NIMBLE_ENABLED)
@@ -71,6 +81,9 @@ class MyServerCallbacks : public BLEServerCallbacks {
     t_heartBeat = millis();
     bleState = CONNECTED;
     deviceConnected = true;
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
 #ifdef BUZZER
     b_beep = false;
 #endif
@@ -90,8 +103,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
 #ifdef BUZZER
     b_beep = storageGetInt(KEY_BEEP, 1);
 #endif
-    b_u8g2Sleep = false;
-    remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
+    restoreDisplayAfterBleDisconnect();
     Serial.print("Device disconnected (connId: ");
     Serial.print(desc->conn_handle);
     Serial.println("), restarting advertising...");
@@ -106,6 +118,9 @@ class MyServerCallbacks : public BLEServerCallbacks {
     t_heartBeat = millis();
     bleState = CONNECTED;
     deviceConnected = true;
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
 #ifdef BUZZER
     b_beep = false;
 #endif
@@ -121,8 +136,7 @@ class MyServerCallbacks : public BLEServerCallbacks {
 #ifdef BUZZER
     b_beep = storageGetInt(KEY_BEEP, 1);
 #endif
-    b_u8g2Sleep = false;
-    remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
+    restoreDisplayAfterBleDisconnect();
     Serial.println("Device disconnected, restarting advertising...");
     delay(100);
     pAdvertising->start();
@@ -139,13 +153,21 @@ struct BleDecentCommandSink {
   }
 
   void displayOff() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyDisplay(false);
+#else
     b_u8g2Sleep = true;
+#endif
     remoteReplacePending(WSP_DISPLAY_OFF, WSP_DISPLAY_ON);
     queueBleStatusResponse();
   }
 
   void displayOn() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyDisplay(true);
+#else
     b_u8g2Sleep = false;
+#endif
     remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
     queueBleStatusResponse();
   }
@@ -155,23 +177,32 @@ struct BleDecentCommandSink {
   }
 
   void lowPowerOn() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyLowPower(true);
+#else
     b_websocketLowPowerEnabled = true;
+#endif
     remoteReplacePending(WSP_LOWPWR_ON, WSP_LOWPWR_OFF);
   }
 
   void lowPowerOff() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyLowPower(false);
+#else
     b_websocketLowPowerEnabled = false;
+#endif
     remoteReplacePending(WSP_LOWPWR_OFF, WSP_LOWPWR_ON);
   }
 
   void softSleepOn() {
-    b_softSleep = true;
-    b_u8g2Sleep = true;
     remoteReplacePending(WSP_SLEEP_ON, WSP_SLEEP_OFF);
   }
 
   void softSleepOff() {
-    bool wasSoftSleep = b_softSleep;
+#if HDS_ENABLE_ENERGY_MENU
+    remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);
+#else
+    const bool wasSoftSleep = b_softSleep;
     b_softSleep = false;
     b_u8g2Sleep = false;
     if (wasSoftSleep) {
@@ -179,6 +210,7 @@ struct BleDecentCommandSink {
     } else {
       remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
     }
+#endif
   }
 
   void timerStart() {
@@ -194,8 +226,12 @@ struct BleDecentCommandSink {
   }
 
   void wifiUpdate() {
+#if HDS_FEATURE_PULL_OTA
     Serial.println("Start WiFi OTA queued.");
     remoteQueuePending(WSP_WIFI_UPDATE);
+#else
+    Serial.println("WiFi OTA unavailable.");
+#endif
   }
 
 #ifdef BUZZER
@@ -231,7 +267,7 @@ struct BleDecentCommandSink {
 #endif
 
   void sendVoltage() {
-    sendBleVoltage();
+    queueBleVoltageResponse();
   }
 
   void adsDebug(uint8_t mode) {
@@ -342,15 +378,16 @@ void ble_init() {
 
 void disconnectBLE() {
   if (!bleHasLiveClient() || pServer == nullptr || connId == 0xFFFF) return;
-  Serial.println("***No heartbeat for 5 seconds. Disconnecting BLE...***");
-  if (millis() - t_lastDisconnectAttempt < 5000) {
-    if (millis() - t_lastDisconnectAttemptNotice > 1000){
+  const unsigned long now = millis();
+  if (now - t_lastDisconnectAttempt < HEARTBEAT_TIMEOUT) {
+    if (now - t_lastDisconnectAttemptNotice > 1000){
       Serial.println("Disconnect attempt too frequent, skipping...");
-      t_lastDisconnectAttemptNotice = millis();
+      t_lastDisconnectAttemptNotice = now;
     }
     return;
   }
-  t_lastDisconnectAttempt = millis();
+  Serial.println("***No heartbeat for 5 seconds. Disconnecting BLE...***");
+  t_lastDisconnectAttempt = now;
   pServer->disconnect(connId, 0x13);
 }
 
@@ -384,15 +421,39 @@ static bool bleCanNotifyCurrent() {
     && subscribed;
 }
 
+void queueBleVoltageResponse() {
+  portENTER_CRITICAL(&bleFff4Mux);
+  if (bleVoltageResponsesPending != UINT16_MAX) bleVoltageResponsesPending = bleVoltageResponsesPending + 1;
+  portEXIT_CRITICAL(&bleFff4Mux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
+}
+
+void processBleVoltageResponse() {
+  bool sendVoltage = false;
+  portENTER_CRITICAL(&bleFff4Mux);
+  if (bleVoltageResponsesPending > 0) {
+    bleVoltageResponsesPending = bleVoltageResponsesPending - 1;
+    sendVoltage = true;
+  }
+  portEXIT_CRITICAL(&bleFff4Mux);
+  if (sendVoltage) sendBleVoltage();
+}
+
 void queueBleStatusResponse() {
   const unsigned long now = millis();
   portENTER_CRITICAL(&bleFff4Mux);
   bleStatusRequestAt = now;
   if (bleStatusResponsesPending != UINT16_MAX) bleStatusResponsesPending = bleStatusResponsesPending + 1;
   portEXIT_CRITICAL(&bleFff4Mux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 void processBleStatusResponse() {
+  if (bleStatusResponsesPending == 0) return;
   const unsigned long now = millis();
   bool sendStatus = false;
   bool disconnectCurrent = false;

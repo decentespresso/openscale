@@ -47,7 +47,10 @@ static uint32_t hdsOtaRecordAttempt() {
     return HDS_OTA_MAX_VERIFY_ATTEMPTS + 1;
   }
   uint32_t attempts = preferences.getUInt("attempts", 0) + 1;
-  preferences.putUInt("attempts", attempts);
+  if (attempts == 0 ||
+      preferences.putUInt("attempts", attempts) != sizeof(attempts)) {
+    attempts = HDS_OTA_MAX_VERIFY_ATTEMPTS + 1;
+  }
   preferences.end();
   return attempts;
 }

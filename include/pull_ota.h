@@ -1,15 +1,16 @@
 #ifndef PULL_OTA_H
 #define PULL_OTA_H
 
-#ifdef WIFIOTA
-
 #include "config.h"
+#if HDS_FEATURE_PULL_OTA
+
 #include "display.h"
 #include "parameter.h"
 #include "pull_ota_catalog.h"
 #include "pull_ota_version.h"
+#if HDS_FEATURE_WEBSERVER
 #include "webserver.h"
-#include "wifi_ota.h"
+#endif
 #include "wifi_setup.h"
 #if __has_include("ota_public_key.h")
 #include "ota_public_key.h"
@@ -17,6 +18,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
+#include <LittleFS.h>
 #include <Preferences.h>
 #include <Update.h>
 #include <WiFi.h>
@@ -26,8 +28,8 @@
 #include <mbedtls/pk.h>
 #include <string.h>
 #include <time.h>
+#include <utility>
 
-void setupWebsocketEvents();
 void wifi_init();
 void hdsOtaRollbackMarkValid();
 
@@ -79,7 +81,7 @@ Aymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qyHB5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ
 1b0SHzUvKBds0pjBqAlkd25HN7rOrFleaJ1/ctaJxQZBKT5ZPt0m9STJEadao0xAH0ahmbWnOlFu
 hjuefXKnEgV4We0+UXgVCwOPjdAvBbI+e0ocS3MFEvzG6uBQE3xDk3SzynTnjh8BCNAw1FtxNrQH
 usEwMFxIt4I7mKZ9YIqioymCzLq9gwQbooMDQaHWBfEbwrbwqHyGO0aoSCqI3Haadr8faqU9GY/r
-OPNk3sgrDQoo
+OPNk3sgrDQoo//fb4hVC1CLQJ13hef4Y53CIrU7m2Ys6xt0nUW7/vGT1M0NPAgMBAAGjQjBAMA4G
 A1UdDwEB/wQEAwIBBjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBR5tFnme7bl5AFzgAiIyBpY
 9umbbjANBgkqhkiG9w0BAQsFAAOCAgEAVR9YqbyyqFDQDLHYGmkgJykIrGF1XIpu+ILlaS/V9lZL
 ubhzEFnTIZd+50xx+7LSYK05qAvqFyFWhfFQDlnrzuBZ6brJFe+GnY+EgPbk6ZGQ3BebYhtF8GaV
@@ -147,6 +149,11 @@ struct PullOtaReleaseList {
   uint8_t count = 0;
 };
 
+struct PullOtaReleaseSelection {
+  uint8_t indices[HDS_OTA_MAX_RELEASE_CHOICES];
+  uint8_t count = 0;
+};
+
 struct PullOtaPendingLittleFs {
   bool present = false;
   bool restore = false;
@@ -174,6 +181,9 @@ void pullOtaDraw(const char *line1, const char *line2 = "", const char *line3 = 
   else
     u8g2.setDisplayRotation(U8G2_R2);
   u8g2.setFont(FONT_S);
+#if HDS_ENABLE_ENERGY_MENU
+  invalidateEnergyOledFrame();
+#endif
   u8g2.firstPage();
   do {
     if (line1 && line1[0] != '\0') u8g2.drawUTF8(AC(line1), 14, line1);
@@ -419,20 +429,24 @@ bool pullOtaAddParsedRelease(JsonObject releaseObject, PullOtaReleaseList &list)
 
 void pullOtaBuildSelectableReleases(
     const PullOtaReleaseList &catalog,
-    PullOtaReleaseList &selectable) {
+    PullOtaReleaseSelection &selection) {
   String currentVersion = pullOtaCurrentVersion();
   for (uint8_t i = 0; i < catalog.count; i++) {
     int currentCompare = pullOtaCompareVersions(catalog.releases[i].version, currentVersion);
-    if (currentCompare != 0) {
-      pullOtaAddRelease(selectable, catalog.releases[i]);
+    if (currentCompare != 0 && selection.count < HDS_OTA_MAX_RELEASE_CHOICES) {
+      selection.indices[selection.count++] = i;
     }
   }
 }
 
-bool pullOtaHasNewerRelease(const PullOtaReleaseList &list) {
+bool pullOtaHasNewerRelease(
+    const PullOtaReleaseList &catalog,
+    const PullOtaReleaseSelection &selection) {
   String currentVersion = pullOtaCurrentVersion();
-  for (uint8_t i = 0; i < list.count; i++) {
-    if (pullOtaCompareVersions(list.releases[i].version, currentVersion) > 0) {
+  for (uint8_t i = 0; i < selection.count; i++) {
+    if (pullOtaCompareVersions(
+            catalog.releases[selection.indices[i]].version,
+            currentVersion) > 0) {
       return true;
     }
   }
@@ -1079,14 +1093,23 @@ bool pullOtaWaitForRelease(unsigned long timeoutMs) {
   return false;
 }
 
-void pullOtaDrawReleaseChoice(const PullOtaReleaseList &list, uint8_t index) {
+void pullOtaDrawReleaseChoice(
+    const PullOtaReleaseList &catalog,
+    const PullOtaReleaseSelection &selection,
+    uint8_t index) {
   char page[24];
-  snprintf(page, sizeof(page), "%u/%u O next Sq ok", index + 1, list.count);
-  pullOtaDraw("Install version", list.releases[index].version.c_str(), page);
+  snprintf(page, sizeof(page), "%u/%u O next Sq ok", index + 1, selection.count);
+  pullOtaDraw(
+      "Install version",
+      catalog.releases[selection.indices[index]].version.c_str(),
+      page);
 }
 
-bool pullOtaPickRelease(const PullOtaReleaseList &list, PullOtaManifest &manifest) {
-  if (list.count == 0) {
+bool pullOtaPickRelease(
+    const PullOtaReleaseList &catalog,
+    const PullOtaReleaseSelection &selection,
+    uint8_t *selectedCatalogIndex) {
+  if (selection.count == 0 || selectedCatalogIndex == nullptr) {
     return false;
   }
   pullOtaWaitForRelease(1000);
@@ -1095,7 +1118,7 @@ bool pullOtaPickRelease(const PullOtaReleaseList &list, PullOtaManifest &manifes
   bool squareWasDown = false;
   unsigned long circleDownAt = 0;
   unsigned long startedAt = millis();
-  pullOtaDrawReleaseChoice(list, index);
+  pullOtaDrawReleaseChoice(catalog, selection, index);
   while (millis() - startedAt < HDS_OTA_PICK_TIMEOUT_MS) {
     bool circleDown = digitalRead(BUTTON_CIRCLE) == LOW;
     bool squareDown = digitalRead(BUTTON_SQUARE) == LOW;
@@ -1107,13 +1130,13 @@ bool pullOtaPickRelease(const PullOtaReleaseList &list, PullOtaManifest &manifes
       return pullOtaFail("Update cancelled");
     }
     if (circleWasDown && !circleDown) {
-      index = (index + 1) % list.count;
-      pullOtaDrawReleaseChoice(list, index);
+      index = (index + 1) % selection.count;
+      pullOtaDrawReleaseChoice(catalog, selection, index);
       startedAt = millis();
       circleDownAt = 0;
     }
     if (squareDown && !squareWasDown) {
-      manifest = list.releases[index];
+      *selectedCatalogIndex = selection.indices[index];
       pullOtaWaitForRelease(1000);
       return true;
     }
@@ -1149,16 +1172,20 @@ bool pullOtaConfirmInstall(const PullOtaManifest &manifest) {
 }
 
 void pullOtaPauseFilesystemServices() {
+#if HDS_FEATURE_WEBSERVER
   stopWebServer();
+#endif
   LittleFS.end();
   delay(200);
 }
 
 void pullOtaResumeFilesystemServices() {
   LittleFS.begin();
+#if HDS_FEATURE_WEBSERVER
   if (b_wifiEnabled) {
     startWebServer();
   }
+#endif
 }
 
 bool pullOtaStreamAsset(
@@ -1280,7 +1307,7 @@ bool pullOtaInstall(
   }
   pullOtaDraw("Firmware done", "Restarting", "Web UI next");
   delay(1500);
-  remoteQueueResetAt(millis());
+  remoteQueueOtaResetAt(millis());
   return true;
 }
 
@@ -1338,8 +1365,8 @@ bool pullOtaResumePendingLittleFs() {
   uint8_t maxAttempts = pending.restore ? 1 : 2;
   uint8_t attempts = pending.restore ? 0 : pending.targetAttempts;
   bool filesystemWriteStarted = pending.filesystemDirty;
-  bool updated = false;
-  while (attempts < maxAttempts) {
+  bool updated = pullOtaVerifyPendingLittleFs(pending);
+  while (!updated && attempts < maxAttempts) {
     attempts++;
     bool attemptRecorded = pending.restore
         ? !pending.restoreAttempted && pullOtaBeginRollbackLittleFsAttempt()
@@ -1364,14 +1391,14 @@ bool pullOtaResumePendingLittleFs() {
     }
     return false;
   }
+  hdsOtaRollbackMarkValid();
   if (!pullOtaClearPendingLittleFs()) {
     pullOtaFail("FS state failed");
     pullOtaRecoveryError();
   }
-  hdsOtaRollbackMarkValid();
   pullOtaDraw("Update done", "Restarting");
   delay(1500);
-  remoteQueueResetAt(millis());
+  remoteQueueOtaResetAt(millis());
   return true;
 }
 
@@ -1388,43 +1415,42 @@ void pullOtaRunUpdate() {
     pullOtaFail("Clock failed", "TLS blocked");
     return;
   }
-  PullOtaReleaseList releases;
+  PullOtaReleaseList catalog;
+  PullOtaReleaseSelection selection;
   PullOtaManifest rollbackManifest;
   bool rollbackFound = false;
   {
-    PullOtaReleaseList catalog;
-    {
-      String body;
-      if (!pullOtaFetchSignedManifest(body)) {
-        pullOtaFail("Signature failed");
-        return;
-      }
-      if (!pullOtaParseManifest(body, catalog)) {
-        pullOtaFail("Manifest invalid");
-        return;
-      }
-    }
-    pullOtaBuildSelectableReleases(catalog, releases);
-    if (releases.count == 0) {
-      pullOtaDraw("Newest stable", pullOtaCurrentVersion().c_str());
-      delay(2000);
-      b_ota = false;
+    String body;
+    if (!pullOtaFetchSignedManifest(body)) {
+      pullOtaFail("Signature failed");
       return;
     }
-    rollbackFound = pullOtaFindCurrentRelease(catalog, rollbackManifest);
+    if (!pullOtaParseManifest(body, catalog)) {
+      pullOtaFail("Manifest invalid");
+      return;
+    }
   }
+  pullOtaBuildSelectableReleases(catalog, selection);
+  if (selection.count == 0) {
+    pullOtaDraw("Newest stable", pullOtaCurrentVersion().c_str());
+    delay(2000);
+    b_ota = false;
+    return;
+  }
+  rollbackFound = pullOtaFindCurrentRelease(catalog, rollbackManifest);
   if (!rollbackFound && !pullOtaFetchCurrentReleaseManifest(rollbackManifest)) {
     pullOtaFail("Rollback missing");
     return;
   }
-  if (!pullOtaHasNewerRelease(releases)) {
+  if (!pullOtaHasNewerRelease(catalog, selection)) {
     pullOtaDraw("Newest stable", pullOtaCurrentVersion().c_str());
     delay(1500);
   }
-  PullOtaManifest manifest;
-  if (!pullOtaPickRelease(releases, manifest)) {
+  uint8_t selectedCatalogIndex = 0;
+  if (!pullOtaPickRelease(catalog, selection, &selectedCatalogIndex)) {
     return;
   }
+  PullOtaManifest manifest = std::move(catalog.releases[selectedCatalogIndex]);
   if (!pullOtaConfirmInstall(manifest)) {
     return;
   }

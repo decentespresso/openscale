@@ -1,6 +1,7 @@
-#ifdef WIFIOTA
 #ifndef WIFI_OTA_H
 #define WIFI_OTA_H
+#include "config.h"
+#if HDS_FEATURE_ELEGANT_OTA
 #include "display.h"
 #include <ESPAsyncWebServer.h>
 #include <ElegantOTA.h>
@@ -29,6 +30,9 @@ void queueOtaDisplay(uint8_t state, uint8_t percent = 0) {
   otaDisplayState = state;
   otaDisplayPercent = percent;
   portEXIT_CRITICAL(&otaDisplayMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 void processOtaDisplayUpdate() {
@@ -52,6 +56,9 @@ void processOtaDisplayUpdate() {
     b_ota = false;
   }
 
+#if HDS_ENABLE_ENERGY_MENU
+  invalidateEnergyOledFrame();
+#endif
   u8g2.firstPage();
   u8g2.setFont(FONT_S);
   if (b_screenFlipped)
@@ -64,8 +71,17 @@ void processOtaDisplayUpdate() {
 }
 
 void onOTAStart() {
+#if HDS_ENABLE_ENERGY_MENU
+  recordEnergyActivity();
+#endif
   Serial.println("OTA update started!");
+  std::lock_guard<std::mutex> otaDispatchLock(otaDispatchMutex);
+  portENTER_CRITICAL(&wsPendingMux);
   b_ota = true;
+  portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 void onOTAProgress(size_t current, size_t final) {
@@ -84,7 +100,7 @@ void onOTAEnd(bool success) {
   if (success) {
     Serial.println("OTA update finished successfully!");
     queueOtaDisplay(OTA_DISPLAY_SUCCESS);
-    remoteQueueResetAt(millis() + OTA_RESTART_DELAY_MS);
+    remoteQueueOtaResetAt(millis() + OTA_RESTART_DELAY_MS);
   } else {
     Serial.println("There was an error during OTA update!");
     queueOtaDisplay(OTA_DISPLAY_FAILURE);
@@ -104,5 +120,5 @@ void wifiOta() {
   ElegantOTA.onEnd(onOTAEnd);
   otaRegistered = true;
 }
-#endif // WIFI_OTA_H
+#endif
 #endif

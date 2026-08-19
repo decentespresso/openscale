@@ -15,4 +15,4 @@ __pycache__/
 dist/
 build/
 
-/web_apps/**/*.gz
+/plugins/default-web-apps/assets/**/*.gz

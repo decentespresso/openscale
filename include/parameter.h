@@ -1,35 +1,146 @@
 #ifndef PARAMETER_H
 #define PARAMETER_H
+//declaration
 #include <Arduino.h>
+#include <atomic>
 #include <Preferences.h>
 #include <math.h>
+#include <mutex>
 #include "calibration_validation.h"
+#include "energy_runtime_policy.h"
+#if HDS_ENABLE_ENERGY_MENU
+#include "energy_policy.h"
+#include "energy_power_management.h"
+#endif
 
 Preferences settingsPreferences;
+struct PowerCadenceState {
+  CadenceGate autoOff;
+  CadenceGate chargeCheck;
+  BatterySampleGate batterySamples;
+  uint32_t batterySampleSequence = 0;
+};
+PowerCadenceState powerCadence;
+#if HDS_ENABLE_ENERGY_MENU
+EnergyPolicy energyPolicy;
+EnergyPowerManagement energyPowerManagement;
+struct EnergyRuntimeState {
+  OledFrameGate oledFrames;
+  CadenceGate oledIdle;
+  DisplayIdleMode displayMode = DisplayIdleMode::Active;
+  volatile bool explicitDisplayOff = false;
+  volatile uint8_t requestedDisplayContrast = 255;
+};
+EnergyRuntimeState energyRuntime;
+struct EnergyIdleState {
+  TaskHandle_t mainTask = nullptr;
+  bool wakeInterruptsAttached = false;
+  bool lightSleepCallbackRegistered = false;
+  bool scaleWakeEnabled = true;
+  bool usbWakeEnabled = true;
+  bool scaleWakeFallback = false;
+  bool circleButtonWakeFallback = false;
+  bool squareButtonWakeFallback = false;
+  bool usbWakeFallback = false;
+  uint64_t rtcWakeMask = 0;
+  volatile bool wakePinsNeedRestore = false;
+  bool buttonGestureActive = false;
+  unsigned long lastButtonActivityAt = 0;
+  unsigned long lastButtonPoll = 0;
+  unsigned long lastScaleData = 0;
+  unsigned long lastScaleRecovery = 0;
+  unsigned long lastWeightTick = 0;
+};
+EnergyIdleState energyIdle;
+portMUX_TYPE energyActivityMux = portMUX_INITIALIZER_UNLOCKED;
+volatile bool energyActivityPending = false;
 
+inline void notifyEnergyMainLoop() {
+  TaskHandle_t mainTask = energyIdle.mainTask;
+  if (mainTask != nullptr) {
+    xTaskNotifyGive(mainTask);
+  }
+}
+
+inline void clearPendingEnergyActivity() {
+  portENTER_CRITICAL(&energyActivityMux);
+  energyActivityPending = false;
+  portEXIT_CRITICAL(&energyActivityMux);
+}
+
+inline void recordEnergyActivity() {
+  if (!energyPolicy.settings.enabled(EnergyFeature::OledIdle)) return;
+  portENTER_CRITICAL(&energyActivityMux);
+  energyActivityPending = true;
+  portEXIT_CRITICAL(&energyActivityMux);
+}
+
+inline void processEnergyActivities(unsigned long now) {
+  portENTER_CRITICAL(&energyActivityMux);
+  const bool pending = energyActivityPending;
+  energyActivityPending = false;
+  portEXIT_CRITICAL(&energyActivityMux);
+  if (pending) energyPolicy.recordActivity(now);
+}
+
+inline void invalidateEnergyOledFrame() {
+  if (!energyPolicy.settings.enabled(EnergyFeature::OledRedraw)) return;
+  energyRuntime.oledFrames.invalidate();
+}
+#else
+inline void recordEnergyActivity() {}
+inline void invalidateEnergyOledFrame() {}
+#endif
+
+//ble
+// volatile: read by the AsyncTCP task in the WS status frame, written by the
+// main loop during boot/charging-mode transitions.
 volatile bool b_ble_enabled = false;
 volatile uint16_t bleFff4SubscriptionHandle = 0xFFFF;
 volatile uint16_t bleStatusResponsesPending = 0;
+volatile uint16_t bleVoltageResponsesPending = 0;
 volatile unsigned long bleStatusRequestAt = 0;
 volatile bool bleNotifyFailureLogged = false;
 volatile uint32_t bleFff4ConnectionGeneration = 0;
 portMUX_TYPE bleFff4Mux = portMUX_INITIALIZER_UNLOCKED;
 volatile bool b_usbweight_enabled = false;
-unsigned long weightBleNotifyInterval = 100;
-volatile unsigned long weightUsbNotifyInterval = 100;
-unsigned long weightTextNotifyInterval = 1000;
+unsigned long weightBleNotifyInterval = 100;  // BLE notify interval (ms). Fixed at 100ms (10Hz); not runtime-configurable over BLE.
+volatile unsigned long weightUsbNotifyInterval = 100;  // USB binary notify interval (ms)
+unsigned long weightTextNotifyInterval = 1000;  // USB text/debug line interval (ms)
+// Base period of the unified weight-output tick. One grid timer drives every
+// interface; each sends every (its NotifyInterval / base) ticks. All the
+// per-interface intervals above (and the WS ones below) are multiples of this.
 const unsigned long WEIGHT_BASE_INTERVAL_MS = 100;
 const unsigned long WEBSOCKET_2HZ_NOTIFY_INTERVAL_MS = 500;
 const unsigned long WEBSOCKET_5HZ_NOTIFY_INTERVAL_MS = 200;
 const unsigned long WEBSOCKET_10HZ_NOTIFY_INTERVAL_MS = 100;
 const unsigned long WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS = WEBSOCKET_2HZ_NOTIFY_INTERVAL_MS;
+// volatile: written from the AsyncTCP task (WS event callback) and read
+// from the main loop. Without volatile, the compiler may keep these cached
+// in a register across the loop's WS gate check on the other core.
 volatile unsigned long weightWebsocketNotifyInterval = WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS;
 volatile bool b_websocketEventsEnabled = false;
 volatile bool b_websocketLowPowerEnabled = false;
+std::atomic<uint8_t> g_websocketClientCount{0};
 
+inline bool websocketHasClients() {
+  return g_websocketClientCount.load(std::memory_order_relaxed) > 0;
+}
+
+// Snapshot of the stopWatch state, refreshed once per main-loop iteration. The
+// WS status frame is built on the AsyncTCP task (response to {"command":"status"}
+// from handleWebsocketControlCommand); stopWatch is a multi-field object (running
+// flag + start ts + accumulator) also mutated from BLE/USB and the main loop, so
+// reading it directly off the AsyncTCP task can tear (CLAUDE.md threading model
+// "stopWatch.* -- No -- multi-field..."). sendWebsocketStatus reads these single
+// aligned volatiles instead. g_timerElapsed carries stopWatch.elapsed() in its
+// configured resolution (SECONDS) -- the WS "timer_seconds" field.
 volatile bool g_timerRunning = false;
 volatile unsigned long g_timerElapsed = 0;
 
+// Websocket pending-command mask. Set on the AsyncTCP task by the WS event
+// callback; drained on the main loop. Defers hardware-touching ops (u8g2,
+// stopWatch, power-rail GPIOs) so they never race the main loop.
 const uint32_t WSP_DISPLAY_ON  = 1u << 0;
 const uint32_t WSP_DISPLAY_OFF = 1u << 1;
 const uint32_t WSP_LOWPWR_ON   = 1u << 2;
@@ -44,10 +155,13 @@ const uint32_t WSP_SET_SAMPLES = 1u << 10;
 const uint32_t WSP_WIFI_UPDATE = 1u << 11;
 const uint32_t WSP_RESET       = 1u << 12;
 const uint32_t WSP_BLE_GYRO    = 1u << 13;
+const uint32_t WSP_OTA_RESET   = 1u << 14;
 portMUX_TYPE wsPendingMux = portMUX_INITIALIZER_UNLOCKED;
 volatile uint32_t wsPendingMask = 0;
 volatile uint8_t pendingSamplesInUse = 0;
 volatile unsigned long pendingResetAt = 0;
+volatile unsigned long pendingOtaResetAt = 0;
+std::mutex otaDispatchMutex;
 
 const uint8_t OTA_DISPLAY_NONE = 0;
 const uint8_t OTA_DISPLAY_PROGRESS = 1;
@@ -62,20 +176,39 @@ inline void remoteQueueResetAt(unsigned long resetAt) {
   pendingResetAt = resetAt;
   wsPendingMask |= WSP_RESET;
   portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
+}
+
+inline void remoteQueueOtaResetAt(unsigned long resetAt) {
+  portENTER_CRITICAL(&wsPendingMux);
+  pendingOtaResetAt = resetAt;
+  wsPendingMask |= WSP_OTA_RESET;
+  portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 int i_onWrite_counter = 0;
 volatile unsigned long t_heartBeat = 0;
 volatile unsigned long t_firstConnect = 0;
+// volatile: read by the AsyncTCP task in the WS status frame, written by the
+// main-loop menu/NVS restore paths.
 volatile bool b_requireHeartBeat = true;
 volatile bool b_screenFlipped = false;
 volatile bool b_timeOnTop = false;
 volatile bool b_btnFuncWhileConnected = false;
 
-int windowLength = 5;
+//
+int windowLength = 5;  // default window length
+// define circular buffer
 float circularBuffer[5];
 int bufferIndex = 0;
 
+//constant 常量
+//const int sample[] = { 1, 2, 4, 8, 16, 32, 64, 128 };
 
 const int i_margin_top = 8;
 const int i_margin_bottom = 8;
@@ -84,19 +217,18 @@ int b_beep = 1;
 bool b_about = false;
 bool b_debug = false;
 
-unsigned long t_batteryIcon = 0;
-bool b_showBatteryIcon = true;
 volatile bool b_softSleep = false;
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 bool b_gyroEnabled = true;
 #endif
 
+//varables 变量
 uint64_t GPIO_reason = 0;
 bool b_usbLinked = false;
 int GPIO_power_on_with = -1;
 
-unsigned long t_power_on_button = 0;
-bool b_button_pressed = false;
+unsigned long t_power_on_button = 0;  // Variable to store the timestamp when the button is pressed
+bool b_button_pressed = false;        // Boolean flag to indicate whether the button is currently pressed
 bool b_buttonChordSuppressUntilRelease = false;
 #if HDS_ENABLE_GRINDER
 bool b_grinderMenuDirectEntry = false;
@@ -106,8 +238,7 @@ bool b_grinderMenuDirectEntry = false;
 float INPUTCOFFEEPOUROVER = 20.0;
 float INPUTCOFFEEESPRESSO = 20.0;
 float f_batteryCalibrationFactor = 0.66;
-String str_welcome = "welcome";
-float f_calibration_value = CALIBRATION_VALUE_DEFAULT;
+float f_calibration_value = CALIBRATION_VALUE_DEFAULT;   //称重单元校准值
 bool b_calibrationInvalid = false;
 char c_calibrationStatus[32] = "ok";
 float f_lastCalibrationCandidate = 0.0f;
@@ -116,14 +247,36 @@ long i_lastCalibrationZeroRaw = 0;
 long i_lastCalibrationLoadRaw = 0;
 long i_lastCalibrationRawDelta = 0;
 long i_lastCalibrationSpread = 0;
-float f_up_battery;
-unsigned long t_up_battery;
+float f_up_battery;          //开机时电池电压
+unsigned long t_up_battery;  //开机到现在时间
 
 bool b_chargingOLED = true;
-bool b_heartBeatIcon = false;
-unsigned long t_shutdownFailBle = 0;
+bool b_heartBeatIcon = false; //debug ble heart icon
+unsigned long t_shutdownFailBle = 0;  //for popping up shut down fail due to ble is connected.
 bool b_shutdownFailBle = false;
+// volatile: now also written from the AsyncTCP task (WS display/sleep commands).
 volatile bool b_u8g2Sleep = true;
+
+#if HDS_ENABLE_ENERGY_MENU
+inline void requestEnergyDisplay(bool enabled) {
+  energyRuntime.explicitDisplayOff = !enabled;
+  b_u8g2Sleep = !enabled;
+  recordEnergyActivity();
+}
+
+inline void requestEnergyLowPower(bool enabled) {
+  b_websocketLowPowerEnabled = enabled;
+  energyRuntime.requestedDisplayContrast = enabled ? 0 : 255;
+  recordEnergyActivity();
+}
+
+inline void requestEnergyContrast(uint8_t contrast) {
+  b_websocketLowPowerEnabled = false;
+  energyRuntime.requestedDisplayContrast = contrast;
+  recordEnergyActivity();
+}
+#endif
+
 unsigned long t_bootTare = 0;
 bool b_bootTare = false;
 int i_bootTareDelay = 1000;
@@ -133,22 +286,25 @@ unsigned long t_bootFreshTare = 0;
 const uint8_t BOOT_FRESH_TARE_SAMPLES = 4;
 const unsigned long BOOT_FRESH_TARE_TIMEOUT = 3000;
 const unsigned long BOOT_FRESH_TARE_INPUT_SETTLE = 1000;
-int i_tareDelay = 0;
-unsigned long t_tareByButton = 0;
+//int i_tareDelay = 200;             //tare delay for button
+int i_tareDelay = 0;             //tare delay 0ms for finger detection
+unsigned long t_tareByButton = 0;  //tare time stamp used by button to mimic delay
 unsigned long t_quickZeroStart = 0;
 bool b_tareByButton = false;
 unsigned long t_tareByBle = 0;
 uint8_t i_remoteTareRequests = 0;
 bool b_tareByBle = false;
 portMUX_TYPE remoteTareMux = portMUX_INITIALIZER_UNLOCKED;
-unsigned long t_tareStatus = 0;
-unsigned long t_power_off;
+unsigned long t_tareStatus = 0;  //tare done time stamp
+unsigned long t_power_off;       //关机倒计时
+// volatile: set in processWsPendingCmds (main loop) and read in loop's top
+// guard; main loop also writes it from other paths. Keep volatile defensively.
 volatile bool b_powerOff = false;
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
-unsigned long t_power_off_gyro = 0;
+unsigned long t_power_off_gyro = 0;  //侧放关机倒计时
 #endif
-unsigned long t_button_pressed;
-unsigned long t_temp;
+unsigned long t_button_pressed;  //进入萃取模式的时间点
+unsigned long t_temp;            //上次更新温度和度数时间
 float f_temp_tare = 0;
 
 void requestRemoteTare() {
@@ -160,6 +316,10 @@ void requestRemoteTare() {
   b_tareByBle = true;
   t_tareByBle = now;
   portEXIT_CRITICAL(&remoteTareMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+  recordEnergyActivity();
+#endif
 }
 
 bool hasRemoteTareRequest() {
@@ -179,10 +339,13 @@ uint8_t consumeRemoteTareRequests() {
   portEXIT_CRITICAL(&remoteTareMux);
   return requests;
 }
-int i_icon = 0;
+// int i_sample = 0;       //采样数0-7
+// int i_sample_step = 0;  //设置采样数的第几步
+int i_icon = 0;  //充电指示电量数字0-6
 int i_setContainerWeight = 0;
 float f_filtered_temperature = 0;
-bool b_ads1115InitFail = true;
+bool b_ads1115InitFail = true;  //ads1115 not detected flag
+// volatile: surfaced from AsyncTCP status while menu/setup code updates them.
 volatile bool b_wifiOnBoot = false;
 volatile bool b_autoSleep = true;
 volatile bool b_quickBoot = false;
@@ -198,29 +361,34 @@ portMUX_TYPE grinderMdnsMux = portMUX_INITIALIZER_UNLOCKED;
 GrinderMdnsCandidate * volatile grinderMdnsCandidateBuffer = nullptr;
 #endif
 
-static float f_tracking_offset = 0.0;
-static float f_tracking_target = 0.0;
-static unsigned long t_last_tracking_update = 0;
-static unsigned long TRACKING_UPDATE_INTERVAL = 1000;
-static float TRACKING_THRESHOLD = 0.1;
-static const int i_STABLE_COUNT_THRESHOLD = 5;
-static const float MAX_TRACKING_ADJUSTMENT = 0.5;
+//电子秤参数和计时点
+// Enhanced tracking system global variables
+static float f_tracking_offset = 0.0;              // Current tracking offset
+static float f_tracking_target = 0.0;              // Current tracking target weight
+static unsigned long t_last_tracking_update = 0;   // Last tracking update time
+static unsigned long TRACKING_UPDATE_INTERVAL = 1000; // Tracking update interval 1 seconds
+static float TRACKING_THRESHOLD = 0.1;      // Tracking stability threshold
+static const int i_STABLE_COUNT_THRESHOLD = 5;     // Stable count threshold
+static const float MAX_TRACKING_ADJUSTMENT = 0.5;  // Maximum single adjustment
 
 static unsigned long t_last_status_display = 0;
 static const unsigned long STATUS_DISPLAY_INTERVAL = 5000;
 static bool b_weight_in_serial = false;
 
-static int i_stable_count = 0;
-static bool b_tracking_enabled = true;
-static bool b_tracking_active = false;
+static int i_stable_count = 0;                     // Stable state counter
+static bool b_tracking_enabled = true;          // Tracking enable flag
+static bool b_tracking_active = false;          // Whether tracking is currently active
 
-static float f_previous_stable_value = 0.0;
-static float f_current_raw_value = 0.0;
-static float STABLE_OUTPUT_THRESHOLD = 0.1;
-static bool b_stable_output_enabled = true;
-static unsigned long t_last_stable_change = 0;
-static float f_driftCompensation = 0.0;
-static float f_maxDriftCompensation = 0.05;
+// Stable output system global variables
+static float f_previous_stable_value = 0.0;        // Previous stable output value
+static float f_current_raw_value = 0.0;            // Current raw input value
+static float STABLE_OUTPUT_THRESHOLD = 0.1;       // Minimum change to update output
+static bool b_stable_output_enabled = true;     // Stable output enable flag
+static unsigned long t_last_stable_change = 0;     // Time of last stable change
+static float f_driftCompensation = 0.0;  // Continuous temperature drift compensation
+static float f_maxDriftCompensation = 0.05;  // Maximum micro-drift range for temperature compensation (g)
+// Range: 0.01g to this value will be considered as temperature drift
+// Values above this are considered as real weight changes, not drift
 static const unsigned long QUICK_ZERO_HOLD_TIMEOUT = 3000;
 static const unsigned long ZERO_DISPLAY_MISMATCH_TIMEOUT = 1500;
 static const float ZERO_DISPLAY_MISMATCH_THRESHOLD = 0.5;
@@ -228,13 +396,18 @@ static const uint8_t ADC_ERROR_RECOVERY_COUNT = 2;
 static bool b_adc_recovery_active = false;
 static uint8_t i_adc_recovery_count = 0;
 
+// Raw esp_reset_reason() captured once at boot, surfaced in the ADS1232 debug
+// packet (byte 24) so a spontaneous reset (brownout / panic / watchdog) is
+// attributable from a serial or BLE capture instead of looking like a clean
+// power-on. The IDF enum fits a uint8_t in practice (values <= 18 today).
 static uint8_t g_resetReasonCode = 0;
+//bool b_tempDisablePowerOff = true;
 
 bool b_negativeWeight = false;
 
-bool b_weight_quick_zero = false;
-char c_weight[10];
-char c_brew_ratio[10];
+bool b_weight_quick_zero = false;           //Tare后快速显示为0优化
+char c_weight[10];                          //咖啡重量显示
+char c_brew_ratio[10];                      //粉水比显示
 
 static inline void resetAdcRecoveryState() {
   b_adc_recovery_active = false;
@@ -247,23 +420,23 @@ bool setScaleSamplesInUseWhenReady(uint8_t samplesInUse, const char *context);
 bool wakeScaleFromSoftSleep(const char *context);
 void consumeScaleTareStatus();
 void clearPendingAutomaticTareState();
-unsigned long t_extraction_begin = 0;
-unsigned long t_extraction_first_drop = 0;
-unsigned long t_extraction_last_drop = 0;
-unsigned long t_ready_to_brew = 0;
-int i_extraction_minimium_timer = 7;
+unsigned long t_extraction_begin = 0;       //开始萃取打点
+unsigned long t_extraction_first_drop = 0;  //下液第一滴打点
+unsigned long t_extraction_last_drop = 0;   //下液结束打点
+unsigned long t_ready_to_brew = 0;          //准备好冲煮的时刻(手冲)
+int i_extraction_minimium_timer = 7;        //前7秒不判断停止计时
 
-unsigned long t_PowerDog = 0;
-int tareCounter = 0;
-const float f_weight_default_coffee = 0;
+unsigned long t_PowerDog = 0;             //电源5s看门狗
+int tareCounter = 0;                      //不稳计数器
+const float f_weight_default_coffee = 0;  //默认咖啡粉重量
 
-float aWeight = 0;
-float aWeightDiff = 0.15;
-float atWeight = 0;
-float atWeightDiff = 0.3;
-float asWeight = 0;
-float asWeightDiff = 0.1;
-float f_weight_adc = 0.0;
+float aWeight = 0;         //稳定状态比对值（g）
+float aWeightDiff = 0.15;  //稳定停止波动值（g）
+float atWeight = 0;        //自动归零比对值（g）
+float atWeightDiff = 0.3;  //自动归零波动值（g）
+float asWeight = 0;        //下液停止比对值（g）
+float asWeightDiff = 0.1;  //下液停止波动值（g）
+float f_weight_adc = 0.0;  //原始读出值（g）
 float f_weight_smooth;
 float f_displayedValue;
 #if HDS_ENABLE_GRINDER
@@ -274,14 +447,14 @@ float f_flow_rate;
 uint32_t grinderFastWeightSequence = 0;
 #endif
 
-unsigned long t_auto_tare = 0;
-unsigned long t_auto_stop = 0;
-unsigned long t_scale_stable = 0;
-unsigned long t_time_out = 0;
-unsigned long t_last_weight_adc = 0;
-unsigned long t_oled_refresh = 0;
-unsigned long t_esp_now_refresh = 0;
-unsigned long t_flow_rate = 0;
+unsigned long t_auto_tare = 0;        //自动归零打点
+unsigned long t_auto_stop = 0;        //下液停止打点
+unsigned long t_scale_stable = 0;     //稳定状态打点
+unsigned long t_time_out = 0;         //超时打点
+unsigned long t_last_weight_adc = 0;  //最后一次重量输出打点
+unsigned long t_oled_refresh = 0;     //最后一次oled刷新打点
+unsigned long t_esp_now_refresh = 0;  //最后一次espnow刷新打点
+unsigned long t_flow_rate = 0;        //上次流量计时
 int t_extraction_first_drop_num = 0;
 int b_power_off = 0;
 struct CoffeeData {
@@ -295,68 +468,91 @@ struct CoffeeData {
   unsigned long t_extraction_first_drop_num;
   unsigned long t_extraction_last_drop;
   unsigned long t_elapsed;
-  long dataFlag;
-  int b_power_off;
+  long dataFlag;    // Flag to identify the type of data
+  int b_power_off;  //if 1 then power off.
 };
 
-const int autoTareInterval = 500;
-const int autoStopInterval = 500;
-const int scaleStableInterval = 500;
-const int timeOutInterval = 30 * 1000;
-const int i_oled_print_interval = 100;
-const int i_esp_now_interval = 100;
-const int i_serial_print_interval = 0;
-bool b_extraction = false;
-int b_mode = 0;
+const int autoTareInterval = 500;       //自动归零检测间隔（毫秒）
+const int autoStopInterval = 500;       //下液停止检测间隔（毫秒）
+const int scaleStableInterval = 500;    //稳定状态监测间隔（毫秒）
+const int timeOutInterval = 30 * 1000;  //超时检测间隔（毫秒）
+const int i_oled_print_interval = 100;    //oled刷新间隔（毫秒）
+const int i_esp_now_interval = 100;     //espnow刷新间隔（毫秒）
+const int i_serial_print_interval = 0;  //称重输出间隔（毫秒）
+//flags 模式标识
+bool b_extraction = false;  //萃取模式标识
+int b_mode = 0;             //0 = pourover; 1 = espresso;
 
 bool b_menu = false;
+volatile bool b_menuRestartRequired = false;
 unsigned long t_menuExitTime = 0;
 
-bool b_calibration = false;
-volatile bool b_ota = false;
+inline void markMenuRestartRequired() {
+  portENTER_CRITICAL(&wsPendingMux);
+  b_menuRestartRequired = true;
+  portEXIT_CRITICAL(&wsPendingMux);
+}
+
+inline void leaveMenu() {
+  b_menu = false;
+  portENTER_CRITICAL(&wsPendingMux);
+  const bool restartRequired = b_menuRestartRequired;
+  b_menuRestartRequired = false;
+  portEXIT_CRITICAL(&wsPendingMux);
+  if (restartRequired) {
+    remoteQueueResetAt(millis());
+  }
+}
+// Timestamp recording when the menu exit process started
+// Used to implement a protection period preventing unintended operations
+
+bool b_calibration = false;  //Calibration flag
+volatile bool b_ota = false; //wifi ota flag
 volatile bool b_pullOtaRunning = false;
-int i_calibration = 0;
-bool b_show_info = false;
-bool b_set_container = false;
-bool b_minus_container = false;
-bool b_minus_container_button = false;
-bool b_ready_to_brew = false;
-bool b_is_charging = false;
+int i_calibration = 0;       //0 for manual cal, 1 for smart cal
+//bool b_set_sample = false;              //开机菜单 设置采样数
+bool b_show_info = false;               //开机菜单 显示信息
+bool b_set_container = false;           //开机菜单 设置称豆容器重量
+bool b_minus_container = false;         //是否减去称豆容器
+bool b_minus_container_button = false;  //是否减去称豆容器
+bool b_ready_to_brew = false;           //准备冲煮并计时
+bool b_is_charging = false;             //正在充电标识
 bool b_espnow = false;
 //bool b_debug = DEBUG;                                //debug信息显示
 #if DEBUG_BATTERY
-bool b_debug_battery = false;
+bool b_debug_battery = false;  //debug电池信息
 #endif                         //DEBUG_BATTERY
 
-int i_button_cal_status = 0;
-int i_cal_weight = 0;
-float f_weight_dose = 0.0;
-float f_weight_container = 0.0;
+//电子秤校准参数
+int i_button_cal_status = 0;     //校准的不同阶段
+int i_cal_weight = 0;            //the weight to select
+float f_weight_dose = 0.0;       //咖啡粉重量
+float f_weight_container = 0.0;  //咖啡手柄重量
 
-int i_decimal_precision = 1;
-char c_flow_rate[10];
-float f_flow_rate_last_weight = 0.0;
+int i_decimal_precision = 1;          //小数精度 0.1g/0.01g
+char c_flow_rate[10];                 //流速文字
+float f_flow_rate_last_weight = 0.0;  //流速上次记重
 
-char* c_battery = (char*)"0";
-char* c_batteryTemp = (char*)"0";
-unsigned long t_battery = 0;
-int i_battery = 0;
-int i_batteryRefreshTareInterval = 30 * 1000;
-unsigned long t_batteryRefresh = 0;
+char* c_battery = (char*)"0";               //电池字符 0-5有显示 6是充电图标
+char* c_batteryTemp = (char*)"0";           //临时暂存电池状态 以便电量显示不跳跃
+unsigned long t_battery = 0;                //电池充电循环判断打点
+int i_battery = 0;                          //电池充电循环变量
+int i_batteryRefreshTareInterval = 30 * 1000;  //Refresh battery every 30 seconds
+unsigned long t_batteryRefresh = 0;         //Battery refresh timestamp
 float f_batteryVoltage = 0;
 #ifdef AVR
-float f_vref = 4.72;
-float f_true_battery_reading = 4.72;
-float f_adc_battery_reading = 4.72;
+float f_vref = 4.72;                  //5V pin true reading
+float f_true_battery_reading = 4.72;  //需测量usb vcc电压（不一定是usb，可以是电池电压）
+float f_adc_battery_reading = 4.72;   //mcu读取的电压
 float f_divider_factor = f_true_battery_reading / f_adc_battery_reading * 4.07 / 4.38;
 #endif
 #if defined(ESP8266) || defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_ARCH_MBED_RP2040)
-float f_vref = 3.3;
-float f_true_battery_reading = 4.24;
-float f_adc_battery_reading = 1.99;
-float f_divider_factor = f_true_battery_reading / f_adc_battery_reading * 4.07 / 4.38;
+float f_vref = 3.3;                                                                     //3.3V pin true reading
+float f_true_battery_reading = 4.24;                                                    //Measure usb vcc voltage（could not be usb，but can be battery voltage）
+float f_adc_battery_reading = 1.99;                                                     //mcu adc reading voltage
+float f_divider_factor = f_true_battery_reading / f_adc_battery_reading * 4.07 / 4.38;  //for 3.3v board use 2x100k resistor
 #endif
 
-int i_display_rotation = 0;
+int i_display_rotation = 0;  //rotation 0 1 2 3 : 0 90 180 270
 
 #endif

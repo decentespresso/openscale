@@ -14,8 +14,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - run: python tools/test_ai_docs_contract.py
@@ -23,6 +23,9 @@ jobs:
       - run: python tools/test_mdns_name_contract.py
       - run: python tools/test_ota_reboot_routing_contract.py
       - run: python tools/test_grinder_feature_flag_contract.py
+      - run: python tools/test_finger_detection_memory_contract.py
+      - run: python tools/test_plugin_ci_contract.py
+      - run: python tools/test_energy_stage0_contract.py
 
   native-tests:
     name: Native unit tests
@@ -30,8 +33,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install PlatformIO Core
@@ -45,24 +48,20 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - run: python tools/test_gzip_web_assets.py
 
   build:
+    name: firmware (esp32s3)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        board:
-          - esp32s3
-          - esp32s3-grinder
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
 
-      - uses: actions/cache@v3
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cache/pip
@@ -71,9 +70,7 @@ jobs:
           # A static key froze CI on a stale cached `stable` platform zip (3.3.8)
           # even after the pin should have resolved a newer framework.
           key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini', 'requirements-platformio.txt') }}
-      - uses: actions/setup-node@v4.1.0
-
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
@@ -82,10 +79,10 @@ jobs:
 
       - name: Build PlatformIO Project
         run: |
-          pio run -e ${{ matrix.board }} 
-          pio run -e ${{ matrix.board }} -t buildfs
-          pio --version > .pio.nosync/build/${{ matrix.board }}/dependencies.txt
-          pio pkg list -e ${{ matrix.board }} >> .pio.nosync/build/${{ matrix.board }}/dependencies.txt
+          pio run -e esp32s3
+          pio run -e esp32s3 -t buildfs
+          pio --version > .pio.nosync/build/esp32s3/dependencies.txt
+          pio pkg list -e esp32s3 >> .pio.nosync/build/esp32s3/dependencies.txt
 
       - name: Assert vendored partition table matches framework
         run: |
@@ -101,24 +98,45 @@ jobs:
             echo "Vendored partition table matches framework default_8MB.csv."
           fi
 
-      - name: "Run slugify"
+      - name: Shorten commit SHA
         id: slugify
-        uses: eltimn/slugify-action@v2.0.2
+        run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Save firmware file
-        if: matrix.board == 'esp32s3'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: HDS-snapshot-${{ matrix.board }}-${{ steps.slugify.outputs.sha }}
+          name: HDS-snapshot-esp32s3-${{ steps.slugify.outputs.sha }}
           path: |
-            .pio.nosync/build/${{ matrix.board }}/firmware.bin
-            .pio.nosync/build/${{ matrix.board }}/bootloader.bin
-            .pio.nosync/build/${{ matrix.board }}/partitions.bin
-            .pio.nosync/build/${{ matrix.board }}/littlefs.bin
+            .pio.nosync/build/esp32s3/firmware.bin
+            .pio.nosync/build/esp32s3/bootloader.bin
+            .pio.nosync/build/esp32s3/partitions.bin
+            .pio.nosync/build/esp32s3/littlefs.bin
 
       - name: Save dependency inventory
-        if: matrix.board == 'esp32s3'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: HDS-dependencies-${{ matrix.board }}-${{ steps.slugify.outputs.sha }}
-          path: .pio.nosync/build/${{ matrix.board }}/dependencies.txt
+          name: HDS-dependencies-esp32s3-${{ steps.slugify.outputs.sha }}
+          path: .pio.nosync/build/esp32s3/dependencies.txt
+
+  energy-build:
+    name: firmware (esp32s3-energy-menu)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini', 'requirements-platformio.txt') }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO Core
+        run: python -m pip install --requirement requirements-platformio.txt
+
+      - name: Build Energy Menu firmware
+        run: pio run -e esp32s3-energy-menu

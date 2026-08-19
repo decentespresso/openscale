@@ -73,7 +73,7 @@ To explore, modify, or contribute to this application:
 2.  **Navigate to the folder** in your terminal:
 
     ```bash
-    cd openscale/web_apps/Weigh_Save
+    cd openscale/plugins/default-web-apps/assets/Weigh_Save
     ```
 
 3.  **Serve the files locally over HTTP/HTTPS:**

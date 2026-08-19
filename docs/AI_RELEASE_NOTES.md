@@ -83,7 +83,7 @@ Review `README.md` and related documentation when the release changes:
 - setup, provisioning, discovery, or credentials;
 - supported hardware;
 - weighing, calibration, buttons, display, power, or charging;
-- BLE, USB, WiFi, WebSocket, or grinder integrations;
+- BLE, USB, WiFi, WebSocket, or Grind by weight integration;
 - settings, defaults, migration, or reset behavior;
 - build, flashing, recovery, OTA, downgrade, or rollback;
 - required manual actions and known limitations.
@@ -157,7 +157,7 @@ changed.
 
 Run the corresponding device checks for changes affecting weighing,
 calibration, power, wake, charging, buttons, display, BLE, WiFi, WebSocket, or
-grinder control.
+Grind by weight control.
 
 ## 7. Pre-Tag Gate
 

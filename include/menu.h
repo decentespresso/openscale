@@ -3,13 +3,16 @@
 
 #include "esp32-hal.h"
 #include "parameter.h"
+#include "timing.h"
+#if HDS_FEATURE_WIFI
 #include "mdns_name.h"
 #include "wifi_setup.h"
+#endif
 #if HDS_ENABLE_GRINDER
 #include "grinder_runtime.h"
 #endif
 #include <string.h>
-const char *weights[] = { "Exit", "50g", "100g", "200g", "500g", "1000g" };
+const char *const weights[] = { "Exit", "50g", "100g", "200g", "500g", "1000g" };
 const float weight_values[] = { 0.0, 50.0, 100.0, 200.0, 500.0, 1000.0 };
 bool b_showAbout = false;
 bool b_showLogo = false;
@@ -20,6 +23,27 @@ String actionMessage = "Default";
 String actionMessage2 = "Default";
 unsigned long t_actionMessage = 0;
 int t_actionMessageDelay = 1000;
+constexpr unsigned long MENU_SAFETY_REFRESH_INTERVAL_MS = 100;
+bool menuFrameDirty = true;
+bool menuFrameShowsActionMessage = false;
+unsigned long lastMenuFrameRender = 0;
+
+inline void invalidateMenuFrame() {
+  menuFrameDirty = true;
+}
+
+inline bool menuFrameNeedsRender(unsigned long now) {
+  const bool actionMessageVisible = now - t_actionMessage < t_actionMessageDelay;
+  return menuFrameDirty
+      || hdsIntervalElapsed(now, lastMenuFrameRender, MENU_SAFETY_REFRESH_INTERVAL_MS)
+      || (menuFrameShowsActionMessage && !actionMessageVisible);
+}
+
+inline void menuActionMessageChanged() {
+  t_actionMessage = millis();
+  invalidateMenuFrame();
+}
+
 template<typename T> int getMenuSize(T &menu) {
   return sizeof(menu) / sizeof(menu[0]);
 }
@@ -27,24 +51,31 @@ template<typename T> int getMenuSize(T &menu) {
 struct Menu {
   const char *name;
   void (*action)();
-  Menu *subMenu;
-  Menu *parentMenu;
+  const Menu *subMenu;
+  const Menu *parentMenu;
 };
 
+#if HDS_ENABLE_ENERGY_MENU
+#include "energy_menu.h"
+#endif
 void exitMenu();
 #ifdef BUZZER
 void buzzerOn();
 void buzzerOff();
 #endif
+#if HDS_FEATURE_WIFI
 void toggleWifiOff();
 void toggleWifiOn();
 void resetWifi();
 void showWifiStatus();
+#endif
 void heartbeatOn();
 void heartbeatOff();
 void calibrate();
 void drawButton();
+#if HDS_FEATURE_PULL_OTA
 void wifiUpdate();
+#endif
 void showStatus();
 void showAbout();
 void showMenu();
@@ -76,130 +107,164 @@ void grinderTargetMenu();
 void grinderSafetyMenu();
 void grinderZeroRangeMenu();
 #endif
+#if HDS_FEATURE_WIFI
 void wifi_init();
-
-
-Menu menuExit = { "Exit", exitMenu, NULL, NULL };
-#ifdef BUZZER
-Menu menuBuzzer = { "Buzzer", NULL, NULL, NULL };
 #endif
-Menu menuCalibration = { "Calibration", NULL, NULL, NULL };
-Menu menuWifi = { "WiFi Settings", NULL, NULL, NULL };
-Menu menuStatus = { "Status", showStatus, NULL, NULL };
-Menu menuAbout = { "About", showAbout, NULL, NULL };
-Menu menuLogo = { "Show Logo", showLogo, NULL, NULL };
-Menu menuFactory = { "Factory", NULL, NULL, NULL };
-Menu menuHeartbeat = { "Heartbeat", NULL, NULL, NULL };
-Menu menuFlipScreen = { "Flip Screen", NULL, NULL, NULL };
-Menu menuTimeOnTop = { "Time On Top", NULL, NULL, NULL };
-Menu menuBtnFuncWhileConnected = { "Button with BLE", NULL, NULL, NULL };
-Menu menuAutoSleep = { "Auto Sleep", NULL, NULL, NULL };
-Menu menuQuickBoot = { "Quick Boot", NULL, NULL, NULL };
-Menu menuDriftComp = { "Drift Comp", NULL, NULL, NULL };
+
+extern const Menu menuCalibrationBack;
+extern const Menu menuHeartbeatBack;
+extern const Menu menuFlipScreenBack;
+extern const Menu menuTimeOnTopBack;
+extern const Menu menuBtnFuncWhileConnectedBack;
+extern const Menu menuAutoSleepBack;
+extern const Menu menuQuickBootBack;
+extern const Menu menuDriftCompBack;
+#ifdef BUZZER
+extern const Menu menuBuzzerBack;
+#endif
+#if HDS_FEATURE_WIFI
+extern const Menu menuWiFiUpdateBack;
+#endif
 #if HDS_ENABLE_GRINDER
-Menu menuGrinder = { "Grinder Plug", NULL, NULL, NULL };
+extern const Menu menuGrinderBack;
+#endif
+
+const Menu menuExit = { "Exit", exitMenu, NULL, NULL };
+#ifdef BUZZER
+const Menu menuBuzzer = { "Buzzer", NULL, &menuBuzzerBack, NULL };
+#endif
+const Menu menuCalibration = { "Calibration", NULL, &menuCalibrationBack, NULL };
+#if HDS_FEATURE_WIFI
+const Menu menuWifi = { "WiFi Settings", NULL, &menuWiFiUpdateBack, NULL };
+#endif
+const Menu menuStatus = { "Status", showStatus, NULL, NULL };
+const Menu menuAbout = { "About", showAbout, NULL, NULL };
+const Menu menuLogo = { "Show Logo", showLogo, NULL, NULL };
+const Menu menuFactory = { "Factory", NULL, NULL, NULL };
+const Menu menuHeartbeat = { "Heartbeat", NULL, &menuHeartbeatBack, NULL };
+const Menu menuFlipScreen = { "Flip Screen", NULL, &menuFlipScreenBack, NULL };
+const Menu menuTimeOnTop = { "Time On Top", NULL, &menuTimeOnTopBack, NULL };
+const Menu menuBtnFuncWhileConnected = { "Button with BLE", NULL, &menuBtnFuncWhileConnectedBack, NULL };
+const Menu menuAutoSleep = { "Auto Sleep", NULL, &menuAutoSleepBack, NULL };
+const Menu menuQuickBoot = { "Quick Boot", NULL, &menuQuickBootBack, NULL };
+const Menu menuDriftComp = { "Drift Comp", NULL, &menuDriftCompBack, NULL };
+#if HDS_ENABLE_GRINDER
+const Menu menuGrinder = { "Grind by weight", NULL, &menuGrinderBack, NULL };
 #endif
 
 
 #ifdef BUZZER
-Menu menuBuzzerBack = { "Back", NULL, NULL, &menuBuzzer };
-Menu menuBuzzerOn = { "Buzzer On", buzzerOn, NULL, &menuBuzzer };
-Menu menuBuzzerOff = { "Buzzer Off", buzzerOff, NULL, &menuBuzzer };
-Menu *buzzerMenu[] = { &menuBuzzerBack, &menuBuzzerOn, &menuBuzzerOff };
+const Menu menuBuzzerBack = { "Back", NULL, NULL, &menuBuzzer };
+const Menu menuBuzzerOn = { "Buzzer On", buzzerOn, NULL, &menuBuzzer };
+const Menu menuBuzzerOff = { "Buzzer Off", buzzerOff, NULL, &menuBuzzer };
+const Menu *const buzzerMenu[] = { &menuBuzzerBack, &menuBuzzerOn, &menuBuzzerOff };
 #endif
-Menu menuCalibrationBack = { "Back", NULL, NULL, &menuCalibration };
-Menu menuCalibrate = { "Calibrate", calibrate, NULL, &menuCalibration };
-Menu *calibrationMenu[] = { &menuCalibrationBack, &menuCalibrate };
+const Menu menuCalibrationBack = { "Back", NULL, NULL, &menuCalibration };
+const Menu menuCalibrate = { "Calibrate", calibrate, NULL, &menuCalibration };
+const Menu *const calibrationMenu[] = { &menuCalibrationBack, &menuCalibrate };
 
-Menu menuWiFiUpdateBack = { "Back", NULL, NULL, &menuWifi };
-Menu menuWiFiOnOption = { "WiFi On", toggleWifiOn, NULL, &menuWifi };
-Menu menuWiFiOffOption = { "WiFi Off", toggleWifiOff, NULL, &menuWifi };
-Menu menuWiFiStatusOption = { "WiFi Status", showWifiStatus, NULL, &menuWifi };
-Menu menuWiFiPullUpdateOption = { "WiFi Update", wifiUpdate, NULL, &menuWifi };
-Menu menuWiFiResetOption = { "Reset WiFi", resetWifi, NULL, &menuWifi };
+#if HDS_FEATURE_WIFI
+const Menu menuWiFiUpdateBack = { "Back", NULL, NULL, &menuWifi };
+const Menu menuWiFiOnOption = { "WiFi On", toggleWifiOn, NULL, &menuWifi };
+const Menu menuWiFiOffOption = { "WiFi Off", toggleWifiOff, NULL, &menuWifi };
+const Menu menuWiFiStatusOption = { "WiFi Status", showWifiStatus, NULL, &menuWifi };
+#if HDS_FEATURE_PULL_OTA
+const Menu menuWiFiPullUpdateOption = { "WiFi Update", wifiUpdate, NULL, &menuWifi };
+#endif
+const Menu menuWiFiResetOption = { "Reset WiFi", resetWifi, NULL, &menuWifi };
 
-Menu *wifiUpdateMenu[] = {
+const Menu *const wifiUpdateMenu[] = {
   &menuWiFiUpdateBack,
   &menuWiFiOnOption,
   &menuWiFiOffOption,
   &menuWiFiStatusOption,
+#if HDS_FEATURE_PULL_OTA
   &menuWiFiPullUpdateOption,
+#endif
   &menuWiFiResetOption,
 };
+#endif
 
-Menu menuHeartbeatBack = { "Back", NULL, NULL, &menuHeartbeat };
-Menu menuHeartbeatOn = { "Heartbeat On", heartbeatOn, NULL, &menuHeartbeat };
-Menu menuHeartbeatOff = { "Heartbeat Off", heartbeatOff, NULL, &menuHeartbeat };
-Menu *heartbeatMenu[] = { &menuHeartbeatBack, &menuHeartbeatOn,
+const Menu menuHeartbeatBack = { "Back", NULL, NULL, &menuHeartbeat };
+const Menu menuHeartbeatOn = { "Heartbeat On", heartbeatOn, NULL, &menuHeartbeat };
+const Menu menuHeartbeatOff = { "Heartbeat Off", heartbeatOff, NULL, &menuHeartbeat };
+const Menu *const heartbeatMenu[] = { &menuHeartbeatBack, &menuHeartbeatOn,
                           &menuHeartbeatOff };
 
-Menu menuFlipScreenBack = { "Back", NULL, NULL, &menuFlipScreen };
-Menu menuFlipScreenOn = { "Flip On", flipScreenOn, NULL, &menuFlipScreen };
-Menu menuFlipScreenOff = { "Flip Off", flipScreenOff, NULL, &menuFlipScreen };
-Menu *flipScreenMenu[] = { &menuFlipScreenBack, &menuFlipScreenOn,
+const Menu menuFlipScreenBack = { "Back", NULL, NULL, &menuFlipScreen };
+const Menu menuFlipScreenOn = { "Flip On", flipScreenOn, NULL, &menuFlipScreen };
+const Menu menuFlipScreenOff = { "Flip Off", flipScreenOff, NULL, &menuFlipScreen };
+const Menu *const flipScreenMenu[] = { &menuFlipScreenBack, &menuFlipScreenOn,
                            &menuFlipScreenOff };
 
-Menu menuTimeOnTopBack = { "Back", NULL, NULL, &menuTimeOnTop };
-Menu menuTimeOnTopOn = { "Time On Top", timeOnTopOn, NULL, &menuTimeOnTop };
-Menu menuTimeOnTopOff = { "Weight On Top", timeOnTopOff, NULL, &menuTimeOnTop };
-Menu *timeOnTopMenu[] = { &menuTimeOnTopBack, &menuTimeOnTopOn,
+const Menu menuTimeOnTopBack = { "Back", NULL, NULL, &menuTimeOnTop };
+const Menu menuTimeOnTopOn = { "Time On Top", timeOnTopOn, NULL, &menuTimeOnTop };
+const Menu menuTimeOnTopOff = { "Weight On Top", timeOnTopOff, NULL, &menuTimeOnTop };
+const Menu *const timeOnTopMenu[] = { &menuTimeOnTopBack, &menuTimeOnTopOn,
                           &menuTimeOnTopOff };
 
-Menu menuBtnFuncWhileConnectedBack = { "Back", NULL, NULL,
+const Menu menuBtnFuncWhileConnectedBack = { "Back", NULL, NULL,
                                        &menuBtnFuncWhileConnected };
-Menu menuBtnFuncWhileConnectedOn = { "Enable Buttons", btnFuncWhileConnectedOn,
+const Menu menuBtnFuncWhileConnectedOn = { "Enable Buttons", btnFuncWhileConnectedOn,
                                      NULL, &menuBtnFuncWhileConnected };
-Menu menuBtnFuncWhileConnectedOff = { "Disable Buttons",
-                                      btnFuncWhileConnectedOff, NULL,
-                                      &menuBtnFuncWhileConnected };
-Menu *btnFuncWhileConnectedMenu[] = { &menuBtnFuncWhileConnectedBack,
-                                      &menuBtnFuncWhileConnectedOn,
-                                      &menuBtnFuncWhileConnectedOff };
+const Menu menuBtnFuncWhileConnectedOff = { "Disable Buttons",
+                                       btnFuncWhileConnectedOff, NULL,
+                                       &menuBtnFuncWhileConnected };
+const Menu *const btnFuncWhileConnectedMenu[] = { &menuBtnFuncWhileConnectedBack,
+                                       &menuBtnFuncWhileConnectedOn,
+                                       &menuBtnFuncWhileConnectedOff };
 
-Menu menuAutoSleepBack = { "Back", NULL, NULL, &menuAutoSleep };
-Menu menuAutoSleepOn = { "Auto Sleep On", autoSleepOn, NULL, &menuAutoSleep };
-Menu menuAutoSleepOff = { "Auto Sleep Off", autoSleepOff, NULL, &menuAutoSleep };
-Menu *autoSleepMenu[] = { &menuAutoSleepBack, &menuAutoSleepOn, &menuAutoSleepOff };
+const Menu menuAutoSleepBack = { "Back", NULL, NULL, &menuAutoSleep };
+const Menu menuAutoSleepOn = { "Auto Sleep On", autoSleepOn, NULL, &menuAutoSleep };
+const Menu menuAutoSleepOff = { "Auto Sleep Off", autoSleepOff, NULL, &menuAutoSleep };
+const Menu *const autoSleepMenu[] = { &menuAutoSleepBack, &menuAutoSleepOn, &menuAutoSleepOff };
 
-Menu menuQuickBootBack = { "Back", NULL, NULL, &menuQuickBoot };
-Menu menuQuickBootOn = { "Quick Boot On", quickBootOn, NULL, &menuQuickBoot };
-Menu menuQuickBootOff = { "Quick Boot Off", quickBootOff, NULL, &menuQuickBoot };
-Menu *quickBootMenu[] = { &menuQuickBootBack, &menuQuickBootOn, &menuQuickBootOff };
+const Menu menuQuickBootBack = { "Back", NULL, NULL, &menuQuickBoot };
+const Menu menuQuickBootOn = { "Quick Boot On", quickBootOn, NULL, &menuQuickBoot };
+const Menu menuQuickBootOff = { "Quick Boot Off", quickBootOff, NULL, &menuQuickBoot };
+const Menu *const quickBootMenu[] = { &menuQuickBootBack, &menuQuickBootOn, &menuQuickBootOff };
 
-Menu menuDriftCompBack = { "Back", NULL, NULL, &menuDriftComp };
-Menu menuDriftCompOff = { "Drift Comp Off", driftCompOff, NULL, &menuDriftComp };
-Menu menuQuickBoot0050 = { "0.05g", driftComp0050, NULL, &menuDriftComp };
-Menu menuQuickBoot0075 = { "0.075g", driftComp0075, NULL, &menuDriftComp };
-Menu menuQuickBoot0100 = { "0.1g", driftComp0100, NULL, &menuDriftComp };
-Menu menuQuickBoot0200 = { "0.2g", driftComp0200, NULL, &menuDriftComp };
-Menu *driftCompMenu[] = { &menuDriftCompBack, &menuDriftCompOff, &menuQuickBoot0050, &menuQuickBoot0075, &menuQuickBoot0100, &menuQuickBoot0200 };
+const Menu menuDriftCompBack = { "Back", NULL, NULL, &menuDriftComp };
+const Menu menuDriftCompOff = { "Drift Comp Off", driftCompOff, NULL, &menuDriftComp };
+const Menu menuQuickBoot0050 = { "0.05g", driftComp0050, NULL, &menuDriftComp };
+const Menu menuQuickBoot0075 = { "0.075g", driftComp0075, NULL, &menuDriftComp };
+const Menu menuQuickBoot0100 = { "0.1g", driftComp0100, NULL, &menuDriftComp };
+const Menu menuQuickBoot0200 = { "0.2g", driftComp0200, NULL, &menuDriftComp };
+const Menu *const driftCompMenu[] = { &menuDriftCompBack, &menuDriftCompOff, &menuQuickBoot0050, &menuQuickBoot0075, &menuQuickBoot0100, &menuQuickBoot0200 };
 
 #if HDS_ENABLE_GRINDER
-Menu menuGrinderBack = { "Back", NULL, NULL, &menuGrinder };
-Menu menuGrinderOn = { "Grinder On", grinderOn, NULL, &menuGrinder };
-Menu menuGrinderOff = { "Grinder Off", grinderOff, NULL, &menuGrinder };
-Menu menuGrinderSelect = { "Select Plug", grinderSelectPlugMenu, NULL, &menuGrinder };
-Menu menuGrinderTarget = { "Target g", grinderTargetMenu, NULL, &menuGrinder };
-Menu menuGrinderSafety = { "Safety g", grinderSafetyMenu, NULL, &menuGrinder };
-Menu menuGrinderZero = { "Zero Range", grinderZeroRangeMenu, NULL, &menuGrinder };
-Menu *grinderMenu[] = { &menuGrinderBack, &menuGrinderOn, &menuGrinderOff, &menuGrinderSelect, &menuGrinderTarget, &menuGrinderSafety, &menuGrinderZero };
+const Menu menuGrinderBack = { "Back", NULL, NULL, &menuGrinder };
+const Menu menuGrinderOn = { "Enable", grinderOn, NULL, &menuGrinder };
+const Menu menuGrinderOff = { "Disable", grinderOff, NULL, &menuGrinder };
+const Menu menuGrinderSelect = { "Select Plug", grinderSelectPlugMenu, NULL, &menuGrinder };
+const Menu menuGrinderTarget = { "Target g", grinderTargetMenu, NULL, &menuGrinder };
+const Menu menuGrinderSafety = { "Safety g", grinderSafetyMenu, NULL, &menuGrinder };
+const Menu menuGrinderZero = { "Zero Range", grinderZeroRangeMenu, NULL, &menuGrinder };
+const Menu *const grinderMenu[] = { &menuGrinderBack, &menuGrinderOn, &menuGrinderOff, &menuGrinderSelect, &menuGrinderTarget, &menuGrinderSafety, &menuGrinderZero };
 #endif
 
 
-Menu *mainMenu[] = {
+const Menu *const mainMenu[] = {
   &menuExit,
 #ifdef BUZZER
   &menuBuzzer,
 #endif
-  &menuCalibration, &menuWifi, &menuStatus,
+  &menuCalibration,
+#if HDS_FEATURE_WIFI
+  &menuWifi,
+#endif
+  &menuStatus,
   &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen, &menuTimeOnTop,
   &menuBtnFuncWhileConnected, &menuAutoSleep, &menuQuickBoot, &menuDriftComp,
 #if HDS_ENABLE_GRINDER
   &menuGrinder,
 #endif
+#if HDS_ENABLE_ENERGY_MENU
+  &menuEnergy,
+#endif
 };
-Menu **currentMenu = mainMenu;
-Menu *currentSelection = mainMenu[0];
+const Menu *const *currentMenu = mainMenu;
+const Menu *currentSelection = mainMenu[0];
 int currentMenuSize = getMenuSize(mainMenu);
 int currentIndex = 0;
 const int linesPerPage =
@@ -207,26 +272,10 @@ const int linesPerPage =
 int currentPage = 0;
 int totalPages = currentMenuSize / linesPerPage + 1;
 
-void linkSubmenus() {
-#ifdef BUZZER
-  menuBuzzer.subMenu = buzzerMenu[0];
-#endif
-  menuCalibration.subMenu = calibrationMenu[0];
-  menuWifi.subMenu = wifiUpdateMenu[0];
-  menuHeartbeat.subMenu = heartbeatMenu[0];
-  menuFlipScreen.subMenu = flipScreenMenu[0];
-  menuTimeOnTop.subMenu = timeOnTopMenu[0];
-  menuBtnFuncWhileConnected.subMenu = btnFuncWhileConnectedMenu[0];
-  menuAutoSleep.subMenu = autoSleepMenu[0];
-  menuQuickBoot.subMenu = quickBootMenu[0];
-  menuDriftComp.subMenu = driftCompMenu[0];
-#if HDS_ENABLE_GRINDER
-  menuGrinder.subMenu = grinderMenu[0];
-#endif
-}
-
 void exitMenu() {
+  invalidateMenuFrame();
   u8g2.setFont(FONT_M);
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   do {
     u8g2.drawStr(AC((char *)"Exit Menu"), AM(), (char *)"Exit Menu");
@@ -238,7 +287,7 @@ void exitMenu() {
 #if HDS_ENABLE_GRINDER
   grinderResumeAfterMenu();
 #endif
-  b_menu = false;
+  leaveMenu();
 #if HDS_ENABLE_GRINDER
   b_grinderMenuDirectEntry = false;
 #endif
@@ -256,7 +305,7 @@ void buzzerOn() {
     buzzer.beep(1, BUZZER_DURATION);
   }
   actionMessage = "Buzzer on";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutInt(KEY_BEEP, b_beep);
   Serial.println("Buzzer On stored in NVS.");
@@ -265,13 +314,14 @@ void buzzerOn() {
 void buzzerOff() {
   b_beep = false;
   actionMessage = "Buzzer off";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutInt(KEY_BEEP, b_beep);
   Serial.println("Buzzer off stored in NVS.");
 }
 #endif
 
+#if HDS_FEATURE_WIFI
 void toggleWifiOn() {
   b_wifiOnBoot = true;
 #if HDS_ENABLE_GRINDER
@@ -282,10 +332,11 @@ void toggleWifiOn() {
   }
 #endif
   actionMessage = "WiFi Enabled";
-  actionMessage2 = "Restart scale";
-  t_actionMessage = millis();
+  actionMessage2 = "Restart on exit";
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_WIFI_BOOT, true);
+  markMenuRestartRequired();
   Serial.printf("%s\n", actionMessage);
 }
 
@@ -295,20 +346,21 @@ void toggleWifiOff() {
     grinderSettings.previousWifiOnBoot = false;
     grinderSettings.previousWifiOnBootSaved = true;
     grinderSaveSettings();
-    actionMessage = "Grinder Needs WiFi";
-    actionMessage2 = "Off After Grinder";
-    t_actionMessage = millis();
+    actionMessage = "Grind by weight";
+    actionMessage2 = "Needs WiFi";
+    menuActionMessageChanged();
     t_actionMessageDelay = 1500;
-    Serial.println("WiFi Off deferred until Grinder Off.");
+    Serial.println("WiFi Off deferred until Grind by weight is disabled.");
     return;
   }
 #endif
   b_wifiOnBoot = false;
   actionMessage = "WiFi Disabled";
-  actionMessage2 = "Restart scale";
-  t_actionMessage = millis();
+  actionMessage2 = "Restart on exit";
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_WIFI_BOOT, false);
+  markMenuRestartRequired();
   Serial.printf("%s\n", actionMessage);
 }
 
@@ -323,6 +375,9 @@ void showWifiStatus() {
   const char *nameLine2 =
     mdnsNameSplitOledLine1(wifiDeviceName(), nameLine1, sizeof(nameLine1));
 
+#if HDS_ENABLE_ENERGY_MENU
+  invalidateEnergyOledFrame();
+#endif
   u8g2.firstPage();
   do {
 
@@ -351,10 +406,19 @@ void showWifiStatus() {
     }
   }
 }
+#endif
 
 void showStatus() {
   b_showStatusData = true;
 
+  char wifiLine[32];
+  char bleLine[32];
+  char sleepLine[32];
+  char driftLine[32];
+#if HDS_ENABLE_GRINDER
+  char grinderLine[32];
+#endif
+#if HDS_FEATURE_WIFI
   const char *wifiRunState = "Idle";
   if (b_wifiEnabled) {
     if (WiFi.getMode() == WIFI_AP) {
@@ -366,17 +430,13 @@ void showStatus() {
     }
   }
 
-  char wifiLine[32];
-  char bleLine[32];
-  char sleepLine[32];
-  char driftLine[32];
-#if HDS_ENABLE_GRINDER
-  char grinderLine[32];
-#endif
   snprintf(wifiLine, sizeof(wifiLine), "WiFi:%s %s %s",
            b_wifiOnBoot ? "On" : "Off",
            wifiCredentialsSaved() ? "Saved" : "NoCred",
            wifiRunState);
+#else
+  snprintf(wifiLine, sizeof(wifiLine), "WiFi:Unavailable");
+#endif
   snprintf(bleLine, sizeof(bleLine), "BLE:%s Btn:%s HB:%s",
            b_ble_enabled ? "On" : "Off",
            b_btnFuncWhileConnected ? "On" : "Off",
@@ -393,6 +453,7 @@ void showStatus() {
            grinderSettings.targetGrams);
 #endif
 
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   do {
     u8g2.setFont(u8g2_font_6x12_tr);
@@ -414,18 +475,21 @@ void showStatus() {
   }
 }
 
+#if HDS_FEATURE_WIFI
 void resetWifi() {
   saveCredentials("", "");
   actionMessage = "WiFi Reset";
-  actionMessage2 = "Restart scale";
-  t_actionMessage = millis();
+  actionMessage2 = "Restart on exit";
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
+  markMenuRestartRequired();
 }
+#endif
 
 void heartbeatOn() {
   b_requireHeartBeat = true;
   actionMessage = "Heartbeat On";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_HEARTBEAT, b_requireHeartBeat);
   Serial.println("Heartbeat detection...On");
@@ -434,7 +498,7 @@ void heartbeatOn() {
 void heartbeatOff() {
   b_requireHeartBeat = false;
   actionMessage = "Heartbeat Off";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_HEARTBEAT, b_requireHeartBeat);
   Serial.println("Heartbeat detection...Off");
@@ -443,7 +507,7 @@ void heartbeatOff() {
 void flipScreenOn() {
   b_screenFlipped = true;
   actionMessage = "Flip On";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_SCREEN_FLIP, b_screenFlipped);
   u8g2.setDisplayRotation(U8G2_R0);
@@ -453,7 +517,7 @@ void flipScreenOn() {
 void flipScreenOff() {
   b_screenFlipped = false;
   actionMessage = "Flip Off";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_SCREEN_FLIP, b_screenFlipped);
   u8g2.setDisplayRotation(U8G2_R2);
@@ -463,7 +527,7 @@ void flipScreenOff() {
 void timeOnTopOn() {
   b_timeOnTop = true;
   actionMessage = "Time On Top";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_TIME_ON_TOP, b_timeOnTop);
   Serial.println("Time On Top");
@@ -472,7 +536,7 @@ void timeOnTopOn() {
 void timeOnTopOff() {
   b_timeOnTop = false;
   actionMessage = "Weight On Top";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_TIME_ON_TOP, b_timeOnTop);
   Serial.println("Weight On Top");
@@ -481,7 +545,7 @@ void timeOnTopOff() {
 void btnFuncWhileConnectedOn() {
   b_btnFuncWhileConnected = true;
   actionMessage = "BLE Btns On";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_BTN_CONN, b_btnFuncWhileConnected);
   Serial.println("BLE Btns On");
@@ -490,7 +554,7 @@ void btnFuncWhileConnectedOn() {
 void btnFuncWhileConnectedOff() {
   b_btnFuncWhileConnected = false;
   actionMessage = "BLE Btns Off";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_BTN_CONN, b_btnFuncWhileConnected);
   Serial.println("BLE Btns Off");
@@ -499,7 +563,7 @@ void btnFuncWhileConnectedOff() {
 void autoSleepOn() {
   b_autoSleep = true;
   actionMessage = "Autosleep On";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_AUTO_SLEEP, b_autoSleep);
   Serial.println("Autosleep on stored in NVS.");
@@ -508,7 +572,7 @@ void autoSleepOn() {
 void autoSleepOff() {
   b_autoSleep = false;
   actionMessage = "Autosleep Off";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_AUTO_SLEEP, b_autoSleep);
   Serial.println("Autosleep off stored in NVS.");
@@ -517,7 +581,7 @@ void autoSleepOff() {
 void quickBootOn() {
   b_quickBoot = true;
   actionMessage = "Quick Boot On";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_QUICK_BOOT, b_quickBoot);
   Serial.println("Quick boot on stored in NVS.");
@@ -526,7 +590,7 @@ void quickBootOn() {
 void quickBootOff() {
   b_quickBoot = false;
   actionMessage = "Quick Boot Off";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_QUICK_BOOT, b_quickBoot);
   Serial.println("Quick boot off stored in NVS.");
@@ -535,7 +599,7 @@ void quickBootOff() {
 void driftCompOff() {
   f_maxDriftCompensation = 0.0;
   actionMessage = "Drift Comp Off";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
   Serial.println("Drift Comp Off stored in NVS.");
@@ -544,7 +608,7 @@ void driftCompOff() {
 void driftComp0050() {
   f_maxDriftCompensation = 0.05;
   actionMessage = "Drift Comp 0.05g";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
   Serial.println("Drift Comp 0.05g stored in NVS.");
@@ -553,7 +617,7 @@ void driftComp0050() {
 void driftComp0075() {
   f_maxDriftCompensation = 0.075;
   actionMessage = "Drift Comp 0.075g";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
   Serial.println("Drift Comp 0.075g stored in NVS.");
@@ -562,7 +626,7 @@ void driftComp0075() {
 void driftComp0100() {
   f_maxDriftCompensation = 0.1;
   actionMessage = "Drift Comp 0.1g";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
   Serial.println("Drift Comp 0.1g stored in NVS.");
@@ -571,7 +635,7 @@ void driftComp0100() {
 void driftComp0200() {
   f_maxDriftCompensation = 0.2;
   actionMessage = "Drift Comp 0.2g";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
   Serial.println("Drift Comp 0.2g stored in NVS.");
@@ -581,7 +645,7 @@ void driftComp0200() {
 void grinderSetActionMessage(const char *line1, const char *line2 = nullptr) {
   actionMessage = line1;
   actionMessage2 = line2 == nullptr ? "Default" : line2;
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1500;
 }
 
@@ -596,7 +660,7 @@ void grinderOn() {
   if (!b_wifiEnabled) {
     wifi_init();
   }
-  grinderSetActionMessage("Grinder On", "WiFi On");
+  grinderSetActionMessage("Grind by weight", "Enabled");
   Serial.printf("[grinder] enabled selected=%s ip=%s\n",
                 grinderSettings.selectedMac,
                 grinderSettings.lastIp.toString().c_str());
@@ -613,8 +677,8 @@ void grinderOff() {
     grinderSettings.previousWifiOnBootSaved = false;
     grinderSaveSettings();
   }
-  grinderSetActionMessage("Grinder Off");
-  Serial.println("Grinder Off stored in NVS.");
+  grinderSetActionMessage("Grind by weight", "Disabled");
+  Serial.println("Grind by weight disabled and stored in NVS.");
 }
 
 bool grinderEnsureWifiReadyForDiscovery() {
@@ -664,6 +728,7 @@ void grinderDrawPlugList(uint8_t selected) {
   const uint8_t total = grinderRuntime.discoveredCount + 1;
   const uint8_t rows = 6;
   uint8_t first = (selected / rows) * rows;
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   do {
     u8g2.setFont(u8g2_font_5x8_tr);
@@ -710,7 +775,7 @@ void grinderSelectPlugMenu() {
                       grinderSettings.hostname,
                       grinderSettings.lastIp.toString().c_str(),
                       grinderSettings.enabled ? 1 : 0);
-        grinderSetActionMessage("Plug Selected", grinderSettings.enabled ? "Saved" : "Turn Grinder On");
+        grinderSetActionMessage("Plug Selected", grinderSettings.enabled ? "Saved" : "Enable in menu");
         selecting = false;
       }
       grinderWaitForButtonRelease();
@@ -732,6 +797,7 @@ static inline float grinderClampDraft(float value, float minValue, float maxValu
 static inline void grinderDrawNumberEditor(const char *title, float value, uint8_t selected) {
   char valueLine[24];
   snprintf(valueLine, sizeof(valueLine), "%.1fg Save", value);
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   do {
     u8g2.setFont(u8g2_font_6x12_tr);
@@ -835,7 +901,7 @@ void grinderZeroRangeMenu() {
 #endif
 
 void calibrate() {
-  b_menu = false;
+  leaveMenu();
   b_calibration = true;
   i_calibration = 0;
 }
@@ -898,6 +964,7 @@ void calibrationFinish(bool returnToMenu) {
   calibrationRestoreSampleWindow();
   if (returnToMenu) {
     b_menu = true;
+    invalidateMenuFrame();
   }
 }
 
@@ -953,6 +1020,7 @@ void calibrationShowFailure(CalibrationRejectReason reason) {
   const char *displayText = calibrationRejectReasonDisplayText(reason);
   Serial.print(F("Calibration failed: "));
   Serial.println(reasonText);
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   u8g2.setFont(FONT_S);
   do {
@@ -970,6 +1038,7 @@ void calibrationShowFailure(CalibrationRejectReason reason) {
 
 void calibrationShowUsbWarning() {
   Serial.println(F("Calibration warning: USB connected"));
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   u8g2.setFont(FONT_S);
   do {
@@ -1136,6 +1205,7 @@ void calibration(int input) {
           b_calibrationZeroCaptured = false;
         }
         calibrationEnsureSampleWindow();
+        invalidateEnergyOledFrame();
         u8g2.firstPage();
         do {
           if (b_screenFlipped)
@@ -1186,6 +1256,7 @@ void calibration(int input) {
       }
       if (input == 1) {
         calibrationEnsureSampleWindow();
+        invalidateEnergyOledFrame();
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
@@ -1209,6 +1280,7 @@ void calibration(int input) {
         calibrationShowUsbWarning();
       }
       if (input == 0) {
+        invalidateEnergyOledFrame();
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
@@ -1223,6 +1295,7 @@ void calibration(int input) {
 #endif
         delay(2000);
       }
+      invalidateEnergyOledFrame();
       u8g2.firstPage();
       u8g2.setFont(FONT_S);
       do {
@@ -1236,6 +1309,7 @@ void calibration(int input) {
       buzzer.off();
 #endif
       delay(1000);
+      invalidateEnergyOledFrame();
       u8g2.firstPage();
       u8g2.setFont(FONT_S);
       do {
@@ -1250,6 +1324,7 @@ void calibration(int input) {
 #endif
       delay(1000);
 
+      invalidateEnergyOledFrame();
       u8g2.firstPage();
       u8g2.setFont(FONT_S);
       do {
@@ -1264,6 +1339,7 @@ void calibration(int input) {
 #endif
       delay(1000);
 
+      invalidateEnergyOledFrame();
       u8g2.firstPage();
       u8g2.setFont(FONT_S);
       do {
@@ -1294,6 +1370,7 @@ void calibration(int input) {
       Serial.print(F(" valid="));
       Serial.println(calibrationZeroCapture.validSamples);
       Serial.println(F("0g calibration done"));
+      invalidateEnergyOledFrame();
       u8g2.firstPage();
       u8g2.setFont(FONT_S);
       do {
@@ -1317,6 +1394,7 @@ void calibration(int input) {
         snprintf(buffer, sizeof(buffer), "Place %s weight",
                  weights[i_cal_weight]);
 
+        invalidateEnergyOledFrame();
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
@@ -1331,6 +1409,7 @@ void calibration(int input) {
 #endif
         delay(1000);
 
+        invalidateEnergyOledFrame();
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
@@ -1345,6 +1424,7 @@ void calibration(int input) {
 #endif
         delay(1000);
 
+        invalidateEnergyOledFrame();
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
@@ -1359,6 +1439,7 @@ void calibration(int input) {
 #endif
         delay(1000);
 
+        invalidateEnergyOledFrame();
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
@@ -1416,6 +1497,7 @@ void calibration(int input) {
         Serial.print(F("New calibration value c: "));
         Serial.println(trim(c_calval));
 
+        invalidateEnergyOledFrame();
         u8g2.firstPage();
         u8g2.setFont(FONT_S);
         do {
@@ -1438,19 +1520,28 @@ void calibration(int input) {
   }
 }
 
+#if HDS_FEATURE_PULL_OTA
 void wifiUpdate() {
+  if (b_softSleep) {
+    wakeScaleFromSoftSleep("WiFi OTA wake");
+  }
+#if HDS_ENABLE_ENERGY_MENU
+  recordEnergyActivity();
+#endif
 #ifdef BUZZER
   buzzer.off();
 #endif
   pullOtaUpdate();
-  b_menu = false;
+  leaveMenu();
 }
+#endif
 
 void showAbout() {
   actionMessage = FIRMWARE_VER;
   actionMessage2 = LINE3;
   b_showAbout = true;
   u8g2.setFont(FONT_S);
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   do {
     u8g2.setFont(FONT_S);
@@ -1470,6 +1561,7 @@ void showAbout() {
 
 void showLogo() {
   b_showLogo = true;
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
 
   do {
@@ -1538,6 +1630,7 @@ void showLogo() {
 
 void enableDebug() {
   u8g2.setFont(FONT_M);
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   do {
     u8g2.drawStr(AC((char *)"Exit Menu"), AM(), (char *)"Exit Menu");
@@ -1547,12 +1640,12 @@ void enableDebug() {
 #endif
   delay(1000);
   b_debug = true;
-  b_menu = false;
+  leaveMenu();
 }
 
 void calibrateVoltage() {
   actionMessage = "Calibrate 4.2v";
-  t_actionMessage = millis();
+  menuActionMessageChanged();
   t_actionMessageDelay = 1000;
   const int numReadings = 50;
   long adcSum = 0;
@@ -1576,13 +1669,19 @@ void calibrateVoltage() {
 }
 
 void navigateMenu(int direction) {
+  recordEnergyActivity();
   currentIndex = (currentIndex + direction + currentMenuSize) % currentMenuSize;
   currentSelection = currentMenu[currentIndex];
+  invalidateMenuFrame();
   Serial.print("currentIndex ");
   Serial.println(currentIndex);
 }
 
 void selectMenu() {
+#if HDS_ENABLE_ENERGY_MENU
+  recordEnergyActivity();
+#endif
+  invalidateMenuFrame();
   if (currentSelection->subMenu) {
 #ifdef BUZZER
     if (currentSelection == &menuBuzzer) {
@@ -1593,9 +1692,11 @@ void selectMenu() {
       if (currentSelection == &menuCalibration) {
       currentMenu = calibrationMenu;
       currentMenuSize = getMenuSize(calibrationMenu);
+#if HDS_FEATURE_WIFI
     } else if (currentSelection == &menuWifi) {
       currentMenu = wifiUpdateMenu;
       currentMenuSize = getMenuSize(wifiUpdateMenu);
+#endif
     } else if (currentSelection == &menuHeartbeat) {
       currentMenu = heartbeatMenu;
       currentMenuSize = getMenuSize(heartbeatMenu);
@@ -1623,6 +1724,11 @@ void selectMenu() {
       currentMenu = grinderMenu;
       currentMenuSize = getMenuSize(grinderMenu);
 #endif
+#if HDS_ENABLE_ENERGY_MENU
+    } else if (currentSelection == &menuEnergy) {
+      currentMenu = energyMenu;
+      currentMenuSize = getMenuSize(energyMenu);
+#endif
     }
     currentIndex = 0;
     currentSelection = currentMenu[currentIndex];
@@ -1643,15 +1749,19 @@ void selectMenu() {
 }
 
 void showMenu() {
+  const unsigned long now = millis();
+  if (!menuFrameNeedsRender(now)) return;
+  const bool actionMessageVisible = now - t_actionMessage < t_actionMessageDelay;
   if (b_screenFlipped)
     u8g2.setDisplayRotation(U8G2_R0);
   else
     u8g2.setDisplayRotation(U8G2_R2);
 
   u8g2.setFont(FONT_S);
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   do {
-    if (millis() - t_actionMessage < t_actionMessageDelay) {
+    if (actionMessageVisible) {
       u8g2.setFont(FONT_M);
       if (AC(actionMessage.c_str()) < 0)
         u8g2.setFont(FONT_S);
@@ -1683,6 +1793,9 @@ void showMenu() {
       }
     }
   } while (u8g2.nextPage());
+  lastMenuFrameRender = now;
+  menuFrameShowsActionMessage = actionMessageVisible;
+  menuFrameDirty = false;
 }
 
 #endif

@@ -1,0 +1,156 @@
+{
+  "firmware_refs": [
+    "main"
+  ],
+  "features": [
+    {
+      "id": "wifi",
+      "name": "WiFi",
+      "description": "Wireless networking with inline configuration support.",
+      "tooltip": "Provides WiFi and a minimal setup server for network and device-name configuration.",
+      "requires": [],
+      "default": true
+    },
+    {
+      "id": "mdns",
+      "name": "mDNS",
+      "description": "Local network discovery without an IP address.",
+      "tooltip": "Advertises the scale on the local network using multicast DNS. WiFi is included automatically.",
+      "requires": [
+        "wifi"
+      ],
+      "default": true
+    },
+    {
+      "id": "webserver",
+      "name": "Web server",
+      "description": "Serve the local configuration interface.",
+      "tooltip": "Adds the embedded HTTP server for web settings, APIs, and approved web plugins.",
+      "requires": [
+        "wifi"
+      ],
+      "default": true
+    },
+    {
+      "id": "websocket",
+      "name": "WebSocket",
+      "description": "Bidirectional live updates for web clients.",
+      "tooltip": "Enables persistent browser communication and includes WiFi and the web server.",
+      "requires": [
+        "wifi",
+        "webserver"
+      ],
+      "default": true
+    },
+    {
+      "id": "littlefs",
+      "name": "Runtime LittleFS files",
+      "description": "Bundle files in the runtime flash filesystem.",
+      "tooltip": "Adds runtime assets such as HTML, configuration, or plugin resources to LittleFS.",
+      "requires": [],
+      "default": true
+    },
+    {
+      "id": "elegant-ota",
+      "name": "ElegantOTA",
+      "description": "Browser-based firmware update flow.",
+      "tooltip": "Adds ElegantOTA and includes WiFi and the web server.",
+      "requires": [
+        "wifi",
+        "webserver"
+      ],
+      "default": true
+    },
+    {
+      "id": "pull-ota",
+      "name": "Wifi Pull OTA",
+      "description": "Install official releases from the scale display. Updates replace custom builds.",
+      "tooltip": "Downloads signed firmware and LittleFS release assets over WiFi. Installing an official release replaces the custom build.",
+      "requires": [
+        "wifi"
+      ],
+      "default": true
+    },
+    {
+      "id": "grinder",
+      "name": "Grind by weight core",
+      "description": "Enable the built-in grinder integration.",
+      "tooltip": "Internal compile gate selected by the Grind by weight plugin.",
+      "requires": [
+        "wifi",
+        "mdns"
+      ],
+      "hidden": true
+    },
+    {
+      "id": "energy-menu",
+      "name": "Energy Saving",
+      "description": "Enable optional energy-saving controls.",
+      "tooltip": "Adds the Energy Saving menu and its persistent feature toggles.",
+      "requires": []
+    }
+  ],
+  "plugins": [
+    {
+      "id": "default-web-apps",
+      "name": "Default web apps",
+      "description": "Install the bundled on-device dashboard and scale tools.",
+      "tooltip": "Adds the dashboard, Weigh Save, Dosing Assistant, and Quality Control Assistant. LittleFS, WebSocket, the web server, and WiFi are included automatically.",
+      "version": "1.0.0",
+      "firmware_refs": [
+        "main"
+      ],
+      "requires": [
+        "littlefs",
+        "websocket"
+      ],
+      "depends_on": [],
+      "conflicts": [],
+      "recommends": {
+        "features": [],
+        "plugins": []
+      },
+      "default": true
+    },
+    {
+      "id": "grind-by-weight",
+      "name": "Grind by weight",
+      "description": "Stop a supported grinder automatically at the target dose.",
+      "tooltip": "Enables the built-in grind-by-weight integration. Its recommended setup also selects Wifi Pull OTA and the default web apps.",
+      "version": "1.0.0",
+      "firmware_refs": [
+        "main"
+      ],
+      "requires": [
+        "grinder"
+      ],
+      "depends_on": [],
+      "conflicts": [],
+      "recommends": {
+        "features": [
+          "pull-ota"
+        ],
+        "plugins": [
+          "default-web-apps"
+        ]
+      }
+    },
+    {
+      "id": "pressensor",
+      "name": "Pressensor",
+      "description": "Show Pressensor pressure, weight, flow, and shot time on the scale.",
+      "tooltip": "Connects to a selected Pressensor over BLE and adds pressure-aware shot timing without requiring WiFi or runtime LittleFS.",
+      "version": "1.0.0",
+      "firmware_refs": [
+        "main"
+      ],
+      "requires": [],
+      "depends_on": [],
+      "conflicts": [],
+      "recommends": {
+        "features": [],
+        "plugins": []
+      }
+    }
+  ]
+}
