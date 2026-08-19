@@ -144,12 +144,17 @@ def main():
     if read(BLE_HEADER).count("restoreDisplayAfterBleDisconnect();") != 2:
         raise AssertionError("all BLE disconnect callbacks must preserve soft sleep")
 
-    ws_handler = read(WEBSOCKET_HEADER)
-    ws_wake_start = ws_handler.index('if (action == "off" || action == "wake")')
+    ws_handler = method_body(WEBSOCKET_HEADER, "handleWebsocketControlCommand")
+    ws_sleep_command = 'if (websocketEqualsIgnoreCase(command, "sleep") ||'
+    ws_wake_condition = 'if (websocketEqualsIgnoreCase(action, "off") ||'
+    ws_wake_start = ws_handler.index(ws_wake_condition, ws_handler.index(ws_sleep_command))
     ws_wake_end = ws_handler.index('sendWebsocketStatus(client, "ok");', ws_wake_start)
     ws_wake = ws_handler[ws_wake_start:ws_wake_end]
+    ws_sleep_start = ws_handler.index(
+        'if (websocketEqualsIgnoreCase(action, "on"))',
+        ws_handler.index(ws_sleep_command),
+    )
     ws_energy_wake, ws_stock_wake = energy_and_stock_branches(ws_wake)
-    ws_sleep_start = ws_handler.index('if (action == "on")', ws_handler.index('if (command == "sleep"'))
     ws_sleep_end = ws_handler.index('sendWebsocketStatus(client, "ok");', ws_sleep_start)
     ws_sleep = ws_handler[ws_sleep_start:ws_sleep_end]
     if "b_softSleep = true;" in ws_sleep or "b_u8g2Sleep = true;" in ws_sleep:

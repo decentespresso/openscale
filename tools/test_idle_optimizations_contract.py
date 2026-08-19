@@ -105,6 +105,15 @@ class IdleOptimizationContractTests(unittest.TestCase):
         churn.remove_disconnecting()
         self.assertEqual(churn.connected_count(), 4)
 
+    def test_websocket_control_path_avoids_string_copies(self):
+        self.assertIn("#include <string_view>", WEBSOCKET)
+        self.assertIn("memchr(msg.data(), ' ', msg.size())", WEBSOCKET)
+        self.assertIn("deserializeJson(doc, data, len)", WEBSOCKET)
+        self.assertIn("handleWebsocketRateCommand(client, data, len)", WEBSOCKET)
+        self.assertNotIn("String lowerMsg", WEBSOCKET)
+        self.assertNotIn("String msg((const char *)data, len)", WEBSOCKET)
+        self.assertNotIn("doc[key].as<String>()", WEBSOCKET)
+
     def test_wifi_cadence_and_rollover_contract(self):
         self.assertIn("WIFI_SUPERVISE_INTERVAL_MS = 250", WIFI_HEADER)
         body = function_body(WIFI, "wifiSupervise")

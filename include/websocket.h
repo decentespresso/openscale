@@ -8,6 +8,9 @@
 #if HDS_FEATURE_WEBSOCKET
 #include "wifi_setup.h"
 #include "webserver.h"
+#include <cstdlib>
+#include <cstring>
+#include <string_view>
 #endif
 
 #if HDS_FEATURE_PULL_OTA
@@ -18,6 +21,59 @@ void sendBleGyro();
 #endif
 
 #if HDS_FEATURE_WEBSOCKET
+std::string_view websocketTrimView(std::string_view value) {
+  while (!value.empty() && static_cast<unsigned char>(value.front()) <= ' ') {
+    value.remove_prefix(1);
+  }
+  while (!value.empty() && static_cast<unsigned char>(value.back()) <= ' ') {
+    value.remove_suffix(1);
+  }
+  return value;
+}
+
+char websocketAsciiLower(char value) {
+  return value >= 'A' && value <= 'Z' ? value + ('a' - 'A') : value;
+}
+
+bool websocketEqualsIgnoreCase(std::string_view left, std::string_view right) {
+  if (left.size() != right.size()) {
+    return false;
+  }
+  for (size_t i = 0; i < left.size(); i++) {
+    if (websocketAsciiLower(left[i]) != websocketAsciiLower(right[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool websocketStartsWithIgnoreCase(std::string_view value, std::string_view prefix) {
+  return value.size() >= prefix.size() &&
+         websocketEqualsIgnoreCase(value.substr(0, prefix.size()), prefix);
+}
+
+float websocketFloatValue(std::string_view value) {
+  value = websocketTrimView(value);
+  char text[32];
+  if (value.empty() || value.size() >= sizeof(text)) {
+    return 0;
+  }
+  memcpy(text, value.data(), value.size());
+  text[value.size()] = '\0';
+  return strtof(text, nullptr);
+}
+
+unsigned long websocketUnsignedValue(std::string_view value) {
+  value = websocketTrimView(value);
+  char text[32];
+  if (value.empty() || value.size() >= sizeof(text)) {
+    return 0;
+  }
+  memcpy(text, value.data(), value.size());
+  text[value.size()] = '\0';
+  return strtoul(text, nullptr, 10);
+}
+
 unsigned long websocketIntervalForRate(float hz) {
   if (fabs(hz - 2.0) < 0.01) {
     return WEBSOCKET_2HZ_NOTIFY_INTERVAL_MS;
@@ -31,16 +87,21 @@ unsigned long websocketIntervalForRate(float hz) {
   return 0;
 }
 
-unsigned long websocketIntervalForLabel(String label) {
-  label.trim();
-  label.toLowerCase();
-  if (label == "2" || label == "2hz" || label == "2k") {
+unsigned long websocketIntervalForLabel(std::string_view label) {
+  label = websocketTrimView(label);
+  if (websocketEqualsIgnoreCase(label, "2") ||
+      websocketEqualsIgnoreCase(label, "2hz") ||
+      websocketEqualsIgnoreCase(label, "2k")) {
     return WEBSOCKET_2HZ_NOTIFY_INTERVAL_MS;
   }
-  if (label == "5" || label == "5hz" || label == "5k") {
+  if (websocketEqualsIgnoreCase(label, "5") ||
+      websocketEqualsIgnoreCase(label, "5hz") ||
+      websocketEqualsIgnoreCase(label, "5k")) {
     return WEBSOCKET_5HZ_NOTIFY_INTERVAL_MS;
   }
-  if (label == "10" || label == "10hz" || label == "10k") {
+  if (websocketEqualsIgnoreCase(label, "10") ||
+      websocketEqualsIgnoreCase(label, "10hz") ||
+      websocketEqualsIgnoreCase(label, "10k")) {
     return WEBSOCKET_10HZ_NOTIFY_INTERVAL_MS;
   }
   return 0;
@@ -449,59 +510,65 @@ bool setWebsocketRateFromHz(AsyncWebSocketClient *client, float hz) {
   return setWebsocketRateFromInterval(client, intervalMs);
 }
 
-bool setWebsocketRateFromLabel(AsyncWebSocketClient *client, String label) {
-  unsigned long intervalMs = websocketIntervalForLabel(label);
-  if (intervalMs == 0) {
-    sendWebsocketRateInfo(client, "invalid");
-    return false;
-  }
-  return setWebsocketRateFromInterval(client, intervalMs);
-}
-
-bool setWebsocketRateFromValue(AsyncWebSocketClient *client, String value) {
+bool setWebsocketRateFromValue(AsyncWebSocketClient *client, std::string_view value) {
   unsigned long intervalMs = websocketIntervalForLabel(value);
   if (intervalMs > 0) {
     return setWebsocketRateFromInterval(client, intervalMs);
   }
-  return setWebsocketRateFromHz(client, value.toFloat());
+  return setWebsocketRateFromHz(client, websocketFloatValue(value));
 }
 
-bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command, String action = "") {
-  command.trim();
-  action.trim();
-  command.toLowerCase();
-  action.toLowerCase();
+bool handleWebsocketControlCommand(
+    AsyncWebSocketClient *client,
+    std::string_view command,
+    std::string_view action = "") {
+  command = websocketTrimView(command);
+  action = websocketTrimView(action);
 
 #if HDS_ENABLE_ENERGY_MENU
-  const bool onOff = action == "on" || action == "off";
-  const bool eventAction = onOff || action == "enable" || action == "enabled" ||
-                           action == "disable" || action == "disabled";
-  const bool timerAction = action == "start" || action == "stop" ||
-                           action == "zero" || action == "reset";
-  const bool sleepAction = onOff || action == "wake";
-  if (command == "tare" ||
-      (command == "events" && eventAction) ||
-      (command == "timer" && timerAction) ||
-      (command == "display" && onOff) ||
-      (command == "low_power" && onOff) ||
-      ((command == "sleep" || command == "soft_sleep") && sleepAction) ||
-      (command == "power" && action == "off")) {
+  const bool onOff = websocketEqualsIgnoreCase(action, "on") ||
+                     websocketEqualsIgnoreCase(action, "off");
+  const bool eventAction = onOff ||
+                           websocketEqualsIgnoreCase(action, "enable") ||
+                           websocketEqualsIgnoreCase(action, "enabled") ||
+                           websocketEqualsIgnoreCase(action, "disable") ||
+                           websocketEqualsIgnoreCase(action, "disabled");
+  const bool timerAction = websocketEqualsIgnoreCase(action, "start") ||
+                           websocketEqualsIgnoreCase(action, "stop") ||
+                           websocketEqualsIgnoreCase(action, "zero") ||
+                           websocketEqualsIgnoreCase(action, "reset");
+  const bool sleepAction = onOff || websocketEqualsIgnoreCase(action, "wake");
+  if (websocketEqualsIgnoreCase(command, "tare") ||
+      (websocketEqualsIgnoreCase(command, "events") && eventAction) ||
+      (websocketEqualsIgnoreCase(command, "timer") && timerAction) ||
+      (websocketEqualsIgnoreCase(command, "display") && onOff) ||
+      (websocketEqualsIgnoreCase(command, "low_power") && onOff) ||
+      ((websocketEqualsIgnoreCase(command, "sleep") ||
+        websocketEqualsIgnoreCase(command, "soft_sleep")) && sleepAction) ||
+      (websocketEqualsIgnoreCase(command, "power") &&
+       websocketEqualsIgnoreCase(action, "off"))) {
     recordEnergyActivity();
   }
 #endif
 
-  if (command == "status" || command == "battery" || command == "info") {
+  if (websocketEqualsIgnoreCase(command, "status") ||
+      websocketEqualsIgnoreCase(command, "battery") ||
+      websocketEqualsIgnoreCase(command, "info")) {
     sendWebsocketStatus(client, "ok");
     return true;
   }
 
-  if (command == "events") {
-    if (action == "on" || action == "enable" || action == "enabled") {
+  if (websocketEqualsIgnoreCase(command, "events")) {
+    if (websocketEqualsIgnoreCase(action, "on") ||
+        websocketEqualsIgnoreCase(action, "enable") ||
+        websocketEqualsIgnoreCase(action, "enabled")) {
       b_websocketEventsEnabled = true;
       sendWebsocketStatus(client, "ok");
       return true;
     }
-    if (action == "off" || action == "disable" || action == "disabled") {
+    if (websocketEqualsIgnoreCase(action, "off") ||
+        websocketEqualsIgnoreCase(action, "disable") ||
+        websocketEqualsIgnoreCase(action, "disabled")) {
       b_websocketEventsEnabled = false;
       sendWebsocketStatus(client, "ok");
       return true;
@@ -510,26 +577,27 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
     return true;
   }
 
-  if (command == "tare") {
+  if (websocketEqualsIgnoreCase(command, "tare")) {
     requestRemoteTare();
     sendWebsocketStatus(client, "ok");
     return true;
   }
 
-  if (command == "timer") {
-    if (action == "start") {
+  if (websocketEqualsIgnoreCase(command, "timer")) {
+    if (websocketEqualsIgnoreCase(action, "start")) {
       Serial.println("Websocket timer start detected.");
       wsReplacePending(WSP_TIMER_START, WSP_TIMER_STOP | WSP_TIMER_ZERO);
       sendWebsocketStatus(client, "ok");
       return true;
     }
-    if (action == "stop") {
+    if (websocketEqualsIgnoreCase(action, "stop")) {
       Serial.println("Websocket timer stop detected.");
       wsReplacePending(WSP_TIMER_STOP, WSP_TIMER_START | WSP_TIMER_ZERO);
       sendWebsocketStatus(client, "ok");
       return true;
     }
-    if (action == "zero" || action == "reset") {
+    if (websocketEqualsIgnoreCase(action, "zero") ||
+        websocketEqualsIgnoreCase(action, "reset")) {
       Serial.println("Websocket timer zero detected.");
       wsReplacePending(WSP_TIMER_ZERO, WSP_TIMER_START | WSP_TIMER_STOP);
       sendWebsocketStatus(client, "ok");
@@ -539,8 +607,8 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
     return true;
   }
 
-  if (command == "display") {
-    if (action == "on") {
+  if (websocketEqualsIgnoreCase(command, "display")) {
+    if (websocketEqualsIgnoreCase(action, "on")) {
       Serial.println("Websocket display on detected.");
 #if HDS_ENABLE_ENERGY_MENU
       requestEnergyDisplay(true);
@@ -551,7 +619,7 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
       sendWebsocketStatus(client, "ok");
       return true;
     }
-    if (action == "off") {
+    if (websocketEqualsIgnoreCase(action, "off")) {
       Serial.println("Websocket display off detected.");
 #if HDS_ENABLE_ENERGY_MENU
       requestEnergyDisplay(false);
@@ -566,8 +634,8 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
     return true;
   }
 
-  if (command == "low_power") {
-    if (action == "on") {
+  if (websocketEqualsIgnoreCase(command, "low_power")) {
+    if (websocketEqualsIgnoreCase(action, "on")) {
       Serial.println("Websocket low power mode on detected.");
 #if HDS_ENABLE_ENERGY_MENU
       requestEnergyLowPower(true);
@@ -578,7 +646,7 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
       sendWebsocketStatus(client, "ok");
       return true;
     }
-    if (action == "off") {
+    if (websocketEqualsIgnoreCase(action, "off")) {
       Serial.println("Websocket low power mode off detected.");
 #if HDS_ENABLE_ENERGY_MENU
       requestEnergyLowPower(false);
@@ -593,14 +661,16 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
     return true;
   }
 
-  if (command == "sleep" || command == "soft_sleep") {
-    if (action == "on") {
+  if (websocketEqualsIgnoreCase(command, "sleep") ||
+      websocketEqualsIgnoreCase(command, "soft_sleep")) {
+    if (websocketEqualsIgnoreCase(action, "on")) {
       Serial.println("Websocket soft sleep on detected.");
       wsReplacePending(WSP_SLEEP_ON, WSP_SLEEP_OFF);
       sendWebsocketStatus(client, "ok");
       return true;
     }
-    if (action == "off" || action == "wake") {
+    if (websocketEqualsIgnoreCase(action, "off") ||
+        websocketEqualsIgnoreCase(action, "wake")) {
       Serial.println("Websocket soft sleep off detected.");
 #if HDS_ENABLE_ENERGY_MENU
       wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);
@@ -621,7 +691,8 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
     return true;
   }
 
-  if (command == "power" && action == "off") {
+  if (websocketEqualsIgnoreCase(command, "power") &&
+      websocketEqualsIgnoreCase(action, "off")) {
     Serial.println("Websocket power off detected.");
     sendWebsocketPowerOff(0);
     wsQueuePending(WSP_POWER_OFF);
@@ -632,43 +703,44 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
   return false;
 }
 
-bool handleWebsocketTextCommand(AsyncWebSocketClient *client, String msg) {
-  msg.trim();
-  String lowerMsg = msg;
-  lowerMsg.toLowerCase();
+bool handleWebsocketTextCommand(AsyncWebSocketClient *client, std::string_view msg) {
+  msg = websocketTrimView(msg);
 
-  if (lowerMsg == "tare") {
+  if (websocketEqualsIgnoreCase(msg, "tare")) {
     requestRemoteTare();
     return true;
   }
 
-  if (handleWebsocketControlCommand(client, lowerMsg)) {
+  if (handleWebsocketControlCommand(client, msg)) {
     return true;
   }
 
-  int spaceIndex = lowerMsg.indexOf(' ');
-  if (spaceIndex > 0 &&
-      handleWebsocketControlCommand(client,
-                                    lowerMsg.substring(0, spaceIndex),
-                                    lowerMsg.substring(spaceIndex + 1))) {
+  const char *space = static_cast<const char *>(memchr(msg.data(), ' ', msg.size()));
+  if (space != nullptr && space != msg.data() &&
+      handleWebsocketControlCommand(
+          client,
+          msg.substr(0, static_cast<size_t>(space - msg.data())),
+          msg.substr(static_cast<size_t>(space - msg.data()) + 1))) {
     return true;
   }
 
-  if (lowerMsg == "rate" || lowerMsg == "get_rate") {
+  if (websocketEqualsIgnoreCase(msg, "rate") ||
+      websocketEqualsIgnoreCase(msg, "get_rate")) {
     sendWebsocketRateInfo(client, "ok");
     return true;
   }
 
-  if (lowerMsg.startsWith("rate ")) {
-    unsigned long intervalMs = websocketIntervalForLabel(msg.substring(5));
+  if (websocketStartsWithIgnoreCase(msg, "rate ")) {
+    std::string_view value = msg.substr(5);
+    unsigned long intervalMs = websocketIntervalForLabel(value);
     if (intervalMs > 0) {
       return setWebsocketRateFromInterval(client, intervalMs);
     }
-    return setWebsocketRateFromHz(client, msg.substring(5).toFloat());
+    return setWebsocketRateFromHz(client, websocketFloatValue(value));
   }
 
-  if (lowerMsg.startsWith("interval ")) {
-    return setWebsocketRateFromInterval(client, msg.substring(9).toInt());
+  if (websocketStartsWithIgnoreCase(msg, "interval ")) {
+    return setWebsocketRateFromInterval(client, websocketUnsignedValue(msg.substr(9)));
   }
 
   return false;
@@ -679,33 +751,30 @@ bool handleWebsocketNamedJsonCommand(AsyncWebSocketClient *client, JsonDocument 
     return false;
   }
 
-  String command = doc[key].as<String>();
-  command.trim();
-  command.toLowerCase();
+  std::string_view command = websocketTrimView(doc[key].as<const char *>());
+  const char *action = doc["action"].is<const char *>()
+                           ? doc["action"].as<const char *>()
+                           : "";
 
-  String action = "";
-  if (doc["action"].is<const char *>()) {
-    action = doc["action"].as<String>();
-  }
-
-  if (command == "rate" && doc["value"].is<const char *>()) {
-    return setWebsocketRateFromValue(client, doc["value"].as<String>());
+  if (websocketEqualsIgnoreCase(command, "rate") && doc["value"].is<const char *>()) {
+    return setWebsocketRateFromValue(client, doc["value"].as<const char *>());
   }
 
   return handleWebsocketControlCommand(client, command, action);
 }
 
-bool handleWebsocketRateCommand(AsyncWebSocketClient *client, String msg) {
-  msg.trim();
-  String lowerMsg = msg;
-  lowerMsg.toLowerCase();
-
-  if (!msg.startsWith("{")) {
+bool handleWebsocketRateCommand(AsyncWebSocketClient *client, uint8_t *data, size_t len) {
+  std::string_view msg(reinterpret_cast<const char *>(data), len);
+  msg = websocketTrimView(msg);
+  if (msg.empty()) {
+    return false;
+  }
+  if (msg.front() != '{') {
     return handleWebsocketTextCommand(client, msg);
   }
 
   JsonDocument doc;
-  DeserializationError error = deserializeJson(doc, msg);
+  const DeserializationError error = deserializeJson(doc, data, len);
   if (error) {
     return false;
   }
@@ -719,7 +788,7 @@ bool handleWebsocketRateCommand(AsyncWebSocketClient *client, String msg) {
   }
 
   if (doc["rate"].is<const char *>()) {
-    unsigned long intervalMs = websocketIntervalForLabel(doc["rate"].as<String>());
+    unsigned long intervalMs = websocketIntervalForLabel(doc["rate"].as<const char *>());
     if (intervalMs > 0) {
       return setWebsocketRateFromInterval(client, intervalMs);
     }
@@ -733,7 +802,7 @@ bool handleWebsocketRateCommand(AsyncWebSocketClient *client, String msg) {
       "events", "tare", "timer", "display", "low_power", "sleep", "soft_sleep", "power"};
   for (const char *key : kControlKeys) {
     if (doc[key].is<const char *>()) {
-      return handleWebsocketControlCommand(client, key, doc[key].as<String>());
+      return handleWebsocketControlCommand(client, key, doc[key].as<const char *>());
     }
     if (doc[key].is<bool>() && strcmp(key, "power") != 0) {
       return handleWebsocketControlCommand(client, key, doc[key].as<bool>() ? "on" : "off");
@@ -788,10 +857,9 @@ void setupWebsocketEvents() {
           sendWebsocketError(client, "frame_too_large", "control frame too large");
           return;
         }
-        String msg((const char *)data, len);
-        Serial.print("Websocket recv: ");
-        Serial.println(msg);
-        if (!handleWebsocketRateCommand(client, msg)) {
+        Serial.printf("Websocket recv: %.*s\n", static_cast<int>(len),
+                      reinterpret_cast<const char *>(data));
+        if (!handleWebsocketRateCommand(client, data, len)) {
           sendWebsocketError(client, "unknown_command",
                              "unrecognized or malformed command");
         }
