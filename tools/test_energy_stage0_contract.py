@@ -5,32 +5,26 @@ from test_grinder_feature_flag_contract import is_guarded_at
 
 
 ROOT = Path(__file__).resolve().parents[1]
-
-
-def read(path):
-    return (ROOT / path).read_text(encoding="utf-8")
-
-
-POLICY = read("include/energy_policy.h")
-RUNTIME = read("include/energy_runtime_policy.h")
-MENU = read("include/energy_menu.h")
-MENU_INTEGRATION = read("include/menu.h")
-STORAGE = read("include/storage.h")
-PARAMETER = read("include/parameter.h")
-FIRMWARE = read("src/hds.ino")
-POWER = read("include/power.h")
-GYRO = read("include/gyro.h")
-WIFI = read("src/wifi_setup.cpp")
-FEATURES = read("include/hds_features.h")
-PLATFORMIO = read("platformio.ini")
-CUSTOM_BUILD = read("tools/configure_custom_build.py")
-NIGHTLY = read(".github/workflows/nightly.yml")
-ENERGY_SOURCES = POLICY + RUNTIME + MENU + STORAGE + PARAMETER + FIRMWARE + POWER + GYRO + WIFI
-ACC_GUARD = "defined(ACC_PWR_CTRL) && defined(V8_1) && !defined(ACC_MPU6050) && !defined(ACC_BMA400)"
+POLICY = (ROOT / "include" / "energy_policy.h").read_text(encoding="utf-8")
+MENU = (ROOT / "include" / "energy_menu.h").read_text(encoding="utf-8")
+STORAGE = (ROOT / "include" / "storage.h").read_text(encoding="utf-8")
+POWER = (ROOT / "include" / "energy_power_management.h").read_text(encoding="utf-8")
+SHUTDOWN = (ROOT / "include" / "power.h").read_text(encoding="utf-8")
+FIRMWARE = (ROOT / "src" / "hds.ino").read_text(encoding="utf-8")
+HDS_FEATURES = (ROOT / "include" / "hds_features.h").read_text(encoding="utf-8")
+PLATFORMIO = (ROOT / "platformio.ini").read_text(encoding="utf-8")
+SDKCONFIG = (ROOT / "sdkconfig.energy-menu.defaults").read_text(encoding="utf-8")
+DOCS = (ROOT / "docs" / "energy-saving-stage-0.md").read_text(encoding="utf-8")
+MENU_INTEGRATION = (ROOT / "include" / "menu.h").read_text(encoding="utf-8")
+PARAMETER = (ROOT / "include" / "parameter.h").read_text(encoding="utf-8")
+BLE = (ROOT / "include" / "ble.h").read_text(encoding="utf-8")
+WEBSOCKET = (ROOT / "include" / "websocket.h").read_text(encoding="utf-8")
+GYRO = (ROOT / "include" / "gyro.h").read_text(encoding="utf-8")
+CUSTOM_BUILD = (ROOT / "tools" / "configure_custom_build.py").read_text(encoding="utf-8")
 
 
 def body(source, signature):
-    start = source.rindex(signature)
+    start = source.index(signature)
     opening = source.index("{", start)
     depth = 0
     for index in range(opening, len(source)):
@@ -40,10 +34,17 @@ def body(source, signature):
             depth -= 1
             if depth == 0:
                 return source[opening + 1:index]
-    raise AssertionError(f"body not closed: {signature}")
+    raise AssertionError(signature)
 
 
-class EnergyContractTests(unittest.TestCase):
+def energy_and_stock_branches(source):
+    start = source.index("#if HDS_ENABLE_ENERGY_MENU")
+    divider = source.index("#else", start)
+    end = source.index("#endif", divider)
+    return source[start:divider], source[divider:end]
+
+
+class EnergyLightSleepContractTests(unittest.TestCase):
     def assert_guarded(self, source, text):
         matches = list(re.finditer(re.escape(text), source))
         self.assertTrue(matches, f"missing guarded contract: {text}")
@@ -52,150 +53,151 @@ class EnergyContractTests(unittest.TestCase):
             f"unguarded energy contract: {text}",
         )
 
-    def test_compile_time_gate_matches_grinder_pattern(self):
-        self.assertIn("#define HDS_FEATURE_ENERGY_MENU 0", FEATURES)
-        self.assertIn("#define HDS_ENABLE_ENERGY_MENU HDS_FEATURE_ENERGY_MENU", FEATURES)
-        normal = PLATFORMIO.split("[env:esp32s3]", 1)[1].split("[env:esp32s3-grinder]", 1)[0]
-        energy_environment = PLATFORMIO.split("[env:esp32s3-energy-menu]", 1)[1].split("[env:esp32s3-custom]", 1)[0]
-        self.assertNotIn("HDS_ENABLE_ENERGY_MENU", normal)
-        self.assertIn("extends = env:esp32s3", energy_environment)
-        self.assertIn("${env:esp32s3.build_flags}", energy_environment)
-        self.assertIn("-DHDS_ENABLE_ENERGY_MENU=1", energy_environment)
-        self.assertIn('"energy-menu": ("HDS_FEATURE_ENERGY_MENU", ())', CUSTOM_BUILD)
-        self.assertIn("python tools/test_energy_stage0_contract.py", NIGHTLY)
-        self.assertNotIn("- esp32s3-energy-menu", NIGHTLY)
-        for source, text in [
-            (MENU_INTEGRATION, '#include "energy_menu.h"'),
-            (MENU_INTEGRATION, "&menuEnergy"),
-            (PARAMETER, "EnergyPolicy energyPolicy"),
-            (STORAGE, "KEY_ENERGY_SCHEMA"),
-            (FIRMWARE, "energyLoadSettings(energyPolicy.settings)"),
-            (FIRMWARE, "serviceEnergyHousekeeping(millis())"),
-            (POWER, "processNewBatterySample()"),
-            (GYRO, "featureEnabled(EnergyFeature::MotionPoll)"),
-            (WIFI, "featureEnabled(EnergyFeature::SerialQuiet)"),
-        ]:
-            self.assert_guarded(source, text)
-
-    def test_menu_rows_and_order(self):
-        labels = re.findall(r'char menuEnergy\w+Label\[\] = "([^"]+)";', MENU)
+    def test_feature_count_and_menu_order(self):
+        self.assertEqual(
+            ["SerialQuiet", "PowerCadence", "OledRedraw", "OledIdle", "OledStatic", "LightSleep"],
+            re.findall(r"^  (\w+),$", POLICY, re.MULTILINE),
+        )
         self.assertEqual(
             [
                 "Serial Quiet o", "Power Cadence o", "OLED Redraw o",
-                "OLED Idle o", "OLED Static o", "Motion Poll o", "ACC Rail Off o",
+                "OLED Idle o", "OLED Static o", "Light Sleep o",
             ],
-            labels,
+            re.findall(r'char menuEnergy\w+Label\[\] = "([^"]+)";', MENU),
         )
-        self.assertTrue(all(label.endswith(" o") for label in labels))
-        entries = body(MENU, "Menu *energyMenu[]")
-        names = re.findall(r"&menuEnergy(\w+)", entries)
-        self.assertEqual(
-            ["Back", "SerialQuiet", "PowerCadence", "OledRedraw", "OledIdle", "OledStatic", "MotionPoll", "AccRailOff"],
-            names,
+        self.assertNotIn("Motion Poll", MENU)
+        self.assertNotIn("ACC Rail Off", MENU)
+        self.assertIn("static_cast<size_t>(EnergyFeature::Count)", MENU)
+
+    def test_storage_migration_preserves_retained_features(self):
+        self.assertIn("ENERGY_SCHEMA_VERSION = 5", STORAGE)
+        self.assertIn('"e_light_sleep"', STORAGE)
+        self.assertIn("KEY_ENERGY_MOTION_POLL", STORAGE)
+        self.assertIn("KEY_ENERGY_ACC_RAIL_OFF", STORAGE)
+        migration = body(STORAGE, "inline bool energyLoadSettings")
+        self.assertIn("for (uint8_t index = 0; index < 5; ++index)", migration)
+        self.assertIn("storagePutBool(ENERGY_FEATURE_KEYS[5], false)", migration)
+        self.assertIn("storageRemoveIfPresent(KEY_ENERGY_MOTION_POLL)", migration)
+        self.assertIn("storageRemoveIfPresent(KEY_ENERGY_ACC_RAIL_OFF)", migration)
+        self.assertIn("getType(key) == PT_U8", STORAGE)
+
+    def test_runtime_transition_is_centralized(self):
+        transition = body(FIRMWARE, "void applyEnergyFeatureTransition(EnergyFeature feature, bool wasEnabled, bool isEnabled) {")
+        self.assertIn("feature == EnergyFeature::LightSleep", transition)
+        self.assertIn("applyEnergyLightSleepSetting(isEnabled)", transition)
+        self.assertIn("initEnergyPowerManagement()", FIRMWARE)
+        self.assertIn("serviceEnergyPowerManagement()", FIRMWARE)
+        self.assertIn("setEnergyPerformanceCritical(b_ota || b_pullOtaRunning)", FIRMWARE)
+
+    def test_pm_lock_policy(self):
+        self.assertIn("ESP_PM_CPU_FREQ_MAX", POWER)
+        self.assertIn("ESP_PM_NO_LIGHT_SLEEP", POWER)
+        self.assertIn("config.max_freq_mhz = 240", POWER)
+        self.assertIn("config.min_freq_mhz = 80", POWER)
+        self.assertIn("config.light_sleep_enable = true", POWER)
+        self.assertEqual(POWER.count("esp_pm_lock_create("), 4)
+        self.assertEqual(POWER.count("esp_pm_lock_delete("), 1)
+        deep_sleep = body(SHUTDOWN, "void esp32_sleep()")
+        self.assertLess(
+            deep_sleep.index("applyEnergyLightSleepSetting(false)"),
+            deep_sleep.index("esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER)"),
+        )
+        self.assertLess(
+            deep_sleep.index("esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER)"),
+            deep_sleep.index("esp_sleep_enable_ext1_wakeup_io"),
         )
 
-    def test_toggle_updates_only_selected_row(self):
-        update = body(MENU, "inline void updateEnergyMenuRow")
-        self.assertIn("energyFeatureRows[index]", update)
-        self.assertIn("? 'x' : 'o'", update)
-        toggle = body(MENU, "inline void toggleEnergyFeature")
-        self.assertEqual(1, toggle.count("updateEnergyMenuRow(feature)"))
-        self.assertIn("energyStoreFeature(feature, enabled)", toggle)
-        self.assertIn("applyEnergyFeatureTransition(feature, wasEnabled, enabled)", toggle)
-        action = body(MENU, "inline void showEnergyAction")
-        self.assertIn('enabled ? "ON" : "OFF"', action)
-
-    def test_persisted_rows_are_refreshed_at_boot(self):
-        setup = body(FIRMWARE, "void setup()")
-        self.assertLess(setup.index("energyLoadSettings(energyPolicy.settings)"),
-                        setup.index("refreshEnergyMenuRows()"))
-        self.assertIn("ENERGY_SCHEMA_VERSION = 4", STORAGE)
-        self.assertIn('"e_acc_rail"', STORAGE)
-        self.assertIn("storageLoadValidatedBool", body(STORAGE, "inline bool energyLoadSettings"))
-
-    def test_status_and_statistics_are_removed(self):
-        for removed in [
-            "Energy Status", "Reset Stats", "EnergyStats", "EnergyState",
-            "EnergyActivity", "showEnergyStatus",
-            "resetEnergyStats", "printEnergyStatus", "drawEnergyStatusPage",
-        ]:
-            self.assertNotRegex(ENERGY_SOURCES, rf"\b{re.escape(removed)}\b")
-        self.assertNotIn("energyPolicy.stats", ENERGY_SOURCES)
-
-    def test_acc_rail_is_guarded_and_applied_immediately(self):
-        for source in [POLICY, MENU, STORAGE, FIRMWARE]:
-            self.assertIn(ACC_GUARD, source)
-        transition = body(FIRMWARE, "void applyEnergyFeatureTransition")
-        self.assertIn("feature == EnergyFeature::AccRailOff", transition)
-        self.assertIn("applyEnergyAccRailState()", transition)
-        apply_state = body(FIRMWARE, "void applyEnergyAccRailState")
-        self.assertIn("EnergyFeature::AccRailOff", apply_state)
-        self.assertIn("? LOW : HIGH", apply_state)
-
-    def test_acc_rail_is_not_polled_and_deep_sleep_remains_low(self):
+    def test_no_loop_sleep_or_adc_threading_change(self):
         loop = body(FIRMWARE, "void loop()")
-        self.assertNotIn("EnergyFeature::AccRailOff", loop)
-        self.assertNotIn("applyEnergyAccRailState", loop)
-        self.assertIn("digitalWrite(ACC_PWR_CTRL, LOW);", POWER)
-        self.assertIn("gpio_hold_en((gpio_num_t)ACC_PWR_CTRL);", POWER)
+        self.assertNotIn("vTaskDelay", loop)
+        self.assertNotIn("delay(10)", loop)
+        self.assertNotIn("scale.beginTask", FIRMWARE)
+        self.assertIn("scale.update()", FIRMWARE)
+        self.assertIn("BUTTON_POLL_INTERVAL_MS = 2", FIRMWARE)
+        self.assertIn("hdsIntervalElapsed(buttonNow, lastButtonPoll, BUTTON_POLL_INTERVAL_MS)", loop)
+        self.assertNotIn("websocket.count()", loop)
 
-    def test_accelerometer_builds_exclude_acc_rail_toggle(self):
-        guarded_menu = re.findall(rf"#if {re.escape(ACC_GUARD)}(.*?)#endif", MENU, re.S)
-        self.assertTrue(guarded_menu)
-        self.assertTrue(all("AccRailOff" in section for section in guarded_menu))
+    def test_compile_time_pm_environments_and_custom_build(self):
+        self.assertIn("#define HDS_FEATURE_ENERGY_MENU 0", HDS_FEATURES)
+        self.assertIn("#define HDS_ENABLE_ENERGY_MENU HDS_FEATURE_ENERGY_MENU", HDS_FEATURES)
+        normal = PLATFORMIO.split("[env:esp32s3]", 1)[1].split("[env:esp32s3-grinder]", 1)[0]
+        pm_capable = PLATFORMIO.split("[env:esp32s3-pm-capable]", 1)[1].split("[env:esp32s3-energy-menu]", 1)[0]
+        energy = PLATFORMIO.split("[env:esp32s3-energy-menu]", 1)[1].split("[env:esp32s3-custom]", 1)[0]
+        custom = PLATFORMIO.split("[env:esp32s3-custom]", 1)[1].split("[env:esp32s3-energy-menu-custom]", 1)[0]
+        energy_custom = PLATFORMIO.split("[env:esp32s3-energy-menu-custom]", 1)[1].split("[env:native]", 1)[0]
+        self.assertNotIn("sdkconfig.energy-menu.defaults", normal)
+        self.assertNotIn("HDS_ENABLE_ENERGY_MENU=1", normal)
+        self.assertIn("extends = env:esp32s3", pm_capable)
+        self.assertIn("custom_sdkconfig = file://sdkconfig.energy-menu.defaults", pm_capable)
+        self.assertIn("extends = env:esp32s3-pm-capable", energy)
+        self.assertIn("-DHDS_ENABLE_ENERGY_MENU=1", energy)
+        self.assertIn("extends = env:esp32s3", custom)
+        self.assertNotIn("sdkconfig.energy-menu.defaults", custom)
+        self.assertIn("extends = env:esp32s3-pm-capable", energy_custom)
+        self.assertIn(
+            '"energy-menu": ("HDS_FEATURE_ENERGY_MENU", ())',
+            CUSTOM_BUILD,
+        )
+        self.assertIn('DEFAULT_FEATURES = set(FEATURES) - HIDDEN_FEATURES - {"energy-menu"}', CUSTOM_BUILD)
+        self.assertIn("CONFIG_BT_CTRL_LPCLK_SEL_MAIN_XTAL=y", SDKCONFIG)
+        self.assertIn("# CONFIG_BT_CTRL_LPCLK_SEL_RTC_SLOW is not set", SDKCONFIG)
+        self.assertIn("CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP=y", SDKCONFIG)
+        self.assertNotIn("CONFIG_BT_CTRL_LPCLK_SEL_RTC_SLOW=y", SDKCONFIG)
 
-    def test_retained_features_keep_their_natural_call_sites(self):
-        self.assertIn("featureEnabled(EnergyFeature::SerialQuiet)", POWER + WIFI + FIRMWARE)
-        self.assertIn("featureEnabled(EnergyFeature::PowerCadence)", POWER)
-        self.assertIn("featureEnabled(EnergyFeature::MotionPoll)", GYRO)
-        update_oled = body(FIRMWARE, "void updateOled()")
-        self.assertIn("featureEnabled(EnergyFeature::OledRedraw)", update_oled)
-        self.assertIn("featureEnabled(EnergyFeature::OledStatic)", update_oled)
-        self.assertIn("energyRuntime.explicitDisplayOff", FIRMWARE)
+    def test_energy_runtime_is_compile_gated(self):
+        for source, text in [
+            (MENU_INTEGRATION, '#include "energy_menu.h"'),
+            (MENU_INTEGRATION, "&menuEnergy"),
+            (PARAMETER, '#include "energy_power_management.h"'),
+            (PARAMETER, "EnergyPolicy energyPolicy"),
+            (PARAMETER, "EnergyPowerManagement energyPowerManagement"),
+            (FIRMWARE, "serviceEnergyPowerManagement();"),
+            (FIRMWARE, "energyPowerManagement.service("),
+            (FIRMWARE, "energyPolicy.featureEnabled("),
+            (FIRMWARE, "applyEnergyLightSleepSetting("),
+            (SHUTDOWN, "energyPolicy.featureEnabled("),
+            (SHUTDOWN, "esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);"),
+            (BLE, "remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);"),
+            (WEBSOCKET, "wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);"),
+            (GYRO, "double readGyroZPhysical()"),
+            (SHUTDOWN, "bool processLegacyLowBattery()"),
+        ]:
+            self.assert_guarded(source, text)
 
-    def test_soft_sleep_suspends_oled_idle_and_wake_resynchronizes(self):
-        idle = body(FIRMWARE, "void applyEnergyDisplayIdle")
-        self.assertIn("shouldApplyDisplayIdle(b_softSleep)", idle)
+    def test_stock_transport_gyro_and_power_paths_are_preserved(self):
+        ble_energy, ble_stock = energy_and_stock_branches(body(BLE, "void softSleepOff()"))
+        self.assertNotIn("b_softSleep = false", ble_energy)
+        self.assertIn("const bool wasSoftSleep = b_softSleep", ble_stock)
+        self.assertIn("remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF)", ble_stock)
 
-        housekeeping = body(FIRMWARE, "void serviceEnergyHousekeeping")
-        self.assertLess(housekeeping.index("enabledMask == 0"),
-                        housekeeping.index("b_softSleep"))
-        self.assertLess(housekeeping.index("b_softSleep"),
-                        housekeeping.index("applyEnergyDisplayIdle(now)"))
+        ws_start = WEBSOCKET.index('Serial.println("Websocket soft sleep off detected.");')
+        ws_end = WEBSOCKET.index('sendWebsocketStatus(client, "ok");', ws_start)
+        ws_energy, ws_stock = energy_and_stock_branches(WEBSOCKET[ws_start:ws_end])
+        self.assertNotIn("b_softSleep = false", ws_energy)
+        self.assertIn("const bool wasSoftSleep = b_softSleep", ws_stock)
+        self.assertIn("wsReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF)", ws_stock)
 
-        wake = body(FIRMWARE, "bool wakeScaleFromSoftSleep")
-        wake_steps = [
-            "b_softSleep = false;",
-            "clearPendingEnergyActivity();",
-            "energyPolicy.recordActivity(millis());",
-            "applyEnergyDisplayCommand(!energyRuntime.explicitDisplayOff);",
-        ]
-        self.assertEqual(wake_steps, sorted(wake_steps, key=wake.index))
+        self.assertEqual(2, GYRO.count("#else\ndouble gyro_z()"))
 
-    def test_disabled_power_cadence_keeps_legacy_low_battery_path(self):
-        legacy = body(POWER, "bool processLegacyLowBattery")
+        legacy = body(SHUTDOWN, "bool processLegacyLowBattery()")
         self.assertIn("if (!b_softSleep)", legacy)
         self.assertLess(legacy.index("updateBattery(BATTERY_PIN)"),
                         legacy.index("i_lowBatteryCount++"))
-        self.assertIn("lowBatteryConfirmed(i_lowBatteryCount, false)", legacy)
-        self.assertIn("shut_down_low_battery(f_batteryVoltage)", legacy)
-
-        cadence = body(POWER, "bool processNewBatterySample")
-        self.assertIn("lowBatteryConfirmed(i_lowBatteryCount, true)", cadence)
-
         for signature in ["void power_off(int min)", "void power_off(double sec)"]:
-            power_off = body(POWER, signature)
-            self.assertIn("featureEnabled(EnergyFeature::PowerCadence)", power_off)
-            self.assertIn("cadenceEnabled && processNewBatterySample()", power_off)
-            self.assertIn("!cadenceEnabled && !b_is_charging && processLegacyLowBattery()", power_off)
-            stock = power_off.split("#else", 1)[1]
+            _, stock = energy_and_stock_branches(body(SHUTDOWN, signature))
             self.assertNotIn("processLegacyLowBattery()", stock)
             self.assertIn("if (!b_softSleep)", stock)
             self.assertLess(stock.index("updateBattery(BATTERY_PIN)"),
                             stock.index("i_lowBatteryCount++"))
 
-    def test_no_master_or_extra_energy_menu_was_added(self):
-        self.assertNotRegex(MENU, r"Experiments|Energy Fast|NVS|Storage|Persistence")
+        exit_menu = body(MENU_INTEGRATION, "void exitMenu() {")
+        self.assertEqual(1, exit_menu.count("invalidateMenuFrame();"))
+
+    def test_documented_scope(self):
+        self.assertIn("defaults to off", DOCS)
+        self.assertIn("does not add a normal-loop delay", DOCS)
+        self.assertIn("event-driven ADC and button wake design is a follow-up", DOCS)
+        self.assertNotIn("80-SPS", DOCS)
 
 
 if __name__ == "__main__":

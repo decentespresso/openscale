@@ -199,16 +199,11 @@ struct BleDecentCommandSink {
   }
 
   void softSleepOff() {
+#if HDS_ENABLE_ENERGY_MENU
+    remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);
+#else
     const bool wasSoftSleep = b_softSleep;
     b_softSleep = false;
-#if HDS_ENABLE_ENERGY_MENU
-    b_u8g2Sleep = energyRuntime.explicitDisplayOff;
-    if (wasSoftSleep) {
-      remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);
-    } else if (!energyRuntime.explicitDisplayOff) {
-      remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
-    }
-#else
     b_u8g2Sleep = false;
     if (wasSoftSleep) {
       remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);

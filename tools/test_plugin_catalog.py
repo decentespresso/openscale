@@ -176,7 +176,7 @@ def main():
     assert serviceCatalog == customBuild.buildServiceCatalog()
     assert {
         feature["id"] for feature in generatedCatalog["features"] if feature.get("default")
-    } == set(customBuild.FEATURES) - customBuild.HIDDEN_FEATURES
+    } == customBuild.DEFAULT_FEATURES
     assert [
         plugin["id"] for plugin in generatedCatalog["plugins"] if plugin.get("default")
     ] == ["default-web-apps"]
@@ -234,6 +234,9 @@ def main():
         assert wifi["features"] == ["wifi"]
         noFeatures = customBuild.resolveConfiguration(writeConfig(root, [], []))
         assert noFeatures["features"] == []
+        assert customBuild.platformioEnvironment(noFeatures) == "esp32s3-custom"
+        energyMenu = customBuild.resolveConfiguration(writeConfig(root, ["energy-menu"], []))
+        assert customBuild.platformioEnvironment(energyMenu) == "esp32s3-energy-menu-custom"
         pullOnly = customBuild.resolveConfiguration(writeConfig(root, ["pull-ota"], []))
         assert {"pull-ota", "wifi"}.issubset(pullOnly["features"])
         assert "littlefs" not in pullOnly["features"]

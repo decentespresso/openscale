@@ -78,7 +78,7 @@ FEATURE_PRESENTATION = {
     ),
 }
 HIDDEN_FEATURES = {"grinder"}
-DEFAULT_FEATURES = set(FEATURES) - HIDDEN_FEATURES
+DEFAULT_FEATURES = set(FEATURES) - HIDDEN_FEATURES - {"energy-menu"}
 DEFAULT_PLUGINS = {"default-web-apps"}
 CONFIG_KEYS = {"firmware_ref", "features", "plugins"}
 PLUGIN_KEYS = {
@@ -90,6 +90,7 @@ RECOMMENDATION_KEYS = {"features", "plugins"}
 BUDGET_KEYS = {"firmware_flash_bytes", "static_ram_bytes", "littlefs_bytes"}
 BUILD_CONTRACT_SCHEMA = 2
 PLATFORMIO_ENVIRONMENT = "esp32s3-custom"
+ENERGY_MENU_PLATFORMIO_ENVIRONMENT = "esp32s3-energy-menu-custom"
 PUBLIC_BINARIES = ("firmware.bin", "bootloader.bin", "partitions.bin", "littlefs.bin")
 FIRMWARE_ARCHIVE = "HDS_FW_custom.zip"
 
@@ -447,6 +448,12 @@ def serializableConfiguration(configuration):
     }
 
 
+def platformioEnvironment(configuration):
+    if "energy-menu" in configuration["features"]:
+        return ENERGY_MENU_PLATFORMIO_ENVIRONMENT
+    return PLATFORMIO_ENVIRONMENT
+
+
 def configure(configPath, workspaceDir):
     configuration = resolveConfiguration(configPath)
     writeHeader(configuration, workspaceDir / "generated" / "include")
@@ -612,7 +619,7 @@ def combinationInput(configuration, commitSha, sourceRoot=ROOT, builderCommit=No
         "builder_source": builderCommit or commitSha,
         "features": sorted(configuration["features"]),
         "plugins": packages,
-        "platformio_environment": PLATFORMIO_ENVIRONMENT,
+        "platformio_environment": platformioEnvironment(configuration),
         "partition_schema": firmware["partition_schema"],
     }
 
@@ -641,7 +648,7 @@ def writeBuildManifest(
         "base_source": commitSha,
         "builder_source": identity["builder_source"],
         "firmware_version": identity["firmware_version"],
-        "platformio_environment": PLATFORMIO_ENVIRONMENT,
+        "platformio_environment": platformioEnvironment(configuration),
         "partition_schema": partitionMetadata(sourceRoot),
         "packages": packageMetadata(configuration),
         "combination_input": identity,

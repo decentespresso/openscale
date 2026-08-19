@@ -79,6 +79,7 @@ jobs:
       - name: Build PlatformIO Project
         run: |
           pio run -e esp32s3
+          pio run -e esp32s3-energy-menu
           pio run -e esp32s3 -t buildfs
           pio --version > .pio.nosync/build/esp32s3/dependencies.txt
           pio pkg list -e esp32s3 >> .pio.nosync/build/esp32s3/dependencies.txt

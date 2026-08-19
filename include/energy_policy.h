@@ -9,10 +9,7 @@ enum class EnergyFeature : uint8_t {
   OledRedraw,
   OledIdle,
   OledStatic,
-  MotionPoll,
-#if defined(ACC_PWR_CTRL) && defined(V8_1) && !defined(ACC_MPU6050) && !defined(ACC_BMA400)
-  AccRailOff,
-#endif
+  LightSleep,
   Count
 };
 

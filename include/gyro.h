@@ -113,18 +113,11 @@ double readGyroZPhysical() {
 }
 
 double gyro_z(bool fresh = false) {
+  (void)fresh;
   if (!b_gyroEnabled) {
     return 0.0;
   }
-  const bool motionPollEnabled = energyPolicy.featureEnabled(EnergyFeature::MotionPoll);
-  if (!motionPollEnabled) {
-    return readGyroZPhysical();
-  }
-  if (energyRuntime.motionSamples.shouldRead(
-        true, fresh, true, millis())) {
-    energyRuntime.cachedMotionZ = readGyroZPhysical();
-  }
-  return energyRuntime.cachedMotionZ;
+  return readGyroZPhysical();
 }
 #else
 double gyro_z() {
@@ -191,18 +184,11 @@ double readGyroZPhysical() {
 }
 
 double gyro_z(bool fresh = false) {
+  (void)fresh;
   if (!b_gyroEnabled) {
     return 0.0;
   }
-  const bool motionPollEnabled = energyPolicy.featureEnabled(EnergyFeature::MotionPoll);
-  if (!motionPollEnabled) {
-    return readGyroZPhysical();
-  }
-  if (energyRuntime.motionSamples.shouldRead(
-        true, fresh, true, millis())) {
-    energyRuntime.cachedMotionZ = readGyroZPhysical();
-  }
-  return energyRuntime.cachedMotionZ;
+  return readGyroZPhysical();
 }
 #else
 double gyro_z() {
