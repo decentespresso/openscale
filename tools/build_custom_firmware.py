@@ -126,7 +126,11 @@ def replaceRequired(value, source, replacement, name):
     return value.replace(source, replacement)
 
 
-def prepareBuildCheckout(checkoutRoot, builderRoot=None):
+def prepareBuildCheckout(
+    checkoutRoot,
+    builderRoot=None,
+    platformioEnvironment=customBuild.PLATFORMIO_ENVIRONMENT,
+):
     builderRoot = (builderRoot or ROOT).resolve()
     workspace = checkoutRoot / ".pio.nosync"
     workspace.mkdir(parents=True, exist_ok=True)
@@ -162,7 +166,7 @@ def prepareBuildCheckout(checkoutRoot, builderRoot=None):
     config.optionxform = str
     if not config.read(configPath, encoding="utf-8"):
         raise ValueError("selected firmware has no platformio.ini")
-    section = "env:esp32s3-custom"
+    section = f"env:{platformioEnvironment}"
     scripts = config.get(section, "extra_scripts", fallback="")
     scripts = replaceRequired(
         scripts,
@@ -201,10 +205,10 @@ def createFirmwareArchive(buildDir):
             archive.writestr(info, (buildDir / name).read_bytes())
 
 
-def writeDependencyInventory(buildDir, checkoutRoot, environment):
+def writeDependencyInventory(buildDir, checkoutRoot, environment, platformioEnvironment):
     version = runCommand(["pio", "--version"], checkoutRoot, capture=True, environment=environment).stdout
     packages = runCommand(
-        ["pio", "pkg", "list", "-e", "esp32s3-custom"],
+        ["pio", "pkg", "list", "-e", platformioEnvironment],
         checkoutRoot,
         capture=True,
         environment=environment,
@@ -371,7 +375,8 @@ def buildCustomFirmware(
                 "output": str(outputDir),
             }
         applyPatches(configuration, checkoutRoot)
-        prepareBuildCheckout(checkoutRoot)
+        platformioEnvironment = customBuild.platformioEnvironment(configuration)
+        prepareBuildCheckout(checkoutRoot, platformioEnvironment=platformioEnvironment)
         sourceEpoch = sourceDateEpoch(checkoutRoot)
         environment = {
             **os.environ,
@@ -380,14 +385,14 @@ def buildCustomFirmware(
             "HDS_FIRMWARE_VERSION": identity["firmware_version"],
             "SOURCE_DATE_EPOCH": sourceEpoch,
         }
-        runCommand(["pio", "run", "-e", "esp32s3-custom"], checkoutRoot, environment=environment)
+        runCommand(["pio", "run", "-e", platformioEnvironment], checkoutRoot, environment=environment)
         runCommand(
-            ["pio", "run", "-e", "esp32s3-custom", "-t", "buildfs"],
+            ["pio", "run", "-e", platformioEnvironment, "-t", "buildfs"],
             checkoutRoot,
             environment=environment,
         )
-        buildDir = checkoutRoot / ".pio.nosync" / "build" / "esp32s3-custom"
-        writeDependencyInventory(buildDir, checkoutRoot, environment)
+        buildDir = checkoutRoot / ".pio.nosync" / "build" / platformioEnvironment
+        writeDependencyInventory(buildDir, checkoutRoot, environment, platformioEnvironment)
         createFirmwareArchive(buildDir)
         customBuild.writeBuildManifest(
             configuration,

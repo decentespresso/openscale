@@ -36,7 +36,8 @@
     "grinder": [
       "wifi",
       "mdns"
-    ]
+    ],
+    "energy-menu": []
   },
   "plugins": {
     "default-web-apps": {
@@ -193,7 +194,7 @@
       },
       "patches": {
         "main": {
-          "sha256": "315403d91c5082628f3afc85523178a16d6f23897b2a864a64b12301ed6343c0"
+          "sha256": "c411ab74c65e73334c7defa6971da6e600566537c96575a70675a5f8e72a63ad"
         }
       },
       "assets": []

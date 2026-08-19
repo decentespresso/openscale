@@ -279,6 +279,9 @@ async function resolveSelection(env, selection) {
   }
   const plugins = resolvePlugins(catalog, requested.firmware_ref, requested.plugins);
   const features = resolveFeatures(catalog, requested.features, plugins.map(plugin => plugin.id));
+  const platformioEnvironment = features.includes("energy-menu")
+    ? "esp32s3-energy-menu-custom"
+    : catalog.platformio_environment;
   const identity = {
     schema: catalog.schema,
     firmware_ref: requested.firmware_ref,
@@ -287,7 +290,7 @@ async function resolveSelection(env, selection) {
     builder_source: builderCommit,
     features,
     plugins,
-    platformio_environment: catalog.platformio_environment,
+    platformio_environment: platformioEnvironment,
     partition_schema: {
       path: firmware.partition_schema.path,
       sha256: firmware.partition_schema.sha256,

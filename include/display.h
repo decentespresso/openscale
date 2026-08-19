@@ -110,6 +110,9 @@ static inline void formatFloatSafe(char* buffer, size_t len, float value, int pr
 
 
 void refreshOLED(char* input) {
+#if HDS_ENABLE_ENERGY_MENU
+  invalidateEnergyOledFrame();
+#endif
   u8g2.firstPage();
   u8g2.setFont(FONT_M);
   do {
@@ -120,6 +123,9 @@ void refreshOLED(char* input) {
 }
 
 void refreshOLED(char* input, const uint8_t* font) {
+#if HDS_ENABLE_ENERGY_MENU
+  invalidateEnergyOledFrame();
+#endif
   u8g2.firstPage();
   u8g2.setFont(font);
   do {
@@ -130,6 +136,9 @@ void refreshOLED(char* input, const uint8_t* font) {
 }
 
 void refreshOLED(char* input1, char* input2) {
+#if HDS_ENABLE_ENERGY_MENU
+  invalidateEnergyOledFrame();
+#endif
   u8g2.firstPage();
   u8g2.setFont(FONT_M);
   do {
@@ -141,6 +150,9 @@ void refreshOLED(char* input1, char* input2) {
 }
 
 void refreshOLED(char* input1, char* input2, const uint8_t* font) {
+#if HDS_ENABLE_ENERGY_MENU
+  invalidateEnergyOledFrame();
+#endif
   u8g2.firstPage();
   u8g2.setFont(font);
   do {
@@ -152,6 +164,9 @@ void refreshOLED(char* input1, char* input2, const uint8_t* font) {
 }
 
 void refreshOLED(int input0, char* input1, char* input2) {
+#if HDS_ENABLE_ENERGY_MENU
+  invalidateEnergyOledFrame();
+#endif
   u8g2.firstPage();
   u8g2.setFont(FONT_M);
   do {
@@ -164,6 +179,9 @@ void refreshOLED(int input0, char* input1, char* input2) {
 }
 
 void refreshOLED(char* input1, char* input2, char* input3) {
+#if HDS_ENABLE_ENERGY_MENU
+  invalidateEnergyOledFrame();
+#endif
   u8g2.firstPage();
   u8g2.setFont(FONT_S);
   do {
@@ -176,6 +194,9 @@ void refreshOLED(char* input1, char* input2, char* input3) {
 }
 
 void refreshOLED(char* input1, char* input2, char* input3, const uint8_t* font) {
+#if HDS_ENABLE_ENERGY_MENU
+  invalidateEnergyOledFrame();
+#endif
   u8g2.firstPage();
   u8g2.setFont(font);
   do {

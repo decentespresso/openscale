@@ -28,6 +28,7 @@
 #include <mbedtls/pk.h>
 #include <string.h>
 #include <time.h>
+#include <utility>
 
 void wifi_init();
 void hdsOtaRollbackMarkValid();
@@ -148,6 +149,11 @@ struct PullOtaReleaseList {
   uint8_t count = 0;
 };
 
+struct PullOtaReleaseSelection {
+  uint8_t indices[HDS_OTA_MAX_RELEASE_CHOICES];
+  uint8_t count = 0;
+};
+
 struct PullOtaPendingLittleFs {
   bool present = false;
   bool restore = false;
@@ -175,6 +181,9 @@ void pullOtaDraw(const char *line1, const char *line2 = "", const char *line3 = 
   else
     u8g2.setDisplayRotation(U8G2_R2);
   u8g2.setFont(FONT_S);
+#if HDS_ENABLE_ENERGY_MENU
+  invalidateEnergyOledFrame();
+#endif
   u8g2.firstPage();
   do {
     if (line1 && line1[0] != '\0') u8g2.drawUTF8(AC(line1), 14, line1);
@@ -420,20 +429,24 @@ bool pullOtaAddParsedRelease(JsonObject releaseObject, PullOtaReleaseList &list)
 
 void pullOtaBuildSelectableReleases(
     const PullOtaReleaseList &catalog,
-    PullOtaReleaseList &selectable) {
+    PullOtaReleaseSelection &selection) {
   String currentVersion = pullOtaCurrentVersion();
   for (uint8_t i = 0; i < catalog.count; i++) {
     int currentCompare = pullOtaCompareVersions(catalog.releases[i].version, currentVersion);
-    if (currentCompare != 0) {
-      pullOtaAddRelease(selectable, catalog.releases[i]);
+    if (currentCompare != 0 && selection.count < HDS_OTA_MAX_RELEASE_CHOICES) {
+      selection.indices[selection.count++] = i;
     }
   }
 }
 
-bool pullOtaHasNewerRelease(const PullOtaReleaseList &list) {
+bool pullOtaHasNewerRelease(
+    const PullOtaReleaseList &catalog,
+    const PullOtaReleaseSelection &selection) {
   String currentVersion = pullOtaCurrentVersion();
-  for (uint8_t i = 0; i < list.count; i++) {
-    if (pullOtaCompareVersions(list.releases[i].version, currentVersion) > 0) {
+  for (uint8_t i = 0; i < selection.count; i++) {
+    if (pullOtaCompareVersions(
+            catalog.releases[selection.indices[i]].version,
+            currentVersion) > 0) {
       return true;
     }
   }
@@ -1080,14 +1093,23 @@ bool pullOtaWaitForRelease(unsigned long timeoutMs) {
   return false;
 }
 
-void pullOtaDrawReleaseChoice(const PullOtaReleaseList &list, uint8_t index) {
+void pullOtaDrawReleaseChoice(
+    const PullOtaReleaseList &catalog,
+    const PullOtaReleaseSelection &selection,
+    uint8_t index) {
   char page[24];
-  snprintf(page, sizeof(page), "%u/%u O next Sq ok", index + 1, list.count);
-  pullOtaDraw("Install version", list.releases[index].version.c_str(), page);
+  snprintf(page, sizeof(page), "%u/%u O next Sq ok", index + 1, selection.count);
+  pullOtaDraw(
+      "Install version",
+      catalog.releases[selection.indices[index]].version.c_str(),
+      page);
 }
 
-bool pullOtaPickRelease(const PullOtaReleaseList &list, PullOtaManifest &manifest) {
-  if (list.count == 0) {
+bool pullOtaPickRelease(
+    const PullOtaReleaseList &catalog,
+    const PullOtaReleaseSelection &selection,
+    uint8_t *selectedCatalogIndex) {
+  if (selection.count == 0 || selectedCatalogIndex == nullptr) {
     return false;
   }
   pullOtaWaitForRelease(1000);
@@ -1096,7 +1118,7 @@ bool pullOtaPickRelease(const PullOtaReleaseList &list, PullOtaManifest &manifes
   bool squareWasDown = false;
   unsigned long circleDownAt = 0;
   unsigned long startedAt = millis();
-  pullOtaDrawReleaseChoice(list, index);
+  pullOtaDrawReleaseChoice(catalog, selection, index);
   while (millis() - startedAt < HDS_OTA_PICK_TIMEOUT_MS) {
     bool circleDown = digitalRead(BUTTON_CIRCLE) == LOW;
     bool squareDown = digitalRead(BUTTON_SQUARE) == LOW;
@@ -1108,13 +1130,13 @@ bool pullOtaPickRelease(const PullOtaReleaseList &list, PullOtaManifest &manifes
       return pullOtaFail("Update cancelled");
     }
     if (circleWasDown && !circleDown) {
-      index = (index + 1) % list.count;
-      pullOtaDrawReleaseChoice(list, index);
+      index = (index + 1) % selection.count;
+      pullOtaDrawReleaseChoice(catalog, selection, index);
       startedAt = millis();
       circleDownAt = 0;
     }
     if (squareDown && !squareWasDown) {
-      manifest = list.releases[index];
+      *selectedCatalogIndex = selection.indices[index];
       pullOtaWaitForRelease(1000);
       return true;
     }
@@ -1393,43 +1415,42 @@ void pullOtaRunUpdate() {
     pullOtaFail("Clock failed", "TLS blocked");
     return;
   }
-  PullOtaReleaseList releases;
+  PullOtaReleaseList catalog;
+  PullOtaReleaseSelection selection;
   PullOtaManifest rollbackManifest;
   bool rollbackFound = false;
   {
-    PullOtaReleaseList catalog;
-    {
-      String body;
-      if (!pullOtaFetchSignedManifest(body)) {
-        pullOtaFail("Signature failed");
-        return;
-      }
-      if (!pullOtaParseManifest(body, catalog)) {
-        pullOtaFail("Manifest invalid");
-        return;
-      }
-    }
-    pullOtaBuildSelectableReleases(catalog, releases);
-    if (releases.count == 0) {
-      pullOtaDraw("Newest stable", pullOtaCurrentVersion().c_str());
-      delay(2000);
-      b_ota = false;
+    String body;
+    if (!pullOtaFetchSignedManifest(body)) {
+      pullOtaFail("Signature failed");
       return;
     }
-    rollbackFound = pullOtaFindCurrentRelease(catalog, rollbackManifest);
+    if (!pullOtaParseManifest(body, catalog)) {
+      pullOtaFail("Manifest invalid");
+      return;
+    }
   }
+  pullOtaBuildSelectableReleases(catalog, selection);
+  if (selection.count == 0) {
+    pullOtaDraw("Newest stable", pullOtaCurrentVersion().c_str());
+    delay(2000);
+    b_ota = false;
+    return;
+  }
+  rollbackFound = pullOtaFindCurrentRelease(catalog, rollbackManifest);
   if (!rollbackFound && !pullOtaFetchCurrentReleaseManifest(rollbackManifest)) {
     pullOtaFail("Rollback missing");
     return;
   }
-  if (!pullOtaHasNewerRelease(releases)) {
+  if (!pullOtaHasNewerRelease(catalog, selection)) {
     pullOtaDraw("Newest stable", pullOtaCurrentVersion().c_str());
     delay(1500);
   }
-  PullOtaManifest manifest;
-  if (!pullOtaPickRelease(releases, manifest)) {
+  uint8_t selectedCatalogIndex = 0;
+  if (!pullOtaPickRelease(catalog, selection, &selectedCatalogIndex)) {
     return;
   }
+  PullOtaManifest manifest = std::move(catalog.releases[selectedCatalogIndex]);
   if (!pullOtaConfirmInstall(manifest)) {
     return;
   }
