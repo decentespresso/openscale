@@ -27,6 +27,21 @@ constexpr const char *KEY_WIFI_BOOT = "wifi_boot";
 constexpr const char *KEY_AUTO_SLEEP = "auto_sleep";
 constexpr const char *KEY_QUICK_BOOT = "quick_boot";
 constexpr const char *KEY_DRIFT_MAX = "drift_max";
+#if HDS_ENABLE_ENERGY_MENU
+constexpr const char *KEY_ENERGY_SCHEMA = "energy_schema";
+constexpr uint16_t ENERGY_SCHEMA_VERSION = 8;
+constexpr const char *KEY_ENERGY_MOTION_POLL = "e_motion";
+constexpr const char *KEY_ENERGY_ACC_RAIL_OFF = "e_acc_rail";
+constexpr const char *KEY_ENERGY_POWER_CADENCE = "e_power_cad";
+constexpr const char *KEY_ENERGY_OLED_STATIC = "e_oled_static";
+
+constexpr const char *ENERGY_FEATURE_KEYS[] = {
+  "e_serial_quiet", "e_oled_redraw", "e_oled_idle", "e_light_sleep",
+  "e_usb_sleep"
+};
+static_assert(sizeof(ENERGY_FEATURE_KEYS) / sizeof(ENERGY_FEATURE_KEYS[0]) ==
+              static_cast<size_t>(EnergyFeature::Count));
+#endif
 
 constexpr size_t LEGACY_EEPROM_BYTES = 512;
 constexpr size_t LEGACY_CAL1_ADDRESS = 0;
@@ -90,6 +105,50 @@ inline int storageGetInt(const char *key, int defaultValue) {
 inline bool storageGetBool(const char *key, bool defaultValue) {
   return settingsPreferences.getBool(key, defaultValue);
 }
+
+#if HDS_ENABLE_ENERGY_MENU
+inline bool storageLoadValidatedBool(const char *key, bool defaultValue, bool &value) {
+  const uint8_t stored = settingsPreferences.getType(key) == PT_U8
+                           ? settingsPreferences.getUChar(key, 2)
+                           : 2;
+  if (stored <= 1) {
+    value = stored == 1;
+    return true;
+  }
+  value = defaultValue;
+  return storagePutBool(key, defaultValue);
+}
+
+inline bool storageRemoveIfPresent(const char *key) {
+  return !settingsPreferences.isKey(key) || settingsPreferences.remove(key);
+}
+
+inline bool energyLoadSettings(EnergySettings &settings) {
+  const bool schemaCurrent = settingsPreferences.getType(KEY_ENERGY_SCHEMA) == PT_U16 &&
+                             settingsPreferences.getUShort(KEY_ENERGY_SCHEMA, 0) == ENERGY_SCHEMA_VERSION;
+  bool loaded = true;
+  settings.features = 0;
+  for (uint8_t index = 0; index < static_cast<uint8_t>(EnergyFeature::Count); ++index) {
+    const EnergyFeature feature = static_cast<EnergyFeature>(index);
+    bool enabled = false;
+    loaded = storageLoadValidatedBool(ENERGY_FEATURE_KEYS[index], false, enabled) && loaded;
+    settings.select(feature, enabled);
+  }
+  if (schemaCurrent) return loaded;
+  loaded = storageRemoveIfPresent(KEY_ENERGY_MOTION_POLL) && loaded;
+  loaded = storageRemoveIfPresent(KEY_ENERGY_ACC_RAIL_OFF) && loaded;
+  loaded = storageRemoveIfPresent(KEY_ENERGY_POWER_CADENCE) && loaded;
+  loaded = storageRemoveIfPresent(KEY_ENERGY_OLED_STATIC) && loaded;
+  return loaded &&
+         settingsPreferences.putUShort(KEY_ENERGY_SCHEMA, ENERGY_SCHEMA_VERSION) == sizeof(uint16_t);
+}
+
+inline bool energyStoreFeature(EnergyFeature feature, bool enabled) {
+  const uint8_t index = static_cast<uint8_t>(feature);
+  return index < static_cast<uint8_t>(EnergyFeature::Count) &&
+         storagePutBool(ENERGY_FEATURE_KEYS[index], enabled);
+}
+#endif
 
 inline String storageGetString(const char *key, const String &defaultValue) {
   return settingsPreferences.getString(key, defaultValue);

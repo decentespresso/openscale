@@ -81,6 +81,9 @@ class MyServerCallbacks : public BLEServerCallbacks {
     t_heartBeat = millis();
     bleState = CONNECTED;
     deviceConnected = true;
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
 #ifdef BUZZER
     b_beep = false;
 #endif
@@ -115,6 +118,9 @@ class MyServerCallbacks : public BLEServerCallbacks {
     t_heartBeat = millis();
     bleState = CONNECTED;
     deviceConnected = true;
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
 #ifdef BUZZER
     b_beep = false;
 #endif
@@ -147,13 +153,21 @@ struct BleDecentCommandSink {
   }
 
   void displayOff() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyDisplay(false);
+#else
     b_u8g2Sleep = true;
+#endif
     remoteReplacePending(WSP_DISPLAY_OFF, WSP_DISPLAY_ON);
     queueBleStatusResponse();
   }
 
   void displayOn() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyDisplay(true);
+#else
     b_u8g2Sleep = false;
+#endif
     remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
     queueBleStatusResponse();
   }
@@ -163,12 +177,20 @@ struct BleDecentCommandSink {
   }
 
   void lowPowerOn() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyLowPower(true);
+#else
     b_websocketLowPowerEnabled = true;
+#endif
     remoteReplacePending(WSP_LOWPWR_ON, WSP_LOWPWR_OFF);
   }
 
   void lowPowerOff() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyLowPower(false);
+#else
     b_websocketLowPowerEnabled = false;
+#endif
     remoteReplacePending(WSP_LOWPWR_OFF, WSP_LOWPWR_ON);
   }
 
@@ -177,7 +199,18 @@ struct BleDecentCommandSink {
   }
 
   void softSleepOff() {
+#if HDS_ENABLE_ENERGY_MENU
     remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);
+#else
+    const bool wasSoftSleep = b_softSleep;
+    b_softSleep = false;
+    b_u8g2Sleep = false;
+    if (wasSoftSleep) {
+      remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);
+    } else {
+      remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
+    }
+#endif
   }
 
   void timerStart() {
@@ -392,6 +425,9 @@ void queueBleVoltageResponse() {
   portENTER_CRITICAL(&bleFff4Mux);
   if (bleVoltageResponsesPending != UINT16_MAX) bleVoltageResponsesPending = bleVoltageResponsesPending + 1;
   portEXIT_CRITICAL(&bleFff4Mux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 void processBleVoltageResponse() {
@@ -411,6 +447,9 @@ void queueBleStatusResponse() {
   bleStatusRequestAt = now;
   if (bleStatusResponsesPending != UINT16_MAX) bleStatusResponsesPending = bleStatusResponsesPending + 1;
   portEXIT_CRITICAL(&bleFff4Mux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 void processBleStatusResponse() {

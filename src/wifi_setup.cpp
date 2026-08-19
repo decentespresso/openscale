@@ -14,6 +14,11 @@
 #endif
 #include <Preferences.h>
 #include <WiFi.h>
+#if HDS_ENABLE_ENERGY_MENU
+#include "energy_policy.h"
+
+extern EnergyPolicy energyPolicy;
+#endif
 
 volatile bool b_wifiEnabled = false;
 #if HDS_FEATURE_MDNS
@@ -295,10 +300,16 @@ void wifiSupervise() {
 
   if (now - lastLog >= 5000) {
     lastLog = now;
-    Serial.printf("[health] uptime=%lu wifi_status=%d rssi=%d heap=%lu minheap=%lu disc=%lu rec=%lu\n",
-                  now, (int)WiFi.status(), up ? (int)WiFi.RSSI() : 0,
-                  (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMinFreeHeap(),
-                  (unsigned long)g_wifiDisconnects, (unsigned long)g_wifiReconnects);
+#if HDS_ENABLE_ENERGY_MENU
+    if (!energyPolicy.featureEnabled(EnergyFeature::SerialQuiet)) {
+#endif
+      Serial.printf("[health] uptime=%lu wifi_status=%d rssi=%d heap=%lu minheap=%lu disc=%lu rec=%lu\n",
+                    now, (int)WiFi.status(), up ? (int)WiFi.RSSI() : 0,
+                    (unsigned long)ESP.getFreeHeap(), (unsigned long)ESP.getMinFreeHeap(),
+                    (unsigned long)g_wifiDisconnects, (unsigned long)g_wifiReconnects);
+#if HDS_ENABLE_ENERGY_MENU
+    }
+#endif
   }
 
   if (g_wifiInitDone && params.hasCredentials() && !up) {

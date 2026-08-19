@@ -176,6 +176,11 @@ void print_wakeup_reason() {
 
 
 void esp32_sleep() {
+#if HDS_ENABLE_ENERGY_MENU
+  applyEnergyLightSleepSetting(false);
+  setEnergyIdleWakeEnabled(false);
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+#endif
 #if HDS_ENABLE_GRINDER
   beforeDeepSleepFlush();
 #endif
@@ -340,6 +345,7 @@ void updateBattery(int batteryPin){
     f_batteryVoltage = correctedVoltage;
   }
   t_batteryRefresh = millis();
+  powerCadence.batterySampleSequence++;
 }
 
 float getUsbVoltage(int usbPin) {
@@ -351,38 +357,50 @@ float getUsbVoltage(int usbPin) {
 
 int i_lowBatteryCount = 0;
 int i_lowBatteryCountTotal = 0;
+bool processNewBatterySample() {
+  if (!powerCadence.batterySamples.shouldEvaluate(powerCadence.batterySampleSequence)) {
+    return false;
+  }
+  if (b_is_charging || f_batteryVoltage > lowBatteryThreshold) {
+    i_lowBatteryCount = 0;
+  } else if (f_batteryVoltage < lowBatteryThreshold) {
+    i_lowBatteryCount++;
+    i_lowBatteryCountTotal++;
+    if (!EnergyRuntimePolicy::lowBatteryConfirmed(i_lowBatteryCount) &&
+        i_batteryRefreshTareInterval > 1000) {
+      t_batteryRefresh = millis() - (i_batteryRefreshTareInterval - 1000);
+    }
+  }
+  const bool confirmed = EnergyRuntimePolicy::lowBatteryConfirmed(i_lowBatteryCount);
+  if (confirmed) {
+    shut_down_low_battery(f_batteryVoltage);
+  }
+  return confirmed;
+}
+
+void evaluateAutoOff(double seconds, bool showCountdown) {
+  const unsigned long now = millis();
+  if (!powerCadence.autoOff.shouldRun(now, 1000)) return;
+  const double timeLeft = seconds - (now - t_power_off) / 1000;
+  if (showCountdown
+#if HDS_ENABLE_ENERGY_MENU
+      && !energyPolicy.featureEnabled(EnergyFeature::SerialQuiet)
+#endif
+  ) {
+    Serial.print(timeLeft);
+    Serial.println(" seconds to power off");
+  }
+  if (timeLeft <= 0 && b_autoSleep) {
+    shut_down_now();
+  }
+}
+
 void power_off(int min) {
-  if (!b_is_charging) {
-    if (!b_softSleep) {
-      if (f_batteryVoltage < lowBatteryThreshold) {
-        updateBattery(BATTERY_PIN);
-      }
-      if (f_batteryVoltage > lowBatteryThreshold) {
-        i_lowBatteryCount = 0;
-      }
-
-      if (f_batteryVoltage < lowBatteryThreshold) {
-        i_lowBatteryCount++;
-        i_lowBatteryCountTotal++;
-      }
-
-      if (i_lowBatteryCount > 50) {
-        shut_down_low_battery(f_batteryVoltage);
-        return;
-      }
-    }
-
-    if (min == -1) {
-      t_power_off = millis();
-    }
-    if (min > 0) {
-      double d_timeleft = min * 60 - (millis() - t_power_off) / 1000;
-      Serial.print(d_timeleft);
-      Serial.println(" seconds to power off");
-      if (d_timeleft <= 0 && b_autoSleep == true) {
-        shut_down_now();
-      }
-    }
+  if (processNewBatterySample()) return;
+  if (min == -1) {
+    t_power_off = millis();
+  } else if (min > 0 && !b_is_charging) {
+    evaluateAutoOff(min * 60.0, true);
   }
 }
 
@@ -407,35 +425,11 @@ void power_off_gyro(int sec) {
 #endif
 
 void power_off(double sec) {
-  if (!b_is_charging) {
-    if (!b_softSleep) {
-      if (f_batteryVoltage < lowBatteryThreshold) {
-        updateBattery(BATTERY_PIN);
-      }
-      if (f_batteryVoltage > lowBatteryThreshold) {
-        i_lowBatteryCount = 0;
-      }
-
-      if (f_batteryVoltage < lowBatteryThreshold) {
-        i_lowBatteryCount++;
-        i_lowBatteryCountTotal++;
-      }
-
-      if (i_lowBatteryCount > 50) {
-        shut_down_low_battery(f_batteryVoltage);
-        return;
-      }
-    }
-
-    if (sec == -1) {
-      t_power_off = millis();
-    }
-    if (sec > 0) {
-      double d_timeleft = sec - (millis() - t_power_off) / 1000;
-      if (d_timeleft <= 0 && b_autoSleep == true) {
-        shut_down_now();
-      }
-    }
+  if (processNewBatterySample()) return;
+  if (sec == -1) {
+    t_power_off = millis();
+  } else if (sec > 0 && !b_is_charging) {
+    evaluateAutoOff(sec, false);
   }
 }
 
