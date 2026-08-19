@@ -1,4 +1,33 @@
 #!/usr/bin/env python3
+"""
+Connection-churn stressor for the Half Decent Scale TCP / WebSocket server.
+
+Run this alongside ws_drop_repro.py (which holds the real /snapshot stream) to
+test the hypothesis that *connection activity* -- new TCP/WebSocket connects and
+disconnects -- triggers WS drops or server hangs on the scale's
+AsyncWebServer/AsyncTCP stack.
+
+Why churn is suspect on ESP32:
+  * lwIP has a small fixed TCP PCB pool. Every closed connection lingers in
+    TIME_WAIT; rapid open/close can exhaust PCBs and stall the whole server.
+  * The WS handler now allows up to 8 clients and reaps the OLDEST via
+    cleanupClients(8). If churn (esp. abrupt/half-open closes that aren't reaped
+    until their own ACK timeout) piles up >8 clients, the oldest -- the real
+    stream -- gets evicted.
+
+Modes (combine freely); each worker repeats its action at --rate per second:
+  --tcp    open a raw TCP connection to :80, hold, close
+  --http   open, send "GET / HTTP/1.0", read a little, close
+  --ws     open a SECOND ws://host/snapshot, hold, disconnect (churns WS clients)
+  --rst    close abruptly (SO_LINGER 0 -> RST) leaving half-open server state
+
+Usage:
+    python3 tools/conn_churn.py hds.local --tcp --http --ws --rate 5 --workers 4 --duration 240
+    python3 tools/conn_churn.py hds.local --ws --rst --rate 3 --duration 180   # pile up half-open WS clients
+
+Logs a periodic counter line and a final summary. A rising "hang" count (connect
+attempts that time out) is the smoking gun for server-wide stalls.
+"""
 
 import argparse
 import socket

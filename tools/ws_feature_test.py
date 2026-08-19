@@ -1,4 +1,22 @@
 #!/usr/bin/env python3
+"""
+WebSocket feature test for the Half Decent Scale firmware.
+
+Exercises the on-device /snapshot WebSocket control + event protocol against a
+running scale, as a quick regression check after firmware changes. WiFi must be
+enabled on the device (it advertises _decentscale._tcp / hds.local).
+
+Requirements:
+    pip install websocket-client
+
+Usage:
+    python3 tools/ws_feature_test.py                # ws://hds.local/snapshot
+    python3 tools/ws_feature_test.py 192.168.1.50   # or pass a host / IP
+    HDS_HOST=192.168.1.50 python3 tools/ws_feature_test.py
+
+Exits 0 if every check passes, 1 otherwise. Never sends `power off` (it cannot
+be woken over the network) and restores display/sleep/timer state when done.
+"""
 
 import argparse
 import json

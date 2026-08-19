@@ -1,4 +1,29 @@
 #!/usr/bin/env python3
+"""
+WebSocket connection-drop reproducer for the Half Decent Scale firmware.
+
+Mimics the Decenza client (rate 10k + events on + status, then consume the
+~10 Hz JSON stream) and instruments the exact things the field bug report asks
+about:
+
+  * Does the connection drop on a ~1-2 min cadence?  -> inter-drop intervals
+  * Is it a clean WS close (1000/1001) or abnormal (1006, no close frame)?
+  * Does the stream stall right before the drop?      -> frame-gap timeline
+  * How fast does reconnect to the same IP succeed?    -> reconnect latency
+
+It auto-reconnects after each drop and prints a summary on exit (Ctrl-C or when
+--duration elapses). Read-only against the scale: it never sends `power off`,
+`sleep`, or any state-changing command beyond rate/events selection.
+
+Requirements:
+    pip install websocket-client
+
+Usage:
+    python3 tools/ws_drop_repro.py                      # ws://hds.local/snapshot, 10 Hz, runs until Ctrl-C
+    python3 tools/ws_drop_repro.py 192.168.10.242
+    python3 tools/ws_drop_repro.py --rate 10k --duration 300
+    python3 tools/ws_drop_repro.py --no-events          # weight stream only, skip status subscription
+"""
 
 import argparse
 import os

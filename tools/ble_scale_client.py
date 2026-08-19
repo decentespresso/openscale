@@ -1,4 +1,28 @@
 #!/usr/bin/env python3
+"""
+Decent-Scale BLE client for the Half Decent Scale, using bleak.
+
+Two jobs:
+  1. Provide a realistic "BT active" coexistence load while a WiFi 10 Hz stream
+     runs (the goal requires both at once).
+  2. Serve as the BLE regression test: it holds a persistent link, subscribes to
+     weight notifications, and sends the keep-alive heartbeat the firmware
+     requires. It logs every BLE disconnect and the notify rate -- 0 unexpected
+     disconnects + steady notifies over a long run == BT is still reliable.
+
+Protocol (from include/ble.h, include/config.h):
+  service  0000fff0-0000-1000-8000-00805f9b34fb
+  notify   0000fff4-0000-1000-8000-00805f9b34fb   (weight frames)
+  write    000036f5-0000-1000-8000-00805f9b34fb   (commands)
+  heartbeat command: 03 0A 03 FF FF 00 0A  (resets the scale's 5 s heartbeat
+  timer; without it the scale drops BLE on purpose)
+
+Requires: pip install bleak
+
+Usage:
+    python3 tools/ble_scale_client.py --duration 1500
+    python3 tools/ble_scale_client.py --name "Decent Scale" --hb 2.0
+"""
 
 import argparse
 import asyncio
