@@ -2,46 +2,41 @@
 #define ENERGY_MENU_H
 
 void toggleEnergySerialQuiet();
-void toggleEnergyPowerCadence();
 void toggleEnergyOledRedraw();
 void toggleEnergyOledIdle();
-void toggleEnergyOledStatic();
 void toggleEnergyLightSleep();
+void toggleEnergyUsbSleepTest();
 
 extern Menu menuEnergy;
 Menu menuEnergyBack = { "Back", NULL, NULL, &menuEnergy };
 Menu menuEnergy = { "Energy Saving", NULL, &menuEnergyBack, NULL };
 char menuEnergySerialQuietLabel[] = "Serial Quiet o";
-char menuEnergyPowerCadenceLabel[] = "Power Cadence o";
 char menuEnergyOledRedrawLabel[] = "OLED Redraw o";
 char menuEnergyOledIdleLabel[] = "OLED Idle o";
-char menuEnergyOledStaticLabel[] = "OLED Static o";
 char menuEnergyLightSleepLabel[] = "Light Sleep o";
+char menuEnergyUsbSleepTestLabel[] = "USB Sleep Test o";
 
 const Menu menuEnergySerialQuiet = { menuEnergySerialQuietLabel, toggleEnergySerialQuiet, NULL, &menuEnergy };
-const Menu menuEnergyPowerCadence = { menuEnergyPowerCadenceLabel, toggleEnergyPowerCadence, NULL, &menuEnergy };
 const Menu menuEnergyOledRedraw = { menuEnergyOledRedrawLabel, toggleEnergyOledRedraw, NULL, &menuEnergy };
 const Menu menuEnergyOledIdle = { menuEnergyOledIdleLabel, toggleEnergyOledIdle, NULL, &menuEnergy };
-const Menu menuEnergyOledStatic = { menuEnergyOledStaticLabel, toggleEnergyOledStatic, NULL, &menuEnergy };
 const Menu menuEnergyLightSleep = { menuEnergyLightSleepLabel, toggleEnergyLightSleep, NULL, &menuEnergy };
+const Menu menuEnergyUsbSleepTest = { menuEnergyUsbSleepTestLabel, toggleEnergyUsbSleepTest, NULL, &menuEnergy };
 
 const Menu *const energyMenu[] = {
   &menuEnergyBack,
   &menuEnergySerialQuiet,
-  &menuEnergyPowerCadence,
   &menuEnergyOledRedraw,
   &menuEnergyOledIdle,
-  &menuEnergyOledStatic,
   &menuEnergyLightSleep,
+  &menuEnergyUsbSleepTest,
 };
 
 char *energyFeatureRows[] = {
   menuEnergySerialQuietLabel,
-  menuEnergyPowerCadenceLabel,
   menuEnergyOledRedrawLabel,
   menuEnergyOledIdleLabel,
-  menuEnergyOledStaticLabel,
   menuEnergyLightSleepLabel,
+  menuEnergyUsbSleepTestLabel,
 };
 static_assert(sizeof(energyFeatureRows) / sizeof(energyFeatureRows[0]) ==
               static_cast<size_t>(EnergyFeature::Count));
@@ -80,10 +75,28 @@ inline void toggleEnergyFeature(EnergyFeature feature, const char *label) {
 }
 
 void toggleEnergySerialQuiet() { toggleEnergyFeature(EnergyFeature::SerialQuiet, "Serial Quiet"); }
-void toggleEnergyPowerCadence() { toggleEnergyFeature(EnergyFeature::PowerCadence, "Power Cadence"); }
 void toggleEnergyOledRedraw() { toggleEnergyFeature(EnergyFeature::OledRedraw, "OLED Redraw"); }
 void toggleEnergyOledIdle() { toggleEnergyFeature(EnergyFeature::OledIdle, "OLED Idle"); }
-void toggleEnergyOledStatic() { toggleEnergyFeature(EnergyFeature::OledStatic, "OLED Static"); }
-void toggleEnergyLightSleep() { toggleEnergyFeature(EnergyFeature::LightSleep, "Light Sleep"); }
+void toggleEnergyLightSleep() {
+  const bool enabled = !energyPolicy.settings.selected(EnergyFeature::LightSleep);
+  if (enabled) {
+    const bool applied = setEnergyLightSleepEnabled(true);
+    const bool stored = applied && energyStoreFeature(EnergyFeature::LightSleep, true);
+    if (stored) {
+      energyPolicy.settings.select(EnergyFeature::LightSleep, true);
+    } else if (applied) {
+      setEnergyLightSleepEnabled(false);
+    }
+    updateEnergyMenuRow(EnergyFeature::LightSleep);
+    showEnergyAction("Light Sleep", true, stored);
+    return;
+  }
+  const bool applied = setEnergyLightSleepEnabled(false);
+  energyPolicy.settings.select(EnergyFeature::LightSleep, false);
+  const bool stored = energyStoreFeature(EnergyFeature::LightSleep, false);
+  updateEnergyMenuRow(EnergyFeature::LightSleep);
+  showEnergyAction("Light Sleep", false, applied && stored);
+}
+void toggleEnergyUsbSleepTest() { toggleEnergyFeature(EnergyFeature::UsbSleepTest, "USB Sleep Test"); }
 
 #endif

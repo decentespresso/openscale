@@ -1,5 +1,4 @@
 #include <unity.h>
-#include "energy_policy.h"
 #include "energy_runtime_policy.h"
 
 void setUp() {}
@@ -11,40 +10,6 @@ void testOledRedrawSkipsUnchangedFrames() {
   TEST_ASSERT_FALSE(gate.shouldRender(true, 1, 200));
   TEST_ASSERT_TRUE(gate.shouldRender(true, 2, 201));
   TEST_ASSERT_TRUE(gate.shouldRender(false, 2, 202));
-}
-
-void testOledStaticImpliesGatingAndUsesThirtySeconds() {
-  OledFrameGate gate;
-  const bool oledRedraw = false;
-  const bool oledStatic = true;
-  const bool gatingEnabled = oledRedraw || oledStatic;
-  TEST_ASSERT_TRUE(gatingEnabled);
-  TEST_ASSERT_TRUE(gate.shouldRender(gatingEnabled, 7, 100, 30000));
-  TEST_ASSERT_FALSE(gate.shouldRender(gatingEnabled, 7, 30099, 30000));
-  TEST_ASSERT_TRUE(gate.shouldRender(gatingEnabled, 7, 30100, 30000));
-}
-
-void testCadenceRunsExactlyAtDeadlineAndAcrossRollover() {
-  CadenceGate gate;
-  TEST_ASSERT_TRUE(gate.shouldRun(true, 100, 1000));
-  TEST_ASSERT_FALSE(gate.shouldRun(true, 1099, 1000));
-  TEST_ASSERT_TRUE(gate.shouldRun(true, 1100, 1000));
-  TEST_ASSERT_FALSE(gate.shouldRun(true, 1101, 1000));
-
-  CadenceGate rollover;
-  TEST_ASSERT_TRUE(rollover.shouldRun(true, 0xfffffff0u, 100));
-  TEST_ASSERT_FALSE(rollover.shouldRun(true, 0x53u, 100));
-  TEST_ASSERT_TRUE(rollover.shouldRun(true, 0x54u, 100));
-}
-
-void testCadenceDisableRestoresBaselineOnce() {
-  CadenceGate gate;
-  TEST_ASSERT_TRUE(gate.shouldRun(true, 10, 100));
-  TEST_ASSERT_FALSE(gate.shouldRun(true, 11, 100));
-  gate.reset();
-  TEST_ASSERT_TRUE(gate.shouldRun(false, 12, 100));
-  TEST_ASSERT_TRUE(gate.shouldRun(false, 13, 100));
-  TEST_ASSERT_TRUE(gate.shouldRun(true, 14, 100));
 }
 
 void testOledIdleTransitionsAndExplicitOffPrecedence() {
@@ -60,52 +25,57 @@ void testOledIdleTransitionsAndExplicitOffPrecedence() {
                           static_cast<uint8_t>(EnergyRuntimePolicy::displayMode(false, true, true, 0)));
 }
 
+void testCadenceRunsExactlyAtDeadlineAndAcrossRollover() {
+  CadenceGate gate;
+  TEST_ASSERT_TRUE(gate.shouldRun(100, 1000));
+  TEST_ASSERT_FALSE(gate.shouldRun(1099, 1000));
+  TEST_ASSERT_TRUE(gate.shouldRun(1100, 1000));
+  TEST_ASSERT_FALSE(gate.shouldRun(1101, 1000));
+
+  CadenceGate rollover;
+  TEST_ASSERT_TRUE(rollover.shouldRun(0xfffffff0u, 100));
+  TEST_ASSERT_FALSE(rollover.shouldRun(0x53u, 100));
+  TEST_ASSERT_TRUE(rollover.shouldRun(0x54u, 100));
+}
+
 void testBatteryConfirmationUsesDistinctSamples() {
   BatterySampleGate samples;
   TEST_ASSERT_FALSE(samples.shouldEvaluate(0));
   TEST_ASSERT_TRUE(samples.shouldEvaluate(1));
   TEST_ASSERT_FALSE(samples.shouldEvaluate(1));
   TEST_ASSERT_TRUE(samples.shouldEvaluate(2));
-  TEST_ASSERT_FALSE(EnergyRuntimePolicy::lowBatteryConfirmed(1, true));
-  TEST_ASSERT_TRUE(EnergyRuntimePolicy::lowBatteryConfirmed(2, true));
+  TEST_ASSERT_FALSE(EnergyRuntimePolicy::lowBatteryConfirmed(1));
+  TEST_ASSERT_TRUE(EnergyRuntimePolicy::lowBatteryConfirmed(2));
 }
 
-void testDisabledPowerCadenceKeepsLegacyBatteryThreshold() {
-  EnergyPolicy policy;
-  const bool cadenceEnabled = policy.featureEnabled(EnergyFeature::PowerCadence);
-  TEST_ASSERT_EQUAL_UINT32(0, policy.settings.features);
-  TEST_ASSERT_FALSE(EnergyRuntimePolicy::lowBatteryConfirmed(2, cadenceEnabled));
-  TEST_ASSERT_FALSE(EnergyRuntimePolicy::lowBatteryConfirmed(50, cadenceEnabled));
-  TEST_ASSERT_TRUE(EnergyRuntimePolicy::lowBatteryConfirmed(51, cadenceEnabled));
-
-  policy.settings.select(EnergyFeature::PowerCadence, true);
-  TEST_ASSERT_TRUE(EnergyRuntimePolicy::lowBatteryConfirmed(
-    2, policy.featureEnabled(EnergyFeature::PowerCadence)));
+void testBatteryDisplayUsesVisibleBuckets() {
+  TEST_ASSERT_EQUAL_UINT8(0, EnergyRuntimePolicy::batteryDisplayBucket(5));
+  TEST_ASSERT_EQUAL_UINT8(1, EnergyRuntimePolicy::batteryDisplayBucket(6));
+  TEST_ASSERT_EQUAL_UINT8(1, EnergyRuntimePolicy::batteryDisplayBucket(25));
+  TEST_ASSERT_EQUAL_UINT8(2, EnergyRuntimePolicy::batteryDisplayBucket(26));
+  TEST_ASSERT_EQUAL_UINT8(3, EnergyRuntimePolicy::batteryDisplayBucket(75));
+  TEST_ASSERT_EQUAL_UINT8(4, EnergyRuntimePolicy::batteryDisplayBucket(76));
 }
 
-void testOledIdleIsSuspendedDuringSoftSleep() {
-  TEST_ASSERT_FALSE(EnergyRuntimePolicy::shouldApplyDisplayIdle(true));
-  TEST_ASSERT_TRUE(EnergyRuntimePolicy::shouldApplyDisplayIdle(false));
+void testIdleDeadlineUsesElapsedTimeAndHandlesRollover() {
+  TEST_ASSERT_EQUAL_UINT32(75, EnergyRuntimePolicy::timeUntil(125, 100, 100));
+  TEST_ASSERT_EQUAL_UINT32(0, EnergyRuntimePolicy::timeUntil(200, 100, 100));
+  TEST_ASSERT_EQUAL_UINT32(50, EnergyRuntimePolicy::timeUntil(0x22u, 0xfffffff0u, 100));
 }
 
-void testSharedDispatchSkipsEmptyAndUnrelatedMasks() {
-  const uint32_t oledIdleBit = 1u << 3;
-  TEST_ASSERT_FALSE(EnergyRuntimePolicy::shouldServiceFeature(0, oledIdleBit));
-  TEST_ASSERT_FALSE(EnergyRuntimePolicy::shouldServiceFeature(1u << 0, oledIdleBit));
-  TEST_ASSERT_FALSE(EnergyRuntimePolicy::shouldServiceFeature(1u << 1, oledIdleBit));
-  TEST_ASSERT_TRUE(EnergyRuntimePolicy::shouldServiceFeature(oledIdleBit, oledIdleBit));
+void testIdleDeadlineSelectsEarlierWork() {
+  TEST_ASSERT_EQUAL_UINT32(25, EnergyRuntimePolicy::earlier(100, 25));
+  TEST_ASSERT_EQUAL_UINT32(25, EnergyRuntimePolicy::earlier(25, 100));
 }
 
 int main(int argc, char **argv) {
   UNITY_BEGIN();
   RUN_TEST(testOledRedrawSkipsUnchangedFrames);
-  RUN_TEST(testOledStaticImpliesGatingAndUsesThirtySeconds);
-  RUN_TEST(testCadenceRunsExactlyAtDeadlineAndAcrossRollover);
-  RUN_TEST(testCadenceDisableRestoresBaselineOnce);
   RUN_TEST(testOledIdleTransitionsAndExplicitOffPrecedence);
+  RUN_TEST(testCadenceRunsExactlyAtDeadlineAndAcrossRollover);
   RUN_TEST(testBatteryConfirmationUsesDistinctSamples);
-  RUN_TEST(testDisabledPowerCadenceKeepsLegacyBatteryThreshold);
-  RUN_TEST(testOledIdleIsSuspendedDuringSoftSleep);
-  RUN_TEST(testSharedDispatchSkipsEmptyAndUnrelatedMasks);
+  RUN_TEST(testBatteryDisplayUsesVisibleBuckets);
+  RUN_TEST(testIdleDeadlineUsesElapsedTimeAndHandlesRollover);
+  RUN_TEST(testIdleDeadlineSelectsEarlierWork);
   return UNITY_END();
 }

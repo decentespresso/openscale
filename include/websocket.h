@@ -116,12 +116,18 @@ inline void remoteQueuePending(uint32_t bits) {
   }
   wsPendingMask |= bits;
   portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 inline void remoteReplacePending(uint32_t setBits, uint32_t clearBits) {
   portENTER_CRITICAL(&wsPendingMux);
   wsPendingMask = (wsPendingMask & ~clearBits) | setBits;
   portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 inline void remoteQueueSamplesInUse(uint8_t samplesInUse) {
@@ -129,6 +135,9 @@ inline void remoteQueueSamplesInUse(uint8_t samplesInUse) {
   pendingSamplesInUse = samplesInUse;
   wsPendingMask |= WSP_SET_SAMPLES;
   portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 inline void wsQueuePending(uint32_t bits) {
@@ -239,6 +248,9 @@ void processWsPendingCmds() {
     u8g2.setPowerSave(1);
     digitalWrite(PWR_CTRL, LOW);
     digitalWrite(ACC_PWR_CTRL, LOW);
+#if HDS_ENABLE_ENERGY_MENU
+    refreshEnergyIdleWakeForRuntimeState();
+#endif
   }
   if (mask & WSP_TIMER_START) {
     stopWatch.reset();
@@ -460,11 +472,6 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
   command.toLowerCase();
   action.toLowerCase();
 
-  if (command == "status" || command == "battery" || command == "info") {
-    sendWebsocketStatus(client, "ok");
-    return true;
-  }
-
 #if HDS_ENABLE_ENERGY_MENU
   const bool onOff = action == "on" || action == "off";
   const bool eventAction = onOff || action == "enable" || action == "enabled" ||
@@ -482,6 +489,11 @@ bool handleWebsocketControlCommand(AsyncWebSocketClient *client, String command,
     recordEnergyActivity();
   }
 #endif
+
+  if (command == "status" || command == "battery" || command == "info") {
+    sendWebsocketStatus(client, "ok");
+    return true;
+  }
 
   if (command == "events") {
     if (action == "on" || action == "enable" || action == "enabled") {

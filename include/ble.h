@@ -425,6 +425,9 @@ void queueBleVoltageResponse() {
   portENTER_CRITICAL(&bleFff4Mux);
   if (bleVoltageResponsesPending != UINT16_MAX) bleVoltageResponsesPending = bleVoltageResponsesPending + 1;
   portEXIT_CRITICAL(&bleFff4Mux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 void processBleVoltageResponse() {
@@ -444,6 +447,9 @@ void queueBleStatusResponse() {
   bleStatusRequestAt = now;
   if (bleStatusResponsesPending != UINT16_MAX) bleStatusResponsesPending = bleStatusResponsesPending + 1;
   portEXIT_CRITICAL(&bleFff4Mux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 void processBleStatusResponse() {

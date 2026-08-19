@@ -36,11 +36,7 @@ private:
 
 class CadenceGate {
 public:
-  bool shouldRun(bool enabled, uint32_t now, uint32_t intervalMs) {
-    if (!enabled) {
-      initialized = false;
-      return true;
-    }
+  bool shouldRun(uint32_t now, uint32_t intervalMs) {
     if (!initialized || now - lastRunAt >= intervalMs) {
       initialized = true;
       lastRunAt = now;
@@ -49,19 +45,9 @@ public:
     return false;
   }
 
-  void reset() {
-    initialized = false;
-  }
-
 private:
   bool initialized = false;
   uint32_t lastRunAt = 0;
-};
-
-struct EnergyRuntimeSchedule {
-  CadenceGate autoOff;
-  CadenceGate chargeCheck;
-  CadenceGate oledIdle;
 };
 
 class BatterySampleGate {
@@ -72,10 +58,6 @@ public:
     return true;
   }
 
-  void reset(uint32_t sequence) {
-    processedSequence = sequence;
-  }
-
 private:
   uint32_t processedSequence = 0;
 };
@@ -83,21 +65,22 @@ private:
 struct EnergyRuntimePolicy {
   static constexpr uint8_t lowBatteryConfirmationSamples = 2;
 
-  static bool lowBatteryConfirmed(uint32_t samples, bool cadenceEnabled) {
-    return samples >= (cadenceEnabled ? lowBatteryConfirmationSamples : 51);
+  static uint32_t timeUntil(uint32_t now, uint32_t last, uint32_t interval) {
+    const uint32_t elapsed = now - last;
+    return elapsed >= interval ? 0 : interval - elapsed;
   }
 
-  static bool shouldApplyDisplayIdle(bool softSleep) {
-    return !softSleep;
+  static uint32_t earlier(uint32_t current, uint32_t candidate) {
+    return candidate < current ? candidate : current;
+  }
+
+  static bool lowBatteryConfirmed(uint32_t samples) {
+    return samples >= lowBatteryConfirmationSamples;
   }
 
   static bool meaningfulWeightChange(float previous, float current, float threshold) {
     const float change = current - previous;
     return change >= threshold || change <= -threshold;
-  }
-
-  static bool shouldServiceFeature(uint32_t enabledMask, uint32_t featureBit) {
-    return enabledMask != 0 && (enabledMask & featureBit) != 0;
   }
 
   static DisplayIdleMode displayMode(bool enabled, bool inhibited, bool explicitlyOff,
@@ -111,6 +94,14 @@ struct EnergyRuntimePolicy {
 
   static uint8_t displayContrast(uint8_t requested, DisplayIdleMode mode) {
     return mode == DisplayIdleMode::Dimmed && requested > 32 ? 32 : requested;
+  }
+
+  static uint8_t batteryDisplayBucket(int percent) {
+    if (percent <= 5) return 0;
+    if (percent <= 25) return 1;
+    if (percent <= 50) return 2;
+    if (percent <= 75) return 3;
+    return 4;
   }
 };
 

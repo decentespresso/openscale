@@ -86,6 +86,9 @@ struct UsbDecentCommandSink {
     b_softSleep = true;
     digitalWrite(PWR_CTRL, LOW);
     digitalWrite(ACC_PWR_CTRL, LOW);
+#if HDS_ENABLE_ENERGY_MENU
+    refreshEnergyIdleWakeForRuntimeState();
+#endif
   }
 
   void softSleepOff() {

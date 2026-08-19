@@ -30,6 +30,9 @@ void queueOtaDisplay(uint8_t state, uint8_t percent = 0) {
   otaDisplayState = state;
   otaDisplayPercent = percent;
   portEXIT_CRITICAL(&otaDisplayMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 void processOtaDisplayUpdate() {
@@ -76,6 +79,9 @@ void onOTAStart() {
   portENTER_CRITICAL(&wsPendingMux);
   b_ota = true;
   portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 void onOTAProgress(size_t current, size_t final) {

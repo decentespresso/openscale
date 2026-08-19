@@ -7,28 +7,60 @@
 #include <math.h>
 #include <mutex>
 #include "calibration_validation.h"
+#include "energy_runtime_policy.h"
 #if HDS_ENABLE_ENERGY_MENU
 #include "energy_policy.h"
 #include "energy_power_management.h"
-#include "energy_runtime_policy.h"
 #endif
 
 Preferences settingsPreferences;
+struct PowerCadenceState {
+  CadenceGate autoOff;
+  CadenceGate chargeCheck;
+  BatterySampleGate batterySamples;
+  uint32_t batterySampleSequence = 0;
+};
+PowerCadenceState powerCadence;
 #if HDS_ENABLE_ENERGY_MENU
 EnergyPolicy energyPolicy;
 EnergyPowerManagement energyPowerManagement;
 struct EnergyRuntimeState {
   OledFrameGate oledFrames;
-  BatterySampleGate batterySamples;
-  EnergyRuntimeSchedule schedule;
+  CadenceGate oledIdle;
   DisplayIdleMode displayMode = DisplayIdleMode::Active;
   volatile bool explicitDisplayOff = false;
   volatile uint8_t requestedDisplayContrast = 255;
-  uint32_t batterySampleSequence = 0;
 };
 EnergyRuntimeState energyRuntime;
+struct EnergyIdleState {
+  TaskHandle_t mainTask = nullptr;
+  bool wakeInterruptsAttached = false;
+  bool lightSleepCallbackRegistered = false;
+  bool scaleWakeEnabled = true;
+  bool usbWakeEnabled = true;
+  bool scaleWakeFallback = false;
+  bool circleButtonWakeFallback = false;
+  bool squareButtonWakeFallback = false;
+  bool usbWakeFallback = false;
+  uint64_t rtcWakeMask = 0;
+  volatile bool wakePinsNeedRestore = false;
+  bool buttonGestureActive = false;
+  unsigned long lastButtonActivityAt = 0;
+  unsigned long lastButtonPoll = 0;
+  unsigned long lastScaleData = 0;
+  unsigned long lastScaleRecovery = 0;
+  unsigned long lastWeightTick = 0;
+};
+EnergyIdleState energyIdle;
 portMUX_TYPE energyActivityMux = portMUX_INITIALIZER_UNLOCKED;
 volatile bool energyActivityPending = false;
+
+inline void notifyEnergyMainLoop() {
+  TaskHandle_t mainTask = energyIdle.mainTask;
+  if (mainTask != nullptr) {
+    xTaskNotifyGive(mainTask);
+  }
+}
 
 inline void clearPendingEnergyActivity() {
   portENTER_CRITICAL(&energyActivityMux);
@@ -37,34 +69,22 @@ inline void clearPendingEnergyActivity() {
 }
 
 inline void recordEnergyActivity() {
-  if (!energyPolicy.settings.enabled(EnergyFeature::OledIdle)) {
-    return;
-  }
+  if (!energyPolicy.settings.enabled(EnergyFeature::OledIdle)) return;
   portENTER_CRITICAL(&energyActivityMux);
   energyActivityPending = true;
   portEXIT_CRITICAL(&energyActivityMux);
 }
 
 inline void processEnergyActivities(unsigned long now) {
-  const uint32_t enabledMask = energyPolicy.settings.features;
-  if (enabledMask == 0 ||
-      !energyPolicy.settings.enabled(EnergyFeature::OledIdle)) {
-    return;
-  }
   portENTER_CRITICAL(&energyActivityMux);
   const bool pending = energyActivityPending;
   energyActivityPending = false;
   portEXIT_CRITICAL(&energyActivityMux);
-  if (pending) {
-    energyPolicy.recordActivity(now);
-  }
+  if (pending) energyPolicy.recordActivity(now);
 }
 
 inline void invalidateEnergyOledFrame() {
-  if (!energyPolicy.settings.enabled(EnergyFeature::OledRedraw) &&
-      !energyPolicy.settings.enabled(EnergyFeature::OledStatic)) {
-    return;
-  }
+  if (!energyPolicy.settings.enabled(EnergyFeature::OledRedraw)) return;
   energyRuntime.oledFrames.invalidate();
 }
 #else
@@ -156,6 +176,9 @@ inline void remoteQueueResetAt(unsigned long resetAt) {
   pendingResetAt = resetAt;
   wsPendingMask |= WSP_RESET;
   portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 inline void remoteQueueOtaResetAt(unsigned long resetAt) {
@@ -163,6 +186,9 @@ inline void remoteQueueOtaResetAt(unsigned long resetAt) {
   pendingOtaResetAt = resetAt;
   wsPendingMask |= WSP_OTA_RESET;
   portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 int i_onWrite_counter = 0;
@@ -191,8 +217,6 @@ int b_beep = 1;
 bool b_about = false;
 bool b_debug = false;
 
-unsigned long t_batteryIcon = 0;
-bool b_showBatteryIcon = true;
 volatile bool b_softSleep = false;
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 bool b_gyroEnabled = true;
@@ -293,6 +317,7 @@ void requestRemoteTare() {
   t_tareByBle = now;
   portEXIT_CRITICAL(&remoteTareMux);
 #if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
   recordEnergyActivity();
 #endif
 }

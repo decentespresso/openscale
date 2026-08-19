@@ -6,24 +6,37 @@ void tearDown() {}
 
 void testFeaturesDefaultOff() {
   EnergyPolicy policy;
-  TEST_ASSERT_FALSE(policy.anyFeatureEnabled());
   TEST_ASSERT_EQUAL_UINT32(0, policy.settings.features);
-  TEST_ASSERT_EQUAL_UINT8(6, static_cast<uint8_t>(EnergyFeature::Count));
+  TEST_ASSERT_EQUAL_UINT8(5, static_cast<uint8_t>(EnergyFeature::Count));
+}
+
+void testUsbSleepPolicyCombinations() {
+  EnergySettings settings;
+  TEST_ASSERT_FALSE(settings.lightSleepAllowed(true));
+  TEST_ASSERT_FALSE(settings.usbSleepTestActive());
+  settings.select(EnergyFeature::UsbSleepTest, true);
+  TEST_ASSERT_FALSE(settings.lightSleepAllowed(true));
+  TEST_ASSERT_FALSE(settings.usbSleepTestActive());
+  settings.select(EnergyFeature::UsbSleepTest, false);
+  settings.select(EnergyFeature::LightSleep, true);
+  TEST_ASSERT_FALSE(settings.lightSleepAllowed(true));
+  TEST_ASSERT_FALSE(settings.usbSleepTestActive());
+  settings.select(EnergyFeature::UsbSleepTest, true);
+  TEST_ASSERT_TRUE(settings.lightSleepAllowed(true));
+  TEST_ASSERT_TRUE(settings.usbSleepTestActive());
 }
 
 void testFeaturesAreIndependent() {
   EnergyPolicy policy;
-  policy.settings.select(EnergyFeature::OledStatic, true);
-  TEST_ASSERT_TRUE(policy.featureEnabled(EnergyFeature::OledStatic));
+  policy.settings.select(EnergyFeature::OledIdle, true);
+  TEST_ASSERT_TRUE(policy.featureEnabled(EnergyFeature::OledIdle));
   TEST_ASSERT_FALSE(policy.featureEnabled(EnergyFeature::OledRedraw));
-  TEST_ASSERT_FALSE(policy.featureEnabled(EnergyFeature::OledIdle));
-  policy.settings.select(EnergyFeature::OledStatic, false);
-  TEST_ASSERT_FALSE(policy.anyFeatureEnabled());
+  TEST_ASSERT_FALSE(policy.featureEnabled(EnergyFeature::LightSleep));
+  policy.settings.select(EnergyFeature::OledIdle, false);
+  TEST_ASSERT_EQUAL_UINT32(0, policy.settings.features);
 }
 
 void testActivityTimingHandlesRollover() {
-  TEST_ASSERT_FALSE(EnergyPolicy::deadlineReached(0xfffffff5u, 0xfffffff0u, 10));
-  TEST_ASSERT_TRUE(EnergyPolicy::deadlineReached(4u, 0xfffffff0u, 20));
   EnergyPolicy policy;
   policy.begin(0xfffffff0u);
   policy.recordActivity(0xfffffff8u);
@@ -34,6 +47,7 @@ int main(int argc, char **argv) {
   UNITY_BEGIN();
   RUN_TEST(testFeaturesDefaultOff);
   RUN_TEST(testFeaturesAreIndependent);
+  RUN_TEST(testUsbSleepPolicyCombinations);
   RUN_TEST(testActivityTimingHandlesRollover);
   return UNITY_END();
 }

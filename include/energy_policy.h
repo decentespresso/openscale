@@ -5,11 +5,10 @@
 
 enum class EnergyFeature : uint8_t {
   SerialQuiet,
-  PowerCadence,
   OledRedraw,
   OledIdle,
-  OledStatic,
   LightSleep,
+  UsbSleepTest,
   Count
 };
 
@@ -29,6 +28,16 @@ struct EnergySettings {
     features = value ? features | bit : features & ~bit;
   }
 
+  bool lightSleepAllowed(bool usbPresent) const {
+    return enabled(EnergyFeature::LightSleep) &&
+           (!usbPresent || enabled(EnergyFeature::UsbSleepTest));
+  }
+
+  bool usbSleepTestActive() const {
+    return enabled(EnergyFeature::LightSleep) &&
+           enabled(EnergyFeature::UsbSleepTest);
+  }
+
   static constexpr uint32_t featureBit(EnergyFeature feature) {
     return uint32_t(1) << static_cast<uint8_t>(feature);
   }
@@ -46,20 +55,12 @@ public:
     return settings.enabled(feature);
   }
 
-  bool anyFeatureEnabled() const {
-    return settings.features != 0;
-  }
-
   void recordActivity(uint32_t now) {
     lastActivityAt = now;
   }
 
   uint32_t inactiveFor(uint32_t now) const {
     return now - lastActivityAt;
-  }
-
-  static bool deadlineReached(uint32_t now, uint32_t startedAt, uint32_t delay) {
-    return now - startedAt >= delay;
   }
 
 private:
