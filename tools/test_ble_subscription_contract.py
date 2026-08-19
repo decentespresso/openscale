@@ -24,9 +24,11 @@ class Mailbox:
         self.connection = 7
         self.subscription = 0xFFFF
         self.pending = 0
+        self.voltage_pending = 0
         self.requested_at = 0
         self.generation = 1
         self.retiring_generation = 0
+        self.direct_notify_required = False
 
     def queue(self, now):
         self.requested_at = now
@@ -34,6 +36,34 @@ class Mailbox:
 
     def subscribe(self):
         self.subscription = self.connection
+
+    def queue_voltage(self):
+        self.voltage_pending += 1
+
+    def connect_normally(self, connection):
+        self.connection = connection
+        self.subscription = 0xFFFF
+        self.pending = 0
+        self.voltage_pending = 0
+        self.direct_notify_required = False
+        self.generation += 1
+
+    def adopt_fallback(self, connection):
+        self.connection = connection
+        self.subscription = connection
+        self.direct_notify_required = True
+        self.generation += 1
+
+    def disconnect(self):
+        self.connection = 0xFFFF
+        self.subscription = 0xFFFF
+        self.pending = 0
+        self.voltage_pending = 0
+        self.direct_notify_required = False
+        self.generation += 1
+
+    def notify_path(self):
+        return "raw" if self.direct_notify_required else "normal"
 
     def begin_process(self, now):
         if self.pending == 0:
@@ -55,6 +85,23 @@ class Mailbox:
         if self.subscription == self.connection:
             return "send"
         return "disconnect"
+
+
+class FrameworkPeers:
+    def __init__(self):
+        self.peers = set()
+        self.connected_count = 0
+
+    def connect_with_failed_descriptor_lookup(self, connection):
+        self.peers.add(connection)
+
+    def remove_peer(self, connection):
+        self.peers.discard(connection)
+
+    def disconnect(self, connection):
+        if connection in self.peers:
+            self.peers.remove(connection)
+            self.connected_count = (self.connected_count - 1) & 0xFFFFFFFF
 
 
 def function_body(text, name):
@@ -90,6 +137,7 @@ def main():
         "volatile uint16_t bleStatusResponsesPending = 0;",
         "volatile unsigned long bleStatusRequestAt = 0;",
         "volatile bool bleNotifyFailureLogged = false;",
+        "volatile bool bleDirectNotifyRequired = false;",
         "volatile uint32_t bleFff4ConnectionGeneration = 0;",
         "portMUX_TYPE bleFff4Mux = portMUX_INITIALIZER_UNLOCKED;",
     )
@@ -102,13 +150,54 @@ def main():
     if ble.count("bleNotifyReadPacket(data,") != len(OUTBOUND_FUNCTIONS):
         raise AssertionError("outbound FFF4 notification bypasses the shared gate")
     sender = function_body(ble, "bleNotifyReadPacket")
-    assert_contains(sender, "pReadCharacteristic->notify();", "ble_gatts_notify_custom(")
+    assert_contains(
+        sender,
+        "bleDirectNotifyRequired",
+        "pReadCharacteristic->notify();",
+        "ble_gatts_notify_custom(",
+        "const int rc =",
+        "if (rc != 0)",
+        "logBleDirectNotifyFailure(",
+    )
+    if "getConnectedCount()" in sender:
+        raise AssertionError("notification routing uses the framework counter as connection state")
     if ble.count("pReadCharacteristic->notify();") != 1:
         raise AssertionError("outbound FFF4 notification bypasses the shared send path")
 
     subscribe = function_body(ble, "onSubscribe")
-    assert_contains(subscribe, "portENTER_CRITICAL(&bleFff4Mux)", "bleFff4SubscriptionHandle = nextHandle;")
+    assert_contains(
+        subscribe,
+        "pServer->removePeerDevice(desc->conn_handle, false);",
+        "adoptBleFff4ConnectionFromSubscription(desc->conn_handle);",
+        "portENTER_CRITICAL(&bleFff4Mux)",
+        "bleFff4SubscriptionHandle = nextHandle;",
+    )
+    if subscribe.index("removePeerDevice(") > subscribe.index("adoptBleFff4ConnectionFromSubscription("):
+        raise AssertionError("fallback adoption leaves the framework phantom peer installed")
     assert_contains(ble, "pReadCharacteristic->setCallbacks(new Fff4Callbacks());")
+
+    normal_connection = function_body(ble, "onConnect")
+    assert_contains(normal_connection, "setBleFff4Connection(desc->conn_handle, 0xFFFF);")
+    if "adoptBleFff4ConnectionFromSubscription" in normal_connection:
+        raise AssertionError("normal connections use fallback adoption")
+
+    adoption = function_body(ble, "adoptBleFff4ConnectionFromSubscription")
+    assert_contains(adoption, "bleDirectNotifyRequired = true;", "bleFff4SubscriptionHandle = connectionHandle;")
+    for cleared_state in ("resetBleFff4StateLocked", "bleStatusResponsesPending", "bleVoltageResponsesPending"):
+        if cleared_state in adoption:
+            raise AssertionError("fallback adoption clears pending responses")
+
+    reset = function_body(ble, "resetBleFff4StateLocked")
+    assert_contains(
+        reset,
+        "bleStatusResponsesPending = 0;",
+        "bleVoltageResponsesPending = 0;",
+        "bleDirectNotifyRequired = false;",
+    )
+
+    live_client = function_body(ble, "bleHasLiveClient")
+    if "getConnectedCount()" in live_client:
+        raise AssertionError("live-client state trusts the framework counter")
 
     for name in ("displayOff", "displayOn"):
         body = function_body(ble, name)
@@ -164,6 +253,8 @@ def main():
 
     disconnect = function_body(ble, "onDisconnect")
     assert_contains(disconnect, "clearBleFff4Connection(desc->conn_handle)")
+    clear_connection = function_body(ble, "clearBleFff4Connection")
+    assert_contains(clear_connection, "resetBleFff4StateLocked(0xFFFF);")
 
     status = function_body(ble, "onStatus")
     assert_contains(status, "bleNotifyFailureLogged", "bleNotifyFailureLogged = true;")
@@ -200,6 +291,40 @@ def main():
     mailbox.generation += 1
     if mailbox.finish_retire() != "wait":
         raise AssertionError("a reused connection handle inherited an older timeout")
+
+    mailbox = Mailbox()
+    mailbox.queue(0)
+    mailbox.queue_voltage()
+    mailbox.adopt_fallback(9)
+    if mailbox.pending != 1 or mailbox.voltage_pending != 1:
+        raise AssertionError("fallback adoption cleared pending responses")
+    if mailbox.notify_path() != "raw":
+        raise AssertionError("fallback connection did not use raw notifications")
+    mailbox.disconnect()
+    if mailbox.direct_notify_required or mailbox.connection != 0xFFFF:
+        raise AssertionError("disconnect did not clear fallback state")
+
+    mailbox = Mailbox()
+    mailbox.queue(0)
+    mailbox.queue_voltage()
+    mailbox.connect_normally(9)
+    if mailbox.pending or mailbox.voltage_pending:
+        raise AssertionError("normal connection did not reset pending responses")
+    if mailbox.notify_path() != "normal":
+        raise AssertionError("normal connection did not use normal notifications")
+
+    broken_framework = FrameworkPeers()
+    broken_framework.connect_with_failed_descriptor_lookup(9)
+    broken_framework.disconnect(9)
+    if broken_framework.connected_count != 0xFFFFFFFF:
+        raise AssertionError("framework model does not reproduce the counter underflow")
+
+    fixed_framework = FrameworkPeers()
+    fixed_framework.connect_with_failed_descriptor_lookup(9)
+    fixed_framework.remove_peer(9)
+    fixed_framework.disconnect(9)
+    if fixed_framework.connected_count != 0 or fixed_framework.peers:
+        raise AssertionError("fallback disconnect underflowed the framework connection count")
     print("BLE subscription contract tests passed")
 
 

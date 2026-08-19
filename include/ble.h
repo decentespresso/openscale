@@ -44,6 +44,7 @@ void resetBleFff4StateLocked(uint16_t subscriptionHandle) {
   bleVoltageResponsesPending = 0;
   bleStatusRequestAt = 0;
   bleNotifyFailureLogged = false;
+  bleDirectNotifyRequired = false;
 }
 
 void setBleFff4Connection(uint16_t connectionHandle, uint16_t subscriptionHandle) {
@@ -51,6 +52,16 @@ void setBleFff4Connection(uint16_t connectionHandle, uint16_t subscriptionHandle
   bleFff4ConnectionGeneration = bleFff4ConnectionGeneration + 1;
   connId = connectionHandle;
   resetBleFff4StateLocked(subscriptionHandle);
+  portEXIT_CRITICAL(&bleFff4Mux);
+}
+
+void adoptBleFff4ConnectionFromSubscription(uint16_t connectionHandle) {
+  portENTER_CRITICAL(&bleFff4Mux);
+  bleFff4ConnectionGeneration = bleFff4ConnectionGeneration + 1;
+  connId = connectionHandle;
+  bleFff4SubscriptionHandle = connectionHandle;
+  bleNotifyFailureLogged = false;
+  bleDirectNotifyRequired = true;
   portEXIT_CRITICAL(&bleFff4Mux);
 }
 
@@ -305,12 +316,9 @@ class Fff4Callbacks : public BLECharacteristicCallbacks {
 #if defined(CONFIG_NIMBLE_ENABLED)
   void onSubscribe(BLECharacteristic *pCharacteristic, ble_gap_conn_desc *desc, uint16_t subValue) {
     if (desc == nullptr) return;
-    // iOS 9 CoreBluetooth establishes the link and subscribes but the arduino-esp32
-    // BLE server never runs its connect path (onConnect does not fire, getConnectedCount
-    // stays 0). onSubscribe still fires, so adopt this subscription as the live
-    // connection when none was registered.
     if (subValue != 0 && connId == 0xFFFF) {
-      setBleFff4Connection(desc->conn_handle, desc->conn_handle);
+      pServer->removePeerDevice(desc->conn_handle, false);
+      adoptBleFff4ConnectionFromSubscription(desc->conn_handle);
       t_firstConnect = millis();
       t_heartBeat = millis();
       bleState = CONNECTED;
@@ -392,12 +400,20 @@ void bleShutdown() {
 
 static bool bleHasLiveClient() {
 #if defined(CONFIG_NIMBLE_ENABLED)
-  // connId != 0xFFFF covers the iOS 9 client adopted in onSubscribe, whose
-  // connection the server's getConnectedCount() never counted.
-  return pServer != nullptr && (pServer->getConnectedCount() > 0 || connId != 0xFFFF);
+  return pServer != nullptr && connId != 0xFFFF;
 #else
   return deviceConnected;
 #endif
+}
+
+static void logBleDirectNotifyFailure(uint16_t connectionHandle, int rc) {
+  portENTER_CRITICAL(&bleFff4Mux);
+  const bool shouldLog = !bleNotifyFailureLogged && bleDirectNotifyRequired && connId == connectionHandle;
+  if (shouldLog) bleNotifyFailureLogged = true;
+  portEXIT_CRITICAL(&bleFff4Mux);
+  if (!shouldLog) return;
+  Serial.printf("FFF4 direct notification failure for connId: %u, code: %d\n",
+                static_cast<unsigned int>(connectionHandle), rc);
 }
 
 static bool bleCanNotifyCurrent() {
@@ -477,16 +493,23 @@ void processBleStatusResponse() {
   pServer->disconnect(currentConnId, 0x13);
 }
 
-// Registered clients receive via the server's notify(). The iOS 9 client adopted in
-// onSubscribe is never counted by the server, so send directly on its conn handle.
 static void bleNotifyReadPacket(uint8_t *data, size_t len) {
+  portENTER_CRITICAL(&bleFff4Mux);
+  const bool directNotifyRequired = bleDirectNotifyRequired;
+  const uint16_t connectionHandle = connId;
+  portEXIT_CRITICAL(&bleFff4Mux);
   pReadCharacteristic->setValue(data, len);
-  if (pServer->getConnectedCount() > 0) {
+  if (!directNotifyRequired) {
     pReadCharacteristic->notify();
-  } else if (connId != 0xFFFF) {
-    struct os_mbuf *om = ble_hs_mbuf_from_flat(data, len);
-    if (om != nullptr) ble_gatts_notify_custom(connId, pReadCharacteristic->getHandle(), om);
+    return;
   }
+  struct os_mbuf *om = ble_hs_mbuf_from_flat(data, len);
+  if (om == nullptr) {
+    logBleDirectNotifyFailure(connectionHandle, BLE_HS_ENOMEM);
+    return;
+  }
+  const int rc = ble_gatts_notify_custom(connectionHandle, pReadCharacteristic->getHandle(), om);
+  if (rc != 0) logBleDirectNotifyFailure(connectionHandle, rc);
 }
 
 void sendBleVoltage() {

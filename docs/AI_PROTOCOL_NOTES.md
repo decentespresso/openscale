@@ -29,7 +29,7 @@ A live BLE connection does not imply an FFF4 notification subscription. A client
 
 All outbound FFF4 paths pass through `bleCanNotifyCurrent()`. The shared gate checks the feature state, characteristic, live connection, and current subscription before touching the characteristic.
 
-On iOS 9 the arduino-esp32 BLE server never runs its connect path: `onConnect` does not fire and `getConnectedCount()` stays zero, even though the client subscribes to FFF4 and its writes are acknowledged. `onSubscribe` adopts that subscription as the live connection, `bleHasLiveClient()` counts a valid connection handle, and every gated sender emits through `bleNotifyReadPacket()`: the server's `notify()` for counted clients, or a direct `ble_gatts_notify_custom()` on the connection handle when the server counts no peer.
+On iOS 9 the pinned arduino-esp32 framework can insert a peer before descriptor lookup, then skip both `onConnect` and its connection-count increment when that lookup fails. `onSubscribe` removes the uncounted peer before disconnect can underflow the framework counter, adopts the connection without clearing queued responses, and records that the connection requires direct NimBLE notifications. Normal connections continue through `BLECharacteristic::notify()`.
 
 Display status responses are deferred through a mailbox. The BLE callback queues the response, and `processBleStatusResponse()` drains it from the main loop. The mailbox waits two seconds for the FFF4 subscription, then rechecks the connection handle, connection generation, pending requests, and subscription before disconnecting. A newer request or reused connection cancels stale recovery.
 
