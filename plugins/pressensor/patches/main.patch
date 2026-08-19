@@ -117,9 +117,12 @@ index 8c02f2e..a036e87 100644
  
  const Menu *const mainMenu[] = {
    &menuExit,
-@@ -234,6 +261,9 @@ const Menu *const mainMenu[] = {
+@@ -234,9 +261,12 @@ const Menu *const mainMenu[] = {
  #if HDS_ENABLE_GRINDER
    &menuGrinder,
+ #endif
+ #if HDS_ENABLE_ENERGY_MENU
+   &menuEnergy,
  #endif
 +#if HDS_ENABLE_PRESSENSOR
 +  &menuPressensor,
@@ -254,16 +257,21 @@ index 8c02f2e..a036e87 100644
  void calibrate() {
    leaveMenu();
    b_calibration = true;
-@@ -1656,6 +1806,11 @@ void selectMenu() {
+@@ -1656,11 +1806,16 @@ void selectMenu() {
        b_grinderMenuDirectEntry = false;
        currentMenu = grinderMenu;
        currentMenuSize = getMenuSize(grinderMenu);
-+#endif
+ #endif
+ #if HDS_ENABLE_ENERGY_MENU
+     } else if (currentSelection == &menuEnergy) {
+       currentMenu = energyMenu;
+       currentMenuSize = getMenuSize(energyMenu);
+ #endif
 +#if HDS_ENABLE_PRESSENSOR
 +    } else if (currentSelection == &menuPressensor) {
 +      currentMenu = pressensorMenu;
 +      currentMenuSize = getMenuSize(pressensorMenu);
- #endif
++#endif
      }
      currentIndex = 0;
 diff --git a/include/parameter.h b/include/parameter.h
@@ -1538,9 +1546,9 @@ index c473fa7..cac7fed 100644
 +}
 +#endif
 +
- void drawBattery() {
-   if (millis() - t_batteryIcon >= 500) {
-     t_batteryIcon = millis();
+ void drawBattery(unsigned long now) {
+ #if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
+   if (digitalRead(USB_DET) == LOW) {
 diff --git a/tools/test_pressensor_ble_contract.py b/tools/test_pressensor_ble_contract.py
 new file mode 100644
 index 0000000..4fbf212

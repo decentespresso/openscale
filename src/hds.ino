@@ -3,6 +3,21 @@
 #include "config.h"
 
 #include "parameter.h"
+#if HDS_ENABLE_ENERGY_MENU
+#include "energy_idle_wake.h"
+void applyEnergyDisplayCommand(bool enabled);
+void applyEnergyLowPowerCommand();
+void applyEnergyFeatureTransition(EnergyFeature feature, bool wasEnabled, bool isEnabled);
+bool initEnergyPowerManagement();
+bool applyEnergyLightSleepSetting(bool enabled);
+bool setEnergyLightSleepEnabled(bool enabled);
+void refreshEnergyIdleWakeForRuntimeState();
+bool setEnergyPerformanceCritical(bool required);
+void serviceEnergyPowerManagement();
+bool setEnergyIdleWakeEnabled(bool enabled);
+void waitForEnergyMainLoopWork();
+#endif
+
 #include "storage.h"
 #include "power.h"
 #include "gyro.h"
@@ -58,6 +73,279 @@ bool buttonChecksSuppressedUntilRelease() {
   return true;
 }
 
+#if HDS_ENABLE_ENERGY_MENU
+constexpr unsigned long ENERGY_ADC_SIGNAL_TIMEOUT_MS = 301;
+constexpr unsigned long ENERGY_ADC_RECOVERY_START_MS = 1501;
+constexpr unsigned long ENERGY_ADC_RECOVERY_RETRY_MS = 5001;
+constexpr unsigned long ENERGY_DISPLAY_DEADLINE_MS = 500;
+constexpr unsigned long ENERGY_USB_FALLBACK_POLL_MS = 10;
+
+bool energySerialTransportActive() {
+#ifdef USB_DET
+  return b_usbLinked || digitalRead(USB_DET) == LOW;
+#else
+  return true;
+#endif
+}
+
+bool energyLightSleepAllowedByUsbPolicy() {
+  return energyPolicy.settings.lightSleepAllowed(energySerialTransportActive());
+}
+
+bool energyUsbSleepTestActive() {
+  return energyPolicy.settings.usbSleepTestActive();
+}
+
+bool setEnergyIdleWakeEnabled(bool enabled) {
+  const bool scaleWakeEnabled = !b_softSleep;
+  const bool usbWakeEnabled =
+    !energyPolicy.featureEnabled(EnergyFeature::UsbSleepTest);
+  if (enabled == energyIdle.wakeInterruptsAttached &&
+      scaleWakeEnabled == energyIdle.scaleWakeEnabled &&
+      usbWakeEnabled == energyIdle.usbWakeEnabled) return true;
+  uint64_t rtcWakeMask = 0;
+  if (!setEnergyLightSleepWakeSourceEnabled(
+        enabled, scaleWakeEnabled, usbWakeEnabled, &rtcWakeMask)) {
+    if (energyIdle.wakeInterruptsAttached) {
+      detachInterrupt(digitalPinToInterrupt(SCALE_DOUT));
+      detachInterrupt(digitalPinToInterrupt(BUTTON_CIRCLE));
+      detachInterrupt(digitalPinToInterrupt(BUTTON_SQUARE));
+#ifdef USB_DET
+      detachInterrupt(digitalPinToInterrupt(USB_DET));
+#endif
+      energyIdle.wakeInterruptsAttached = false;
+    }
+    energyIdle.scaleWakeFallback = false;
+    energyIdle.circleButtonWakeFallback = false;
+    energyIdle.squareButtonWakeFallback = false;
+    energyIdle.usbWakeFallback = false;
+    energyIdle.rtcWakeMask = 0;
+    return false;
+  }
+  const bool interruptsChanged = enabled != energyIdle.wakeInterruptsAttached;
+  if (interruptsChanged && enabled) {
+    attachInterruptArg(digitalPinToInterrupt(SCALE_DOUT), energyMainLoopWakeIsr,
+                       energyIdle.mainTask, FALLING);
+    attachInterruptArg(digitalPinToInterrupt(BUTTON_CIRCLE), energyMainLoopWakeIsr,
+                       energyIdle.mainTask, FALLING);
+    attachInterruptArg(digitalPinToInterrupt(BUTTON_SQUARE), energyMainLoopWakeIsr,
+                       energyIdle.mainTask, FALLING);
+#ifdef USB_DET
+    attachInterruptArg(digitalPinToInterrupt(USB_DET), energyMainLoopWakeIsr,
+                       energyIdle.mainTask, FALLING);
+#endif
+  } else if (interruptsChanged) {
+    detachInterrupt(digitalPinToInterrupt(SCALE_DOUT));
+    detachInterrupt(digitalPinToInterrupt(BUTTON_CIRCLE));
+    detachInterrupt(digitalPinToInterrupt(BUTTON_SQUARE));
+#ifdef USB_DET
+    detachInterrupt(digitalPinToInterrupt(USB_DET));
+#endif
+  }
+  energyIdle.wakeInterruptsAttached = enabled;
+  energyIdle.scaleWakeEnabled = scaleWakeEnabled;
+  energyIdle.usbWakeEnabled = usbWakeEnabled;
+  energyIdle.scaleWakeFallback = enabled && scaleWakeEnabled &&
+    !energyLightSleepWakePinSupported((gpio_num_t)SCALE_DOUT);
+  energyIdle.circleButtonWakeFallback = enabled &&
+    !energyLightSleepWakePinSupported((gpio_num_t)BUTTON_CIRCLE);
+  energyIdle.squareButtonWakeFallback = enabled &&
+    !energyLightSleepWakePinSupported((gpio_num_t)BUTTON_SQUARE);
+#ifdef USB_DET
+  energyIdle.usbWakeFallback = enabled && usbWakeEnabled &&
+    !energyLightSleepWakePinSupported((gpio_num_t)USB_DET);
+#else
+  energyIdle.usbWakeFallback = enabled && usbWakeEnabled;
+#endif
+  energyIdle.rtcWakeMask = rtcWakeMask;
+  return true;
+}
+
+bool initEnergyIdleWake() {
+  if (energyIdle.lightSleepCallbackRegistered) return true;
+  energyIdle.lightSleepCallbackRegistered =
+    registerEnergyMainLoopLightSleepCallback(&energyIdle);
+  return energyIdle.lightSleepCallbackRegistered;
+}
+
+bool setEnergyLightSleepEnabled(bool enabled) {
+  if (enabled) {
+    if (!energyPowerManagement.ready() ||
+        !energyIdle.lightSleepCallbackRegistered ||
+        !setEnergyIdleWakeEnabled(true)) {
+      setEnergyIdleWakeEnabled(false);
+      applyEnergyLightSleepSetting(false);
+      return false;
+    }
+    if (applyEnergyLightSleepSetting(true)) return true;
+    setEnergyIdleWakeEnabled(false);
+    applyEnergyLightSleepSetting(false);
+    return false;
+  }
+  const bool powerManagementDisabled = applyEnergyLightSleepSetting(false);
+  const bool wakeDisabled = setEnergyIdleWakeEnabled(false);
+  return powerManagementDisabled && wakeDisabled;
+}
+
+void refreshEnergyIdleWakeForRuntimeState() {
+  if (!energyPolicy.featureEnabled(EnergyFeature::LightSleep) ||
+      setEnergyIdleWakeEnabled(true)) return;
+  setEnergyLightSleepEnabled(false);
+  energyPolicy.settings.select(EnergyFeature::LightSleep, false);
+  energyStoreFeature(EnergyFeature::LightSleep, false);
+  updateEnergyMenuRow(EnergyFeature::LightSleep);
+  Serial.println("[energy] Light Sleep disabled after wake source failure");
+}
+
+void serviceEnergyLightSleepWakeRestore() {
+  if (!energyIdle.wakePinsNeedRestore) return;
+  energyIdle.wakePinsNeedRestore = false;
+  const bool restored = restoreEnergyLightSleepWakePins(energyIdle.rtcWakeMask);
+  pinMode(SCALE_DOUT, INPUT);
+  pinMode(BUTTON_CIRCLE, INPUT_PULLUP);
+  pinMode(BUTTON_SQUARE, INPUT_PULLUP);
+#ifdef USB_DET
+  pinMode(USB_DET, INPUT_PULLUP);
+#endif
+  if (restored) return;
+  setEnergyLightSleepEnabled(false);
+  energyPolicy.settings.select(EnergyFeature::LightSleep, false);
+  energyStoreFeature(EnergyFeature::LightSleep, false);
+  Serial.println("[energy] Light Sleep disabled after wake pin restore failure");
+}
+
+bool serviceEnergyButtonGesture(unsigned long now) {
+  if (!energyPolicy.featureEnabled(EnergyFeature::LightSleep)) return true;
+  if (anyScaleButtonPressed()) {
+    energyIdle.buttonGestureActive = true;
+    energyIdle.lastButtonActivityAt = now;
+  } else if (energyIdle.buttonGestureActive &&
+             now - energyIdle.lastButtonActivityAt > DOUBLECLICK_DELAY) {
+    energyIdle.buttonGestureActive = false;
+  }
+  return energyIdle.buttonGestureActive;
+}
+
+bool energyMainLoopHasPendingWork() {
+  if ((!b_softSleep && digitalRead(SCALE_DOUT) == LOW) || wsPendingMask != 0 ||
+      bleStatusResponsesPending != 0 || bleVoltageResponsesPending != 0 ||
+      otaDisplayState != OTA_DISPLAY_NONE || b_powerOff) {
+    return true;
+  }
+  return hasRemoteTareRequest();
+}
+
+bool energyMainLoopCanBlock() {
+  const bool usbSleepTest = energyUsbSleepTestActive();
+  const bool chargingBlocksSleep = !usbSleepTest &&
+    (b_showChargingUI || b_is_charging ||
+     GPIO_power_on_with == BATTERY_CHARGING);
+  if (!energyLightSleepAllowedByUsbPolicy() ||
+      b_ota || b_pullOtaRunning || b_menu || b_calibration ||
+      chargingBlocksSleep) {
+    return false;
+  }
+#if HDS_ENABLE_GRINDER
+  if (grinderRuntimeKeepsAwake()) return false;
+#endif
+#if HDS_FEATURE_WIFI && !HDS_FEATURE_WEBSERVER
+  if (b_wifiEnabled) return false;
+#endif
+  return true;
+}
+
+unsigned long energyMainLoopWaitMs(unsigned long now) {
+  unsigned long waitMs = 200;
+  if (!b_softSleep && scale.getSignalTimeoutFlag()) {
+    const unsigned long dataWait = EnergyRuntimePolicy::timeUntil(
+      now, energyIdle.lastScaleData, ENERGY_ADC_RECOVERY_START_MS);
+    const unsigned long recoveryWait = EnergyRuntimePolicy::timeUntil(
+      now, energyIdle.lastScaleRecovery, ENERGY_ADC_RECOVERY_RETRY_MS);
+    waitMs = max(dataWait, recoveryWait);
+  } else if (!b_softSleep) {
+    waitMs = EnergyRuntimePolicy::timeUntil(
+      now, energyIdle.lastScaleData, ENERGY_ADC_SIGNAL_TIMEOUT_MS);
+  }
+
+  if (!b_softSleep && energyIdle.scaleWakeFallback) {
+    const float conversionMs = scale.getConversionTime();
+    const unsigned long scalePollMs = isfinite(conversionMs) && conversionMs >= 1.0f
+      ? static_cast<unsigned long>(ceilf(conversionMs))
+      : ADS1232_DEFAULT_CONVERSION_MS;
+    waitMs = EnergyRuntimePolicy::earlier(
+      waitMs, EnergyRuntimePolicy::timeUntil(
+        now, energyIdle.lastScaleData, max(1UL, scalePollMs)));
+  }
+
+  if (energyIdle.circleButtonWakeFallback ||
+      energyIdle.squareButtonWakeFallback) {
+    waitMs = EnergyRuntimePolicy::earlier(waitMs, BUTTON_POLL_INTERVAL_MS);
+  }
+
+  if (energyIdle.usbWakeFallback) {
+    waitMs = EnergyRuntimePolicy::earlier(waitMs, ENERGY_USB_FALLBACK_POLL_MS);
+  }
+
+  if (anyScaleButtonPressed() || energyIdle.buttonGestureActive) {
+    waitMs = EnergyRuntimePolicy::earlier(
+      waitMs, EnergyRuntimePolicy::timeUntil(
+        now, energyIdle.lastButtonPoll, BUTTON_POLL_INTERVAL_MS));
+  }
+
+  const bool weightOutputActive = b_weight_in_serial || b_usbweight_enabled ||
+                                  bleHasLiveClient()
+#if HDS_FEATURE_WEBSOCKET
+                                  || (b_wifiEnabled && websocketHasClients())
+#endif
+                                  ;
+  if (!b_softSleep && weightOutputActive) {
+    waitMs = EnergyRuntimePolicy::earlier(
+      waitMs, EnergyRuntimePolicy::timeUntil(
+        now, energyIdle.lastWeightTick, WEIGHT_BASE_INTERVAL_MS));
+  }
+
+  if (stopWatch.isRunning()) {
+    waitMs = EnergyRuntimePolicy::earlier(waitMs, 1000);
+  }
+  if (!b_u8g2Sleep) {
+    waitMs = EnergyRuntimePolicy::earlier(waitMs, ENERGY_DISPLAY_DEADLINE_MS);
+  }
+  waitMs = EnergyRuntimePolicy::earlier(waitMs, 200);
+  waitMs = EnergyRuntimePolicy::earlier(
+    waitMs, EnergyRuntimePolicy::timeUntil(
+      now, t_batteryRefresh, i_batteryRefreshTareInterval));
+
+#if HDS_FEATURE_WIFI
+  if (b_wifiEnabled) {
+    waitMs = EnergyRuntimePolicy::earlier(waitMs, WIFI_SUPERVISE_INTERVAL_MS);
+  }
+#endif
+
+  if (bleHasLiveClient() && b_requireHeartBeat) {
+    unsigned long heartbeatWait = max(
+      EnergyRuntimePolicy::timeUntil(now, t_firstConnect, HEARTBEAT_TIMEOUT + 1),
+      EnergyRuntimePolicy::timeUntil(now, t_heartBeat, HEARTBEAT_TIMEOUT + 1));
+    if (t_lastDisconnectAttempt != 0) {
+      heartbeatWait = max(
+        heartbeatWait,
+        EnergyRuntimePolicy::timeUntil(
+          now, t_lastDisconnectAttempt, HEARTBEAT_DISCONNECT_RETRY_INTERVAL));
+    }
+    waitMs = EnergyRuntimePolicy::earlier(waitMs, heartbeatWait);
+  }
+  return waitMs;
+}
+
+void waitForEnergyMainLoopWork() {
+  if (!energyMainLoopCanBlock() || energyMainLoopHasPendingWork()) return;
+  const unsigned long waitMs = energyMainLoopWaitMs(millis());
+  if (waitMs == 0) return;
+  TickType_t waitTicks = pdMS_TO_TICKS(waitMs);
+  if (waitTicks == 0) waitTicks = 1;
+  ulTaskNotifyTake(pdTRUE, waitTicks);
+}
+#endif
+
 void adsDebugCallback(const ADS1232DebugInfo& info) {
   static unsigned long lastDebugPrint = 0;
   unsigned long now = millis();
@@ -85,16 +373,31 @@ void adsDebugCallback(const ADS1232DebugInfo& info) {
 
 void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonState) {
   power_off(-1);
+#if HDS_ENABLE_ENERGY_MENU
+  if (b_u8g2Sleep && !energyRuntime.explicitDisplayOff) {
+    u8g2.setPowerSave(0);
+    b_u8g2Sleep = false;
+  }
+#else
   if (b_u8g2Sleep) {
     u8g2.setPowerSave(0);
     b_u8g2Sleep = false;
   }
+#endif
   if (b_softSleep) {
     Serial.println("Exit Soft Sleep.");
     wakeScaleFromSoftSleep("button soft wake");
   }
+#if HDS_ENABLE_ENERGY_MENU
+  if (!energyRuntime.explicitDisplayOff) {
+    u8g2.setContrast(255);
+    b_websocketLowPowerEnabled = false;
+    energyRuntime.requestedDisplayContrast = 255;
+  }
+#else
   u8g2.setContrast(255);
   b_websocketLowPowerEnabled = false;
+#endif
   int pin = button->getPin();
   switch (eventType) {
     case AceButton::kEventPressed:
@@ -148,14 +451,17 @@ void scaleTimer() {
   if (stopWatch.isRunning() == false) {
     if (stopWatch.elapsed() == 0) {
       stopWatch.start();
+      recordEnergyActivity();
       Serial.println("Timer Start");
     }
     if (stopWatch.elapsed() > 0) {
       stopWatch.reset();
+      recordEnergyActivity();
       Serial.println("Timer Reset");
     }
   } else {
     stopWatch.stop();
+    recordEnergyActivity();
     Serial.println("Timer Stop");
   }
 }
@@ -184,6 +490,7 @@ void buttonCircle_Released() {
 }
 
 void buttonCircle_Pressed() {
+  recordEnergyActivity();
   if (b_showChargingUI && i_buttonBootDelay == 0) {
     wakeFromChargingUi(BUTTON_CIRCLE);
   }
@@ -192,6 +499,7 @@ void buttonCircle_Pressed() {
     navigateMenu(1);
   }
   if (b_calibration) {
+    recordEnergyActivity();
     i_cal_weight++;
     Serial.print("i_cal_weight = ");
     Serial.println(i_cal_weight);
@@ -210,6 +518,7 @@ void buttonSquare_Released() {
 }
 
 void buttonSquare_Pressed() {
+  recordEnergyActivity();
   if (b_showChargingUI && i_buttonBootDelay == 0) {
     wakeFromChargingUi(BUTTON_SQUARE);
   }
@@ -217,6 +526,7 @@ void buttonSquare_Pressed() {
     selectMenu();
   }
   if (b_calibration) {
+    recordEnergyActivity();
     i_button_cal_status++;
     Serial.print("i_button_cal_status:");
     Serial.println(i_button_cal_status);
@@ -424,6 +734,9 @@ void beforeDeepSleepFlush() {
 #endif
 
 void setup() {
+#if HDS_ENABLE_ENERGY_MENU
+  energyIdle.mainTask = xTaskGetCurrentTaskHandle();
+#endif
   Serial.begin(115200);
   while (!Serial)
     ;
@@ -441,6 +754,22 @@ void setup() {
       delay(1000);
     }
   }
+#if HDS_ENABLE_ENERGY_MENU
+  if (!energyLoadSettings(energyPolicy.settings)) {
+    Serial.println("Energy settings init failed!");
+    while (1) {
+      delay(1000);
+    }
+  }
+  if (energyPolicy.featureEnabled(EnergyFeature::UsbSleepTest)) {
+    Serial.println("[energy] USB Sleep Test ON: USB serial reliability not guaranteed");
+  }
+  if (!initEnergyPowerManagement() || !applyEnergyLightSleepSetting(false)) {
+    Serial.println("[energy] Light Sleep unavailable; continuing awake");
+  }
+  energyPolicy.begin(millis());
+  refreshEnergyMenuRows();
+#endif
 #if HDS_ENABLE_GRINDER
   grinderLoadSettings();
 #endif
@@ -550,9 +879,9 @@ void setup() {
 
 #if defined(V7_3) || defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
   gpio_hold_dis((gpio_num_t)ACC_PWR_CTRL);
-  Serial.println("ACC_PWR_CTRL = HIGH");
 #endif
   gpio_deep_sleep_hold_dis();
+  Serial.println("ACC_PWR_CTRL = HIGH");
 #ifdef ESP32
   Wire.begin(I2C_SDA, I2C_SCL);
 #endif
@@ -573,16 +902,26 @@ void setup() {
   Serial.println("ACC_init complete");
   if (b_gyroEnabled) {
 #ifdef GYROFACEUP
-    if (gyro_z() < 8) {
+#if HDS_ENABLE_ENERGY_MENU
+    const double bootGyroZUp = gyro_z(true);
+#else
+    const double bootGyroZUp = gyro_z();
+#endif
+    if (bootGyroZUp < 8) {
       Serial.print("gyro_z:");
-      Serial.println(gyro_z());
+      Serial.println(bootGyroZUp);
       shut_down_now_accidentTouch();
     }
 #endif
 #ifdef GYROFACEDOWN
-    if (gyro_z() > -8) {
+#if HDS_ENABLE_ENERGY_MENU
+    const double bootGyroZDown = gyro_z(true);
+#else
+    const double bootGyroZDown = gyro_z();
+#endif
+    if (bootGyroZDown > -8) {
       Serial.print("gyro_z:");
-      Serial.println(gyro_z());
+      Serial.println(bootGyroZDown);
       shut_down_now_accidentTouch();
     }
 #endif
@@ -598,6 +937,7 @@ void setup() {
   }
 #endif
   u8g2.begin();
+  b_u8g2Sleep = false;
   u8g2.enableUTF8Print();
   u8g2.setContrast(255);
   u8g2.setFont(FONT_M);
@@ -608,6 +948,7 @@ void setup() {
   else
     u8g2.setDisplayRotation(U8G2_R2);
 
+  invalidateEnergyOledFrame();
   u8g2.firstPage();
   do {
     u8g2.setFont(u8g2_font_logisoso22_tf);
@@ -848,6 +1189,23 @@ void setup() {
     hdsOtaRollbackMarkValid();
   }
 #endif
+#if HDS_ENABLE_ENERGY_MENU
+  const bool lightSleepRequested =
+    energyPolicy.featureEnabled(EnergyFeature::LightSleep);
+  const bool lightSleepReady = initEnergyIdleWake();
+  if (lightSleepRequested &&
+      (!lightSleepReady || !setEnergyLightSleepEnabled(true))) {
+    setEnergyLightSleepEnabled(false);
+    energyPolicy.settings.select(EnergyFeature::LightSleep, false);
+    const bool stored = energyStoreFeature(EnergyFeature::LightSleep, false);
+    updateEnergyMenuRow(EnergyFeature::LightSleep);
+    Serial.println(stored
+      ? "[energy] Stored Light Sleep rejected; disabled"
+      : "[energy] Stored Light Sleep rejected; persistence failed");
+  } else if (!lightSleepReady) {
+    Serial.println("[energy] Light Sleep wake setup unavailable; continuing awake");
+  }
+#endif
 }
 
 void updateAdaptiveTracking(float current_weight) {
@@ -969,9 +1327,16 @@ float applyStableOutput(float current_value) {
 
 void pureScale() {
   static bool b_newDataReady = 0;
+#if HDS_ENABLE_ENERGY_MENU
   static float f_last_displayed = 0.0;
+#endif
+#if HDS_ENABLE_ENERGY_MENU
+  unsigned long &t_lastScaleData = energyIdle.lastScaleData;
+  unsigned long &t_lastScaleRecovery = energyIdle.lastScaleRecovery;
+#else
   static unsigned long t_lastScaleData = 0;
   static unsigned long t_lastScaleRecovery = 0;
+#endif
   static unsigned long t_zeroDisplayMismatch = 0;
   static int f_similar_diff_count = 0;
   static float f_last_diff = 0.0;
@@ -1060,6 +1425,13 @@ void pureScale() {
     } else {
       f_displayedValue = stable_output;
     }
+#if HDS_ENABLE_ENERGY_MENU
+    if (EnergyRuntimePolicy::meaningfulWeightChange(
+          f_last_displayed, f_displayedValue, STABLE_OUTPUT_THRESHOLD)) {
+      recordEnergyActivity();
+      f_last_displayed = f_displayedValue;
+    }
+#endif
     updateAdaptiveTracking(tracking_compensated);
 
     if (!b_bootTare && !b_weight_quick_zero &&
@@ -1175,9 +1547,17 @@ bool wakeScaleFromSoftSleep(const char *context) {
   digitalWrite(ACC_PWR_CTRL, HIGH);
   delay(5);
   scale.powerUp();
+#if HDS_ENABLE_ENERGY_MENU
+  b_softSleep = false;
+  refreshEnergyIdleWakeForRuntimeState();
+  clearPendingEnergyActivity();
+  energyPolicy.recordActivity(millis());
+  applyEnergyDisplayCommand(!energyRuntime.explicitDisplayOff);
+#else
   u8g2.setPowerSave(0);
   b_softSleep = false;
   b_u8g2Sleep = false;
+#endif
   if (refreshScaleDatasetAfterDiscontinuity(context)) {
     resetScaleOutputAfterAdcDiscontinuity();
     return true;
@@ -1308,6 +1688,7 @@ bool processBootFreshTare() {
 }
 
 bool tareScaleWhenAdcReady(const char *context, bool userRequested) {
+  if (userRequested) recordEnergyActivity();
   ADS1232DebugInfo info = scale.getDebugInfo();
   if (info.samplesInUse > 0 && info.validSamples < info.samplesInUse) {
     if (!refreshScaleDatasetAfterDiscontinuity(context)) {
@@ -1453,11 +1834,231 @@ void setManualStableValue(float value) {
   Serial.println(value, 4);
 }
 
+#if HDS_ENABLE_ENERGY_MENU
+void recordEnergyStateTransitions() {
+  static bool initialized = false;
+  static bool charging = false;
+  static bool calibrating = false;
+#if HDS_ENABLE_GRINDER
+  static GrinderDosingState grinderState = GRINDER_STATE_DISABLED;
+#endif
+  const bool chargingNow = b_is_charging;
+  if (!initialized) {
+    charging = chargingNow;
+    calibrating = b_calibration;
+#if HDS_ENABLE_GRINDER
+    grinderState = grinderRuntime.state;
+#endif
+    initialized = true;
+    return;
+  }
+  if (charging != chargingNow) {
+    charging = chargingNow;
+    recordEnergyActivity();
+  }
+  if (calibrating != b_calibration) {
+    calibrating = b_calibration;
+    recordEnergyActivity();
+  }
+#if HDS_ENABLE_GRINDER
+  if (grinderState != grinderRuntime.state) {
+    grinderState = grinderRuntime.state;
+    recordEnergyActivity();
+  }
+#endif
+}
+
+uint32_t mixEnergyDisplaySignature(uint32_t signature, uint32_t value) {
+  return (signature ^ value) * 16777619u;
+}
+
+uint32_t mixEnergyDisplayText(uint32_t signature, const char *text) {
+  while (*text != '\0') {
+    signature = mixEnergyDisplaySignature(signature, static_cast<uint8_t>(*text));
+    text++;
+  }
+  return signature;
+}
+
+uint32_t energyDisplaySignature(unsigned long now) {
+  uint32_t signature = 2166136261u;
+  const bool bleConnected = bleHasLiveClient();
+#if HDS_FEATURE_WIFI
+  const bool wifiBlink = b_wifiEnabled && WiFi.getMode() == WIFI_STA &&
+                         WiFi.status() != WL_CONNECTED;
+#else
+  const bool wifiBlink = false;
+#endif
+  const int batteryPercent = map(f_batteryVoltage * 1000,
+                                 showEmptyBatteryBelowVoltage * 1000,
+                                 showFullBatteryAboveVoltage * 1000, 0, 100);
+  bool chargingNow = digitalRead(BATTERY_CHARGING) == LOW;
+#ifdef USB_DET
+  chargingNow = digitalRead(USB_DET) == LOW;
+#endif
+  const uint8_t batteryBucket = EnergyRuntimePolicy::batteryDisplayBucket(batteryPercent);
+  const uint8_t displayedBattery = chargingNow ? 5 : batteryBucket;
+  const bool tareVisible = now - t_tareStatus < 500;
+  const bool shutdownWarningVisible = b_shutdownFailBle && now - t_shutdownFailBle < 3000;
+  const uint32_t animationPhase =
+    ((wifiBlink || (!chargingNow && batteryBucket == 0)) ? (now / 500) & 1 : 0) |
+    ((b_ble_enabled && !bleConnected ? (now / 1000) & 1 : 0) << 1);
+  signature = mixEnergyDisplaySignature(signature, static_cast<uint32_t>(lroundf(f_displayedValue * 10.0f)));
+  signature = mixEnergyDisplaySignature(signature, (f_displayedValue > OVER_WEIGHT) |
+                                                    ((f_displayedValue <= -1000.0f) << 1));
+  signature = mixEnergyDisplaySignature(signature, stopWatch.elapsed());
+  signature = mixEnergyDisplaySignature(signature, displayedBattery);
+#if HDS_FEATURE_WIFI
+  signature = mixEnergyDisplaySignature(signature, static_cast<uint32_t>(WiFi.status()));
+  signature = mixEnergyDisplaySignature(signature, static_cast<uint32_t>(WiFi.getMode()));
+#endif
+#if HDS_ENABLE_GRINDER
+  signature = mixEnergyDisplaySignature(signature, static_cast<uint32_t>(grinderRuntime.state));
+  signature = mixEnergyDisplayText(signature, grinderRuntime.status);
+#endif
+  signature = mixEnergyDisplaySignature(signature, animationPhase);
+  signature = mixEnergyDisplaySignature(signature, b_screenFlipped | (b_debug << 1) |
+                                                    (b_about << 2) | (b_timeOnTop << 3));
+  signature = mixEnergyDisplaySignature(signature, b_adc_recovery_active | (b_heartBeatIcon << 1) |
+                                                    (tareVisible << 2) | (shutdownWarningVisible << 3));
+  signature = mixEnergyDisplaySignature(signature, i_adc_recovery_count);
+  uint32_t connectionState = bleConnected | (b_ble_enabled << 1);
+#if HDS_FEATURE_WIFI
+  connectionState |= b_wifiEnabled << 2;
+#endif
+  signature = mixEnergyDisplaySignature(signature, connectionState);
+  signature = mixEnergyDisplaySignature(signature, digitalRead(BUTTON_CIRCLE) | (digitalRead(BUTTON_SQUARE) << 1));
+  return signature;
+}
+
+bool energyDisplayIdleInhibited() {
+  bool usbPower = b_is_charging || b_showChargingUI;
+#ifdef USB_DET
+  usbPower = usbPower || digitalRead(USB_DET) == LOW;
+#endif
+#if HDS_ENABLE_GRINDER
+  const bool grinderDisplayRequired = grinderSettings.enabled &&
+                                      grinderRuntime.state >= GRINDER_STATE_ARMED;
+#else
+  const bool grinderDisplayRequired = false;
+#endif
+  return usbPower || b_menu || b_calibration || b_ota ||
+         b_adc_recovery_active || stopWatch.isRunning() || grinderDisplayRequired ||
+         b_debug || b_about || b_shutdownFailBle;
+}
+
+void applyEnergyDisplayMode(DisplayIdleMode requested, bool force = false) {
+  if (!force && requested == energyRuntime.displayMode) return;
+  energyRuntime.displayMode = requested;
+  if (requested == DisplayIdleMode::Off) {
+    u8g2.setPowerSave(1);
+    b_u8g2Sleep = true;
+    return;
+  }
+  u8g2.setPowerSave(0);
+  u8g2.setContrast(EnergyRuntimePolicy::displayContrast(
+    energyRuntime.requestedDisplayContrast, requested));
+  b_u8g2Sleep = false;
+  if (requested == DisplayIdleMode::Active) energyRuntime.oledFrames.invalidate();
+}
+
+void applyEnergyDisplayCommand(bool enabled) {
+  applyEnergyDisplayMode(enabled ? DisplayIdleMode::Active : DisplayIdleMode::Off, true);
+}
+
+void applyEnergyLowPowerCommand() {
+  u8g2.setContrast(EnergyRuntimePolicy::displayContrast(
+    energyRuntime.requestedDisplayContrast, energyRuntime.displayMode));
+  energyRuntime.oledFrames.invalidate();
+}
+
+bool initEnergyPowerManagement() {
+  return energyPowerManagement.begin();
+}
+
+bool applyEnergyLightSleepSetting(bool enabled) {
+  return energyPowerManagement.applyLightSleepSetting(enabled);
+}
+
+bool setEnergyPerformanceCritical(bool required) {
+  return energyPowerManagement.setPerformanceCritical(required);
+}
+
+void serviceEnergyPowerManagement() {
+  static bool failureLogged = false;
+  energyPowerManagement.setSerialTransportActive(energySerialTransportActive());
+  energyPowerManagement.setUsbSleepTestEnabled(
+    energyPolicy.featureEnabled(EnergyFeature::UsbSleepTest));
+  const bool performanceOk = setEnergyPerformanceCritical(b_ota || b_pullOtaRunning);
+  const bool serviceOk = energyPowerManagement.service(millis());
+  if (performanceOk && serviceOk) {
+    failureLogged = false;
+    return;
+  }
+  if (energyPolicy.featureEnabled(EnergyFeature::LightSleep)) {
+    setEnergyLightSleepEnabled(false);
+    energyPolicy.settings.select(EnergyFeature::LightSleep, false);
+    energyStoreFeature(EnergyFeature::LightSleep, false);
+    updateEnergyMenuRow(EnergyFeature::LightSleep);
+  }
+  if (!failureLogged) {
+    Serial.println("[energy] PM transition failed; Light Sleep disabled");
+    failureLogged = true;
+  }
+}
+
+void applyEnergyDisplayIdle(unsigned long now) {
+  if (b_softSleep) return;
+  const DisplayIdleMode requested = EnergyRuntimePolicy::displayMode(
+    energyPolicy.featureEnabled(EnergyFeature::OledIdle), energyDisplayIdleInhibited(),
+    energyRuntime.explicitDisplayOff, energyPolicy.inactiveFor(now));
+  applyEnergyDisplayMode(requested);
+}
+
+void applyEnergyFeatureTransition(EnergyFeature feature, bool wasEnabled, bool isEnabled) {
+  if (wasEnabled == isEnabled) return;
+  if (feature == EnergyFeature::OledRedraw) {
+    energyRuntime.oledFrames.invalidate();
+  } else if (feature == EnergyFeature::OledIdle) {
+    clearPendingEnergyActivity();
+    if (isEnabled) {
+      energyPolicy.begin(millis());
+      applyEnergyDisplayIdle(millis());
+    } else {
+      applyEnergyDisplayMode(energyRuntime.explicitDisplayOff ? DisplayIdleMode::Off
+                                                             : DisplayIdleMode::Active);
+    }
+  } else if (feature == EnergyFeature::LightSleep) {
+    setEnergyLightSleepEnabled(isEnabled);
+  } else if (feature == EnergyFeature::UsbSleepTest) {
+    refreshEnergyIdleWakeForRuntimeState();
+    serviceEnergyPowerManagement();
+  }
+}
+
+void serviceEnergyHousekeeping(unsigned long now) {
+  if (b_softSleep || !energyPolicy.featureEnabled(EnergyFeature::OledIdle)) return;
+  if (!energyRuntime.oledIdle.shouldRun(now, 100)) return;
+  processEnergyActivities(now);
+  recordEnergyStateTransitions();
+  applyEnergyDisplayIdle(now);
+}
+
+#endif
+
+
 
 void loop() {
+#if HDS_ENABLE_ENERGY_MENU
+  serviceEnergyLightSleepWakeRestore();
+#endif
   processWsPendingCmds();
   processBleStatusResponse();
   processBleVoltageResponse();
+#if HDS_ENABLE_ENERGY_MENU
+  serviceEnergyPowerManagement();
+  serviceEnergyHousekeeping(millis());
+#endif
 
   if (b_powerOff){
     shut_down_now_nobeep();
@@ -1509,10 +2110,18 @@ void loop() {
       && !handleGrinderMenuChord()
 #endif
   ) {
-    static unsigned long lastButtonPoll = 0;
     const unsigned long buttonNow = millis();
-    if (hdsIntervalElapsed(buttonNow, lastButtonPoll, BUTTON_POLL_INTERVAL_MS)) {
-      lastButtonPoll = buttonNow;
+#if HDS_ENABLE_ENERGY_MENU
+    const bool buttonPollDue = serviceEnergyButtonGesture(buttonNow) &&
+      hdsIntervalElapsed(buttonNow, energyIdle.lastButtonPoll, BUTTON_POLL_INTERVAL_MS);
+    if (buttonPollDue) energyIdle.lastButtonPoll = buttonNow;
+#else
+    static unsigned long lastButtonPoll = 0;
+    const bool buttonPollDue =
+      hdsIntervalElapsed(buttonNow, lastButtonPoll, BUTTON_POLL_INTERVAL_MS);
+    if (buttonPollDue) lastButtonPoll = buttonNow;
+#endif
+    if (buttonPollDue) {
       buttonCircle.check();
       buttonSquare.check();
     }
@@ -1544,7 +2153,9 @@ void loop() {
     if (millis() - t_batteryRefresh > i_batteryRefreshTareInterval){
       updateBattery(BATTERY_PIN);
     }
-    checkBattery();
+    if (powerCadence.chargeCheck.shouldRun(millis(), 200)) {
+      checkBattery();
+    }
     if (b_ota) {
 #if HDS_FEATURE_ELEGANT_OTA
       ElegantOTA.loop();
@@ -1619,25 +2230,38 @@ void loop() {
         g_timerElapsed = (unsigned long)stopWatch.elapsed();
 
         if (!b_adc_recovery_active) {
+#if HDS_ENABLE_ENERGY_MENU
+          unsigned long &t_weightTick = energyIdle.lastWeightTick;
+#else
           static unsigned long t_weightTick = 0;
+#endif
           static unsigned long weightTickCount = 0;
           unsigned long nowMs = millis();
           if (nowMs - t_weightTick >= WEIGHT_BASE_INTERVAL_MS) {
             t_weightTick += WEIGHT_BASE_INTERVAL_MS;
             if (nowMs - t_weightTick >= WEIGHT_BASE_INTERVAL_MS) t_weightTick = nowMs;
             weightTickCount++;
-            if (weightTickCount % max(1UL, weightTextNotifyInterval / WEIGHT_BASE_INTERVAL_MS) == 0)
-              sendUsbTextWeight();
-            if (b_ble_enabled &&
-                weightTickCount % max(1UL, weightBleNotifyInterval / WEIGHT_BASE_INTERVAL_MS) == 0)
-              sendBleWeight();
-            if (b_usbweight_enabled &&
-                weightTickCount % max(1UL, weightUsbNotifyInterval / WEIGHT_BASE_INTERVAL_MS) == 0)
-              sendUsbWeight();
+            const bool textDue =
+              weightTickCount % max(1UL, weightTextNotifyInterval / WEIGHT_BASE_INTERVAL_MS) == 0;
+            const bool bleDue = b_ble_enabled &&
+              weightTickCount % max(1UL, weightBleNotifyInterval / WEIGHT_BASE_INTERVAL_MS) == 0;
+            const bool usbDue = b_usbweight_enabled &&
+              weightTickCount % max(1UL, weightUsbNotifyInterval / WEIGHT_BASE_INTERVAL_MS) == 0;
 #if HDS_FEATURE_WEBSOCKET
-            if (b_wifiEnabled &&
-                weightTickCount % max(1UL, weightWebsocketNotifyInterval / WEIGHT_BASE_INTERVAL_MS) == 0)
-              sendWebsocketWeightAll(f_displayedValue, nowMs);
+            const bool websocketDue = b_wifiEnabled &&
+              weightTickCount % max(1UL, weightWebsocketNotifyInterval / WEIGHT_BASE_INTERVAL_MS) == 0;
+#endif
+            if (textDue
+#if HDS_ENABLE_ENERGY_MENU
+                && !energyPolicy.featureEnabled(EnergyFeature::SerialQuiet)
+#endif
+            ) {
+              sendUsbTextWeight();
+            }
+            if (bleDue) sendBleWeight();
+            if (usbDue) sendUsbWeight();
+#if HDS_FEATURE_WEBSOCKET
+            if (websocketDue) sendWebsocketWeightAll(f_displayedValue, nowMs);
 #endif
           }
         }
@@ -1680,12 +2304,16 @@ void loop() {
       }
     }
   }
+#if HDS_ENABLE_ENERGY_MENU
+  waitForEnergyMainLoopWork();
+#endif
 }
 
 
 void chargingOLED(int perc, float voltage) {
   if (millis() - t_oled_refresh >= 1000) {
     t_oled_refresh = millis();
+    invalidateEnergyOledFrame();
     u8g2.firstPage();
     do {
       u8g2.drawXBM(121, 51, 7, 12, image_battery_charging);
@@ -1703,8 +2331,22 @@ void chargingOLED(int perc, float voltage) {
 
 
 void updateOled() {
-  if (millis() - t_oled_refresh >= i_oled_print_interval) {
-    t_oled_refresh = millis();
+  const unsigned long frameNow = millis();
+  if (frameNow - t_oled_refresh >= i_oled_print_interval) {
+    t_oled_refresh = frameNow;
+
+#if HDS_ENABLE_ENERGY_MENU
+    const bool oledRedraw = energyPolicy.featureEnabled(EnergyFeature::OledRedraw);
+    if (energyRuntime.displayMode == DisplayIdleMode::Off) {
+      return;
+    }
+    if (oledRedraw) {
+      if (!energyRuntime.oledFrames.shouldRender(
+            true, energyDisplaySignature(frameNow), frameNow, 1000)) {
+        return;
+      }
+    }
+#endif
 
     u8g2.firstPage();
     do {
@@ -1724,9 +2366,9 @@ void updateOled() {
       }
       u8g2.setDrawColor(2);
 
-      drawBattery();
+      drawBattery(frameNow);
       drawButton();
-      drawBle();
+      drawBle(frameNow);
       drawHeartBeat();
 #if HDS_ENABLE_GRINDER
       drawGrinder();
@@ -1845,19 +2487,12 @@ void drawButton() {
       u8g2.drawXBM(114, 0, 14, 16, image_square);
 }
 
-unsigned long t_ble_box = 0;
-bool b_drawBle = false;
-void drawBle() {
+void drawBle(unsigned long now) {
   if (b_ble_enabled) {
     if (bleHasLiveClient()) {
       u8g2.drawXBM(3, 51, 5, 13, image_ble_enabled);
-    } else {
-      if (millis() - t_ble_box > 1000) {
-        b_drawBle = !b_drawBle;
-        t_ble_box = millis();
-      }
-      if (b_drawBle)
-        u8g2.drawXBM(3, 51, 5, 13, image_ble_enabled);
+    } else if ((now / 1000) & 1) {
+      u8g2.drawXBM(3, 51, 5, 13, image_ble_enabled);
     }
   } else {
     u8g2.drawXBM(0, 51, 10, 13, image_ble_disabled);
@@ -1881,11 +2516,7 @@ void drawGrinder() {
 }
 #endif
 
-void drawBattery() {
-  if (millis() - t_batteryIcon >= 500) {
-    t_batteryIcon = millis();
-    b_showBatteryIcon = !b_showBatteryIcon;
-  }
+void drawBattery(unsigned long now) {
 #if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
   if (digitalRead(USB_DET) == LOW) {
 #else
@@ -1896,24 +2527,29 @@ void drawBattery() {
   } else {
     b_is_charging = false;
     int i_batteryPercent = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
-    if (i_batteryPercent <= 5) {
-      if (b_showBatteryIcon)
-        u8g2.drawXBM(121, 52, 7, 12, image_battery_0);
-    } else if (i_batteryPercent > 5 && i_batteryPercent <= 25) {
-      u8g2.drawXBM(121, 52, 7, 12, image_battery_1);
-    } else if (i_batteryPercent > 25 && i_batteryPercent <= 50) {
-      u8g2.drawXBM(121, 52, 7, 12, image_battery_2);
-    } else if (i_batteryPercent > 50 && i_batteryPercent <= 75) {
-      u8g2.drawXBM(121, 52, 7, 12, image_battery_3);
-    } else if (i_batteryPercent > 75) {
-      u8g2.drawXBM(121, 52, 7, 12, image_battery_4);
+    switch (EnergyRuntimePolicy::batteryDisplayBucket(i_batteryPercent)) {
+      case 0:
+        if ((now / 500) & 1) u8g2.drawXBM(121, 52, 7, 12, image_battery_0);
+        break;
+      case 1:
+        u8g2.drawXBM(121, 52, 7, 12, image_battery_1);
+        break;
+      case 2:
+        u8g2.drawXBM(121, 52, 7, 12, image_battery_2);
+        break;
+      case 3:
+        u8g2.drawXBM(121, 52, 7, 12, image_battery_3);
+        break;
+      default:
+        u8g2.drawXBM(121, 52, 7, 12, image_battery_4);
+        break;
     }
   }
 
 #if HDS_FEATURE_WIFI
   if (b_wifiEnabled) {
     bool connecting = WiFi.getMode() == WIFI_STA && WiFi.status() != WL_CONNECTED;
-    if (!connecting || (millis() / 500) % 2) {
+    if (!connecting || ((now / 500) & 1)) {
       u8g2.setFont(u8g2_font_open_iconic_www_1x_t);
       int glyph = WiFi.getMode() == WIFI_STA ? 0x004F : 0x0051;
       u8g2.drawGlyph(10, 64, glyph);

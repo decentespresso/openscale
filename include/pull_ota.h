@@ -175,6 +175,9 @@ void pullOtaDraw(const char *line1, const char *line2 = "", const char *line3 = 
   else
     u8g2.setDisplayRotation(U8G2_R2);
   u8g2.setFont(FONT_S);
+#if HDS_ENABLE_ENERGY_MENU
+  invalidateEnergyOledFrame();
+#endif
   u8g2.firstPage();
   do {
     if (line1 && line1[0] != '\0') u8g2.drawUTF8(AC(line1), 14, line1);

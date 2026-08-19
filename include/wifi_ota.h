@@ -30,6 +30,9 @@ void queueOtaDisplay(uint8_t state, uint8_t percent = 0) {
   otaDisplayState = state;
   otaDisplayPercent = percent;
   portEXIT_CRITICAL(&otaDisplayMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 void processOtaDisplayUpdate() {
@@ -53,6 +56,9 @@ void processOtaDisplayUpdate() {
     b_ota = false;
   }
 
+#if HDS_ENABLE_ENERGY_MENU
+  invalidateEnergyOledFrame();
+#endif
   u8g2.firstPage();
   u8g2.setFont(FONT_S);
   if (b_screenFlipped)
@@ -65,11 +71,17 @@ void processOtaDisplayUpdate() {
 }
 
 void onOTAStart() {
+#if HDS_ENABLE_ENERGY_MENU
+  recordEnergyActivity();
+#endif
   Serial.println("OTA update started!");
   std::lock_guard<std::mutex> otaDispatchLock(otaDispatchMutex);
   portENTER_CRITICAL(&wsPendingMux);
   b_ota = true;
   portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 void onOTAProgress(size_t current, size_t final) {

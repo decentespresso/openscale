@@ -141,7 +141,9 @@ test("publishes immutable cache entries and deduplicates public builds", async (
         partition_schema: {path: "partitions/default.csv", sha256: "2".repeat(64)},
       },
     },
-    features: {wifi: [], mdns: [], webserver: [], littlefs: [], "elegant-ota": []},
+    features: {
+      wifi: [], mdns: [], webserver: [], littlefs: [], "elegant-ota": [], "energy-menu": [],
+    },
     plugins: {
       "asset-sort": {
         version: "1.0.0",
@@ -223,6 +225,14 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     const hash = missingStatus.combination_hash;
     assert.equal(hash, "280d0fb981fa56f7753846b33b91a5b053145d41360551f8c27c0b38e7ee955c");
     assert.equal(missingStatus.state, "missing");
+
+    const energyMenu = await api(env, "/api/v1/status", "POST", {
+      firmware_ref: "main", features: ["energy-menu"], plugins: [],
+    });
+    assert.equal(
+      (await energyMenu.json()).combination_hash,
+      "35a0475ceda855f8ffcfa6c1c4896dd8e9cefce7f4458886f72c93acb69d4afe",
+    );
 
     const stable = await api(env, "/api/v1/status", "POST", {
       firmware_ref: "v1.2.3", features: [], plugins: [],
