@@ -25,6 +25,9 @@ BUILD_FILES = (
     "build-manifest.json",
     "dependencies.txt",
 )
+PROGRAM_BINARIES = tuple(
+    name for name in customBuild.PUBLIC_BINARIES if name != "littlefs.bin"
+)
 MAX_REMOTE_MANIFEST_BYTES = 1024 * 1024
 
 
@@ -203,6 +206,11 @@ def createFirmwareArchive(buildDir):
             info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
             info.external_attr = 0o100644 << 16
             archive.writestr(info, (buildDir / name).read_bytes())
+
+
+def copyBuildFiles(sourceDir, targetDir, names):
+    for name in names:
+        shutil.copy2(sourceDir / name, targetDir / name)
 
 
 def writeDependencyInventory(buildDir, checkoutRoot, environment, platformioEnvironment):
@@ -385,13 +393,17 @@ def buildCustomFirmware(
             "HDS_FIRMWARE_VERSION": identity["firmware_version"],
             "SOURCE_DATE_EPOCH": sourceEpoch,
         }
-        runCommand(["pio", "run", "-e", platformioEnvironment], checkoutRoot, environment=environment)
-        runCommand(
-            ["pio", "run", "-e", platformioEnvironment, "-t", "buildfs"],
-            checkoutRoot,
-            environment=environment,
-        )
         buildDir = checkoutRoot / ".pio.nosync" / "build" / platformioEnvironment
+        runCommand(["pio", "run", "-e", platformioEnvironment], checkoutRoot, environment=environment)
+        with tempfile.TemporaryDirectory(prefix="custom-program-") as programDirectory:
+            preservedBinaries = Path(programDirectory)
+            copyBuildFiles(buildDir, preservedBinaries, PROGRAM_BINARIES)
+            runCommand(
+                ["pio", "run", "-e", platformioEnvironment, "-t", "buildfs"],
+                checkoutRoot,
+                environment=environment,
+            )
+            copyBuildFiles(preservedBinaries, buildDir, PROGRAM_BINARIES)
         writeDependencyInventory(buildDir, checkoutRoot, environment, platformioEnvironment)
         createFirmwareArchive(buildDir)
         customBuild.writeBuildManifest(

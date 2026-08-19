@@ -257,6 +257,18 @@ def main():
                 "firmware.bin", "firmware.factory.bin", "bootloader.bin", "partitions.bin", "littlefs.bin",
             ):
                 (buildDir / name).write_bytes(name.encode("ascii"))
+            preservedBinaries = root / "preserved-binaries"
+            preservedBinaries.mkdir()
+            customRunner.copyBuildFiles(
+                buildDir, preservedBinaries, customRunner.PROGRAM_BINARIES
+            )
+            for name in customRunner.PROGRAM_BINARIES:
+                (buildDir / name).unlink()
+            customRunner.copyBuildFiles(
+                preservedBinaries, buildDir, customRunner.PROGRAM_BINARIES
+            )
+            for name in customRunner.PROGRAM_BINARIES:
+                assert (buildDir / name).read_bytes() == name.encode("ascii")
             (buildDir / "dependencies.txt").write_text("PlatformIO Core", encoding="utf-8")
             customRunner.createFirmwareArchive(buildDir)
             archiveBytes = (buildDir / customBuild.FIRMWARE_ARCHIVE).read_bytes()
