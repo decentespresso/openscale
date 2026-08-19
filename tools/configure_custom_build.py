@@ -28,6 +28,7 @@ FEATURES = {
     "elegant-ota": ("HDS_FEATURE_ELEGANT_OTA", ("wifi", "webserver")),
     "pull-ota": ("HDS_FEATURE_PULL_OTA", ("wifi",)),
     "grinder": ("HDS_FEATURE_GRINDER", ("wifi", "mdns")),
+    "energy-menu": ("HDS_FEATURE_ENERGY_MENU", ()),
 }
 FEATURE_PRESENTATION = {
     "wifi": (
@@ -69,6 +70,11 @@ FEATURE_PRESENTATION = {
         "Grind by weight core",
         "Enable the built-in grinder integration.",
         "Internal compile gate selected by the Grind by weight plugin.",
+    ),
+    "energy-menu": (
+        "Energy Saving",
+        "Enable optional energy-saving controls.",
+        "Adds the Energy Saving menu and its persistent feature toggles.",
     ),
 }
 HIDDEN_FEATURES = {"grinder"}

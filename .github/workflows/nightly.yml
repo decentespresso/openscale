@@ -24,6 +24,7 @@ jobs:
       - run: python tools/test_ota_reboot_routing_contract.py
       - run: python tools/test_grinder_feature_flag_contract.py
       - run: python tools/test_plugin_ci_contract.py
+      - run: python tools/test_energy_stage0_contract.py
 
   native-tests:
     name: Native unit tests

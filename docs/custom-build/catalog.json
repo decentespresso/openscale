@@ -81,6 +81,14 @@
         "mdns"
       ],
       "hidden": true
+    },
+    {
+      "id": "energy-menu",
+      "name": "Energy Saving",
+      "description": "Enable optional energy-saving controls.",
+      "tooltip": "Adds the Energy Saving menu and its persistent feature toggles.",
+      "requires": [],
+      "default": true
     }
   ],
   "plugins": [
