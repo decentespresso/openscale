@@ -9,8 +9,6 @@ ADS1232_ADC scale(SCALE_DOUT, SCALE_SCLK, SCALE_PDWN, SCALE_A0);
 
 #include <AceButton.h>
 #include <StopWatch.h>
-// #include <BluetoothSerial.h>
-// BluetoothSerial SerialBT;
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
@@ -20,12 +18,8 @@ BLEService *pService = NULL;
 BLEAdvertising *pAdvertising = NULL;
 BLECharacteristic *pReadCharacteristic = NULL;
 BLECharacteristic *pWriteCharacteristic = NULL;
-// volatile: written from the BLE (NimBLE) task in onConnect/onDisconnect; read
-// on the main loop (power-off keepalive in loop(), heap-watchdog gate in
-// wifiSupervise()). volatile prevents the readers caching a stale value.
 volatile bool deviceConnected = false;
 
-// The model byte is always 03 for Decent scales
 const byte modelByte = 0x03;
 
 

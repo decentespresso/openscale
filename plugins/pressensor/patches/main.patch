@@ -20,13 +20,10 @@ diff --git a/include/display.h b/include/display.h
 index 80187e8..d238c56 100644
 --- a/include/display.h
 +++ b/include/display.h
-@@ -60,6 +60,7 @@ U8G2_SSD1306_128X64_NONAME_1_SW_I2C u8g2(U8G2_R0, /* clock=*/OLED_SCL, /* data=*
+@@ -56,3 +56,4 @@
  #define FONT_EXTRACTION u8g2_font_fub14_tr
- //#define FONT_S FONT_M
  #define FONT_BATTERY u8g2_font_battery19_tn
 +#define FONT_PRESSENSOR_VALUE u8g2_font_logisoso16_tr
- //macros
- //文本对齐 AC居中 AR右对齐 AL左对齐 T为要显示的文本
  #define LCDWidth u8g2.getDisplayWidth()
 diff --git a/include/finger_detection.h b/include/finger_detection.h
 index f751a85..5a6a5e8 100644

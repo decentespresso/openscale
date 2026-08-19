@@ -21,15 +21,12 @@ export class TimerManager {
     this.elapsedTime = 0;
     this.measurementInterval = interval * 1000;
     this.lastWeightReadingTime = 0;
-    
+
     clearInterval(this.timerInterval);
     this.timerInterval = setInterval(() => {
         this.elapsedTime++;
         this.uiController.updateTimer(this.elapsedTime);
 
-        // if (this.elapsedTime >= duration) {
-        //     this.stopTimer();
-        // }
     }, 1000);
     }
 
@@ -38,7 +35,6 @@ export class TimerManager {
         clearInterval(this.timerInterval);
         this.timerInterval = null;
         this.uiController.showMeasurementAlert();
-        // Reset UI state when timer stops
         this.uiController.resetTimerState();
     }
 

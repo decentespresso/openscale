@@ -1,23 +1,4 @@
 #!/usr/bin/env python3
-"""
-Fine-grained TCP reachability probe with wall-clock timestamps.
-
-Runs alongside ws_drop_repro.py to answer one question when a WebSocket drop
-occurs: was the scale still on the network, or did its WiFi fall off?
-
-  * Scale stays reachable through the drop  -> app/TCP-layer close (e.g. the
-    AsyncTCP ACK timeout) while WiFi is up.
-  * Reachability also fails around the drop -> the scale's WiFi itself dropped
-    (coexistence deauth / reassociation).
-
-Opens a short-lived TCP connection to host:port each interval (default the HTTP
-server on :80) and logs latency or failure. No root required (unlike ICMP at
-sub-second intervals or tcpdump).
-
-Usage:
-    python3 tools/reach_probe.py                       # hds.local:80 every 0.4s
-    python3 tools/reach_probe.py hds.local --interval 0.3 --port 80
-"""
 
 import argparse
 import socket
@@ -37,7 +18,6 @@ def main():
     ap.add_argument("--timeout", type=float, default=2.0)
     args = ap.parse_args()
 
-    # Resolve once so a flaky mDNS lookup isn't mistaken for the host vanishing.
     try:
         ip = socket.gethostbyname(args.host)
     except OSError as e:

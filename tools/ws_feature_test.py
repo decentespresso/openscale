@@ -38,7 +38,6 @@ def rec(name, ok, detail=""):
 
 
 def is_weight(o):
-    # Weight snapshots are intentionally untyped for backwards compatibility.
     return "grams" in o and "type" not in o
 
 
@@ -47,7 +46,6 @@ def is_type(t):
 
 
 def recv_until(ws, pred, timeout=4.0):
-    """Read frames until one satisfies pred (skipping others), or timeout."""
     end = time.time() + timeout
     while time.time() < end:
         try:
@@ -65,7 +63,6 @@ def recv_until(ws, pred, timeout=4.0):
 
 
 def drain(ws, dur=0.5):
-    """Discard any buffered frames so the next read reflects current state."""
     end = time.time() + dur
     while time.time() < end:
         try:
@@ -76,8 +73,6 @@ def drain(ws, dur=0.5):
 
 
 def status_after(ws, command, settle=0.4):
-    """Send a command, let it apply (synchronous flags + one main-loop tick for
-    deferred ops), discard the backlog, then read a fresh status frame."""
     ws.send(command)
     time.sleep(settle)
     drain(ws)
@@ -125,7 +120,6 @@ def main():
     r = recv_until(ws, is_type("rate")) or {}
     rec("rate 10k -> 100 ms / 10 Hz", r.get("interval_ms") == 100 and r.get("hz") == 10)
 
-    # New behavior: unrecognized / malformed input gets an error frame, not silence.
     ws.send("not_a_real_command")
     e = recv_until(ws, is_type("error")) or {}
     rec("error frame on unknown command", e.get("code") == "unknown_command")
@@ -133,7 +127,6 @@ def main():
     e = recv_until(ws, is_type("error")) or {}
     rec("error frame on malformed JSON", e.get("code") == "unknown_command")
 
-    # Timer ops are deferred to the main loop; the effect lands within a tick.
     ws.send("timer start")
     time.sleep(1.6)
     st = status_after(ws, "status") or {}
@@ -151,7 +144,7 @@ def main():
 
     rec("low_power on -> low_power:true",
         (status_after(ws, "low_power on") or {}).get("low_power") is True)
-    status_after(ws, "low_power off")  # restore
+    status_after(ws, "low_power off")
 
     st = status_after(ws, "soft_sleep on") or {}
     rec("soft_sleep on -> soft_sleep:true and display_on:false",
@@ -161,8 +154,6 @@ def main():
         st.get("soft_sleep") is False and st.get("display_on") is True)
     ws.close()
 
-    # Multi-client: independent serving, and one client leaving must not stall
-    # the other.
     a = create_connection(url, timeout=6)
     b = create_connection(url, timeout=6)
     rec("multi-client: both clients receive weight",

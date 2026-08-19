@@ -42,7 +42,7 @@ try:
 except ImportError:
     create_connection = None
 
-RST_LINGER = struct.pack("ii", 1, 0)  # SO_LINGER on, timeout 0 -> RST on close
+RST_LINGER = struct.pack("ii", 1, 0)
 
 
 def ts():
@@ -173,9 +173,6 @@ def main():
         modes = ["tcp"]
         args.tcp = True
 
-    # Resolve .local once and churn against the IP. Repeated mDNS lookups under
-    # load fail intermittently (gaierror) and would be miscounted as server
-    # failures; a real client caches the IP too.
     try:
         args.host = socket.gethostbyname(args.host)
     except OSError as e:

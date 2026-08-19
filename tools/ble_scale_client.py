@@ -58,7 +58,6 @@ async def run(args):
     deadline = started + args.duration if args.duration else None
 
     while deadline is None or time.monotonic() < deadline:
-        # Find the scale.
         t0 = time.monotonic()
         dev = await BleakScanner.find_device_by_name(args.name, timeout=args.scan_timeout)
         if dev is None:
@@ -92,7 +91,6 @@ async def run(args):
                     st.notifies += 1
 
                 await client.start_notify(NOTIFY, on_notify)
-                # Send an initial heartbeat immediately so the 5 s timer is fresh.
                 await client.write_gatt_char(WRITE, HEARTBEAT, response=False)
 
                 last_stat = time.monotonic()

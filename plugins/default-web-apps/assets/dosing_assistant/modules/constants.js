@@ -11,9 +11,9 @@ export const SCALE_CONSTANTS = {
         CONTAINER_REMOVED: 'container_removed'
     },
     WEIGHT_THRESHOLDS: {
-        MINIMUM: -0.4,          // Threshold for container removal detection
-        CONTAINER_TOLERANCE: 0.6, // Increased tolerance for container replacement
-        ZERO_TOLERANCE: 0.2,     // Tolerance for considering weight as "zero"
+        MINIMUM: -0.4,
+        CONTAINER_TOLERANCE: 0.6,
+        ZERO_TOLERANCE: 0.2,
         NEW_CONTAINER_TOLERANCE: 1
     }
 };

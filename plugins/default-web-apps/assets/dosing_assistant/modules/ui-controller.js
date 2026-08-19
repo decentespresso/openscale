@@ -1,6 +1,5 @@
 export class UIController {
     constructor() {
-        // Initialize UI elements
         this.weightDisplay = document.getElementById('weight');
         this.statusDisplay = document.getElementById('status');
         this.guidanceDisplay = document.getElementById('guidance');
@@ -13,17 +12,13 @@ export class UIController {
         this.exportCSVButton = document.getElementById('exportCSV');
         this.exportJSONButton = document.getElementById('exportJSON');
 
-        // Add input elements
         this.targetWeightInput = document.getElementById('targetWeight');
         this.lowThresholdInput = document.getElementById('lowThreshold');
         this.highThresholdInput = document.getElementById('highThreshold');
-        
-        // Add sound preference checkbox
+
         this.soundToggle = document.getElementById('soundEnabled');
-        
-        // Initialize input listeners
+
         this.setupTargetWeightListener();
-        //fullscreenButton
         this.fullscreenButton = document.getElementById('fullscreen-button');
         this.setupFullscreenHandler();
         this.setupSoundToggle();
@@ -38,14 +33,12 @@ export class UIController {
         });
     }
 
-    // Add this new method
     setupTargetWeightListener() {
         if (this.targetWeightInput) {
             this.targetWeightInput.addEventListener('input', () => {
                 const targetWeightValue = parseFloat(this.targetWeightInput.value);
-                
+
                 if (!isNaN(targetWeightValue)) {
-                    // Set thresholds to target ± 1.0g
                     if (this.lowThresholdInput) {
                         this.lowThresholdInput.value = (targetWeightValue - 1.0).toFixed(1);
                     }
@@ -58,7 +51,6 @@ export class UIController {
                         high: this.highThresholdInput?.value
                     });
                 } else {
-                    // Clear thresholds if target is invalid
                     if (this.lowThresholdInput) this.lowThresholdInput.value = '';
                     if (this.highThresholdInput) this.highThresholdInput.value = '';
                 }
@@ -69,20 +61,16 @@ export class UIController {
         }
     }
 
-    // Add this new method
     setupSoundToggle() {
         if (this.soundToggle) {
-            // Load saved preference
             const savedPreference = localStorage.getItem('soundEnabled');
             if (savedPreference !== null) {
                 this.soundToggle.checked = savedPreference === 'true';
             }
 
-            // Add change listener
             this.soundToggle.addEventListener('change', (e) => {
                 const isEnabled = e.target.checked;
                 localStorage.setItem('soundEnabled', isEnabled);
-                // Notify scale instance
                 if (this.scale) {
                     this.scale.updateSoundPreference(isEnabled);
                 }
@@ -90,10 +78,8 @@ export class UIController {
         }
     }
 
-    // Add method to set scale reference
     setScale(scale) {
         this.scale = scale;
-        // Update initial sound preference
         if (this.soundToggle) {
             this.scale.updateSoundPreference(this.soundToggle.checked);
         }
@@ -105,7 +91,6 @@ export class UIController {
         }
     }
 
-    // Weight display methods
     updateWeightDisplay(weight) {
         if (this.weightDisplay) {
             this.weightDisplay.textContent = `Weight: ${weight.toFixed(1)} g`;
@@ -120,7 +105,6 @@ export class UIController {
         return 0;
     }
 
-    // Progress bar methods
     updateProgressBar(percentage) {
         if (this.progressFill) {
             this.progressFill.style.width = `${percentage}%`;
@@ -134,9 +118,9 @@ export class UIController {
         if (!this.progressFill) return;
 
         this.progressFill.classList.remove(
-            'bg-gray-300', 
-            'bg-yellow-500', 
-            'bg-green-500', 
+            'bg-gray-300',
+            'bg-yellow-500',
+            'bg-green-500',
             'bg-red-600'
         );
 
@@ -155,7 +139,6 @@ export class UIController {
         }
     }
 
-    // Status and guidance methods
     updateStatus(message) {
         if (this.statusDisplay) {
             this.statusDisplay.textContent = `Status: ${message}`;
@@ -165,8 +148,7 @@ export class UIController {
     updateGuidance(message, type = 'info') {
         if (this.guidanceDisplay) {
             this.guidanceDisplay.textContent = message;
-            
-            // Update guidance styling based on type
+
             this.guidanceDisplay.className = 'mt-4 p-4 rounded-lg shadow-md text-center text-lg font-bold';
             switch (type) {
                 case 'success':
@@ -184,35 +166,29 @@ export class UIController {
         }
     }
 
-    // Weight readings display
     displayWeightReadings(weightReadings) {
         if (!this.weightReadingsList) return;
-        
-        // Clear and update weight readings list
+
         this.weightReadingsList.innerHTML = '';
 
-        // Check if we have valid data
         const hasData = Array.isArray(weightReadings) && weightReadings.length > 0;
-        
+
         if (hasData) {
-            // Create reversed array to show newest first
             const reversedReadings = [...weightReadings].reverse();
-            
+
             reversedReadings.forEach(reading => {
                 const li = document.createElement('li');
                 li.textContent = reading;
                 li.className = 'py-1 px-2 border-b border-gray-200';
                 this.weightReadingsList.appendChild(li);
             });
-            
+
             console.log(`Updated weight readings display with ${weightReadings.length} entries (newest first)`);
         }
 
-        // Update export button states
         this.updateExportButtonStates(hasData);
     }
 
-    // Button control methods
     updateConnectButton(text) {
         if (this.connectButton) {
             this.connectButton.textContent = text;
@@ -273,7 +249,6 @@ export class UIController {
         }
     }
 
-    // Form input methods
     getTargetWeight() {
         const input = document.getElementById('targetWeight');
         return input ? input.value : '0';
@@ -296,7 +271,6 @@ export class UIController {
         const disabledClasses = ['bg-gray-50', 'opacity-50', 'cursor-not-allowed'];
 
         if (hasData) {
-            // Enable export buttons if there's data
             if (this.exportCSVButton) {
                 this.exportCSVButton.removeAttribute('disabled');
                 disabledClasses.forEach(cls => this.exportCSVButton.classList.remove(cls));
@@ -308,7 +282,6 @@ export class UIController {
                 enabledClasses.forEach(cls => this.exportJSONButton.classList.add(cls));
             }
         } else {
-            // Disable export buttons if no data
             if (this.exportCSVButton) {
                 this.exportCSVButton.setAttribute('disabled', '');
                 enabledClasses.forEach(cls => this.exportCSVButton.classList.remove(cls));
@@ -321,7 +294,6 @@ export class UIController {
             }
         }
     }
-    //make body go full screen 
     toggleFullScreen() {
         if (!document.fullscreenElement) {
             document.body.requestFullscreen();

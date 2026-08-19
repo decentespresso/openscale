@@ -63,11 +63,11 @@
         },
         {
           "target": "Quality_Control_Assistant/quality_control.html",
-          "sha256": "81be8c8aeed23eb1fb206de4292757f3bce8a80643d1d03ef0db626930c7ca78"
+          "sha256": "56170dc8368b6aaa85a940a8bf4106cfef2e70675664ddb69c2f255926483914"
         },
         {
           "target": "Quality_Control_Assistant/quality_control.js",
-          "sha256": "0d379f761bb01b0d5c54447ead3ccd22d3657870e04ff85f16d15a1c3fcd8b23"
+          "sha256": "450016df049d6c16fc33d1876e45496b0dececc63e2c9482e145f654ee622621"
         },
         {
           "target": "README.md",
@@ -79,11 +79,11 @@
         },
         {
           "target": "Weigh_Save/main.js",
-          "sha256": "dfa01ab05aee1982d528b7e792c1409138cc928db4740773b04e682a09dfa5e2"
+          "sha256": "f13354a1812c9e08f8b8154f441a716d4c96f0916502b4d8b16b929eacda4954"
         },
         {
           "target": "Weigh_Save/modules/export.js",
-          "sha256": "0d4d782f7969d213ee9b78b338cce8be42be3f151b636aef3025bed6158cbf40"
+          "sha256": "7a0a243c0aa372f7727d2726e55bc3cc47ed7a90fedefbaaaee00727f36271bc"
         },
         {
           "target": "Weigh_Save/modules/scale.js",
@@ -91,15 +91,15 @@
         },
         {
           "target": "Weigh_Save/modules/timer.js",
-          "sha256": "c0e34753a7d30ba84bf9e88cd39f42d5bd9c90b0cf307399afc798a763d16b8e"
+          "sha256": "79cee1260022a7524d28e894cf5081a11bb98dc1e96c5fe431a3684a14b6efcd"
         },
         {
           "target": "Weigh_Save/modules/ui-controller.js",
-          "sha256": "504011412b577137e9380ba3223bdb8ed68c5d3fafb208529be21657d7a9b195"
+          "sha256": "f0bbe3b5bcf1146cd1090132e0954a7a29995a6b40a531ff892bf03315284fba"
         },
         {
           "target": "Weigh_Save/weigh_save.html",
-          "sha256": "400c598562273d787d2fa2871e9c12dbe4f85217dc00b426b7f846438703951d"
+          "sha256": "d1dd9f461c1741b1c7e2f526e08908b1f7830d49fdacdf18793dab85d68d4470"
         },
         {
           "target": "dosing_assistant/README.md",
@@ -107,7 +107,7 @@
         },
         {
           "target": "dosing_assistant/dosing_assistant.html",
-          "sha256": "7eb4d77fc4ea1cefc73db4a68fec937a97b366472be44053b88cade4ece06a19"
+          "sha256": "3167ea50f6888779fe1ee119e79b3ea3b64220b8b6133be509a009178ea28dac"
         },
         {
           "target": "dosing_assistant/dosing_assistant.md",
@@ -119,7 +119,7 @@
         },
         {
           "target": "dosing_assistant/modules/constants.js",
-          "sha256": "7eaa950028ecfc79c3dcb0d2473e7a4a9bdae8c2873d93c09e63d9764e86f40b"
+          "sha256": "eda468128df41758af8364ab105eea22f9c9ce6e74d9026e4ae3243b98af1357"
         },
         {
           "target": "dosing_assistant/modules/export.js",
@@ -131,15 +131,15 @@
         },
         {
           "target": "dosing_assistant/modules/state-machine.js",
-          "sha256": "574fe9d6dccda2ce5f448a65d6d5263993f0d3b8185e147ea6fe1d88d1773180"
+          "sha256": "e460b0b0589842b5b9feb1cd1d77c253a1cbe375a2b7e60b496a8703e3870163"
         },
         {
           "target": "dosing_assistant/modules/ui-controller.js",
-          "sha256": "940f8301f28072603181838e3df96dea9f7d707ec38965172544de51f920136d"
+          "sha256": "045cce4a569b254175ab1f3fa921c482e01ed71fd1f63c4adab846c14ec5beb2"
         },
         {
           "target": "index.html",
-          "sha256": "16fb127298f343dfc2e4d4fb54a5f58c9ab1dd5830f179b84b642f6b6f88e7b6"
+          "sha256": "dba39a6a112b47d8e8180d857c132810c6a0895a1430cadf92143a56b5ffaa36"
         },
         {
           "target": "shared/app.css",
@@ -151,7 +151,7 @@
         },
         {
           "target": "shared/modules/presets.js",
-          "sha256": "42532e2c2f0419132f26b464d99a4843ef694ef440685246bde20a662f9ed753"
+          "sha256": "89f7e025d03b77f5de0cb5f764792598947ddbee5dca1a434f9809e073b7dca4"
         },
         {
           "target": "shared/reconnecting-websocket.js",
@@ -194,7 +194,7 @@
       },
       "patches": {
         "main": {
-          "sha256": "c411ab74c65e73334c7defa6971da6e600566537c96575a70675a5f8e72a63ad"
+          "sha256": "e820bf08524d4141d1172243496d67f06bacd3d39ac6d2f050f29d4dadc6c0a7"
         }
       },
       "assets": []

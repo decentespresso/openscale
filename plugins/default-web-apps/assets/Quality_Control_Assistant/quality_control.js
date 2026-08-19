@@ -18,7 +18,7 @@ class DecentScale {
         this.lastWeight = 0;
         this.weightIsStable = false;
         this.stabilityThreshold = 0.2;
-        this.nearzerotolerance =0.2; 
+        this.nearzerotolerance =0.2;
         this.countdownInterval = null;
         this.loadPresets();
         this.setupPresetHandlers();
@@ -61,7 +61,7 @@ class DecentScale {
     this.ws.addEventListener('close', () => {
         if (this.statusDisplay) this.statusDisplay.textContent = 'Status: Disconnected (WebSocket)';
     });
-    
+
     }
 
     initializeElements() {
@@ -77,7 +77,7 @@ class DecentScale {
         this.toggleQC = document.getElementById('toggleQC');
         this.fullscreenButton = document.getElementById('fullscreen-button');
         this.setupFullscreenHandler();
-        
+
         if (!this.exportCSVButton) {
             console.warn('CSV export button not found during initialization');
         }
@@ -94,7 +94,7 @@ class DecentScale {
             this.qcSettings.enableSounds = true;
             this.playSound('pass');
             setTimeout(() => {this.playSound('fail');}, 500);
-        }); 
+        });
         if (this.exportCSVButton) {
             console.log('Adding CSV export button listener');
             this.exportCSVButton.addEventListener('click', () => {
@@ -104,7 +104,7 @@ class DecentScale {
         } else {
             console.error('CSV export button not initialized properly');
         }
-        
+
         if (this.exportJSONButton) {
             console.log('Adding JSON export button listener');
             this.exportJSONButton.addEventListener('click', () => {
@@ -121,11 +121,9 @@ class DecentScale {
             console.error('Weight readings list element not initialized');
             return;
         }
-    
-        // Clear existing readings
+
         this.weightReadingsList.innerHTML = '';
-        
-        // Display readings
+
         if (Array.isArray(this.weightReadings) && this.weightReadings.length > 0) {
             const reversedReadings = [...this.weightReadings].reverse();
             reversedReadings.forEach(weight => {
@@ -134,8 +132,7 @@ class DecentScale {
                 li.className = 'py-1 px-2 border-b border-gray-200';
                 this.weightReadingsList.appendChild(li);
             });
-    
-            // Enable export buttons without recreating them
+
             if (this.exportCSVButton && this.exportJSONButton) {
                 [this.exportCSVButton, this.exportJSONButton].forEach(button => {
                     button.disabled = false;
@@ -146,7 +143,6 @@ class DecentScale {
                 console.error('Export buttons not found in DOM');
             }
         } else {
-            // Disable export buttons if no data
             if (this.exportCSVButton && this.exportJSONButton) {
                 [this.exportCSVButton, this.exportJSONButton].forEach(button => {
                     button.disabled = true;
@@ -163,7 +159,7 @@ class DecentScale {
             console.warn('No data to export - CSV');
             return;
         }
-    
+
         try {
             console.log('Starting CSV export with data:', this.weightData);
             const headers = [
@@ -176,7 +172,7 @@ class DecentScale {
                 'High Threshold',
                 'Min Weight'
             ];
-    
+
             const rows = this.weightData.map(reading => [
                 reading.id,
                 reading.timestamp,
@@ -187,67 +183,64 @@ class DecentScale {
                 reading.qcSettings.highThreshold,
                 reading.qcSettings.minWeight
             ]);
-    
+
             const csvContent = [
                 headers.join(','),
                 ...rows.map(row => row.join(','))
             ].join('\n');
-    
-            // Format the date for filename
+
             const date = new Date();
-            const formattedDate = date.toISOString().split('T')[0]; // Gets YYYY-MM-DD
+            const formattedDate = date.toISOString().split('T')[0];
             const filename = `qc_result_${formattedDate}.csv`;
-            
+
             this.downloadFile(csvContent, filename, 'text/csv');
         } catch (error) {
             console.error('CSV export failed:', error);
         }
     }
-    
+
     exportToJSON() {
         console.log('JSON export button clicked');
         if (!this.weightData || this.weightData.length === 0) {
             console.warn('No data to export - JSON');
             return;
         }
-    
+
         try {
             console.log('Starting JSON export with data:', this.weightData);
             const jsonData = JSON.stringify({
                 exportDate: new Date().toISOString(),
                 readings: this.weightData
             }, null, 2);
-    
-            // Format the date for filename
+
             const date = new Date();
-            const formattedDate = date.toISOString().split('T')[0]; // Gets YYYY-MM-DD
+            const formattedDate = date.toISOString().split('T')[0];
             const filename = `qc_result_${formattedDate}.json`;
-            
+
             this.downloadFile(jsonData, filename, 'application/json');
         } catch (error) {
             console.error('JSON export failed:', error);
         }
     }
-    
+
     downloadFile(content, filename, type) {
         try {
             const blob = new Blob([content], { type });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
-            
+
             link.style.display = 'none';
             link.href = url;
             link.download = filename;
-            
+
             document.body.appendChild(link);
             link.click();
-            
-            // Cleanup
+
             requestAnimationFrame(() => {
                 document.body.removeChild(link);
                 URL.revokeObjectURL(url);
             });
-            
+
             console.log('File download initiated:', filename);
         } catch (error) {
             console.error('Download failed:', error);
@@ -264,7 +257,7 @@ class DecentScale {
     }
 
     evaluateWeight(weight) {
-        if (weight >= this.qcSettings.lowThreshold && 
+        if (weight >= this.qcSettings.lowThreshold &&
             weight <= this.qcSettings.highThreshold) {
             return 'pass';
         }
@@ -281,7 +274,7 @@ class DecentScale {
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
             const oscillator = audioContext.createOscillator();
             const gainNode = audioContext.createGain();
-            
+
             if (type === 'pass') {
                 oscillator.frequency.setValueAtTime(1000, audioContext.currentTime);
                 gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
@@ -294,20 +287,19 @@ class DecentScale {
                 oscillator.frequency.linearRampToValueAtTime(50, audioContext.currentTime + 0.2);
                 console.log('Configured fail sound');
             }
-            
+
             oscillator.connect(gainNode);
         gainNode.connect(audioContext.destination);
-        
-        // Ensure oscillator has time to play
+
         oscillator.start();
         console.log('Sound started');
-        
+
         setTimeout(() => {
             oscillator.stop();
             audioContext.close();
             console.log('Sound stopped');
-        }, 300); // Increased from 200ms to 300ms
-        
+        }, 300);
+
     } catch (error) {
         console.error('Sound playback failed:', error);
     }
@@ -339,10 +331,8 @@ class DecentScale {
             highThreshold: parseFloat(document.getElementById('highThreshold').value),
             minWeight: parseFloat(document.getElementById('minWeight').value),
             enableSounds: document.getElementById('enableSounds').checked,
-            // waitTime: parseInt(document.getElementById('waitTime').value, 10) || 2
         };
         this.tare();
-        // Set initial state when starting QC mode
         this.updateQCStatus(
             this.QC_STATES.WAITING_FOR_NEXT,
             'QC Mode: Active - Place object on scale'
@@ -384,18 +374,16 @@ class DecentScale {
     }
 
     setupPresetHandlers() {
-        // MODIFIED event listener for presetSelect dropdown to handle both load and save
         document.getElementById('presetSelect').addEventListener('change', (e) => {
             const selectedValue = e.target.value;
             if (selectedValue === 'save_preset') {
-                this.saveCurrentPreset(); // Call save functionality when "save_preset" is selected
-                e.target.value = ''; // Reset dropdown after saving (optional, for better UX)
+                this.saveCurrentPreset();
+                e.target.value = '';
             } else if (selectedValue) {
-                this.loadPreset(selectedValue); // Existing load preset functionality
+                this.loadPreset(selectedValue);
             }
         });
-    
-        // Keep the event listener for objectName input - test if it still works as expected
+
         document.getElementById('objectName').addEventListener('input', (e) => {
             const presetSelect = document.getElementById('presetSelect');
             if (this.getPreset(e.target.value)) {
@@ -418,7 +406,6 @@ class DecentScale {
                 goalWeight: parseFloat(document.getElementById('goalWeight').value),
                 highThreshold: parseFloat(document.getElementById('highThreshold').value),
                 minWeight: parseFloat(document.getElementById('minWeight').value),
-                // waitTime: parseInt(document.getElementById('waitTime').value, 10) || 2
             }
         };
 
@@ -454,22 +441,17 @@ class DecentScale {
         const presets = this.getPresets();
         const presetSelect = document.getElementById('presetSelect');
 
-        // **Preserve "Save Preset" option:**
-        const savePresetOption = presetSelect.querySelector('option[value="save_preset"]'); // Get the "Save Preset" option
+        const savePresetOption = presetSelect.querySelector('option[value="save_preset"]');
 
-        // Clear *only* the preset options (leave "Select a preset..." and "Save Preset")
-        while (presetSelect.options.length > 1) { // Keep condition > 1, but now we are careful about what's at index 1
-            if (presetSelect.options[1] !== savePresetOption) { // Check if option at index 1 is NOT the "Save Preset" option
-                presetSelect.remove(1); // If it's not the "Save Preset" option, remove it (this will remove dynamically loaded presets)
+        while (presetSelect.options.length > 1) {
+            if (presetSelect.options[1] !== savePresetOption) {
+                presetSelect.remove(1);
             } else {
-                // If it IS the "Save Preset" option at index 1 (which should not happen in correct HTML, but for safety), 
-                // break to avoid infinite loop
                 break;
             }
         }
 
 
-        // Add presets to dropdown
         Object.keys(presets).forEach(name => {
             const option = document.createElement('option');
             option.value = name;
@@ -477,7 +459,6 @@ class DecentScale {
             presetSelect.appendChild(option);
         });
 
-        // Load last used preset if available (keep this part)
         const lastUsed = localStorage.getItem('lastUsedPreset');
         if (lastUsed && presets[lastUsed]) {
             this.loadPreset(lastUsed);
@@ -494,7 +475,6 @@ class DecentScale {
         document.getElementById('goalWeight').value = preset.goalWeight;
         document.getElementById('highThreshold').value = preset.highThreshold;
         document.getElementById('minWeight').value = preset.minWeight;
-        // document.getElementById('waitTime').value = preset.waitTime || 2;
 
         localStorage.setItem('lastUsedPreset', name);
     }
@@ -507,7 +487,6 @@ class DecentScale {
         const qcStatus = document.getElementById('qcStatus');
         qcStatus.textContent = message;
 
-        // State-specific styling
         switch(state) {
             case this.QC_STATES.MEASURING:
                 qcStatus.className = 'mt-4 p-4 rounded-lg shadow-md text-center text-lg font-bold bg-blue-100 text-blue-700';
@@ -527,30 +506,27 @@ class DecentScale {
         if (!Array.isArray(this.weightData)) {
             this.weightData = [];
         }
-        
-        // Increment readingCount before using it
+
         this.readingCount = this.weightData.length + 1;
-        
+
         const reading = {
-            id: this.readingCount,  // Now uses the correct sequence number
+            id: this.readingCount,
             timestamp: new Date().toISOString(),
             weight: parseFloat(weight.toFixed(1)),
             result: result,
             qcSettings: { ...this.qcSettings }
         };
-    
+
         this.weightData.push(reading);
-        // Format the display string with the correct sequence number
         this.weightReadings.push(`${reading.id}. ${new Date(reading.timestamp).toLocaleString()}: ${reading.weight}g - ${result.toUpperCase()}`);
-        
+
         console.log('Measurement saved:', reading);
         this.displayWeightReadings();
-        
+
         if (this.qcSettings.enableSounds) {
             this.playSound(result);
         }
     }
-     //make body go full screen 
      toggleFullScreen() {
         if (!document.fullscreenElement) {
             document.body.requestFullscreen();
@@ -577,25 +553,19 @@ class DecentScale {
             document.body.removeAttribute("fullscreen");
         }
     }
-    //websocket methods 
     handleWebSocketWeight(weight) {
-        console.log("handleWebSocketWeight called with weight:", weight); // <---- Add this line
-        // Update the weight display
+        console.log("handleWebSocketWeight called with weight:", weight);
         if (this.weightDisplay) {
             this.weightDisplay.textContent = `Weight: ${weight.toFixed(1)} g`;
         }
-        // If QC mode is active, run QC logic
         if (this.qcMode) {
             this.processQCWeight(weight);
         }
     }
     processQCWeight(weight) {
         try {
-        // The UI is already updated by handleWebSocketWeight.
-        // This function will now only manage the state machine logic.
 
         if (this.qcMode) {
-            // QC state machine logic
             switch (this.currentQCState) {
                 case this.QC_STATES.WAITING_FOR_NEXT:
                     if (weight >= this.qcSettings.minWeight) {
