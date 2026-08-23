@@ -101,6 +101,7 @@ volatile uint16_t bleStatusResponsesPending = 0;
 volatile uint16_t bleVoltageResponsesPending = 0;
 volatile unsigned long bleStatusRequestAt = 0;
 volatile bool bleNotifyFailureLogged = false;
+volatile bool bleDirectNotifyRequired = false;
 volatile uint32_t bleFff4ConnectionGeneration = 0;
 portMUX_TYPE bleFff4Mux = portMUX_INITIALIZER_UNLOCKED;
 volatile bool b_usbweight_enabled = false;
