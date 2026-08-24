@@ -99,7 +99,13 @@ static inline size_t decentCommandFrameLength(const uint8_t *data, size_t len, b
       if (len < 3) {
         return 0;
       }
-      return decentFixedFrameLength(len, data[2] == 0x01 ? 4 : 3);
+      if (data[2] != 0x01) {
+        return 3;
+      }
+      if (len >= 4) {
+        return 4;
+      }
+      return allowShort ? 3 : 0;
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
     case 0x21:
       return decentFixedFrameLength(len, 2);
