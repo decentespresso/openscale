@@ -49,7 +49,7 @@ Do not add an environment merely because it exists. Changes limited to ADS1232 b
 
 ## Enabling a Stable Custom Base
 
-After a release tag exists, verify that it contains the compatible `esp32s3-custom` hooks, add its `vX.Y.Z` ref to `FIRMWARE_REFS`, add that ref and a tested patch mapping to each compatible plugin manifest, regenerate both custom-build catalogs, and add the ref to the Worker's `ALLOWED_FIRMWARE_REFS`. Deploy the Worker only after the catalog commit reaches the trusted builder branch. The configurator displays `vX.Y.Z` as `X.Y.Z (stable)`, and the resulting firmware reports `X.Y.Z-custom`.
+After a release tag exists, verify that it contains the compatible `esp32s3-custom` hooks, prepend its `vX.Y.Z` ref to `FIRMWARE_REFS` so it becomes the default selection, add that ref and a tested patch mapping to each compatible plugin manifest, regenerate both custom-build catalogs, and add the ref to the Worker's `ALLOWED_FIRMWARE_REFS`. Deploy the Worker only after the catalog commit reaches the trusted builder branch. The configurator displays `vX.Y.Z` as `X.Y.Z (stable)`, and the resulting firmware reports `X.Y.Z-custom`.
 
 ## Focused Checks
 

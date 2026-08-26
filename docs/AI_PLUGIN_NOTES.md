@@ -25,7 +25,7 @@ plugins/<plugin-id>/
 `-- assets/
 ```
 
-`plugin.json` declares the stable ID, plugin version, compatible firmware refs, feature requirements, plugin dependencies, recommendations, conflicts, patch mapping, asset mapping, and resource budgets. A patch filename is not a compatibility claim by itself; it must be mapped by the manifest.
+`plugin.json` declares the stable ID, plugin version, compatible firmware refs, feature requirements, plugin dependencies, recommendations, plugin and feature conflicts, patch mapping, asset mapping, and resource budgets. A patch filename is not a compatibility claim by itself; it must be mapped by the manifest.
 
 ## Compile Gate Pattern
 
@@ -82,6 +82,8 @@ Declare only dependencies exercised by the plugin:
 - other existing feature IDs only when their code is required.
 
 Use `depends_on` for required plugin IDs. Dependency patches are applied before dependent patches, cycles are rejected, and the dependency order is part of the build identity. Use `recommends` only for a complete combination that has been tested together. The configurator's Recommended button replaces the current selection with that combination rather than retaining untested extras.
+
+Use `conflicts` for plugin IDs and optional `conflicts_features` for feature IDs. Catalog generation rejects packages that conflict with their own dependency closure and recommendations that resolve to a conflict. Runtime validation checks conflicts only after all plugin and feature dependencies have been resolved.
 
 Do not infer WiFi, WebServer, or runtime LittleFS from the fact that a custom ZIP contains `littlefs.bin`. Runtime filesystem use and staged filesystem replacement are separate concerns. Pull OTA continues to use its mandatory staged `littlefs.bin` transaction independently of `HDS_FEATURE_LITTLEFS`.
 

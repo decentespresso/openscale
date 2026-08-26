@@ -80,6 +80,7 @@ jobs:
           python tools/test_custom_build_execution.py
           python tools/test_custom_cache_transport.py
           python tools/test_plugin_ci_contract.py
+          node --test cloudflare/custom-build-worker/test/configurator.test.mjs
           node --test cloudflare/custom-build-worker/test/worker.test.mjs
       - name: Detect changed patch plugins
         id: plugins
@@ -237,6 +238,7 @@ jobs:
           python tools/test_plugin_catalog.py
           python tools/test_custom_build_execution.py
           python tools/test_custom_cache_transport.py
+          node --test cloudflare/custom-build-worker/test/configurator.test.mjs
           node --test cloudflare/custom-build-worker/test/worker.test.mjs
       - name: Mark custom build as running
         if: >-
@@ -320,3 +322,4 @@ jobs:
           --combination-hash "${{ inputs.combination_hash }}"
           --attempt-id "${{ inputs.attempt_id }}"
           --state failed
+          --failure-code build_failed

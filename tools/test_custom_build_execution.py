@@ -402,7 +402,7 @@ def main():
     )
     assert "selectionController = new AbortController()" in configurator
     assert "if (generation !== selectionGeneration) return;" in configurator
-    assert "currentCombinationHash" not in configurator
+    assert "navigator.clipboard.writeText(currentCombinationHash)" in configurator
     assert "expectedHash" not in configurator
     configuratorWorkflow = (
         customBuild.SCRIPT_ROOT / ".github" / "workflows" / "custom-build-configurator.yml"
@@ -414,6 +414,7 @@ def main():
     assert "python tools/test_plugin_catalog.py" in configuratorWorkflow
     assert "python tools/test_custom_build_execution.py" in configuratorWorkflow
     assert "node --check docs/custom-build/app.js" in configuratorWorkflow
+    assert "node --test cloudflare/custom-build-worker/test/configurator.test.mjs" in configuratorWorkflow
     print("custom build execution tests passed")
 
 

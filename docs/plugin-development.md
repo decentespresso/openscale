@@ -51,6 +51,7 @@ Example manifest:
   "requires": [],
   "depends_on": [],
   "conflicts": [],
+  "conflicts_features": [],
   "recommends": {"features": [], "plugins": []},
   "patches": {
     "main": "patches/main.patch"
@@ -134,7 +135,7 @@ Use `requires` for existing compile-time features:
 
 The custom ZIP always contains `littlefs.bin`. That does not mean the plugin requires runtime LittleFS. OTA replacement of the LittleFS partition and runtime filesystem use are separate mechanisms.
 
-Use `depends_on` for plugin IDs that must be applied first. Dependencies are resolved transitively, cycles are rejected, and dependency patches are applied before their dependents. Use `recommends` for a complete combination that maintainers have tested together; choosing it replaces the user's current selection. Use `conflicts` for plugin IDs that cannot safely be applied or operated together. Overlapping patches should be redesigned rather than relying on order.
+Use `depends_on` for plugin IDs that must be applied first. Dependencies are resolved transitively, cycles are rejected, and dependency patches are applied before their dependents. Use `recommends` for a complete combination that maintainers have tested together; choosing it replaces the user's current selection. Use `conflicts` for incompatible plugin IDs and `conflicts_features` for incompatible feature IDs. Conflicts are checked after the complete plugin and feature dependency closure is resolved. Overlapping patches should be redesigned rather than relying on order.
 
 ## Validate Before Review
 

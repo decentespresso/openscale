@@ -124,11 +124,13 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     requires: [],
     depends_on,
     conflicts: [],
+    conflicts_features: [],
     patches: {},
     assets: [],
   });
   const serviceCatalog = {
     schema: 2,
+    catalog_revision: "a".repeat(64),
     firmware_refs: ["main", "v1.2.3"],
     platformio_environment: "esp32s3-custom",
     firmware: {
@@ -142,7 +144,13 @@ test("publishes immutable cache entries and deduplicates public builds", async (
       },
     },
     features: {
-      wifi: [], mdns: [], webserver: [], littlefs: [], "elegant-ota": [], "energy-menu": [],
+      wifi: {requires: [], firmware_refs: ["main"]},
+      mdns: {requires: [], firmware_refs: ["main"]},
+      webserver: {requires: [], firmware_refs: ["main"]},
+      littlefs: {requires: [], firmware_refs: ["main"]},
+      "elegant-ota": {requires: [], firmware_refs: ["main"]},
+      "energy-menu": {requires: [], firmware_refs: ["main"]},
+      "stable-only": {requires: [], firmware_refs: ["v1.2.3"]},
     },
     plugins: {
       "asset-sort": {
@@ -151,6 +159,7 @@ test("publishes immutable cache entries and deduplicates public builds", async (
         requires: [],
         depends_on: ["base-plugin"],
         conflicts: [],
+        conflicts_features: [],
         patches: {},
         assets: [
           {target: "plugins/z.txt", sha256: "3".repeat(64)},
@@ -163,6 +172,7 @@ test("publishes immutable cache entries and deduplicates public builds", async (
         requires: ["wifi"],
         depends_on: [],
         conflicts: [],
+        conflicts_features: [],
         patches: {},
         assets: [],
       },
@@ -170,8 +180,13 @@ test("publishes immutable cache entries and deduplicates public builds", async (
       bravo: dependencyPlugin(["delta"]),
       charlie: dependencyPlugin(["alpha"]),
       delta: dependencyPlugin(),
+      "feature-blocker": dependencyPlugin(),
+      "wifi-client": {...dependencyPlugin(), requires: ["wifi"]},
+      "wifi-root": dependencyPlugin(["wifi-client"]),
+      "plugin-blocker": {...dependencyPlugin(), conflicts: ["delta"]},
     },
   };
+  serviceCatalog.plugins["feature-blocker"].conflicts_features = ["wifi"];
   const keyPair = await crypto.subtle.generateKey(
     {name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256"},
     true,
@@ -195,12 +210,19 @@ test("publishes immutable cache entries and deduplicates public builds", async (
   env.COORDINATOR = new CoordinatorNamespace(env);
   const originalFetch = globalThis.fetch;
   let dispatches = 0;
+  let failDispatch = false;
+  let servedCatalog = serviceCatalog;
   globalThis.fetch = async (url, options = {}) => {
     const target = String(url);
     if (target.includes("/commits/main")) return Response.json({sha: commit});
     if (target.includes("/commits/v1.2.3")) return Response.json({sha: stableCommit});
-    if (target.includes("raw.githubusercontent.com")) return Response.json(serviceCatalog);
-    if (target.includes("/access_tokens")) return Response.json({token: "installation-token"});
+    if (target.includes("raw.githubusercontent.com")) return Response.json(servedCatalog);
+    if (target.includes("/access_tokens")) {
+      assert.deepEqual(JSON.parse(options.body), {
+        repositories: ["openscale"], permissions: {actions: "write"},
+      });
+      return Response.json({token: "installation-token"});
+    }
     if (target.includes("/dispatches")) {
       dispatches += 1;
       const request = JSON.parse(options.body);
@@ -213,6 +235,7 @@ test("publishes immutable cache entries and deduplicates public builds", async (
         assert.equal(request.inputs.features, "");
         assert.equal(request.inputs.plugins, "");
       }
+      if (failDispatch) return Response.json({message: "unavailable"}, {status: 503});
       return new Response(null, {status: 204});
     }
     throw new Error(`unexpected fetch: ${target}`);
@@ -260,6 +283,43 @@ test("publishes immutable cache entries and deduplicates public builds", async (
       firmware_ref: "main", features: ["unknown"], plugins: [],
     });
     assert.equal(unknown.status, 400);
+
+    const revised = await api(env, "/api/v1/status", "POST", {
+      ...selection, catalog_revision: serviceCatalog.catalog_revision,
+    });
+    assert.equal(revised.status, 200);
+    const stale = await api(env, "/api/v1/status", "POST", {
+      ...selection, catalog_revision: "b".repeat(64),
+    });
+    assert.equal(stale.status, 409);
+    assert.deepEqual(await stale.json(), {error: "catalog_stale"});
+    assert.equal((await api(env, "/api/v1/status", "POST", {
+      ...selection, catalog_revision: "invalid",
+    })).status, 400);
+
+    for (const conflictingSelection of [
+      {firmware_ref: "main", features: ["wifi"], plugins: ["feature-blocker"]},
+      {firmware_ref: "main", features: [], plugins: ["feature-blocker", "wifi-root"]},
+      {firmware_ref: "main", features: [], plugins: ["plugin-blocker", "bravo"]},
+    ]) {
+      assert.equal((await api(env, "/api/v1/status", "POST", conflictingSelection)).status, 400);
+    }
+    assert.equal((await api(env, "/api/v1/status", "POST", {
+      firmware_ref: "main", features: ["stable-only"], plugins: [],
+    })).status, 400);
+    assert.equal((await api(env, "/api/v1/status", "POST", {
+      firmware_ref: "v1.2.3", features: ["stable-only"], plugins: [],
+    })).status, 200);
+
+    const {catalog_revision, ...legacyCatalog} = serviceCatalog;
+    servedCatalog = {
+      ...legacyCatalog,
+      features: Object.fromEntries(
+        Object.entries(serviceCatalog.features).map(([id, definition]) => [id, definition.requires]),
+      ),
+    };
+    assert.equal((await api(env, "/api/v1/status", "POST", selection)).status, 200);
+    servedCatalog = serviceCatalog;
 
     const queued = await api(env, "/api/v1/build", "POST", selection);
     assert.equal(queued.status, 202);
@@ -323,6 +383,7 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     assert.equal(ready.state, "ready");
     assert.deepEqual(Object.keys(ready.downloads), ["HDS_FW_custom.zip"]);
     assert.equal(ready.downloads["HDS_FW_custom.zip"], `https://example.test/v1/${hash}/HDS_FW_custom.zip`);
+    assert.equal(ready.manifest_url, `https://example.test/v1/${hash}/build-manifest.json`);
     assert.equal((await put(env, hash, "HDS_FW_custom.zip", "replacement")).status, 409);
 
     const preflight = await worker.fetch(new Request("https://example.test/api/v1/status", {
@@ -339,7 +400,7 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     const firstAttempt = (await env.COORDINATOR.coordinator.state.storage.get(`build:${retryHash}`)).attempt_id;
     assert.equal((await worker.fetch(new Request(`https://example.test/internal/v1/status/${retryHash}`, {
       method: "PUT",
-      body: JSON.stringify({state: "failed", attempt_id: firstAttempt}),
+      body: JSON.stringify({state: "failed", failure_code: "build_failed", attempt_id: firstAttempt}),
       headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
     }), env)).status, 204);
     const retry = await api(env, "/api/v1/build", "POST", retrySelection);
@@ -353,26 +414,37 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     }), env)).status, 409);
     assert.equal((await worker.fetch(new Request(`https://example.test/internal/v1/status/${retryHash}`, {
       method: "PUT",
-      body: JSON.stringify({state: "failed", attempt_id: secondAttempt}),
+      body: JSON.stringify({state: "failed", failure_code: "build_failed", attempt_id: secondAttempt}),
       headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
     }), env)).status, 204);
     const terminal = await api(env, "/api/v1/build", "POST", retrySelection);
     assert.equal(terminal.status, 409);
     assert.deepEqual(await terminal.json(), {
       state: "failed",
+      failure_code: "build_failed",
       combination_hash: retryHash,
       attempts: 2,
       max_attempts: 2,
       retryable: false,
       updated_at: (await env.COORDINATOR.coordinator.state.storage.get(`build:${retryHash}`)).updated_at,
     });
+    failDispatch = true;
+    const dispatchFailure = await api(env, "/api/v1/build", "POST", {
+      firmware_ref: "main", features: [], plugins: ["alpha"],
+    });
+    assert.equal(dispatchFailure.status, 503);
+    const dispatchStatus = await dispatchFailure.json();
+    assert.equal(dispatchStatus.state, "failed");
+    assert.equal(dispatchStatus.failure_code, "dispatch_failed");
+    assert.equal(dispatchStatus.retryable, true);
+    failDispatch = false;
     const burstFeatures = ["wifi", "mdns", "webserver", "littlefs", "elegant-ota"];
     const burstSelections = Array.from({length: 31}, (_, index) =>
       burstFeatures.filter((_, bit) => (index + 1) & (1 << bit)),
     ).filter(features => ![["mdns"], ["webserver"]].some(skip =>
       skip.length === features.length && skip.every((feature, index) => feature === features[index]),
     ));
-    for (const features of burstSelections.slice(0, 18)) {
+    for (const features of burstSelections.slice(0, 17)) {
       assert.equal((await api(env, "/api/v1/build", "POST", {
         firmware_ref: "main", features, plugins: [],
       })).status, 202);
@@ -408,6 +480,11 @@ test("publishes immutable cache entries and deduplicates public builds", async (
       headers: {Origin: "https://example.invalid", "Content-Type": "application/json"},
     }), env);
     assert.equal(rejectedOrigin.status, 403);
+    env.GITHUB_REPOSITORY = "decentespresso/other";
+    const wrongRepository = await api(env, "/api/v1/status", "POST", selection);
+    assert.equal(wrongRepository.status, 503);
+    assert.deepEqual(await wrongRepository.json(), {error: "github_repository_misconfigured"});
+    env.GITHUB_REPOSITORY = "decentespresso/openscale";
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -433,6 +510,7 @@ test("expires stale build attempts", async () => {
   await coordinator.alarm();
   const record = await storage.get(`build:${hash}`);
   assert.equal(record.state, "failed");
+  assert.equal(record.failure_code, "build_timeout");
   assert.equal(Object.hasOwn(record, "lease_expires_at"), false);
   assert.deepEqual(await storage.get("pending"), {});
 });

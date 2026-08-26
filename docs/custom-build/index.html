@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#0d6b4f">
   <title>HDS Custom Build</title>
-  <link rel="stylesheet" href="styles.css?v=6">
+  <link rel="stylesheet" href="styles.css?v=7">
 </head>
 <body>
   <header class="topbar">
@@ -96,7 +96,10 @@
           <div class="service-section">
             <div class="service-heading">
               <span>Build status</span>
-              <code id="combination-hash"></code>
+              <button id="copy-hash" class="hash-button" type="button" title="Copy combination hash" hidden>
+                <code id="combination-hash"></code>
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              </button>
             </div>
             <p id="status-message" class="status-message" role="status" aria-live="polite">Checking the build cache.</p>
             <p id="pull-ota-warning" class="pull-ota-warning" hidden>Wifi Pull OTA installs official releases and replaces this custom build.</p>
@@ -123,6 +126,6 @@
     <span id="toast-message">Command copied</span>
   </div>
 
-  <script src="app.js?v=7"></script>
+  <script type="module" src="app.js?v=8"></script>
 </body>
 </html>

@@ -353,10 +353,11 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertNotIn("sdkconfig.energy-menu.defaults", custom)
         self.assertIn("extends = env:esp32s3-pm-capable", energy_custom)
         self.assertIn(
-            '"energy-menu": ("HDS_FEATURE_ENERGY_MENU", ())',
+            '"energy-menu": ("HDS_FEATURE_ENERGY_MENU", (), ("main",))',
             CUSTOM_BUILD,
         )
-        self.assertIn('DEFAULT_FEATURES = set(FEATURES) - HIDDEN_FEATURES - {"energy-menu"}', CUSTOM_BUILD)
+        self.assertIn('DEFAULT_FEATURES = {', CUSTOM_BUILD)
+        self.assertNotIn('DEFAULT_FEATURES = set(FEATURES)', CUSTOM_BUILD)
         self.assertIn("CONFIG_BT_CTRL_LPCLK_SEL_MAIN_XTAL=y", SDKCONFIG)
         self.assertIn("CONFIG_PM_LIGHT_SLEEP_CALLBACKS=y", SDKCONFIG)
         self.assertIn("# CONFIG_BT_CTRL_LPCLK_SEL_RTC_SLOW is not set", SDKCONFIG)

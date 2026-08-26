@@ -10,9 +10,10 @@ import urllib.request
 HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 ATTEMPT_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 STATES = {"building", "ready", "failed"}
+FAILURE_CODES = {"dispatch_failed", "build_failed", "build_timeout"}
 
 
-def updateStatus(baseUrl, token, combinationHash, attemptId, state):
+def updateStatus(baseUrl, token, combinationHash, attemptId, state, failureCode=None):
     parsed = urllib.parse.urlsplit(baseUrl)
     if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
         raise ValueError("status URL must be HTTPS without credentials")
@@ -26,9 +27,14 @@ def updateStatus(baseUrl, token, combinationHash, attemptId, state):
         raise ValueError("attempt id must be a lowercase UUIDv4")
     if state not in STATES:
         raise ValueError("invalid build state")
+    if (state == "failed") != (failureCode in FAILURE_CODES):
+        raise ValueError("failed builds require a valid failure code")
+    payload = {"state": state, "attempt_id": attemptId}
+    if failureCode:
+        payload["failure_code"] = failureCode
     request = urllib.request.Request(
         f"{baseUrl.rstrip('/')}/internal/v1/status/{combinationHash}",
-        data=json.dumps({"state": state, "attempt_id": attemptId}).encode("utf-8"),
+        data=json.dumps(payload).encode("utf-8"),
         method="PUT",
         headers={
             "Authorization": f"Bearer {token}",
@@ -47,6 +53,7 @@ def main():
     parser.add_argument("--combination-hash", required=True)
     parser.add_argument("--attempt-id", required=True)
     parser.add_argument("--state", choices=sorted(STATES), required=True)
+    parser.add_argument("--failure-code", choices=sorted(FAILURE_CODES))
     args = parser.parse_args()
     try:
         updateStatus(
@@ -55,6 +62,7 @@ def main():
             args.combination_hash,
             args.attempt_id,
             args.state,
+            args.failure_code,
         )
     except (ValueError, urllib.error.HTTPError, urllib.error.URLError) as error:
         parser.exit(1, f"custom build status update failed: {error}\n")
