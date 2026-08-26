@@ -554,19 +554,24 @@ async function updateStatus(request, env, hash) {
   const update = await readJson(request, 1024);
   const keys = update && typeof update === "object" && !Array.isArray(update)
     ? Object.keys(update).sort().join(",") : "";
-  const expectedKeys = update?.state === "failed" ? "attempt_id,failure_code,state" : "attempt_id,state";
-  if (keys !== expectedKeys || !buildStates.has(update.state) ||
-      !attemptPattern.test(update.attempt_id) ||
-      update.state === "failed" && !failureCodes.has(update.failure_code)) {
+  const normalizedUpdate = update?.state === "failed" && keys === "attempt_id,state"
+    ? {...update, failure_code: "build_failed"} : update;
+  const normalizedKeys = normalizedUpdate && typeof normalizedUpdate === "object"
+    ? Object.keys(normalizedUpdate).sort().join(",") : "";
+  const expectedKeys = normalizedUpdate?.state === "failed"
+    ? "attempt_id,failure_code,state" : "attempt_id,state";
+  if (normalizedKeys !== expectedKeys || !buildStates.has(normalizedUpdate.state) ||
+      !attemptPattern.test(normalizedUpdate.attempt_id) ||
+      normalizedUpdate.state === "failed" && !failureCodes.has(normalizedUpdate.failure_code)) {
     throw new ApiError(400, "invalid_build_state");
   }
-  if (update.state === "ready" && !(await env.BUILDS.head(`v1/${hash}/build-manifest.json`))) {
+  if (normalizedUpdate.state === "ready" && !(await env.BUILDS.head(`v1/${hash}/build-manifest.json`))) {
     throw new ApiError(409, "cache_entry_missing");
   }
   const response = await coordinator(env).fetch(`https://coordinator/status/${hash}`, {
     method: "PUT",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify(update),
+    body: JSON.stringify(normalizedUpdate),
   });
   if (!response.ok) throw new ApiError(response.status, "status_update_failed");
   return new Response(null, {status: 204});

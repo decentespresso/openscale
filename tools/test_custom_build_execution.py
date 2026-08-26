@@ -402,6 +402,8 @@ def main():
     )
     assert "selectionController = new AbortController()" in configurator
     assert "if (generation !== selectionGeneration) return;" in configurator
+    assert "catalogRetryDelay = Math.min(catalogRetryDelay * 2, 30000)" in configurator
+    assert "setTimeout(() => checkStatus(selection, generation), retryDelay)" in configurator
     assert "navigator.clipboard.writeText(currentCombinationHash)" in configurator
     assert "expectedHash" not in configurator
     configuratorWorkflow = (

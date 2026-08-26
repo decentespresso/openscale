@@ -42,6 +42,7 @@ import {
   let selectionController;
   let currentSelection;
   let currentCombinationHash = "";
+  let catalogRetryDelay = 2000;
 
   const escapeHtml = value => String(value).replace(/[&<>'"]/g, character => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
@@ -191,22 +192,28 @@ import {
   };
 
   const clearCatalogReload = () => {
+    catalogRetryDelay = 2000;
     try {
       sessionStorage.removeItem("hds-custom-build-catalog-reload");
     } catch {
     }
   };
 
-  const handleCatalogStale = (error, generation) => {
+  const handleCatalogStale = (error, generation, selection) => {
     if (error.result?.error !== "catalog_stale") return false;
     setStatus({state: "updating"}, generation);
     try {
       if (!sessionStorage.getItem("hds-custom-build-catalog-reload")) {
         sessionStorage.setItem("hds-custom-build-catalog-reload", "1");
         location.reload();
+        return true;
       }
     } catch {
     }
+    const retryDelay = catalogRetryDelay;
+    catalogRetryDelay = Math.min(catalogRetryDelay * 2, 30000);
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => checkStatus(selection, generation), retryDelay);
     return true;
   };
 
@@ -241,7 +248,7 @@ import {
       clearCatalogReload();
       setStatus(result, generation);
     } catch (error) {
-      if (error.name !== "AbortError" && !handleCatalogStale(error, generation)) {
+      if (error.name !== "AbortError" && !handleCatalogStale(error, generation, selection)) {
         setStatus({state: "unavailable"}, generation);
       }
     }
@@ -389,7 +396,7 @@ import {
       setStatus(result, generation);
     } catch (error) {
       if (error.name === "AbortError" || generation !== selectionGeneration) return;
-      if (handleCatalogStale(error, generation)) return;
+      if (handleCatalogStale(error, generation, selection)) return;
       if (error.status === 429) {
         setStatus({state: "rate-limited"}, generation);
         showToast("Weekly build limit reached");

@@ -400,9 +400,13 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     const firstAttempt = (await env.COORDINATOR.coordinator.state.storage.get(`build:${retryHash}`)).attempt_id;
     assert.equal((await worker.fetch(new Request(`https://example.test/internal/v1/status/${retryHash}`, {
       method: "PUT",
-      body: JSON.stringify({state: "failed", failure_code: "build_failed", attempt_id: firstAttempt}),
+      body: JSON.stringify({state: "failed", attempt_id: firstAttempt}),
       headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
     }), env)).status, 204);
+    assert.equal(
+      (await env.COORDINATOR.coordinator.state.storage.get(`build:${retryHash}`)).failure_code,
+      "build_failed",
+    );
     const retry = await api(env, "/api/v1/build", "POST", retrySelection);
     assert.equal(retry.status, 202);
     const secondAttempt = (await env.COORDINATOR.coordinator.state.storage.get(`build:${retryHash}`)).attempt_id;
