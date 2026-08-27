@@ -40,6 +40,22 @@ export async function catalogRevisionChanged(fetchCatalog, currentRevision) {
   return revisionPattern.test(revision) && revision !== currentRevision;
 }
 
+function compatibilityPackages(maps, pluginIds) {
+  const selected = new Set(pluginIds);
+  return pluginIds.map(ownerId => {
+    const owner = maps.plugins.get(ownerId);
+    const pending = [ownerId, ...(owner.recommends?.plugins || []).filter(id => selected.has(id))];
+    const compatible = new Set();
+    while (pending.length) {
+      const id = pending.pop();
+      if (compatible.has(id)) continue;
+      compatible.add(id);
+      pending.push(...maps.plugins.get(id).depends_on);
+    }
+    return compatible;
+  });
+}
+
 export function resolveSelection(catalog, selection) {
   const maps = catalogMaps(catalog);
   const firmwareRef = selection.firmware_ref;
@@ -85,9 +101,11 @@ export function resolveSelection(catalog, selection) {
 
   const pluginIds = [...resolvedPlugins].sort();
   const featureIds = [...resolvedFeatures].sort();
+  const compatible = compatibilityPackages(maps, pluginIds);
   for (const id of pluginIds) {
     const plugin = maps.plugins.get(id);
-    const otherPluginId = plugin.conflicts.find(conflict => resolvedPlugins.has(conflict));
+    const otherPluginId = plugin.conflicts.find(conflict =>
+      resolvedPlugins.has(conflict) && !compatible.some(group => group.has(id) && group.has(conflict)));
     if (otherPluginId) {
       throw new SelectionError("plugin_conflict", {pluginId: id, otherPluginId});
     }

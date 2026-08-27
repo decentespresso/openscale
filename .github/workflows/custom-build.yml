@@ -124,14 +124,18 @@ jobs:
           python - <<'PY'
           import json
           import os
+          import sys
           from pathlib import Path
+          sys.path.insert(0, "tools")
+          import configure_custom_build as customBuild
           path = Path(".pio.nosync/plugin-ci.json")
           path.parent.mkdir(parents=True, exist_ok=True)
-          path.write_text(json.dumps({
-              "firmware_ref": os.environ["FIRMWARE_REF"],
-              "features": [],
-              "plugins": [os.environ["PLUGIN_ID"]],
-          }) + "\n", encoding="utf-8")
+          selection = customBuild.recommendedPluginSelection(
+              customBuild.loadPluginCatalog(),
+              os.environ["PLUGIN_ID"],
+              os.environ["FIRMWARE_REF"],
+          )
+          path.write_text(json.dumps(selection) + "\n", encoding="utf-8")
           PY
       - name: Build plugin environment
         env:

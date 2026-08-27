@@ -41,6 +41,10 @@ const catalog = {
     plugin("direct", "Direct", {conflicts: ["blocker"]}),
     plugin("helper", "Helper", {conflicts: ["blocker"]}),
     plugin("indirect", "Indirect", {depends_on: ["helper"]}),
+    plugin("compatibility-root", "Compatibility root", {depends_on: ["direct", "blocker"]}),
+    plugin("compatibility-recommender", "Compatibility recommender", {
+      recommends: {features: [], plugins: ["direct", "blocker"]},
+    }),
   ],
 };
 
@@ -58,6 +62,7 @@ test("blocks new direct and transitive conflicts without blocking removal", () =
     "Requires WiFi, which conflicts with Blocker",
   );
   assert.equal(optionReason(catalog, current, "plugin", "direct"), "Conflicts with Blocker");
+  assert.equal(optionReason(catalog, current, "plugin", "compatibility-root"), "");
   assert.equal(
     optionReason(catalog, current, "plugin", "indirect"),
     "Requires Helper, which conflicts with Blocker",
@@ -69,6 +74,14 @@ test("blocks new direct and transitive conflicts without blocking removal", () =
   assert.deepEqual(
     resolveSelection(catalog, {firmware_ref: "main", features: [], plugins: ["client"]}),
     {firmware_ref: "main", features: ["network", "wifi"], plugins: ["client"]},
+  );
+  assert.deepEqual(
+    resolveSelection(catalog, {
+      firmware_ref: "main",
+      features: [],
+      plugins: ["compatibility-recommender", "direct", "blocker"],
+    }).plugins,
+    ["blocker", "compatibility-recommender", "direct"],
   );
 });
 

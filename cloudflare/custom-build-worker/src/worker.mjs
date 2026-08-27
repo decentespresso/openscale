@@ -246,17 +246,21 @@ function resolvePlugins(catalog, firmwareRef, selected) {
     const plugin = catalog.plugins[id];
     if (!plugin) throw new ApiError(400, "unknown_plugin");
     const conflictsFeatures = plugin.conflicts_features || [];
+    const recommendedPlugins = plugin.recommends?.plugins || [];
     if (!Array.isArray(plugin.firmware_refs) || !Array.isArray(plugin.depends_on) ||
         !Array.isArray(plugin.conflicts) || !Array.isArray(conflictsFeatures) ||
+        !Array.isArray(recommendedPlugins) ||
         !Array.isArray(plugin.requires) || !Array.isArray(plugin.assets) ||
         !plugin.patches || typeof plugin.patches !== "object" || Array.isArray(plugin.patches) ||
         plugin.firmware_refs.some(ref => typeof ref !== "string") ||
         plugin.requires.some(feature => !idPattern.test(feature)) ||
         plugin.depends_on.some(dependency => !idPattern.test(dependency)) ||
         plugin.conflicts.some(conflict => !idPattern.test(conflict)) ||
+        recommendedPlugins.some(recommended => !idPattern.test(recommended)) ||
         conflictsFeatures.some(feature => !idPattern.test(feature)) ||
         plugin.depends_on.length !== new Set(plugin.depends_on).size ||
         plugin.conflicts.length !== new Set(plugin.conflicts).size ||
+        recommendedPlugins.length !== new Set(recommendedPlugins).size ||
         conflictsFeatures.length !== new Set(conflictsFeatures).size) {
       throw new ApiError(503, "invalid_service_catalog");
     }
@@ -295,12 +299,30 @@ function resolvePlugins(catalog, firmwareRef, selected) {
   });
 }
 
+function compatibilityPackages(catalog, pluginIds) {
+  const selected = new Set(pluginIds);
+  return pluginIds.map(ownerId => {
+    const owner = catalog.plugins[ownerId];
+    const pending = [ownerId, ...(owner.recommends?.plugins || []).filter(id => selected.has(id))];
+    const compatible = new Set();
+    while (pending.length) {
+      const id = pending.pop();
+      if (compatible.has(id)) continue;
+      compatible.add(id);
+      pending.push(...catalog.plugins[id].depends_on);
+    }
+    return compatible;
+  });
+}
+
 function validateConflicts(catalog, pluginIds, featureIds) {
   const selectedPlugins = new Set(pluginIds);
   const selectedFeatures = new Set(featureIds);
+  const compatible = compatibilityPackages(catalog, pluginIds);
   for (const id of pluginIds) {
     const plugin = catalog.plugins[id];
-    if (plugin.conflicts.some(conflict => selectedPlugins.has(conflict))) {
+    if (plugin.conflicts.some(conflict => selectedPlugins.has(conflict) &&
+        !compatible.some(group => group.has(id) && group.has(conflict)))) {
       throw new ApiError(400, "plugin_conflict");
     }
     if ((plugin.conflicts_features || []).some(feature => selectedFeatures.has(feature))) {

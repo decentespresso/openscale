@@ -270,6 +270,21 @@ def resolveFeatureIds(featureIds, firmwareRef):
     return sorted(resolved)
 
 
+def pluginCompatibilityPackages(pluginCatalog, pluginIds):
+    selected = set(pluginIds)
+    return [
+        set(pluginOrder(pluginCatalog, [
+            pluginId,
+            *(
+                recommended
+                for recommended in pluginCatalog[pluginId][0]["recommends"]["plugins"]
+                if recommended in selected
+            ),
+        ]))
+        for pluginId in pluginIds
+    ]
+
+
 def resolveCatalogSelection(pluginCatalog, requestedPluginIds, requestedFeatures, firmwareRef):
     pluginIds = pluginOrder(pluginCatalog, requestedPluginIds)
     unsupportedPlugins = sorted(
@@ -292,9 +307,14 @@ def resolveCatalogSelection(pluginCatalog, requestedPluginIds, requestedFeatures
     )
     selectedPlugins = set(pluginIds)
     selectedFeatures = set(featureIds)
+    compatibilityPackages = pluginCompatibilityPackages(pluginCatalog, pluginIds)
     for pluginId in pluginIds:
         manifest = pluginCatalog[pluginId][0]
-        pluginConflicts = sorted(selectedPlugins.intersection(manifest["conflicts"]))
+        pluginConflicts = sorted(
+            conflict
+            for conflict in selectedPlugins.intersection(manifest["conflicts"])
+            if not any({pluginId, conflict} <= package for package in compatibilityPackages)
+        )
         if pluginConflicts:
             raise ValueError(f"plugin {pluginId} conflicts with {pluginConflicts}")
         featureConflicts = sorted(selectedFeatures.intersection(manifest["conflicts_features"]))
@@ -308,6 +328,19 @@ def resolveCatalogSelection(pluginCatalog, requestedPluginIds, requestedFeatures
     if len(targets) != len(set(targets)):
         raise ValueError("plugin asset target collision")
     return pluginIds, featureIds
+
+
+def recommendedPluginSelection(pluginCatalog, pluginId, firmwareRef):
+    recommendations = pluginCatalog[pluginId][0]["recommends"]
+    selection = {
+        "firmware_ref": firmwareRef,
+        "features": recommendations["features"],
+        "plugins": [pluginId, *recommendations["plugins"]],
+    }
+    resolveCatalogSelection(
+        pluginCatalog, selection["plugins"], selection["features"], firmwareRef
+    )
+    return selection
 
 
 def loadPluginCatalog(validateDefaults=False):
@@ -340,14 +373,8 @@ def loadPluginCatalog(validateDefaults=False):
                 resolveCatalogSelection(plugins, [pluginId], [], firmwareRef)
             except ValueError as error:
                 raise ValueError(f"impossible plugin {pluginId} on {firmwareRef}: {error}") from error
-            recommendations = manifest["recommends"]
             try:
-                resolveCatalogSelection(
-                    plugins,
-                    [pluginId, *recommendations["plugins"]],
-                    recommendations["features"],
-                    firmwareRef,
-                )
+                recommendedPluginSelection(plugins, pluginId, firmwareRef)
             except ValueError as error:
                 raise ValueError(
                     f"invalid recommendations for {pluginId} on {firmwareRef}: {error}"
@@ -512,6 +539,7 @@ def resolveConfiguration(configPath):
             patches.append((pluginId, pluginPatches[firmwareRef]))
     return {
         "firmware_ref": firmwareRef,
+        "requested_features": sorted(requestedFeatures),
         "requested_plugins": sorted(requestedPluginIds),
         "features": resolved,
         "plugins": plugins,

@@ -40,17 +40,20 @@ def runGit(root, *arguments):
     ).stdout.strip()
 
 
-def writeConfig(root, plugins, firmwareRef="main", name="custom-build.json"):
+def writeConfig(root, plugins, firmwareRef="main", name="custom-build.json", features=None):
     path = root / name
     path.write_text(json.dumps({
         "firmware_ref": firmwareRef,
-        "features": [],
+        "features": features or [],
         "plugins": plugins,
     }), encoding="utf-8")
     return path
 
 
-def writePlugin(root, pluginId, patchText=None, conflicts=None, firmwareRefs=None, dependsOn=None):
+def writePlugin(
+    root, pluginId, patchText=None, conflicts=None, firmwareRefs=None, dependsOn=None,
+    recommends=None,
+):
     firmwareRefs = firmwareRefs or ["main"]
     pluginDir = root / "plugins" / pluginId
     pluginDir.mkdir(parents=True, exist_ok=True)
@@ -77,7 +80,7 @@ def writePlugin(root, pluginId, patchText=None, conflicts=None, firmwareRefs=Non
         "requires": ["littlefs"] if assets else [],
         "depends_on": dependsOn or [],
         "conflicts": conflicts or [],
-        "recommends": {"features": [], "plugins": []},
+        "recommends": recommends or {"features": [], "plugins": []},
         "patches": patches,
         "assets": assets,
         "budget": {
@@ -155,7 +158,13 @@ def main():
         shutil.copy2(customBuild.SCRIPT_ROOT / "git_rev_macro.py", catalogRoot)
         writePlugin(catalogRoot, "asset-only")
         writePlugin(catalogRoot, "dependency")
-        writePlugin(catalogRoot, "patch-a", PATCHES["patch-a"], dependsOn=["dependency"])
+        writePlugin(
+            catalogRoot,
+            "patch-a",
+            PATCHES["patch-a"],
+            dependsOn=["dependency"],
+            recommends={"features": ["wifi"], "plugins": ["patch-b"]},
+        )
         writePlugin(catalogRoot, "patch-b", PATCHES["patch-b"])
         configPath = writeConfig(catalogRoot, ["patch-b", "asset-only", "patch-a"])
         sourceRoot, sourceCommit = createSourceRepository(root)
@@ -174,7 +183,10 @@ def main():
             assertRejected(lambda: customRunner.verifySourceCommit(sourceRoot, "main"))
 
             pluginConfigPath = writeConfig(
-                catalogRoot, ["patch-a"], name="plugin-verify.json"
+                catalogRoot,
+                ["patch-a", "patch-b"],
+                name="plugin-verify.json",
+                features=["wifi"],
             )
 
             def createPluginCheckout(repositoryRoot, commitSha, checkoutRoot):
@@ -388,7 +400,7 @@ def main():
     assert "tools/list_changed_patch_plugins.py" in workflow
     assert "fromJSON(needs.detect_plugins.outputs.matrix)" in workflow
     assert '--verify-plugin-environment "esp32s3-$PLUGIN_ID"' in workflow
-    assert '"plugins": [os.environ["PLUGIN_ID"]]' in workflow
+    assert "recommendedPluginSelection" in workflow
     assert "verify-pressensor:" not in workflow
     assert "compile-matrix:" not in workflow
     assert "default-web-apps" in workflow

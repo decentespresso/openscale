@@ -6,7 +6,7 @@ import {
   parseSelection,
   resolveSelection,
   selectionQuery,
-} from "./selection.mjs?v=1";
+} from "./selection.mjs?v=2";
 
 (async () => {
   const apiBase = "https://openscale-custom-builds.odevstudio.workers.dev";

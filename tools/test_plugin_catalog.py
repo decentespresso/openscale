@@ -149,6 +149,35 @@ def testTemporaryPluginValidation():
             assertRejected(lambda: customBuild.resolveConfiguration(
                 writeConfig(root, [], ["code-plugin", "other-plugin"])
             ))
+            writePlugin(root, pluginManifest(
+                pluginId="compatibility-middle", depends_on=["code-plugin"],
+            ))
+            writePlugin(root, pluginManifest(
+                pluginId="compatibility-root",
+                depends_on=["compatibility-middle", "other-plugin"],
+            ))
+            resolved = customBuild.resolveConfiguration(
+                writeConfig(root, [], ["compatibility-root"])
+            )
+            assert {plugin["id"] for plugin in resolved["plugins"]} >= {
+                "code-plugin", "other-plugin", "compatibility-root",
+            }
+            writePlugin(root, pluginManifest(
+                pluginId="compatibility-root",
+                recommends={"features": [], "plugins": ["code-plugin", "other-plugin"]},
+            ))
+            catalog = customBuild.loadPluginCatalog()
+            recommendation = customBuild.recommendedPluginSelection(
+                catalog, "compatibility-root", "main"
+            )
+            assert recommendation == {
+                "firmware_ref": "main",
+                "features": [],
+                "plugins": ["compatibility-root", "code-plugin", "other-plugin"],
+            }
+            customBuild.resolveConfiguration(writeConfig(
+                root, recommendation["features"], recommendation["plugins"]
+            ))
 
             writePlugin(root, pluginManifest(conflicts_features=["wifi"]))
             assertRejected(lambda: customBuild.resolveConfiguration(
@@ -165,7 +194,7 @@ def testTemporaryPluginValidation():
 
             writePlugin(root, pluginManifest(depends_on=["dependency"]))
             writePlugin(root, pluginManifest(pluginId="dependency", conflicts=["code-plugin"]))
-            assertRejected(customBuild.loadPluginCatalog)
+            customBuild.loadPluginCatalog()
 
             writePlugin(root, pluginManifest())
             writePlugin(root, pluginManifest(pluginId="dependency"))

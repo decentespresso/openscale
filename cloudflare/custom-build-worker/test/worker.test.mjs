@@ -184,6 +184,11 @@ test("publishes immutable cache entries and deduplicates public builds", async (
       "wifi-client": {...dependencyPlugin(), requires: ["wifi"]},
       "wifi-root": dependencyPlugin(["wifi-client"]),
       "plugin-blocker": {...dependencyPlugin(), conflicts: ["delta"]},
+      "compatibility-root": dependencyPlugin(["plugin-blocker", "bravo"]),
+      "compatibility-recommender": {
+        ...dependencyPlugin(),
+        recommends: {features: [], plugins: ["plugin-blocker", "bravo"]},
+      },
     },
   };
   serviceCatalog.plugins["feature-blocker"].conflicts_features = ["wifi"];
@@ -303,6 +308,16 @@ test("publishes immutable cache entries and deduplicates public builds", async (
       {firmware_ref: "main", features: [], plugins: ["plugin-blocker", "bravo"]},
     ]) {
       assert.equal((await api(env, "/api/v1/status", "POST", conflictingSelection)).status, 400);
+    }
+    for (const compatibleSelection of [
+      {firmware_ref: "main", features: [], plugins: ["compatibility-root"]},
+      {
+        firmware_ref: "main",
+        features: [],
+        plugins: ["compatibility-recommender", "plugin-blocker", "bravo"],
+      },
+    ]) {
+      assert.equal((await api(env, "/api/v1/status", "POST", compatibleSelection)).status, 200);
     }
     assert.equal((await api(env, "/api/v1/status", "POST", {
       firmware_ref: "main", features: ["stable-only"], plugins: [],

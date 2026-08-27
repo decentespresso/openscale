@@ -135,7 +135,7 @@ Use `requires` for existing compile-time features:
 
 The custom ZIP always contains `littlefs.bin`. That does not mean the plugin requires runtime LittleFS. OTA replacement of the LittleFS partition and runtime filesystem use are separate mechanisms.
 
-Use `depends_on` for plugin IDs that must be applied first. Dependencies are resolved transitively, cycles are rejected, and dependency patches are applied before their dependents. Use `recommends` for a complete combination that maintainers have tested together; choosing it replaces the user's current selection. Use `conflicts` for incompatible plugin IDs and `conflicts_features` for incompatible feature IDs. Conflicts are checked after the complete plugin and feature dependency closure is resolved. Overlapping patches should be redesigned rather than relying on order.
+Use `depends_on` for plugin IDs that must be applied first. Dependencies are resolved transitively, cycles are rejected, and dependency patches are applied before their dependents. Use `recommends` for a complete combination that maintainers have tested together; choosing it replaces the user's current selection. Use `conflicts` for incompatible plugin IDs and `conflicts_features` for incompatible feature IDs. A selected plugin overrides plugin-to-plugin conflicts within its own dependency and recommended package, so the last plugin in the chain owns that package's compatibility decision. Feature conflicts remain strict. Conflicts are checked after the complete plugin and feature dependency closure is resolved. Overlapping patches should be redesigned rather than relying on order.
 
 ## Validate Before Review
 
@@ -163,7 +163,7 @@ python tools/build_custom_firmware.py --config .pio.nosync/plugin-build.json --v
 python tools/build_custom_firmware.py --config .pio.nosync/plugin-build.json --output .pio.nosync/custom-output
 ```
 
-The first PlatformIO build proves the normal firmware still compiles. The verification command applies the selected target plugin and its dependencies, runs matching `tools/test_my_plugin_*.py` files from the patch, and builds its dedicated environment. Pull-request CI performs this verification for every changed patch plugin and every firmware ref mapped by that package; it does not rebuild unrelated or asset-only plugins. The final command verifies the same package through the production `esp32s3-custom` compositor and creates the four-file ZIP.
+The first PlatformIO build proves the normal firmware still compiles. The verification command applies the selected target plugin and its dependencies, runs matching `tools/test_my_plugin_*.py` files from the patch, and builds its dedicated environment. Pull-request CI performs this verification for every changed patch plugin and every firmware ref mapped by that package, using its recommended selection when present and its minimal selection otherwise; it does not rebuild unrelated or asset-only plugins. The final command verifies the same package through the production `esp32s3-custom` compositor and creates the four-file ZIP.
 
 Hardware testing must state what was actually available. A build and menu smoke test do not prove sensor communication, electrical behavior, calibration, or radio coexistence.
 
