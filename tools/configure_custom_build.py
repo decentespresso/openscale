@@ -20,15 +20,15 @@ DEFAULT_FIRMWARE_VERSION_PATTERN = re.compile(
 )
 FIRMWARE_REFS = ("main",)
 FEATURES = {
-    "wifi": ("HDS_FEATURE_WIFI", ()),
-    "mdns": ("HDS_FEATURE_MDNS", ("wifi",)),
-    "webserver": ("HDS_FEATURE_WEBSERVER", ("wifi",)),
-    "websocket": ("HDS_FEATURE_WEBSOCKET", ("wifi", "webserver")),
-    "littlefs": ("HDS_FEATURE_LITTLEFS", ()),
-    "elegant-ota": ("HDS_FEATURE_ELEGANT_OTA", ("wifi", "webserver")),
-    "pull-ota": ("HDS_FEATURE_PULL_OTA", ("wifi",)),
-    "grinder": ("HDS_FEATURE_GRINDER", ("wifi", "mdns")),
-    "energy-menu": ("HDS_FEATURE_ENERGY_MENU", ()),
+    "wifi": ("HDS_FEATURE_WIFI", (), ("main",)),
+    "mdns": ("HDS_FEATURE_MDNS", ("wifi",), ("main",)),
+    "webserver": ("HDS_FEATURE_WEBSERVER", ("wifi",), ("main",)),
+    "websocket": ("HDS_FEATURE_WEBSOCKET", ("wifi", "webserver"), ("main",)),
+    "littlefs": ("HDS_FEATURE_LITTLEFS", (), ("main",)),
+    "elegant-ota": ("HDS_FEATURE_ELEGANT_OTA", ("wifi", "webserver"), ("main",)),
+    "pull-ota": ("HDS_FEATURE_PULL_OTA", ("wifi",), ("main",)),
+    "grinder": ("HDS_FEATURE_GRINDER", ("wifi", "mdns"), ("main",)),
+    "energy-menu": ("HDS_FEATURE_ENERGY_MENU", (), ("main",)),
 }
 FEATURE_PRESENTATION = {
     "wifi": (
@@ -78,14 +78,16 @@ FEATURE_PRESENTATION = {
     ),
 }
 HIDDEN_FEATURES = {"grinder"}
-DEFAULT_FEATURES = set(FEATURES) - HIDDEN_FEATURES - {"energy-menu"}
+DEFAULT_FEATURES = {
+    "wifi", "mdns", "webserver", "websocket", "littlefs", "elegant-ota", "pull-ota",
+}
 DEFAULT_PLUGINS = {"default-web-apps"}
 CONFIG_KEYS = {"firmware_ref", "features", "plugins"}
 PLUGIN_KEYS = {
     "schema", "id", "name", "description", "tooltip", "version",
     "firmware_refs", "requires", "conflicts", "patches", "assets", "budget",
 }
-OPTIONAL_PLUGIN_KEYS = {"depends_on", "recommends"}
+OPTIONAL_PLUGIN_KEYS = {"depends_on", "recommends", "conflicts_features"}
 RECOMMENDATION_KEYS = {"features", "plugins"}
 BUDGET_KEYS = {"firmware_flash_bytes", "static_ram_bytes", "littlefs_bytes"}
 BUILD_CONTRACT_SCHEMA = 2
@@ -132,6 +134,7 @@ def loadPlugin(pluginId, firmwareRef=None):
         **storedManifest,
         "depends_on": storedManifest.get("depends_on", []),
         "recommends": storedManifest.get("recommends", {"features": [], "plugins": []}),
+        "conflicts_features": storedManifest.get("conflicts_features", []),
     }
     if manifest["schema"] != 2 or manifest["id"] != pluginId:
         raise ValueError(f"invalid plugin identity: {pluginId}")
@@ -147,9 +150,15 @@ def loadPlugin(pluginId, firmwareRef=None):
     requires = requireStringList(manifest["requires"], f"{pluginId}.requires")
     dependsOn = requireStringList(manifest["depends_on"], f"{pluginId}.depends_on")
     conflicts = requireStringList(manifest["conflicts"], f"{pluginId}.conflicts")
+    conflictsFeatures = requireStringList(
+        manifest["conflicts_features"], f"{pluginId}.conflicts_features"
+    )
     unknownFeatures = set(requires) - set(FEATURES)
     if unknownFeatures:
         raise ValueError(f"unknown plugin features: {sorted(unknownFeatures)}")
+    unknownConflictFeatures = set(conflictsFeatures) - set(FEATURES)
+    if unknownConflictFeatures:
+        raise ValueError(f"unknown plugin feature conflicts: {sorted(unknownConflictFeatures)}")
     if any(not ID_PATTERN.fullmatch(dependency) for dependency in dependsOn) or pluginId in dependsOn:
         raise ValueError(f"invalid plugin dependencies: {pluginId}")
     if any(not ID_PATTERN.fullmatch(conflict) for conflict in conflicts) or pluginId in conflicts:
@@ -243,42 +252,171 @@ def pluginOrder(pluginCatalog, requestedIds):
     return ordered
 
 
-def loadPluginCatalog():
+def resolveFeatureIds(featureIds, firmwareRef):
+    resolved = set(featureIds)
+    changed = True
+    while changed:
+        previous = set(resolved)
+        for featureId in previous:
+            if featureId not in FEATURES:
+                raise ValueError(f"unknown feature: {featureId}")
+            resolved.update(FEATURES[featureId][1])
+        changed = resolved != previous
+    unsupported = sorted(
+        featureId for featureId in resolved if firmwareRef not in FEATURES[featureId][2]
+    )
+    if unsupported:
+        raise ValueError(f"features do not support {firmwareRef}: {unsupported}")
+    return sorted(resolved)
+
+
+def pluginCompatibilityPackages(pluginCatalog, pluginIds):
+    selected = set(pluginIds)
+    return [
+        set(pluginOrder(pluginCatalog, [
+            pluginId,
+            *(
+                recommended
+                for recommended in pluginCatalog[pluginId][0]["recommends"]["plugins"]
+                if recommended in selected
+            ),
+        ]))
+        for pluginId in pluginIds
+    ]
+
+
+def resolveCatalogSelection(pluginCatalog, requestedPluginIds, requestedFeatures, firmwareRef):
+    pluginIds = pluginOrder(pluginCatalog, requestedPluginIds)
+    unsupportedPlugins = sorted(
+        pluginId
+        for pluginId in pluginIds
+        if firmwareRef not in pluginCatalog[pluginId][0]["firmware_refs"]
+    )
+    if unsupportedPlugins:
+        raise ValueError(f"plugins do not support {firmwareRef}: {unsupportedPlugins}")
+    featureIds = resolveFeatureIds(
+        [
+            *requestedFeatures,
+            *(
+                featureId
+                for pluginId in pluginIds
+                for featureId in pluginCatalog[pluginId][0]["requires"]
+            ),
+        ],
+        firmwareRef,
+    )
+    selectedPlugins = set(pluginIds)
+    selectedFeatures = set(featureIds)
+    compatibilityPackages = pluginCompatibilityPackages(pluginCatalog, pluginIds)
+    for pluginId in pluginIds:
+        manifest = pluginCatalog[pluginId][0]
+        pluginConflicts = sorted(
+            conflict
+            for conflict in selectedPlugins.intersection(manifest["conflicts"])
+            if not any({pluginId, conflict} <= package for package in compatibilityPackages)
+        )
+        if pluginConflicts:
+            raise ValueError(f"plugin {pluginId} conflicts with {pluginConflicts}")
+        featureConflicts = sorted(selectedFeatures.intersection(manifest["conflicts_features"]))
+        if featureConflicts:
+            raise ValueError(f"plugin {pluginId} conflicts with features {featureConflicts}")
+    targets = [
+        target.as_posix()
+        for pluginId in pluginIds
+        for _, target in pluginCatalog[pluginId][1]
+    ]
+    if len(targets) != len(set(targets)):
+        raise ValueError("plugin asset target collision")
+    return pluginIds, featureIds
+
+
+def recommendedPluginSelection(pluginCatalog, pluginId, firmwareRef):
+    recommendations = pluginCatalog[pluginId][0]["recommends"]
+    selection = {
+        "firmware_ref": firmwareRef,
+        "features": recommendations["features"],
+        "plugins": [pluginId, *recommendations["plugins"]],
+    }
+    resolveCatalogSelection(
+        pluginCatalog, selection["plugins"], selection["features"], firmwareRef
+    )
+    return selection
+
+
+def loadPluginCatalog(validateDefaults=False):
     pluginIds = [path.parent.name for path in sorted((ROOT / "plugins").glob("*/plugin.json"))]
     plugins = {pluginId: loadPlugin(pluginId) for pluginId in pluginIds}
     knownIds = set(plugins)
+    for featureId, (_, dependencies, firmwareRefs) in FEATURES.items():
+        if (not firmwareRefs or len(firmwareRefs) != len(set(firmwareRefs)) or
+                set(firmwareRefs) - set(FIRMWARE_REFS)):
+            raise ValueError(f"invalid firmware refs for feature {featureId}")
+        unknownDependencies = set(dependencies) - set(FEATURES)
+        if unknownDependencies:
+            raise ValueError(f"unknown dependencies for feature {featureId}: {sorted(unknownDependencies)}")
+        for firmwareRef in firmwareRefs:
+            resolveFeatureIds([featureId], firmwareRef)
     for pluginId, (manifest, _, _) in plugins.items():
         for field in ("conflicts", "depends_on"):
             unknownIds = set(manifest[field]) - knownIds
             if unknownIds:
                 raise ValueError(f"unknown plugin {field} for {pluginId}: {sorted(unknownIds)}")
-        for dependencyId in manifest["depends_on"]:
-            dependencyRefs = set(plugins[dependencyId][0]["firmware_refs"])
-            unsupportedRefs = set(manifest["firmware_refs"]) - dependencyRefs
-            if unsupportedRefs:
-                raise ValueError(
-                    f"plugin dependency {dependencyId} does not support {sorted(unsupportedRefs)}"
-                )
         unknownRecommendations = set(manifest["recommends"]["plugins"]) - knownIds
         if unknownRecommendations:
             raise ValueError(
                 f"unknown recommended plugins for {pluginId}: {sorted(unknownRecommendations)}"
             )
-        for recommendedId in manifest["recommends"]["plugins"]:
-            recommendedRefs = set(plugins[recommendedId][0]["firmware_refs"])
-            unsupportedRefs = set(manifest["firmware_refs"]) - recommendedRefs
-            if unsupportedRefs:
-                raise ValueError(
-                    f"recommended plugin {recommendedId} does not support {sorted(unsupportedRefs)}"
-                )
     pluginOrder(plugins, knownIds)
+    for pluginId, (manifest, _, _) in plugins.items():
+        for firmwareRef in manifest["firmware_refs"]:
+            try:
+                resolveCatalogSelection(plugins, [pluginId], [], firmwareRef)
+            except ValueError as error:
+                raise ValueError(f"impossible plugin {pluginId} on {firmwareRef}: {error}") from error
+            try:
+                recommendedPluginSelection(plugins, pluginId, firmwareRef)
+            except ValueError as error:
+                raise ValueError(
+                    f"invalid recommendations for {pluginId} on {firmwareRef}: {error}"
+                ) from error
+    if validateDefaults:
+        try:
+            resolveCatalogSelection(plugins, DEFAULT_PLUGINS, DEFAULT_FEATURES, FIRMWARE_REFS[0])
+        except ValueError as error:
+            raise ValueError(f"invalid default selection: {error}") from error
     return plugins
 
 
+def catalogRevision(plugins):
+    contract = {
+        "schema": BUILD_CONTRACT_SCHEMA,
+        "firmware_refs": list(FIRMWARE_REFS),
+        "features": {
+            featureId: {
+                "requires": list(dependencies),
+                "firmware_refs": list(firmwareRefs),
+            }
+            for featureId, (_, dependencies, firmwareRefs) in FEATURES.items()
+        },
+        "plugins": {
+            pluginId: {
+                key: manifest[key]
+                for key in (
+                    "version", "firmware_refs", "requires", "depends_on", "conflicts",
+                    "conflicts_features", "recommends",
+                )
+            }
+            for pluginId, (manifest, _, _) in plugins.items()
+        },
+    }
+    payload = json.dumps(contract, sort_keys=True, separators=(",", ":")).encode("ascii")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def buildBrowserCatalog():
-    plugins = loadPluginCatalog()
+    plugins = loadPluginCatalog(validateDefaults=True)
     features = []
-    for featureId, (_, dependencies) in FEATURES.items():
+    for featureId, (_, dependencies, firmwareRefs) in FEATURES.items():
         name, description, tooltip = FEATURE_PRESENTATION[featureId]
         feature = {
             "id": featureId,
@@ -286,6 +424,7 @@ def buildBrowserCatalog():
             "description": description,
             "tooltip": tooltip,
             "requires": list(dependencies),
+            "firmware_refs": list(firmwareRefs),
         }
         if featureId in DEFAULT_FEATURES:
             feature["default"] = True
@@ -293,6 +432,7 @@ def buildBrowserCatalog():
             feature["hidden"] = True
         features.append(feature)
     return {
+        "catalog_revision": catalogRevision(plugins),
         "firmware_refs": list(FIRMWARE_REFS),
         "features": features,
         "plugins": [
@@ -301,7 +441,8 @@ def buildBrowserCatalog():
                     key: manifest[key]
                     for key in (
                         "id", "name", "description", "tooltip", "version",
-                        "firmware_refs", "requires", "depends_on", "conflicts", "recommends",
+                        "firmware_refs", "requires", "depends_on", "conflicts",
+                        "conflicts_features", "recommends",
                     )
                 },
                 **({"default": True} if manifest["id"] in DEFAULT_PLUGINS else {}),
@@ -317,9 +458,10 @@ def writeBrowserCatalog(path):
 
 
 def buildServiceCatalog(sourceRoot=ROOT):
-    plugins = loadPluginCatalog()
+    plugins = loadPluginCatalog(validateDefaults=True)
     return {
         "schema": BUILD_CONTRACT_SCHEMA,
+        "catalog_revision": catalogRevision(plugins),
         "firmware_refs": list(FIRMWARE_REFS),
         "platformio_environment": PLATFORMIO_ENVIRONMENT,
         "firmware": {
@@ -327,8 +469,11 @@ def buildServiceCatalog(sourceRoot=ROOT):
             for firmwareRef in FIRMWARE_REFS
         },
         "features": {
-            featureId: list(dependencies)
-            for featureId, (_, dependencies) in FEATURES.items()
+            featureId: {
+                "requires": list(dependencies),
+                "firmware_refs": list(firmwareRefs),
+            }
+            for featureId, (_, dependencies, firmwareRefs) in FEATURES.items()
         },
         "plugins": {
             pluginId: {
@@ -337,6 +482,7 @@ def buildServiceCatalog(sourceRoot=ROOT):
                 "requires": manifest["requires"],
                 "depends_on": manifest["depends_on"],
                 "conflicts": manifest["conflicts"],
+                "conflicts_features": manifest["conflicts_features"],
                 "recommends": manifest["recommends"],
                 "patches": {
                     firmwareRef: {"sha256": fileMetadata(path)["sha256"]}
@@ -379,38 +525,23 @@ def resolveConfiguration(configPath):
     unknownPlugins = set(requestedPluginIds) - set(pluginCatalog)
     if unknownPlugins:
         raise ValueError(f"unknown plugins: {sorted(unknownPlugins)}")
-    pluginIds = pluginOrder(pluginCatalog, requestedPluginIds)
+    pluginIds, resolved = resolveCatalogSelection(
+        pluginCatalog, requestedPluginIds, requestedFeatures, firmwareRef
+    )
     plugins = []
     assets = []
     patches = []
-    resolved = set(requestedFeatures)
     for pluginId in pluginIds:
         manifest, pluginAssets, pluginPatches = pluginCatalog[pluginId]
-        if firmwareRef not in manifest["firmware_refs"]:
-            raise ValueError(f"plugin {pluginId} does not support {firmwareRef}")
         plugins.append(manifest)
         assets.extend(pluginAssets)
         if firmwareRef in pluginPatches:
             patches.append((pluginId, pluginPatches[firmwareRef]))
-        resolved.update(manifest["requires"])
-    changed = True
-    while changed:
-        previous = set(resolved)
-        for feature in previous:
-            resolved.update(FEATURES[feature][1])
-        changed = resolved != previous
-    selectedPlugins = set(pluginIds)
-    for plugin in plugins:
-        conflicts = selectedPlugins.intersection(plugin["conflicts"])
-        if conflicts:
-            raise ValueError(f"plugin {plugin['id']} conflicts with {sorted(conflicts)}")
-    targets = [target.as_posix() for _, target in assets]
-    if len(targets) != len(set(targets)):
-        raise ValueError("plugin asset target collision")
     return {
         "firmware_ref": firmwareRef,
+        "requested_features": sorted(requestedFeatures),
         "requested_plugins": sorted(requestedPluginIds),
-        "features": sorted(resolved),
+        "features": resolved,
         "plugins": plugins,
         "assets": assets,
         "patches": patches,
@@ -421,7 +552,7 @@ def writeHeader(configuration, outputDir):
     outputDir.mkdir(parents=True, exist_ok=True)
     enabled = set(configuration["features"])
     lines = ["#ifndef HDS_GENERATED_FEATURES_H", "#define HDS_GENERATED_FEATURES_H", ""]
-    for feature, (macro, _) in FEATURES.items():
+    for feature, (macro, _, _) in FEATURES.items():
         lines.append(f"#define {macro} {int(feature in enabled)}")
     lines.extend(("", "#endif", ""))
     (outputDir / "generated_features.h").write_text("\n".join(lines), encoding="ascii")

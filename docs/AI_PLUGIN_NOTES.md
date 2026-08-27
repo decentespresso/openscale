@@ -25,7 +25,7 @@ plugins/<plugin-id>/
 `-- assets/
 ```
 
-`plugin.json` declares the stable ID, plugin version, compatible firmware refs, feature requirements, plugin dependencies, recommendations, conflicts, patch mapping, asset mapping, and resource budgets. A patch filename is not a compatibility claim by itself; it must be mapped by the manifest.
+`plugin.json` declares the stable ID, plugin version, compatible firmware refs, feature requirements, plugin dependencies, recommendations, plugin and feature conflicts, patch mapping, asset mapping, and resource budgets. A patch filename is not a compatibility claim by itself; it must be mapped by the manifest.
 
 ## Compile Gate Pattern
 
@@ -83,6 +83,8 @@ Declare only dependencies exercised by the plugin:
 
 Use `depends_on` for required plugin IDs. Dependency patches are applied before dependent patches, cycles are rejected, and the dependency order is part of the build identity. Use `recommends` only for a complete combination that has been tested together. The configurator's Recommended button replaces the current selection with that combination rather than retaining untested extras.
 
+Use `conflicts` for plugin IDs and optional `conflicts_features` for feature IDs. A selected plugin's dependency and recommended package overrides older plugin-to-plugin conflicts inside that package because the owning plugin declares the combination compatible. Unrelated plugin conflicts and all feature conflicts remain strict. Runtime validation checks conflicts only after all plugin and feature dependencies have been resolved.
+
 Do not infer WiFi, WebServer, or runtime LittleFS from the fact that a custom ZIP contains `littlefs.bin`. Runtime filesystem use and staged filesystem replacement are separate concerns. Pull OTA continues to use its mandatory staged `littlefs.bin` transaction independently of `HDS_FEATURE_LITTLEFS`.
 
 ## Version Compatibility
@@ -93,9 +95,9 @@ For a moving `main`, update `patches/main.patch` whenever upstream changes make 
 
 ## CI Contract
 
-Patch-plugin pull requests compile the normal `esp32s3` environment and every changed or transitively affected patch plugin as `esp32s3-<plugin-id>`. The custom-build workflow derives a small reverse-dependency matrix from plugin packages changed across the complete pull request and verifies every mapped firmware ref. It also builds one minimal `esp32s3-custom` selection to cover generated feature configuration, builder-tool injection, empty filesystem staging, and the WiFi-disabled firmware. Asset-only plugins do not receive their own dedicated firmware build. The plugin environment activates its own gate and any environment-level requirements. Do not add a permanent full feature matrix or duplicate the normal build in OTA contracts.
+Patch-plugin pull requests compile the normal `esp32s3` environment and every changed or transitively affected patch plugin as `esp32s3-<plugin-id>`. The custom-build workflow derives a small reverse-dependency matrix from plugin packages changed across the complete pull request and verifies every mapped firmware ref. A plugin with recommendations is verified with that recommended feature and plugin selection; a plugin without recommendations uses its minimal selection. The workflow also builds one minimal `esp32s3-custom` selection to cover generated feature configuration, builder-tool injection, empty filesystem staging, and the WiFi-disabled firmware. Asset-only plugins do not receive their own dedicated firmware build. The plugin environment activates its own gate and any environment-level requirements. Do not add a permanent full feature matrix or duplicate the normal build in OTA contracts.
 
-`tools/build_custom_firmware.py --verify-plugin-environment esp32s3-<plugin-id>` requires one selected target plugin, resolves its dependencies, enforces the environment naming convention, applies the trusted patches in an isolated checkout, runs matching `tools/test_<plugin-id>_*.py` files from the applied patch, and compiles the plugin environment.
+`tools/build_custom_firmware.py --verify-plugin-environment esp32s3-<plugin-id>` requires the target plugin's recommended selection, or its minimal selection when no recommendations exist. It resolves dependencies, enforces the environment naming convention, applies the trusted patches in an isolated checkout, runs matching `tools/test_<plugin-id>_*.py` files from the applied patch, and compiles the plugin environment.
 
 Make each patch-plugin pull request run its own targeted environment. Do not grow an all-plugin matrix on every unrelated pull request.
 

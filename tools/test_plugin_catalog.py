@@ -71,6 +71,7 @@ def testTemporaryPluginValidation():
             assert manifest["version"] == "1.0.0"
             assert assets == []
             assert patches["v3.1.13"].is_file()
+            assertRejected(customBuild.buildBrowserCatalog)
             assert customBuild.resolveConfiguration(
                 writeConfig(root, [], ["code-plugin"], "v3.1.13")
             )["plugins"][0]["id"] == "code-plugin"
@@ -148,6 +149,63 @@ def testTemporaryPluginValidation():
             assertRejected(lambda: customBuild.resolveConfiguration(
                 writeConfig(root, [], ["code-plugin", "other-plugin"])
             ))
+            writePlugin(root, pluginManifest(
+                pluginId="compatibility-middle", depends_on=["code-plugin"],
+            ))
+            writePlugin(root, pluginManifest(
+                pluginId="compatibility-root",
+                depends_on=["compatibility-middle", "other-plugin"],
+            ))
+            resolved = customBuild.resolveConfiguration(
+                writeConfig(root, [], ["compatibility-root"])
+            )
+            assert {plugin["id"] for plugin in resolved["plugins"]} >= {
+                "code-plugin", "other-plugin", "compatibility-root",
+            }
+            writePlugin(root, pluginManifest(
+                pluginId="compatibility-root",
+                recommends={"features": [], "plugins": ["code-plugin", "other-plugin"]},
+            ))
+            catalog = customBuild.loadPluginCatalog()
+            recommendation = customBuild.recommendedPluginSelection(
+                catalog, "compatibility-root", "main"
+            )
+            assert recommendation == {
+                "firmware_ref": "main",
+                "features": [],
+                "plugins": ["compatibility-root", "code-plugin", "other-plugin"],
+            }
+            customBuild.resolveConfiguration(writeConfig(
+                root, recommendation["features"], recommendation["plugins"]
+            ))
+
+            writePlugin(root, pluginManifest(conflicts_features=["wifi"]))
+            assertRejected(lambda: customBuild.resolveConfiguration(
+                writeConfig(root, ["webserver"], ["code-plugin"])
+            ))
+
+            writePlugin(root, pluginManifest(requires=["webserver"], conflicts_features=["wifi"]))
+            assertRejected(customBuild.loadPluginCatalog)
+
+            writePlugin(root, pluginManifest(conflicts_features=["wifi"], recommends={
+                "features": ["webserver"], "plugins": [],
+            }))
+            assertRejected(customBuild.loadPluginCatalog)
+
+            writePlugin(root, pluginManifest(depends_on=["dependency"]))
+            writePlugin(root, pluginManifest(pluginId="dependency", conflicts=["code-plugin"]))
+            customBuild.loadPluginCatalog()
+
+            writePlugin(root, pluginManifest())
+            writePlugin(root, pluginManifest(pluginId="dependency"))
+            stableFeatures = {
+                **customBuild.FEATURES,
+                "stable-only": ("HDS_FEATURE_STABLE_ONLY", (), ("v3.1.13",)),
+            }
+            with patch.object(customBuild, "FEATURES", stableFeatures):
+                assertRejected(lambda: customBuild.resolveConfiguration(
+                    writeConfig(root, ["stable-only"], [], "main")
+                ))
 
 
 def main():
@@ -174,6 +232,8 @@ def main():
         "--service-catalog-output docs/custom-build/service-catalog.json"
     )
     assert serviceCatalog == customBuild.buildServiceCatalog()
+    assert pageCatalog["catalog_revision"] == serviceCatalog["catalog_revision"]
+    assert len(pageCatalog["catalog_revision"]) == 64
     assert {
         feature["id"] for feature in generatedCatalog["features"] if feature.get("default")
     } == customBuild.DEFAULT_FEATURES
@@ -183,8 +243,8 @@ def main():
     pageRoot = customBuild.ROOT / "docs" / "custom-build"
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
-    assert 'src="app.js?v=7"' in indexPage
-    assert 'href="styles.css?v=6"' in indexPage
+    assert 'type="module" src="app.js?v=8"' in indexPage
+    assert 'href="styles.css?v=7"' in indexPage
     assert 'id="request-build"' in indexPage
     assert "catalog-data" not in indexPage
     assert 'fetch("catalog.json"' in appScript
@@ -194,7 +254,7 @@ def main():
     assert "error.status === 429" in appScript
     assert "weekly build limit" in appScript.lower()
     assert "daily build limit" not in appScript.lower()
-    assert "state.requested = new Set(plugin.recommends.features)" in appScript
+    assert "plugins: [plugin.id, ...plugin.recommends.plugins]" in appScript
     assert '`${ref.replace(/^v/, "")} (stable)`' in appScript
     grinderFeature = next(feature for feature in generatedCatalog["features"] if feature["id"] == "grinder")
     grindByWeight = next(plugin for plugin in generatedCatalog["plugins"] if plugin["id"] == "grind-by-weight")
@@ -227,7 +287,7 @@ def main():
         assert all(not target.is_absolute() and ".." not in target.parts for _, target in configuration["assets"])
     with tempfile.TemporaryDirectory() as temporaryDirectory:
         root = Path(temporaryDirectory)
-        for feature, (_, dependencies) in customBuild.FEATURES.items():
+        for feature, (_, dependencies, _) in customBuild.FEATURES.items():
             resolvedFeature = customBuild.resolveConfiguration(writeConfig(root, [feature], []))
             assert set(dependencies).issubset(resolvedFeature["features"])
         wifi = customBuild.resolveConfiguration(writeConfig(root, ["wifi"], []))

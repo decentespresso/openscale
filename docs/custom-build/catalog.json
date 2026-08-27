@@ -1,4 +1,5 @@
 {
+  "catalog_revision": "216f0a8c55c7e3bcc5b387f77a22ec3eb9dbabb13388de3dc0e4d628be77ca03",
   "firmware_refs": [
     "main"
   ],
@@ -9,6 +10,9 @@
       "description": "Wireless networking with inline configuration support.",
       "tooltip": "Provides WiFi and a minimal setup server for network and device-name configuration.",
       "requires": [],
+      "firmware_refs": [
+        "main"
+      ],
       "default": true
     },
     {
@@ -19,6 +23,9 @@
       "requires": [
         "wifi"
       ],
+      "firmware_refs": [
+        "main"
+      ],
       "default": true
     },
     {
@@ -28,6 +35,9 @@
       "tooltip": "Adds the embedded HTTP server for web settings, APIs, and approved web plugins.",
       "requires": [
         "wifi"
+      ],
+      "firmware_refs": [
+        "main"
       ],
       "default": true
     },
@@ -40,6 +50,9 @@
         "wifi",
         "webserver"
       ],
+      "firmware_refs": [
+        "main"
+      ],
       "default": true
     },
     {
@@ -48,6 +61,9 @@
       "description": "Bundle files in the runtime flash filesystem.",
       "tooltip": "Adds runtime assets such as HTML, configuration, or plugin resources to LittleFS.",
       "requires": [],
+      "firmware_refs": [
+        "main"
+      ],
       "default": true
     },
     {
@@ -59,6 +75,9 @@
         "wifi",
         "webserver"
       ],
+      "firmware_refs": [
+        "main"
+      ],
       "default": true
     },
     {
@@ -68,6 +87,9 @@
       "tooltip": "Downloads signed firmware and LittleFS release assets over WiFi. Installing an official release replaces the custom build.",
       "requires": [
         "wifi"
+      ],
+      "firmware_refs": [
+        "main"
       ],
       "default": true
     },
@@ -80,6 +102,9 @@
         "wifi",
         "mdns"
       ],
+      "firmware_refs": [
+        "main"
+      ],
       "hidden": true
     },
     {
@@ -87,7 +112,10 @@
       "name": "Energy Saving",
       "description": "Enable optional energy-saving controls.",
       "tooltip": "Adds the Energy Saving menu and its persistent feature toggles.",
-      "requires": []
+      "requires": [],
+      "firmware_refs": [
+        "main"
+      ]
     }
   ],
   "plugins": [
@@ -106,6 +134,7 @@
       ],
       "depends_on": [],
       "conflicts": [],
+      "conflicts_features": [],
       "recommends": {
         "features": [],
         "plugins": []
@@ -126,6 +155,7 @@
       ],
       "depends_on": [],
       "conflicts": [],
+      "conflicts_features": [],
       "recommends": {
         "features": [
           "pull-ota"
@@ -147,6 +177,7 @@
       "requires": [],
       "depends_on": [],
       "conflicts": [],
+      "conflicts_features": [],
       "recommends": {
         "features": [],
         "plugins": []

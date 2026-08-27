@@ -1,5 +1,6 @@
 {
   "schema": 2,
+  "catalog_revision": "216f0a8c55c7e3bcc5b387f77a22ec3eb9dbabb13388de3dc0e4d628be77ca03",
   "firmware_refs": [
     "main"
   ],
@@ -14,30 +15,75 @@
     }
   },
   "features": {
-    "wifi": [],
-    "mdns": [
-      "wifi"
-    ],
-    "webserver": [
-      "wifi"
-    ],
-    "websocket": [
-      "wifi",
-      "webserver"
-    ],
-    "littlefs": [],
-    "elegant-ota": [
-      "wifi",
-      "webserver"
-    ],
-    "pull-ota": [
-      "wifi"
-    ],
-    "grinder": [
-      "wifi",
-      "mdns"
-    ],
-    "energy-menu": []
+    "wifi": {
+      "requires": [],
+      "firmware_refs": [
+        "main"
+      ]
+    },
+    "mdns": {
+      "requires": [
+        "wifi"
+      ],
+      "firmware_refs": [
+        "main"
+      ]
+    },
+    "webserver": {
+      "requires": [
+        "wifi"
+      ],
+      "firmware_refs": [
+        "main"
+      ]
+    },
+    "websocket": {
+      "requires": [
+        "wifi",
+        "webserver"
+      ],
+      "firmware_refs": [
+        "main"
+      ]
+    },
+    "littlefs": {
+      "requires": [],
+      "firmware_refs": [
+        "main"
+      ]
+    },
+    "elegant-ota": {
+      "requires": [
+        "wifi",
+        "webserver"
+      ],
+      "firmware_refs": [
+        "main"
+      ]
+    },
+    "pull-ota": {
+      "requires": [
+        "wifi"
+      ],
+      "firmware_refs": [
+        "main"
+      ]
+    },
+    "grinder": {
+      "requires": [
+        "wifi",
+        "mdns"
+      ],
+      "firmware_refs": [
+        "main"
+      ]
+    },
+    "energy-menu": {
+      "requires": [],
+      "firmware_refs": [
+        "main"
+      ]
+    }
   },
   "plugins": {
     "default-web-apps": {
@@ -51,6 +97,7 @@
       ],
       "depends_on": [],
       "conflicts": [],
+      "conflicts_features": [],
       "recommends": {
         "features": [],
         "plugins": []
@@ -169,6 +216,7 @@
       ],
       "depends_on": [],
       "conflicts": [],
+      "conflicts_features": [],
       "recommends": {
         "features": [
           "pull-ota"
@@ -188,6 +236,7 @@
       "requires": [],
       "depends_on": [],
       "conflicts": [],
+      "conflicts_features": [],
       "recommends": {
         "features": [],
         "plugins": []

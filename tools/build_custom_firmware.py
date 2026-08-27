@@ -312,11 +312,13 @@ def verifyPluginEnvironment(configPath, platformioEnvironment, sourceCommit=None
     if not platformioEnvironment.startswith("esp32s3-"):
         raise ValueError("invalid plugin environment")
     pluginId = platformioEnvironment.removeprefix("esp32s3-")
-    if configuration["requested_plugins"] != [pluginId]:
-        raise ValueError("plugin verification requires one selected target plugin")
-    pluginIds = [plugin["id"] for plugin in configuration["plugins"]]
-    if pluginId not in pluginIds:
+    target = next((plugin for plugin in configuration["plugins"] if plugin["id"] == pluginId), None)
+    if target is None:
         raise ValueError("plugin environment does not match the selected plugin")
+    recommendations = target["recommends"]
+    if (configuration["requested_plugins"] != sorted([pluginId, *recommendations["plugins"]]) or
+            configuration["requested_features"] != sorted(recommendations["features"])):
+        raise ValueError("plugin verification requires the target's recommended selection")
     if pluginId not in [patchPluginId for patchPluginId, _ in configuration["patches"]]:
         raise ValueError("plugin verification target has no matching patch")
     commitSha = (

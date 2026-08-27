@@ -4,6 +4,8 @@ const versionPattern = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?$/;
 const idPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const pathPattern = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 const attemptPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const trustedRepository = "decentespresso/openscale";
+const trustedRepositoryName = "openscale";
 const archive = "HDS_FW_custom.zip";
 const files = new Set([
   archive,
@@ -12,6 +14,7 @@ const files = new Set([
 ]);
 const binaries = ["firmware.bin", "bootloader.bin", "partitions.bin", "littlefs.bin"];
 const buildStates = new Set(["building", "ready", "failed"]);
+const failureCodes = new Set(["dispatch_failed", "build_failed", "build_timeout"]);
 const maxEntryBytes = 4 * 1024 * 1024;
 const maxApiBytes = 4096;
 const dayMs = 86400000;
@@ -131,11 +134,15 @@ async function readJson(request, maximum = maxApiBytes) {
 }
 
 function requireSelection(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value) ||
-      Object.keys(value).sort().join(",") !== "features,firmware_ref,plugins") {
+  const keys = value && typeof value === "object" && !Array.isArray(value)
+    ? Object.keys(value).sort().join(",") : "";
+  if (!["features,firmware_ref,plugins", "catalog_revision,features,firmware_ref,plugins"].includes(keys)) {
     throw new ApiError(400, "invalid_selection");
   }
   if (typeof value.firmware_ref !== "string") throw new ApiError(400, "invalid_firmware_ref");
+  if (value.catalog_revision !== undefined && !hashPattern.test(value.catalog_revision)) {
+    throw new ApiError(400, "invalid_catalog_revision");
+  }
   for (const field of ["features", "plugins"]) {
     const values = value[field];
     if (!Array.isArray(values) || values.some(item => typeof item !== "string" || !idPattern.test(item)) ||
@@ -144,6 +151,12 @@ function requireSelection(value) {
     }
   }
   return value;
+}
+
+function repository(env) {
+  const configured = env.GITHUB_REPOSITORY || trustedRepository;
+  if (configured !== trustedRepository) throw new ApiError(503, "github_repository_misconfigured");
+  return trustedRepository;
 }
 
 function githubHeaders(extra = {}) {
@@ -156,8 +169,7 @@ function githubHeaders(extra = {}) {
 }
 
 async function resolveGithubCommit(env, ref, unavailableCode) {
-  const repository = env.GITHUB_REPOSITORY || "decentespresso/openscale";
-  const response = await fetch(`https://api.github.com/repos/${repository}/commits/${encodeURIComponent(ref)}`, {
+  const response = await fetch(`https://api.github.com/repos/${repository(env)}/commits/${encodeURIComponent(ref)}`, {
     headers: githubHeaders(),
     cf: {cacheEverything: true, cacheTtl: 60},
   });
@@ -173,20 +185,34 @@ function requireAllowedFirmwareRef(env, firmwareRef) {
 }
 
 async function serviceCatalog(env, commit) {
-  const repository = env.GITHUB_REPOSITORY || "decentespresso/openscale";
-  const response = await fetch(`https://raw.githubusercontent.com/${repository}/${commit}/docs/custom-build/service-catalog.json`, {
+  const response = await fetch(`https://raw.githubusercontent.com/${repository(env)}/${commit}/docs/custom-build/service-catalog.json`, {
     cf: {cacheEverything: true, cacheTtl: 86400},
   });
   if (!response.ok) throw new ApiError(503, "service_catalog_unavailable");
   const catalog = await response.json();
-  if (!Number.isSafeInteger(catalog.schema) || !catalog.features || !catalog.plugins ||
-      !catalog.firmware || typeof catalog.platformio_environment !== "string") {
+  if (!Number.isSafeInteger(catalog.schema) || !Array.isArray(catalog.firmware_refs) ||
+      !catalog.features || !catalog.plugins || !catalog.firmware ||
+      typeof catalog.platformio_environment !== "string" ||
+      (catalog.catalog_revision !== undefined && !hashPattern.test(catalog.catalog_revision))) {
     throw new ApiError(503, "invalid_service_catalog");
   }
   return catalog;
 }
 
-function resolveFeatures(catalog, requested, plugins) {
+function featureDefinition(catalog, id) {
+  const stored = catalog.features[id];
+  const feature = Array.isArray(stored)
+    ? {requires: stored, firmware_refs: catalog.firmware_refs}
+    : stored;
+  if (!feature || !Array.isArray(feature.requires) || !Array.isArray(feature.firmware_refs) ||
+      feature.requires.some(required => !idPattern.test(required)) ||
+      feature.firmware_refs.some(ref => typeof ref !== "string")) {
+    throw new ApiError(503, "invalid_service_catalog");
+  }
+  return feature;
+}
+
+function resolveFeatures(catalog, firmwareRef, requested, plugins) {
   const resolved = new Set(requested);
   for (const id of requested) {
     if (!Object.hasOwn(catalog.features, id)) throw new ApiError(400, "unknown_feature");
@@ -200,9 +226,12 @@ function resolveFeatures(catalog, requested, plugins) {
   while (resolved.size !== previousSize) {
     previousSize = resolved.size;
     for (const id of resolved) {
-      const dependencies = catalog.features[id];
-      if (!dependencies) throw new ApiError(503, "invalid_service_catalog");
-      for (const dependency of dependencies) resolved.add(dependency);
+      for (const dependency of featureDefinition(catalog, id).requires) resolved.add(dependency);
+    }
+  }
+  for (const id of resolved) {
+    if (!featureDefinition(catalog, id).firmware_refs.includes(firmwareRef)) {
+      throw new ApiError(400, "unsupported_feature_ref");
     }
   }
   return [...resolved].sort();
@@ -216,10 +245,23 @@ function resolvePlugins(catalog, firmwareRef, selected) {
     if (closure.has(id)) continue;
     const plugin = catalog.plugins[id];
     if (!plugin) throw new ApiError(400, "unknown_plugin");
+    const conflictsFeatures = plugin.conflicts_features || [];
+    const recommendedPlugins = plugin.recommends?.plugins || [];
     if (!Array.isArray(plugin.firmware_refs) || !Array.isArray(plugin.depends_on) ||
-        !Array.isArray(plugin.conflicts) || !Array.isArray(plugin.requires) ||
+        !Array.isArray(plugin.conflicts) || !Array.isArray(conflictsFeatures) ||
+        !Array.isArray(recommendedPlugins) ||
+        !Array.isArray(plugin.requires) || !Array.isArray(plugin.assets) ||
+        !plugin.patches || typeof plugin.patches !== "object" || Array.isArray(plugin.patches) ||
+        plugin.firmware_refs.some(ref => typeof ref !== "string") ||
+        plugin.requires.some(feature => !idPattern.test(feature)) ||
         plugin.depends_on.some(dependency => !idPattern.test(dependency)) ||
-        plugin.depends_on.length !== new Set(plugin.depends_on).size) {
+        plugin.conflicts.some(conflict => !idPattern.test(conflict)) ||
+        recommendedPlugins.some(recommended => !idPattern.test(recommended)) ||
+        conflictsFeatures.some(feature => !idPattern.test(feature)) ||
+        plugin.depends_on.length !== new Set(plugin.depends_on).size ||
+        plugin.conflicts.length !== new Set(plugin.conflicts).size ||
+        recommendedPlugins.length !== new Set(recommendedPlugins).size ||
+        conflictsFeatures.length !== new Set(conflictsFeatures).size) {
       throw new ApiError(503, "invalid_service_catalog");
     }
     closure.add(id);
@@ -240,10 +282,8 @@ function resolvePlugins(catalog, firmwareRef, selected) {
     orderedIds.push(id);
   };
   [...closure].sort().forEach(visit);
-  const selectedSet = new Set(orderedIds);
   return orderedIds.map(id => {
     const plugin = catalog.plugins[id];
-    if (plugin.conflicts.some(conflict => selectedSet.has(conflict))) throw new ApiError(400, "plugin_conflict");
     const patch = plugin.patches[firmwareRef];
     if (plugin.assets.some(asset => !pathPattern.test(asset.target) || !hashPattern.test(asset.sha256))) {
       throw new ApiError(503, "invalid_service_catalog");
@@ -259,6 +299,38 @@ function resolvePlugins(catalog, firmwareRef, selected) {
   });
 }
 
+function compatibilityPackages(catalog, pluginIds) {
+  const selected = new Set(pluginIds);
+  return pluginIds.map(ownerId => {
+    const owner = catalog.plugins[ownerId];
+    const pending = [ownerId, ...(owner.recommends?.plugins || []).filter(id => selected.has(id))];
+    const compatible = new Set();
+    while (pending.length) {
+      const id = pending.pop();
+      if (compatible.has(id)) continue;
+      compatible.add(id);
+      pending.push(...catalog.plugins[id].depends_on);
+    }
+    return compatible;
+  });
+}
+
+function validateConflicts(catalog, pluginIds, featureIds) {
+  const selectedPlugins = new Set(pluginIds);
+  const selectedFeatures = new Set(featureIds);
+  const compatible = compatibilityPackages(catalog, pluginIds);
+  for (const id of pluginIds) {
+    const plugin = catalog.plugins[id];
+    if (plugin.conflicts.some(conflict => selectedPlugins.has(conflict) &&
+        !compatible.some(group => group.has(id) && group.has(conflict)))) {
+      throw new ApiError(400, "plugin_conflict");
+    }
+    if ((plugin.conflicts_features || []).some(feature => selectedFeatures.has(feature))) {
+      throw new ApiError(400, "feature_conflict");
+    }
+  }
+}
+
 async function resolveSelection(env, selection) {
   const requested = requireSelection(selection);
   const builderRef = env.BUILDER_REF || "main";
@@ -268,6 +340,9 @@ async function resolveSelection(env, selection) {
     ? builderCommit
     : await resolveGithubCommit(env, requested.firmware_ref, "firmware_ref_unavailable");
   const catalog = await serviceCatalog(env, builderCommit);
+  if (requested.catalog_revision && requested.catalog_revision !== catalog.catalog_revision) {
+    throw new ApiError(409, "catalog_stale");
+  }
   if (!catalog.firmware_refs.includes(requested.firmware_ref)) {
     throw new ApiError(400, "unsupported_firmware_ref");
   }
@@ -278,7 +353,11 @@ async function resolveSelection(env, selection) {
     throw new ApiError(503, "invalid_service_catalog");
   }
   const plugins = resolvePlugins(catalog, requested.firmware_ref, requested.plugins);
-  const features = resolveFeatures(catalog, requested.features, plugins.map(plugin => plugin.id));
+  const pluginIds = plugins.map(plugin => plugin.id);
+  const features = resolveFeatures(
+    catalog, requested.firmware_ref, requested.features, pluginIds,
+  );
+  validateConflicts(catalog, pluginIds, features);
   const platformioEnvironment = features.includes("energy-menu")
     ? "esp32s3-energy-menu-custom"
     : catalog.platformio_environment;
@@ -324,6 +403,7 @@ function readyStatus(env, hash) {
   return {
     state: "ready",
     combination_hash: hash,
+    manifest_url: `${baseUrl}/v1/${hash}/build-manifest.json`,
     downloads: {[archive]: `${baseUrl}/v1/${hash}/${archive}`},
   };
 }
@@ -374,7 +454,11 @@ async function createAppToken(env) {
   const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(unsigned));
   const response = await fetch(`https://api.github.com/app/installations/${env.GITHUB_APP_INSTALLATION_ID}/access_tokens`, {
     method: "POST",
-    headers: githubHeaders({Authorization: `Bearer ${unsigned}.${base64Url(signature)}`}),
+    headers: githubHeaders({
+      Authorization: `Bearer ${unsigned}.${base64Url(signature)}`,
+      "Content-Type": "application/json",
+    }),
+    body: JSON.stringify({repositories: [trustedRepositoryName], permissions: {actions: "write"}}),
   });
   if (!response.ok) throw new ApiError(503, "github_app_unavailable");
   const result = await response.json();
@@ -383,10 +467,9 @@ async function createAppToken(env) {
 }
 
 async function dispatchBuild(env, build) {
-  const repository = env.GITHUB_REPOSITORY || "decentespresso/openscale";
   const workflow = env.GITHUB_WORKFLOW || "custom-build.yml";
   const token = await createAppToken(env);
-  const response = await fetch(`https://api.github.com/repos/${repository}/actions/workflows/${workflow}/dispatches`, {
+  const response = await fetch(`https://api.github.com/repos/${repository(env)}/actions/workflows/${workflow}/dispatches`, {
     method: "POST",
     headers: githubHeaders({Authorization: `Bearer ${token}`, "Content-Type": "application/json"}),
     body: JSON.stringify({
@@ -403,7 +486,7 @@ async function dispatchBuild(env, build) {
       },
     }),
   });
-  if (response.status !== 204) throw new ApiError(503, "github_dispatch_failed");
+  if (response.status !== 204) throw new ApiError(503, "dispatch_failed");
 }
 
 async function enqueueBuild(request, env, build) {
@@ -414,6 +497,7 @@ async function enqueueBuild(request, env, build) {
   });
   const result = await response.json();
   if (!response.ok && response.status !== 409) {
+    if (result.state === "failed") return {result: buildStatus(result), status: response.status};
     throw new ApiError(response.status, result.error || "build_request_failed");
   }
   return {result: buildStatus(result), status: response.status === 409 ? 409 : 202};
@@ -490,17 +574,26 @@ async function download(request, env, target) {
 async function updateStatus(request, env, hash) {
   if (!(await authorized(request, env.UPLOAD_TOKEN))) throw new ApiError(401, "unauthorized");
   const update = await readJson(request, 1024);
-  if (!update || Object.keys(update).sort().join(",") !== "attempt_id,state" ||
-      !buildStates.has(update.state) || !attemptPattern.test(update.attempt_id)) {
+  const keys = update && typeof update === "object" && !Array.isArray(update)
+    ? Object.keys(update).sort().join(",") : "";
+  const normalizedUpdate = update?.state === "failed" && keys === "attempt_id,state"
+    ? {...update, failure_code: "build_failed"} : update;
+  const normalizedKeys = normalizedUpdate && typeof normalizedUpdate === "object"
+    ? Object.keys(normalizedUpdate).sort().join(",") : "";
+  const expectedKeys = normalizedUpdate?.state === "failed"
+    ? "attempt_id,failure_code,state" : "attempt_id,state";
+  if (normalizedKeys !== expectedKeys || !buildStates.has(normalizedUpdate.state) ||
+      !attemptPattern.test(normalizedUpdate.attempt_id) ||
+      normalizedUpdate.state === "failed" && !failureCodes.has(normalizedUpdate.failure_code)) {
     throw new ApiError(400, "invalid_build_state");
   }
-  if (update.state === "ready" && !(await env.BUILDS.head(`v1/${hash}/build-manifest.json`))) {
+  if (normalizedUpdate.state === "ready" && !(await env.BUILDS.head(`v1/${hash}/build-manifest.json`))) {
     throw new ApiError(409, "cache_entry_missing");
   }
   const response = await coordinator(env).fetch(`https://coordinator/status/${hash}`, {
     method: "PUT",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify(update),
+    body: JSON.stringify(normalizedUpdate),
   });
   if (!response.ok) throw new ApiError(response.status, "status_update_failed");
   return new Response(null, {status: 204});
@@ -543,6 +636,7 @@ export class BuildCoordinator {
         state: update.state,
         updated_at: new Date(now).toISOString(),
         ...(update.state === "building" ? {lease_expires_at: now + buildLeaseMs} : {}),
+        ...(update.state === "failed" ? {failure_code: update.failure_code} : {}),
       };
       const pending = update.state === "building" ? {
         ...remainingPending,
@@ -592,6 +686,7 @@ export class BuildCoordinator {
       const effectiveCurrent = currentIsStale ? {
         ...currentWithoutLease,
         state: "failed",
+        failure_code: "build_timeout",
         updated_at: new Date(now).toISOString(),
       } : current;
       if (currentIsStale) {
@@ -657,9 +752,13 @@ export class BuildCoordinator {
     try {
       await dispatchBuild(this.env, {...build, attemptId: reservation.record.attempt_id});
       return Response.json(reservation.record, {status: 202});
-    } catch (error) {
-      await this.updateAttempt(hash, {state: "failed", attempt_id: reservation.record.attempt_id});
-      return Response.json({error: error instanceof ApiError ? error.code : "github_dispatch_failed"}, {status: 503});
+    } catch {
+      const failed = await this.updateAttempt(hash, {
+        state: "failed",
+        failure_code: "dispatch_failed",
+        attempt_id: reservation.record.attempt_id,
+      });
+      return Response.json(failed || {error: "dispatch_failed"}, {status: 503});
     }
   }
 
@@ -678,6 +777,7 @@ export class BuildCoordinator {
         await this.state.storage.put(key, {
           ...record,
           state: "failed",
+          failure_code: "build_timeout",
           updated_at: new Date(now).toISOString(),
         });
       }

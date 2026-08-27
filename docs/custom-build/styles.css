@@ -380,9 +380,8 @@
       font-size: .65rem;
       line-height: 1.25;
       font-weight: 720;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      overflow-wrap: anywhere;
+      white-space: normal;
     }
 
     .option-card.is-required .status-badge,
@@ -517,7 +516,8 @@
       box-shadow: 0 0 0 4px var(--green-soft);
     }
 
-    .state-checking::before, .state-queued::before, .state-building::before, .state-rate-limited::before {
+    .state-checking::before, .state-queued::before, .state-building::before,
+    .state-rate-limited::before, .state-updating::before {
       background: #b77a20;
       box-shadow: 0 0 0 4px var(--amber-soft);
     }
@@ -579,18 +579,40 @@
 
     .service-heading {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
+      align-items: stretch;
+      flex-direction: column;
       gap: 10px;
       margin-bottom: 10px;
     }
 
     .service-heading span { font-size: .78rem; font-weight: 720; }
 
-    .service-heading code {
+    .hash-button {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 16px;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 7px 8px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
       color: var(--faint);
-      font: 600 .65rem/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: var(--surface-soft);
+      text-align: left;
+      cursor: pointer;
     }
+
+    .hash-button[hidden] { display: none; }
+    .hash-button:hover, .hash-button:focus-visible { border-color: var(--green-line); outline: 0; }
+    .hash-button:focus-visible { box-shadow: 0 0 0 3px rgba(13, 121, 85, .14); }
+
+    .hash-button code {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font: 600 .62rem/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .hash-button svg { width: 16px; height: 16px; }
 
     .status-message {
       min-height: 42px;
