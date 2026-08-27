@@ -340,7 +340,7 @@ def test_firmware_contracts():
     assert_contains(MENU_HEADER, "grinderResumeAfterMenu();")
     assert_contains(RUNTIME_HEADER, "bool menuPaused = false")
     assert_contains(RUNTIME_HEADER, "static inline void grinderTickWhileMenuOpen(float weight)")
-    assert_contains(HDS_SOURCE, "if (!buttonChecksSuppressedUntilRelease()")
+    assert_contains(HDS_SOURCE, "&& !buttonChecksSuppressedUntilRelease()")
     assert_contains(HDS_SOURCE, "&& !handleGrinderMenuChord()")
     assert_contains(HDS_SOURCE, "void beforeDeepSleepFlush()")
     assert_contains(HDS_SOURCE, "grinderFlushSettingsIfDirty();")

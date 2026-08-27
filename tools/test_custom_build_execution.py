@@ -102,7 +102,7 @@ def createSourceRepository(root):
     (sourceRoot / "b.txt").write_text("base b\n", encoding="utf-8")
     (sourceRoot / "include").mkdir()
     (sourceRoot / "include" / "config.h").write_text(
-        '#define HDS_FIRMWARE_VERSION "3.1.13-dev"\n', encoding="utf-8"
+        '#define HDS_FIRMWARE_VERSION "3.1.14-preview.1"\n', encoding="utf-8"
     )
     partition = sourceRoot / "partitions" / "test.csv"
     partition.parent.mkdir()
@@ -169,17 +169,25 @@ def main():
         configPath = writeConfig(catalogRoot, ["patch-b", "asset-only", "patch-a"])
         sourceRoot, sourceCommit = createSourceRepository(root)
         runGit(sourceRoot, "tag", "v1.2.3")
+        runGit(sourceRoot, "tag", "v3.1.14-preview.1")
         with patch.object(customBuild, "ROOT", sourceRoot):
             stableFirmware = customBuild.firmwareMetadata("v1.2.3", sourceRoot)
+            previewFirmware = customBuild.firmwareMetadata("v3.1.14-preview.1", sourceRoot)
         assert stableFirmware["custom_version"] == "1.2.3-custom"
+        assert previewFirmware["custom_version"] == "3.1.14-preview.1-custom"
         assert stableFirmware["partition_schema"]["path"] == "partitions/test.csv"
-        with patch.object(customBuild, "ROOT", catalogRoot), patch.object(customRunner, "ROOT", sourceRoot):
+        with patch.object(customBuild, "ROOT", catalogRoot), patch.object(
+            customBuild, "FIRMWARE_REFS", ("main", "v3.1.14-preview.1")
+        ), patch.object(customRunner, "ROOT", sourceRoot):
             configuration = customBuild.resolveConfiguration(configPath)
             assert [plugin["id"] for plugin in configuration["plugins"]] == [
                 "asset-only", "dependency", "patch-a", "patch-b",
             ]
             assert [pluginId for pluginId, _ in configuration["patches"]] == ["patch-a", "patch-b"]
             assert customRunner.resolveFirmwareCommit(sourceRoot, "main") == sourceCommit
+            assert customRunner.resolveFirmwareCommit(
+                sourceRoot, "v3.1.14-preview.1"
+            ) == sourceCommit
             assertRejected(lambda: customRunner.verifySourceCommit(sourceRoot, "main"))
 
             pluginConfigPath = writeConfig(
@@ -301,7 +309,7 @@ def main():
             assert first == second
             assert first["base_source"] == sourceCommit
             assert first["builder_source"] == sourceCommit
-            assert first["firmware_version"] == "3.1.13-dev-custom"
+            assert first["firmware_version"] == "3.1.14-preview.1-custom"
             assert first["combination_hash"] == customBuild.combinationHash(first["combination_input"])
             assert first["partition_schema"]["path"] == "partitions/test.csv"
             assert list(first["binaries"]) == sorted(customBuild.PUBLIC_BINARIES)

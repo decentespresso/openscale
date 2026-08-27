@@ -2,11 +2,12 @@ import {
   SelectionError,
   catalogRevisionChanged,
   defaultSelection,
+  firmwareRefLabel,
   optionReason,
   parseSelection,
   resolveSelection,
   selectionQuery,
-} from "./selection.mjs?v=2";
+} from "./selection.mjs?v=3";
 
 (async () => {
   const apiBase = "https://openscale-custom-builds.odevstudio.workers.dev";
@@ -73,9 +74,7 @@ import {
     return wrapper;
   };
 
-  const refLabel = ref => /^v?\d+\.\d+\.\d+$/.test(ref) ?
-    `${ref.replace(/^v/, "")} (stable)` : `${ref} (development)`;
-  catalog.firmware_refs.forEach(ref => refSelect.add(new Option(refLabel(ref), ref)));
+  catalog.firmware_refs.forEach(ref => refSelect.add(new Option(firmwareRefLabel(ref), ref)));
   catalog.features.filter(item => !item.hidden).forEach(item => featureRoot.append(makeOption(item, "feature")));
   catalog.plugins.forEach(item => pluginRoot.append(makeOption(item, "plugin")));
 

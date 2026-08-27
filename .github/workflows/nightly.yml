@@ -9,7 +9,7 @@ on:
 
 jobs:
   ai-documentation:
-    name: AI documentation contract
+    name: Python contracts
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -18,14 +18,10 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - run: python tools/test_ai_docs_contract.py
-      - run: python tools/test_ble_subscription_contract.py
-      - run: python tools/test_mdns_name_contract.py
-      - run: python tools/test_ota_reboot_routing_contract.py
-      - run: python tools/test_grinder_feature_flag_contract.py
-      - run: python tools/test_finger_detection_memory_contract.py
-      - run: python tools/test_plugin_ci_contract.py
-      - run: python tools/test_energy_stage0_contract.py
+      - run: |
+          for test in tools/test_*.py; do
+            python "$test"
+          done
 
   native-tests:
     name: Native unit tests
@@ -41,18 +37,6 @@ jobs:
         run: python -m pip install --requirement requirements-platformio.txt
       - name: Run host-side tests
         run: pio test -e native
-
-  gzip-assets:
-    name: Gzip asset generation contract
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.11"
-      - run: python tools/test_gzip_web_assets.py
 
   build:
     name: firmware (esp32s3)

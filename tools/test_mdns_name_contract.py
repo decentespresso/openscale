@@ -109,8 +109,8 @@ def check_device_screen(menu_source):
 
 
 def check_ci(nightly_workflow):
-    if "tools/test_mdns_name_contract.py" not in nightly_workflow:
-        raise AssertionError("nightly.yml must run the mdns name contract check")
+    if "for test in tools/test_*.py" not in nightly_workflow:
+        raise AssertionError("nightly.yml must run every Python contract check")
     if "pio test -e native" not in nightly_workflow:
         raise AssertionError("nightly.yml must run the native unit tests")
 

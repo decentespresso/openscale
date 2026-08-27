@@ -30,7 +30,7 @@ def main():
     assert "esp32s3-grinder" not in firmwareWorkflow
     assert "name: firmware (esp32s3)" in firmwareWorkflow
     assert "name: firmware (esp32s3-energy-menu)" in energyBuild
-    assert "python tools/test_plugin_ci_contract.py" in firmwareWorkflow
+    assert "for test in tools/test_*.py" in firmwareWorkflow
 
     assert "detect_plugins:" in customWorkflow
     assert "verify_plugins:" in customWorkflow

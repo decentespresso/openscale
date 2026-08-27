@@ -32,6 +32,13 @@ export function defaultSelection(catalog) {
   };
 }
 
+export function firmwareRefLabel(ref) {
+  const version = ref.replace(/^v/, "");
+  if (/^\d+\.\d+\.\d+$/.test(version)) return `${version} (stable)`;
+  if (/^\d+\.\d+\.\d+-preview(?:[.-][a-z0-9]+)*$/.test(version)) return `${version} (preview)`;
+  return `${ref} (development)`;
+}
+
 export async function catalogRevisionChanged(fetchCatalog, currentRevision) {
   const response = await fetchCatalog("catalog.json", {cache: "no-store"});
   if (!response.ok) return false;

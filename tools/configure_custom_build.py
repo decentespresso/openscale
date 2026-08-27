@@ -15,7 +15,7 @@ ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 PATH_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 STABLE_FIRMWARE_REF_PATTERN = re.compile(r"^v?([0-9]+\.[0-9]+\.[0-9]+)$")
 DEFAULT_FIRMWARE_VERSION_PATTERN = re.compile(
-    r'^\s*#define\s+HDS_FIRMWARE_VERSION\s+"([0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?)"\s*$',
+    r'^\s*#define\s+HDS_FIRMWARE_VERSION\s+"([0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9]+(?:[.-][a-z0-9]+)*)?)"\s*$',
     re.MULTILINE,
 )
 FIRMWARE_REFS = ("main",)

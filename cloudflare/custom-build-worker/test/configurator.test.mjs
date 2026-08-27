@@ -4,6 +4,7 @@ import {test} from "node:test";
 import {
   catalogRevisionChanged,
   defaultSelection,
+  firmwareRefLabel,
   optionReason,
   parseSelection,
   resolveSelection,
@@ -47,6 +48,13 @@ const catalog = {
     }),
   ],
 };
+
+
+test("labels stable, preview, and development firmware refs", () => {
+  assert.equal(firmwareRefLabel("v3.1.14"), "3.1.14 (stable)");
+  assert.equal(firmwareRefLabel("v3.1.14-preview.1"), "3.1.14-preview.1 (preview)");
+  assert.equal(firmwareRefLabel("main"), "main (development)");
+});
 
 
 test("blocks new direct and transitive conflicts without blocking removal", () => {

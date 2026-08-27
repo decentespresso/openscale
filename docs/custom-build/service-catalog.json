@@ -7,7 +7,7 @@
   "platformio_environment": "esp32s3-custom",
   "firmware": {
     "main": {
-      "custom_version": "3.1.13-dev-custom",
+      "custom_version": "3.1.14-preview.1-custom",
       "partition_schema": {
         "path": "partitions/default_8MB.csv",
         "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"

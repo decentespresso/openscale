@@ -118,6 +118,7 @@ async function api(env, path, method = "GET", body) {
 test("publishes immutable cache entries and deduplicates public builds", async () => {
   const commit = "1".repeat(40);
   const stableCommit = "5".repeat(40);
+  const previewCommit = "7".repeat(40);
   const dependencyPlugin = (depends_on = []) => ({
     version: "1.0.0",
     firmware_refs: ["main"],
@@ -131,7 +132,7 @@ test("publishes immutable cache entries and deduplicates public builds", async (
   const serviceCatalog = {
     schema: 2,
     catalog_revision: "a".repeat(64),
-    firmware_refs: ["main", "v1.2.3"],
+    firmware_refs: ["main", "v1.2.3", "v3.1.14-preview.1"],
     platformio_environment: "esp32s3-custom",
     firmware: {
       main: {
@@ -140,6 +141,10 @@ test("publishes immutable cache entries and deduplicates public builds", async (
       },
       "v1.2.3": {
         custom_version: "1.2.3-custom",
+        partition_schema: {path: "partitions/default.csv", sha256: "2".repeat(64)},
+      },
+      "v3.1.14-preview.1": {
+        custom_version: "3.1.14-preview.1-custom",
         partition_schema: {path: "partitions/default.csv", sha256: "2".repeat(64)},
       },
     },
@@ -200,7 +205,7 @@ test("publishes immutable cache entries and deduplicates public builds", async (
   const privateKey = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
   const env = {
     ALLOWED_ORIGIN: origin,
-    ALLOWED_FIRMWARE_REFS: "main,v1.2.3",
+    ALLOWED_FIRMWARE_REFS: "main,v1.2.3,v3.1.14-preview.1",
     BUILDER_REF: "main",
     BUILDS: new Bucket(),
     GITHUB_APP_ID: "123",
@@ -221,6 +226,7 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     const target = String(url);
     if (target.includes("/commits/main")) return Response.json({sha: commit});
     if (target.includes("/commits/v1.2.3")) return Response.json({sha: stableCommit});
+    if (target.includes("/commits/v3.1.14-preview.1")) return Response.json({sha: previewCommit});
     if (target.includes("raw.githubusercontent.com")) return Response.json(servedCatalog);
     if (target.includes("/access_tokens")) {
       assert.deepEqual(JSON.parse(options.body), {
@@ -267,6 +273,15 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     });
     assert.equal(stable.status, 200);
     assert.notEqual((await stable.json()).combination_hash, hash);
+
+    const preview = await api(env, "/api/v1/status", "POST", {
+      firmware_ref: "v3.1.14-preview.1", features: [], plugins: [],
+    });
+    assert.equal(preview.status, 200);
+    assert.equal(
+      (await preview.json()).combination_hash,
+      "3511fd3c41154ebd0bce69466612ef13d79347675e15cd3aea058e2a8f727b86",
+    );
 
     const sortedAssets = await api(env, "/api/v1/status", "POST", {
       firmware_ref: "main", features: [], plugins: ["asset-sort"],

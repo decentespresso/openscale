@@ -106,7 +106,7 @@ def main():
     )
     if result.returncode != 0 or '-DHDS_FIRMWARE_VERSION="9.8.7"' not in result.stdout:
         raise AssertionError("build metadata did not emit the firmware version macro")
-    environment["HDS_FIRMWARE_VERSION"] = "9.8.7-custom"
+    environment["HDS_FIRMWARE_VERSION"] = "3.1.14-preview.1-custom"
     result = subprocess.run(
         [sys.executable, str(BUILD_METADATA)],
         cwd=ROOT,
@@ -114,18 +114,22 @@ def main():
         capture_output=True,
         text=True,
     )
-    if result.returncode != 0 or '-DHDS_FIRMWARE_VERSION="9.8.7-custom"' not in result.stdout:
-        raise AssertionError("build metadata did not accept the custom firmware suffix")
-    environment["HDS_FIRMWARE_VERSION"] = "v9.8.7"
-    result = subprocess.run(
-        [sys.executable, str(BUILD_METADATA)],
-        cwd=ROOT,
-        env=environment,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0:
-        raise AssertionError("build metadata accepted an unnormalized firmware version")
+    if result.returncode != 0 or '-DHDS_FIRMWARE_VERSION="3.1.14-preview.1-custom"' not in result.stdout:
+        raise AssertionError("build metadata did not accept the dotted preview suffix")
+    for invalidVersion in (
+        "v9.8.7", "9.8.7-Preview.1", "9.8.7-preview..1", "9.8.7-preview/1",
+        "9.8.7-.preview", "9.8.7-preview.",
+    ):
+        environment["HDS_FIRMWARE_VERSION"] = invalidVersion
+        result = subprocess.run(
+            [sys.executable, str(BUILD_METADATA)],
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            raise AssertionError(f"build metadata accepted invalid firmware version {invalidVersion}")
 
     with tempfile.TemporaryDirectory() as tempDir:
         root = Path(tempDir)

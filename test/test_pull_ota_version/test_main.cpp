@@ -18,6 +18,8 @@ void testDevBuildUsesNumericPrefix() {
   TEST_ASSERT_EQUAL_INT(1, pullOtaCompareVersionPrefixes("3.1.14", "3.1.13-dev"));
   TEST_ASSERT_EQUAL_INT(-1, pullOtaCompareVersionPrefixes("3.1.12", "3.1.13-dev"));
   TEST_ASSERT_EQUAL_INT(0, pullOtaCompareVersionPrefixes("3.1.14", "3.1.13garbage"));
+  TEST_ASSERT_EQUAL_INT(0, pullOtaCompareVersionPrefixes("3.1.14-preview.1-custom", "3.1.14"));
+  TEST_ASSERT_FALSE(pullOtaVersionIsStable("3.1.14-preview.1-custom"));
 }
 
 void testComparisonHandlesVersionBounds() {
@@ -34,6 +36,8 @@ void testVersionPrefixNormalization() {
   TEST_ASSERT_EQUAL_STRING("3.1.13", normalized);
   TEST_ASSERT_TRUE(pullOtaNormalizeVersionPrefix("3.1.13-dev", normalized, sizeof(normalized)));
   TEST_ASSERT_EQUAL_STRING("3.1.13", normalized);
+  TEST_ASSERT_TRUE(pullOtaNormalizeVersionPrefix("3.1.14-preview.1-custom", normalized, sizeof(normalized)));
+  TEST_ASSERT_EQUAL_STRING("3.1.14", normalized);
   TEST_ASSERT_FALSE(pullOtaNormalizeVersionPrefix("3.1", normalized, sizeof(normalized)));
   TEST_ASSERT_FALSE(pullOtaNormalizeVersionPrefix("3.1.13garbage", normalized, sizeof(normalized)));
 }
