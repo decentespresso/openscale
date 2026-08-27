@@ -1,6 +1,6 @@
 {
   "schema": 2,
-  "catalog_revision": "216f0a8c55c7e3bcc5b387f77a22ec3eb9dbabb13388de3dc0e4d628be77ca03",
+  "catalog_revision": "1f403f29b3d5fbd2203491923df1996b34979c6bfb33df83d6382c2bccc40820",
   "firmware_refs": [
     "main"
   ],
@@ -215,7 +215,9 @@
         "grinder"
       ],
       "depends_on": [],
-      "conflicts": [],
+      "conflicts": [
+        "pressensor"
+      ],
       "conflicts_features": [],
       "recommends": {
         "features": [
@@ -235,7 +237,9 @@
       ],
       "requires": [],
       "depends_on": [],
-      "conflicts": [],
+      "conflicts": [
+        "grind-by-weight"
+      ],
       "conflicts_features": [],
       "recommends": {
         "features": [],

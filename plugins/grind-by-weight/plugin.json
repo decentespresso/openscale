@@ -8,7 +8,7 @@
   "firmware_refs": ["main"],
   "requires": ["grinder"],
   "depends_on": [],
-  "conflicts": [],
+  "conflicts": ["pressensor"],
   "recommends": {
     "features": ["pull-ota"],
     "plugins": ["default-web-apps"]

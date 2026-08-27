@@ -258,10 +258,13 @@ def main():
     assert "firmwareRefLabel(ref)" in appScript
     grinderFeature = next(feature for feature in generatedCatalog["features"] if feature["id"] == "grinder")
     grindByWeight = next(plugin for plugin in generatedCatalog["plugins"] if plugin["id"] == "grind-by-weight")
+    pressensor = next(plugin for plugin in generatedCatalog["plugins"] if plugin["id"] == "pressensor")
     assert grinderFeature["name"] == "Grind by weight core"
     assert grinderFeature["hidden"] is True
     assert grindByWeight["name"] == "Grind by weight"
     assert grindByWeight["requires"] == ["grinder"]
+    assert grindByWeight["conflicts"] == ["pressensor"]
+    assert pressensor["conflicts"] == ["grind-by-weight"]
     assert grindByWeight["recommends"] == {
         "features": ["pull-ota"],
         "plugins": ["default-web-apps"],
@@ -316,6 +319,9 @@ def main():
         assert {"littlefs", "wifi", "webserver", "websocket"}.issubset(resolved["features"])
         grindByWeight = customBuild.resolveConfiguration(writeConfig(root, [], ["grind-by-weight"]))
         assert {"grinder", "wifi", "mdns"}.issubset(grindByWeight["features"])
+        assertRejected(lambda: customBuild.resolveConfiguration(
+            writeConfig(root, [], ["grind-by-weight", "pressensor"])
+        ))
     testTemporaryPluginValidation()
     print("plugin catalog tests passed")
 
