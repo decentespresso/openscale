@@ -65,7 +65,7 @@ def testTemporaryPluginValidation():
         )
         writePlugin(root, valid, {"patches/v3.1.13.patch": "diff --git a/a b/a\n"})
         with patch.object(customBuild, "ROOT", root), patch.object(
-            customBuild, "FIRMWARE_REFS", ("main", "v3.1.13")
+            customBuild, "FIRMWARE_REFS", (*customBuild.FIRMWARE_REFS, "v3.1.13")
         ):
             manifest, assets, patches = customBuild.loadPlugin("code-plugin", "v3.1.13")
             assert manifest["version"] == "1.0.0"
@@ -216,7 +216,8 @@ def main():
     assert len(pluginIds) == len(set(pluginIds))
     assert all(customBuild.ID_PATTERN.fullmatch(pluginId) for pluginId in pluginIds)
     for pluginId in pluginIds:
-        customBuild.loadPlugin(pluginId, "main")
+        for firmwareRef in customBuild.FIRMWARE_REFS:
+            customBuild.loadPlugin(pluginId, firmwareRef)
     generatedCatalog = customBuild.buildBrowserCatalog()
     pageCatalog = json.loads(
         (customBuild.ROOT / "docs" / "custom-build" / "catalog.json").read_text(encoding="utf-8")
@@ -234,6 +235,11 @@ def main():
     assert serviceCatalog == customBuild.buildServiceCatalog()
     assert pageCatalog["catalog_revision"] == serviceCatalog["catalog_revision"]
     assert len(pageCatalog["catalog_revision"]) == 64
+    assert generatedCatalog["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
+    assert all(
+        feature["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
+        for feature in generatedCatalog["features"]
+    )
     assert {
         feature["id"] for feature in generatedCatalog["features"] if feature.get("default")
     } == customBuild.DEFAULT_FEATURES
@@ -265,6 +271,12 @@ def main():
     assert grindByWeight["requires"] == ["grinder"]
     assert grindByWeight["conflicts"] == ["pressensor"]
     assert pressensor["conflicts"] == ["grind-by-weight"]
+    assert grindByWeight["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
+    assert pressensor["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
+    assert set(serviceCatalog["plugins"]["pressensor"]["patches"]) == set(customBuild.FIRMWARE_REFS)
+    assert serviceCatalog["firmware"]["v3.1.14-preview.1"]["custom_version"] == (
+        "3.1.14-preview.1-custom"
+    )
     assert grindByWeight["recommends"] == {
         "features": ["pull-ota"],
         "plugins": ["default-web-apps"],

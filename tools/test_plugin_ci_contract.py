@@ -50,7 +50,10 @@ def main():
     assert "[env:esp32s3-grinder]" in platformio
     assert "[env:esp32s3-pressensor]" in patch
     assert "#ifdef HDS_CUSTOM_BUILD" in patch
-    assert manifest["patches"] == {"main": "patches/main.patch"}
+    assert manifest["patches"] == {
+        "main": "patches/main.patch",
+        "v3.1.14-preview.1": "patches/main.patch",
+    }
     assert changedPlugins.changedPluginIds([
         "plugins/pressensor/plugin.json",
         "plugins/pressensor/patches/main.patch",
@@ -58,7 +61,10 @@ def main():
     ]) == ["pressensor"]
     assert changedPlugins.changedPluginMatrix([
         "plugins/pressensor/patches/main.patch"
-    ]) == [{"plugin": "pressensor", "firmware_ref": "main"}]
+    ]) == [
+        {"plugin": "pressensor", "firmware_ref": "main"},
+        {"plugin": "pressensor", "firmware_ref": "v3.1.14-preview.1"},
+    ]
     assert changedPlugins.changedPluginMatrix([
         "plugins/default-web-apps/assets/index.html"
     ]) == []

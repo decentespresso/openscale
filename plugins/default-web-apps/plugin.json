@@ -5,7 +5,7 @@
   "description": "Install the bundled on-device dashboard and scale tools.",
   "tooltip": "Adds the dashboard, Weigh Save, Dosing Assistant, and Quality Control Assistant. LittleFS, WebSocket, the web server, and WiFi are included automatically.",
   "version": "1.0.0",
-  "firmware_refs": ["main"],
+  "firmware_refs": ["main", "v3.1.14-preview.1"],
   "requires": ["littlefs", "websocket"],
   "depends_on": [],
   "conflicts": [],

@@ -18,17 +18,17 @@ DEFAULT_FIRMWARE_VERSION_PATTERN = re.compile(
     r'^\s*#define\s+HDS_FIRMWARE_VERSION\s+"([0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9]+(?:[.-][a-z0-9]+)*)?)"\s*$',
     re.MULTILINE,
 )
-FIRMWARE_REFS = ("main",)
+FIRMWARE_REFS = ("main", "v3.1.14-preview.1")
 FEATURES = {
-    "wifi": ("HDS_FEATURE_WIFI", (), ("main",)),
-    "mdns": ("HDS_FEATURE_MDNS", ("wifi",), ("main",)),
-    "webserver": ("HDS_FEATURE_WEBSERVER", ("wifi",), ("main",)),
-    "websocket": ("HDS_FEATURE_WEBSOCKET", ("wifi", "webserver"), ("main",)),
-    "littlefs": ("HDS_FEATURE_LITTLEFS", (), ("main",)),
-    "elegant-ota": ("HDS_FEATURE_ELEGANT_OTA", ("wifi", "webserver"), ("main",)),
-    "pull-ota": ("HDS_FEATURE_PULL_OTA", ("wifi",), ("main",)),
-    "grinder": ("HDS_FEATURE_GRINDER", ("wifi", "mdns"), ("main",)),
-    "energy-menu": ("HDS_FEATURE_ENERGY_MENU", (), ("main",)),
+    "wifi": ("HDS_FEATURE_WIFI", (), FIRMWARE_REFS),
+    "mdns": ("HDS_FEATURE_MDNS", ("wifi",), FIRMWARE_REFS),
+    "webserver": ("HDS_FEATURE_WEBSERVER", ("wifi",), FIRMWARE_REFS),
+    "websocket": ("HDS_FEATURE_WEBSOCKET", ("wifi", "webserver"), FIRMWARE_REFS),
+    "littlefs": ("HDS_FEATURE_LITTLEFS", (), FIRMWARE_REFS),
+    "elegant-ota": ("HDS_FEATURE_ELEGANT_OTA", ("wifi", "webserver"), FIRMWARE_REFS),
+    "pull-ota": ("HDS_FEATURE_PULL_OTA", ("wifi",), FIRMWARE_REFS),
+    "grinder": ("HDS_FEATURE_GRINDER", ("wifi", "mdns"), FIRMWARE_REFS),
+    "energy-menu": ("HDS_FEATURE_ENERGY_MENU", (), FIRMWARE_REFS),
 }
 FEATURE_PRESENTATION = {
     "wifi": (

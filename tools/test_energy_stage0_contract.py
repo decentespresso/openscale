@@ -353,7 +353,7 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertNotIn("sdkconfig.energy-menu.defaults", custom)
         self.assertIn("extends = env:esp32s3-pm-capable", energy_custom)
         self.assertIn(
-            '"energy-menu": ("HDS_FEATURE_ENERGY_MENU", (), ("main",))',
+            '"energy-menu": ("HDS_FEATURE_ENERGY_MENU", (), FIRMWARE_REFS)',
             CUSTOM_BUILD,
         )
         self.assertIn('DEFAULT_FEATURES = {', CUSTOM_BUILD)
