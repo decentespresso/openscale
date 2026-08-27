@@ -1,4 +1,5 @@
 const idPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const revisionPattern = /^[0-9a-f]{64}$/;
 
 export class SelectionError extends Error {
   constructor(code, details = {}) {
@@ -29,6 +30,14 @@ export function defaultSelection(catalog) {
     features: catalog.features.filter(item => item.default).map(item => item.id).sort(),
     plugins: catalog.plugins.filter(item => item.default).map(item => item.id).sort(),
   };
+}
+
+export async function catalogRevisionChanged(fetchCatalog, currentRevision) {
+  const response = await fetchCatalog("catalog.json", {cache: "no-store"});
+  if (!response.ok) return false;
+  const refreshed = await response.json();
+  const revision = refreshed?.catalog_revision || "";
+  return revisionPattern.test(revision) && revision !== currentRevision;
 }
 
 export function resolveSelection(catalog, selection) {

@@ -1,5 +1,6 @@
 import {
   SelectionError,
+  catalogRevisionChanged,
   defaultSelection,
   optionReason,
   parseSelection,
@@ -9,7 +10,7 @@ import {
 
 (async () => {
   const apiBase = "https://openscale-custom-builds.odevstudio.workers.dev";
-  const response = await fetch("catalog.json", {cache: "no-cache"});
+  const response = await fetch("catalog.json", {cache: "no-store"});
   if (!response.ok) throw new Error(`catalog request failed: ${response.status}`);
   const catalog = await response.json();
   const icons = {
@@ -213,7 +214,20 @@ import {
     const retryDelay = catalogRetryDelay;
     catalogRetryDelay = Math.min(catalogRetryDelay * 2, 30000);
     clearTimeout(statusTimer);
-    statusTimer = setTimeout(() => checkStatus(selection, generation), retryDelay);
+    statusTimer = setTimeout(async () => {
+      if (generation !== selectionGeneration) return;
+      let revisionChanged = false;
+      try {
+        revisionChanged = await catalogRevisionChanged(fetch, catalog.catalog_revision);
+      } catch {
+      }
+      if (generation !== selectionGeneration) return;
+      if (revisionChanged) {
+        location.reload();
+        return;
+      }
+      await checkStatus(selection, generation);
+    }, retryDelay);
     return true;
   };
 

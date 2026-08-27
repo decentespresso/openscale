@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {test} from "node:test";
 
 import {
+  catalogRevisionChanged,
   defaultSelection,
   optionReason,
   parseSelection,
@@ -85,4 +86,20 @@ test("round-trips sorted URL selections and rejects invalid links atomically", (
   assert.deepEqual(defaultSelection(catalog), {
     firmware_ref: "main", features: [], plugins: ["blocker"],
   });
+});
+
+
+test("detects a new static catalog after a stale reload", async () => {
+  const revisions = ["a".repeat(64), "b".repeat(64)];
+  const requests = [];
+  const fetchCatalog = async (url, options) => {
+    requests.push({url, options});
+    return {ok: true, json: async () => ({catalog_revision: revisions.shift()})};
+  };
+  assert.equal(await catalogRevisionChanged(fetchCatalog, "a".repeat(64)), false);
+  assert.equal(await catalogRevisionChanged(fetchCatalog, "a".repeat(64)), true);
+  assert.deepEqual(requests, [
+    {url: "catalog.json", options: {cache: "no-store"}},
+    {url: "catalog.json", options: {cache: "no-store"}},
+  ]);
 });
