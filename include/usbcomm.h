@@ -127,11 +127,16 @@ struct UsbDecentCommandSink {
 #endif
   }
 
-  void wifiUpdate() {
+  void wifiUpdate(const PullOtaTargetVersion &target) {
 #if HDS_FEATURE_PULL_OTA
+    if (b_pullOtaRunning || b_ota) {
+      Serial.println("WiFi OTA already running; start ignored.");
+      return;
+    }
     Serial.println("Start WiFi OTA");
-    ::wifiUpdate();
+    ::wifiUpdate(target);
 #else
+    (void)target;
     Serial.println("WiFi OTA unavailable.");
 #endif
   }

@@ -5,6 +5,8 @@
 #include <math.h>
 #include "decent_protocol_frame.h"
 
+#include "pull_ota_target.h"
+
 static inline uint8_t decentPacketChecksum(const uint8_t *data, size_t len) {
   uint8_t xorSum = 0;
   for (size_t i = 0; i < len - 1; i++) {
@@ -375,9 +377,19 @@ static inline void handleDecentBinaryCommand(Sink &sink, uint8_t *data, size_t l
       }
       startDecentCalibration(data[2], sink.transportName());
       break;
-    case 0x1B:
-      sink.wifiUpdate();
+    case 0x1B: {
+      PullOtaTargetVersion target = pullOtaNoTargetVersion();
+      if (len >= 3 && pullOtaTargetByteIsBiased(data[2])) {
+        if (!decentRequireLength(
+                sink.transportName(), len, 2 + HDS_OTA_TARGET_PAYLOAD_BYTES,
+                "WiFi update version")) {
+          return;
+        }
+        target = pullOtaTargetFromBiasedBytes(data + 2);
+      }
+      sink.wifiUpdate(target);
       break;
+    }
 #ifdef BUZZER
     case 0x1C:
       if (!decentRequireLength(sink.transportName(), len, 3, "buzzer")) {

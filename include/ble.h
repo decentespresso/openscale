@@ -236,11 +236,19 @@ struct BleDecentCommandSink {
     remoteReplacePending(WSP_TIMER_ZERO, WSP_TIMER_START | WSP_TIMER_STOP);
   }
 
-  void wifiUpdate() {
+  void wifiUpdate(const PullOtaTargetVersion &target) {
 #if HDS_FEATURE_PULL_OTA
+    if (b_pullOtaRunning || b_ota) {
+      Serial.println("WiFi OTA already running; start ignored.");
+      return;
+    }
+    if (!remoteQueueWifiUpdate(target)) {
+      Serial.println("WiFi OTA start already queued; start ignored.");
+      return;
+    }
     Serial.println("Start WiFi OTA queued.");
-    remoteQueuePending(WSP_WIFI_UPDATE);
 #else
+    (void)target;
     Serial.println("WiFi OTA unavailable.");
 #endif
   }

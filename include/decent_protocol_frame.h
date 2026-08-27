@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "pull_ota_target.h"
+
 static inline uint8_t decentPayloadChecksum(const uint8_t *data, size_t len) {
   uint8_t xorSum = 0;
   for (size_t i = 0; i < len; i++) {
@@ -74,6 +76,9 @@ static inline size_t decentCommandFrameLength(const uint8_t *data, size_t len, b
     case 0x1A:
       return decentFixedFrameLength(len, 3);
     case 0x1B:
+      if (len >= 3 && pullOtaTargetByteIsBiased(data[2])) {
+        return decentFixedFrameLength(len, 2 + HDS_OTA_TARGET_PAYLOAD_BYTES);
+      }
       return decentFixedFrameLength(len, 2);
 #ifdef BUZZER
     case 0x1C:

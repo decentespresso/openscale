@@ -219,7 +219,7 @@ def main():
         "}",
     )
     assert_contains(MENU_HEADER, "void calibrate() {\n  leaveMenu();")
-    assert_contains(MENU_HEADER, "pullOtaUpdate();\n  leaveMenu();")
+    assert_contains(MENU_HEADER, "pullOtaUpdate(target);\n  leaveMenu();")
     assert_contains(MENU_HEADER, "b_debug = true;\n  leaveMenu();")
     menu_contents = MENU_HEADER.read_text(encoding="utf-8")
     if menu_contents.count("markMenuRestartRequired();") != 3:
