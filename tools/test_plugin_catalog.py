@@ -249,7 +249,7 @@ def main():
     pageRoot = customBuild.ROOT / "docs" / "custom-build"
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
-    assert 'type="module" src="app.js?v=9"' in indexPage
+    assert 'type="module" src="app.js?v=10"' in indexPage
     assert 'href="styles.css?v=7"' in indexPage
     assert 'id="request-build"' in indexPage
     assert "catalog-data" not in indexPage
@@ -262,6 +262,7 @@ def main():
     assert "daily build limit" not in appScript.lower()
     assert "plugins: [plugin.id, ...plugin.recommends.plugins]" in appScript
     assert "firmwareRefLabel(ref)" in appScript
+    assert "firmwareRefLabel(selected.firmware_ref)" in appScript
     grinderFeature = next(feature for feature in generatedCatalog["features"] if feature["id"] == "grinder")
     grindByWeight = next(plugin for plugin in generatedCatalog["plugins"] if plugin["id"] == "grind-by-weight")
     pressensor = next(plugin for plugin in generatedCatalog["plugins"] if plugin["id"] == "pressensor")

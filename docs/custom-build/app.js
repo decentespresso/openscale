@@ -335,7 +335,7 @@ import {
     }
     document.querySelector("#feature-count").textContent = `${visibleFeatures.length} selected`;
     document.querySelector("#plugin-count").textContent = `${resolved.plugins.length} selected`;
-    document.querySelector("#summary-ref").textContent = refLabel(selected.firmware_ref);
+    document.querySelector("#summary-ref").textContent = firmwareRefLabel(selected.firmware_ref);
     document.querySelector("#summary-plugins").textContent = resolved.plugins.length || "None";
     document.querySelector("#pull-ota-warning").hidden = !resolved.features.includes("pull-ota");
     history.replaceState(null, "", `${location.pathname}${selectionQuery(selected)}${location.hash}`);
