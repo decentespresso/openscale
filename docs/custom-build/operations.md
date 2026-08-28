@@ -26,8 +26,13 @@ releases and must not be presented as verified or signed builds.
 ## Clearing Pre-Launch Builds
 
 Builds live in the private `openscale-custom-builds` R2 bucket under
-`v1/<combination-hash>/`. For each test hash, delete the manifest first so its downloads
-immediately return `404`, then delete the archive and dependency inventory:
+`v1/<combination-hash>/`. A full pre-launch cleanup does not require collecting hashes:
+open **Cloudflare Dashboard > R2 > openscale-custom-builds > Objects > v1**, select all
+objects, and delete them.
+
+For a targeted cleanup, use the hash shown as the object's directory name. Delete the
+manifest first so its downloads immediately return `404`, then delete the archive and
+dependency inventory:
 
 ```powershell
 npx wrangler r2 object delete openscale-custom-builds/v1/<hash>/build-manifest.json --remote --config cloudflare/custom-build-worker/wrangler.toml
@@ -35,9 +40,8 @@ npx wrangler r2 object delete openscale-custom-builds/v1/<hash>/HDS_FW_custom.zi
 npx wrangler r2 object delete openscale-custom-builds/v1/<hash>/dependencies.txt --remote --config cloudflare/custom-build-worker/wrangler.toml
 ```
 
-The same objects can be selected and deleted in **Cloudflare Dashboard > R2 >
-openscale-custom-builds > Objects**. R2 deletion does not reset weekly rate-limit counters;
-the next request for that combination is a new build and consumes a build slot.
+R2 deletion does not reset weekly rate-limit counters; the next request for that combination
+is a new build and consumes a build slot.
 
 ## Blocking a Plugin
 
