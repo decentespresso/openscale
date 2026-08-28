@@ -23,6 +23,22 @@ releases and must not be presented as verified or signed builds.
 4. Treat sustained `409 catalog_stale` responses as an incomplete deployment. The browser
    retries one catalog reload and then displays `Configurator update in progress`.
 
+## Clearing Pre-Launch Builds
+
+Builds live in the private `openscale-custom-builds` R2 bucket under
+`v1/<combination-hash>/`. For each test hash, delete the manifest first so its downloads
+immediately return `404`, then delete the archive and dependency inventory:
+
+```powershell
+npx wrangler r2 object delete openscale-custom-builds/v1/<hash>/build-manifest.json --remote --config cloudflare/custom-build-worker/wrangler.toml
+npx wrangler r2 object delete openscale-custom-builds/v1/<hash>/HDS_FW_custom.zip --remote --config cloudflare/custom-build-worker/wrangler.toml
+npx wrangler r2 object delete openscale-custom-builds/v1/<hash>/dependencies.txt --remote --config cloudflare/custom-build-worker/wrangler.toml
+```
+
+The same objects can be selected and deleted in **Cloudflare Dashboard > R2 >
+openscale-custom-builds > Objects**. R2 deletion does not reset weekly rate-limit counters;
+the next request for that combination is a new build and consumes a build slot.
+
 ## Blocking a Plugin
 
 1. Stop new combinations by removing or fixing the plugin package on the trusted builder

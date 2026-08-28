@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import subprocess
+import tomllib
 
 import list_changed_patch_plugins as changedPlugins
 
@@ -20,6 +21,7 @@ def main():
     patchPath = ROOT / "plugins" / "pressensor" / "patches" / "main.patch"
     patch = patchPath.read_text(encoding="utf-8")
     manifest = json.loads(read("plugins/pressensor/plugin.json"))
+    workerConfig = tomllib.loads(read("cloudflare/custom-build-worker/wrangler.toml"))
 
     stockBuild = firmwareWorkflow.split("\n  build:\n", 1)[1].split("\n  energy-build:\n", 1)[0]
     energyBuild = firmwareWorkflow.split("\n  energy-build:\n", 1)[1]
@@ -51,9 +53,10 @@ def main():
     assert "[env:esp32s3-pressensor]" in patch
     assert "#ifdef HDS_CUSTOM_BUILD" in patch
     assert manifest["patches"] == {
-        "main": "patches/main.patch",
         "v3.1.14-preview.1": "patches/main.patch",
     }
+    assert workerConfig["vars"]["ALLOWED_FIRMWARE_REFS"] == "v3.1.14-preview.1"
+    assert workerConfig["vars"]["BUILDER_REF"] == "main"
     assert changedPlugins.changedPluginIds([
         "plugins/pressensor/plugin.json",
         "plugins/pressensor/patches/main.patch",
@@ -62,7 +65,6 @@ def main():
     assert changedPlugins.changedPluginMatrix([
         "plugins/pressensor/patches/main.patch"
     ]) == [
-        {"plugin": "pressensor", "firmware_ref": "main"},
         {"plugin": "pressensor", "firmware_ref": "v3.1.14-preview.1"},
     ]
     assert changedPlugins.changedPluginMatrix([
@@ -88,6 +90,7 @@ def main():
     assert compileCustom.lstrip().startswith("if: github.event_name == 'pull_request'")
     assert '"features": []' in compileCustom
     assert '"plugins": []' in compileCustom
+    assert '"firmware_ref": "v3.1.14-preview.1"' in compileCustom
     assert "--config .pio.nosync/pr-ci.json" in compileCustom
     assert '--source-commit "${{ github.sha }}"' in compileCustom
     subprocess.run(

@@ -26,7 +26,7 @@ function requireIds(values, field) {
 
 export function defaultSelection(catalog) {
   return {
-    firmware_ref: catalog.firmware_refs.findLast(ref => ref !== "main") || "main",
+    firmware_ref: catalog.firmware_refs.at(-1),
     features: catalog.features.filter(item => item.default).map(item => item.id).sort(),
     plugins: catalog.plugins.filter(item => item.default).map(item => item.id).sort(),
   };

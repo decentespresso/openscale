@@ -5,11 +5,10 @@
   "description": "Show Pressensor pressure, weight, flow, and shot time on the scale.",
   "tooltip": "Connects to a selected Pressensor over BLE and adds pressure-aware shot timing without requiring WiFi or runtime LittleFS.",
   "version": "1.0.0",
-  "firmware_refs": ["main", "v3.1.14-preview.1"],
+  "firmware_refs": ["v3.1.14-preview.1"],
   "requires": [],
   "conflicts": ["grind-by-weight"],
   "patches": {
-    "main": "patches/main.patch",
     "v3.1.14-preview.1": "patches/main.patch"
   },
   "assets": [],

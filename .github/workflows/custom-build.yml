@@ -175,7 +175,7 @@ jobs:
           path = Path(".pio.nosync/pr-ci.json")
           path.parent.mkdir(parents=True, exist_ok=True)
           path.write_text(json.dumps({
-              "firmware_ref": "main",
+              "firmware_ref": "v3.1.14-preview.1",
               "features": [],
               "plugins": [],
           }) + "\n", encoding="utf-8")

@@ -40,7 +40,9 @@ def runGit(root, *arguments):
     ).stdout.strip()
 
 
-def writeConfig(root, plugins, firmwareRef="main", name="custom-build.json", features=None):
+def writeConfig(
+    root, plugins, firmwareRef="v3.1.14-preview.1", name="custom-build.json", features=None,
+):
     path = root / name
     path.write_text(json.dumps({
         "firmware_ref": firmwareRef,
@@ -54,7 +56,7 @@ def writePlugin(
     root, pluginId, patchText=None, conflicts=None, firmwareRefs=None, dependsOn=None,
     recommends=None,
 ):
-    firmwareRefs = firmwareRefs or ["main"]
+    firmwareRefs = firmwareRefs or ["v3.1.14-preview.1"]
     pluginDir = root / "plugins" / pluginId
     pluginDir.mkdir(parents=True, exist_ok=True)
     patches = {}
@@ -177,14 +179,14 @@ def main():
         assert previewFirmware["custom_version"] == "3.1.14-preview.1-custom"
         assert stableFirmware["partition_schema"]["path"] == "partitions/test.csv"
         with patch.object(customBuild, "ROOT", catalogRoot), patch.object(
-            customBuild, "FIRMWARE_REFS", ("main", "v3.1.14-preview.1")
+            customBuild, "FIRMWARE_REFS", ("v3.1.14-preview.1",)
         ), patch.object(customRunner, "ROOT", sourceRoot):
             configuration = customBuild.resolveConfiguration(configPath)
             assert [plugin["id"] for plugin in configuration["plugins"]] == [
                 "asset-only", "dependency", "patch-a", "patch-b",
             ]
             assert [pluginId for pluginId, _ in configuration["patches"]] == ["patch-a", "patch-b"]
-            assert customRunner.resolveFirmwareCommit(sourceRoot, "main") == sourceCommit
+            assertRejected(lambda: customRunner.resolveFirmwareCommit(sourceRoot, "main"))
             assert customRunner.resolveFirmwareCommit(
                 sourceRoot, "v3.1.14-preview.1"
             ) == sourceCommit
@@ -317,7 +319,10 @@ def main():
             assert first["archive"] == customBuild.fileMetadata(buildDir / customBuild.FIRMWARE_ARCHIVE)
             patchPackage = next(item for item in first["packages"] if item["id"] == "patch-a")
             assert patchPackage["patches"][0]["sha256"] == hashlib.sha256(
-                (catalogRoot / "plugins" / "patch-a" / "patches" / "main.patch").read_bytes()
+                (
+                    catalogRoot / "plugins" / "patch-a" / "patches" /
+                    "v3.1.14-preview.1.patch"
+                ).read_bytes()
             ).hexdigest()
             assetPackage = next(item for item in first["packages"] if item["id"] == "asset-only")
             assert assetPackage["assets"][0]["target"] == "plugins/asset/index.html"
@@ -364,13 +369,17 @@ def main():
             changedIdentity = customBuild.combinationInput(configuration, sourceCommit, sourceRoot)
             assert customBuild.combinationHash(changedIdentity) != combinationHash
             assetPath.write_text("asset plugin", encoding="utf-8")
-            patchPath = catalogRoot / "plugins" / "patch-a" / "patches" / "main.patch"
+            patchPath = (
+                catalogRoot / "plugins" / "patch-a" / "patches" / "v3.1.14-preview.1.patch"
+            )
             patchPath.write_text(PATCHES["patch-a"].replace("patched a", "changed a"), encoding="utf-8")
             changedIdentity = customBuild.combinationInput(configuration, sourceCommit, sourceRoot)
             assert customBuild.combinationHash(changedIdentity) != combinationHash
             patchPath.write_text(PATCHES["patch-a"], encoding="utf-8")
 
-            malformed = catalogRoot / "plugins" / "patch-b" / "patches" / "main.patch"
+            malformed = (
+                catalogRoot / "plugins" / "patch-b" / "patches" / "v3.1.14-preview.1.patch"
+            )
             malformed.write_text(PATCHES["patch-b"].replace("base b", "missing b"), encoding="utf-8")
             failedCheckout = root / "failed-checkout"
             customRunner.cloneSource(sourceRoot, sourceCommit, failedCheckout)
@@ -380,7 +389,9 @@ def main():
             assertRejected(lambda: customBuild.resolveConfiguration(configPath))
 
             writePlugin(catalogRoot, "wrong-ref", PATCHES["patch-a"], firmwareRefs=["v1.0.0"])
-            with patch.object(customBuild, "FIRMWARE_REFS", ("main", "v1.0.0")):
+            with patch.object(
+                customBuild, "FIRMWARE_REFS", ("v3.1.14-preview.1", "v1.0.0")
+            ):
                 assertRejected(lambda: customBuild.resolveConfiguration(
                     writeConfig(catalogRoot, ["wrong-ref"])
                 ))

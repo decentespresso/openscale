@@ -107,6 +107,9 @@ test("round-trips sorted URL selections and rejects invalid links atomically", (
   assert.deepEqual(defaultSelection(catalog), {
     firmware_ref: "v1.2.3", features: [], plugins: ["blocker"],
   });
+  assert.deepEqual(defaultSelection({...catalog, firmware_refs: ["v1.2.3"]}), {
+    firmware_ref: "v1.2.3", features: [], plugins: ["blocker"],
+  });
 });
 
 

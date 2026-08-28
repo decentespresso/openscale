@@ -6,7 +6,7 @@ from unittest.mock import patch
 import configure_custom_build as customBuild
 
 
-def writeConfig(root, features, plugins, firmwareRef="main"):
+def writeConfig(root, features, plugins, firmwareRef=customBuild.FIRMWARE_REFS[0]):
     path = root / "custom-build.json"
     path.write_text(json.dumps({
         "firmware_ref": firmwareRef,
@@ -24,7 +24,7 @@ def pluginManifest(pluginId="code-plugin", **overrides):
         "description": "Test plugin with an approved patch.",
         "tooltip": "Used to verify the plugin package contract.",
         "version": "1.0.0",
-        "firmware_refs": ["main"],
+        "firmware_refs": [customBuild.FIRMWARE_REFS[0]],
         "requires": [],
         "conflicts": [],
         "patches": {},
@@ -117,8 +117,9 @@ def testTemporaryPluginValidation():
             ))
             assertRejected(customBuild.loadPluginCatalog)
 
-            writePlugin(root, pluginManifest(patches={"main": "../escape.patch"}))
-            assertRejected(lambda: customBuild.loadPlugin("code-plugin", "main"))
+            firmwareRef = customBuild.FIRMWARE_REFS[0]
+            writePlugin(root, pluginManifest(patches={firmwareRef: "../escape.patch"}))
+            assertRejected(lambda: customBuild.loadPlugin("code-plugin", firmwareRef))
 
             duplicateAssets = [
                 {"source": "assets/one.html", "target": "plugins/example/index.html"},
@@ -128,7 +129,7 @@ def testTemporaryPluginValidation():
                 "assets/one.html": "one",
                 "assets/two.html": "two",
             })
-            assertRejected(lambda: customBuild.loadPlugin("code-plugin", "main"))
+            assertRejected(lambda: customBuild.loadPlugin("code-plugin", firmwareRef))
 
             writePlugin(root, pluginManifest(firmware_refs=["unknown-ref"]))
             assertRejected(lambda: customBuild.loadPlugin("code-plugin"))
@@ -168,10 +169,10 @@ def testTemporaryPluginValidation():
             ))
             catalog = customBuild.loadPluginCatalog()
             recommendation = customBuild.recommendedPluginSelection(
-                catalog, "compatibility-root", "main"
+                catalog, "compatibility-root", firmwareRef
             )
             assert recommendation == {
-                "firmware_ref": "main",
+                "firmware_ref": firmwareRef,
                 "features": [],
                 "plugins": ["compatibility-root", "code-plugin", "other-plugin"],
             }
@@ -204,7 +205,7 @@ def testTemporaryPluginValidation():
             }
             with patch.object(customBuild, "FEATURES", stableFeatures):
                 assertRejected(lambda: customBuild.resolveConfiguration(
-                    writeConfig(root, ["stable-only"], [], "main")
+                    writeConfig(root, ["stable-only"], [], firmwareRef)
                 ))
 
 
@@ -236,6 +237,7 @@ def main():
     assert pageCatalog["catalog_revision"] == serviceCatalog["catalog_revision"]
     assert len(pageCatalog["catalog_revision"]) == 64
     assert generatedCatalog["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
+    assert customBuild.FIRMWARE_REFS == ("v3.1.14-preview.1",)
     assert all(
         feature["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
         for feature in generatedCatalog["features"]
@@ -249,7 +251,7 @@ def main():
     pageRoot = customBuild.ROOT / "docs" / "custom-build"
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
-    assert 'type="module" src="app.js?v=12"' in indexPage
+    assert 'type="module" src="app.js?v=13"' in indexPage
     assert 'href="styles.css?v=8"' in indexPage
     assert 'id="request-build"' in indexPage
     assert "catalog-data" not in indexPage
@@ -263,7 +265,7 @@ def main():
     assert "plugins: [plugin.id, ...plugin.recommends.plugins]" in appScript
     assert "firmwareRefLabel(ref)" in appScript
     assert "firmwareRefLabel(selected.firmware_ref)" in appScript
-    assert 'selection.mjs?v=4' in appScript
+    assert 'selection.mjs?v=5' in appScript
     assert "manifest_url" not in appScript
     grinderFeature = next(feature for feature in generatedCatalog["features"] if feature["id"] == "grinder")
     grindByWeight = next(plugin for plugin in generatedCatalog["plugins"] if plugin["id"] == "grind-by-weight")

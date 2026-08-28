@@ -180,7 +180,7 @@ async function resolveGithubCommit(env, ref, unavailableCode) {
 }
 
 function requireAllowedFirmwareRef(env, firmwareRef) {
-  const allowed = new Set((env.ALLOWED_FIRMWARE_REFS || "main").split(",").map(value => value.trim()).filter(Boolean));
+  const allowed = new Set((env.ALLOWED_FIRMWARE_REFS || "").split(",").map(value => value.trim()).filter(Boolean));
   if (!allowed.has(firmwareRef)) throw new ApiError(400, "unsupported_firmware_ref");
 }
 
