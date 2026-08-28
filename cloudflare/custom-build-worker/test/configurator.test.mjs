@@ -105,7 +105,7 @@ test("round-trips sorted URL selections and rejects invalid links atomically", (
   assert.throws(() => parseSelection("?ref=main&features=wifi", catalog));
   assert.throws(() => parseSelection("?ref=main&features=wifi&plugins=blocker", catalog));
   assert.deepEqual(defaultSelection(catalog), {
-    firmware_ref: "main", features: [], plugins: ["blocker"],
+    firmware_ref: "v1.2.3", features: [], plugins: ["blocker"],
   });
 });
 
