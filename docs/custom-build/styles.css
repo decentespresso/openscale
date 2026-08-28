@@ -625,10 +625,10 @@
     .pull-ota-warning {
       margin: 0 0 10px;
       padding: 8px 10px;
-      border: 1px solid #ecd5a7;
+      border: 1px solid #b8d7ed;
       border-radius: 7px;
-      color: var(--amber);
-      background: var(--amber-soft);
+      color: #235f87;
+      background: #edf7fd;
       font-size: .72rem;
       line-height: 1.45;
     }

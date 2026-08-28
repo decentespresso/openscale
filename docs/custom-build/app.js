@@ -151,11 +151,7 @@ import {
     const downloads = document.querySelector("#downloads");
     downloads.replaceChildren();
     if (result.state === "ready") {
-      const links = {
-        ...(result.downloads || {}),
-        ...(result.manifest_url ? {"build-manifest.json": result.manifest_url} : {})
-      };
-      Object.entries(links).forEach(([name, href]) => {
+      Object.entries(result.downloads || {}).forEach(([name, href]) => {
         const link = document.createElement("a");
         link.href = href;
         link.textContent = name;
