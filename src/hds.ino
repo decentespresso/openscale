@@ -2053,6 +2053,20 @@ void loop() {
   serviceEnergyLightSleepWakeRestore();
 #endif
   processWsPendingCmds();
+  if (b_ota) {
+    if (b_softSleep) {
+      wakeScaleFromSoftSleep("OTA wake");
+    }
+#if HDS_ENABLE_ENERGY_MENU
+    setEnergyPerformanceCritical(true);
+#endif
+#if HDS_FEATURE_ELEGANT_OTA
+    ElegantOTA.loop();
+    processOtaDisplayUpdate();
+#endif
+    return;
+  }
+
   processBleStatusResponse();
   processBleVoltageResponse();
 #if HDS_ENABLE_ENERGY_MENU
@@ -2155,13 +2169,6 @@ void loop() {
     }
     if (powerCadence.chargeCheck.shouldRun(millis(), 200)) {
       checkBattery();
-    }
-    if (b_ota) {
-#if HDS_FEATURE_ELEGANT_OTA
-      ElegantOTA.loop();
-      processOtaDisplayUpdate();
-#endif
-      return;
     }
     if (b_menu) {
 #if HDS_FEATURE_WIFI

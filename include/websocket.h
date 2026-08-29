@@ -280,6 +280,14 @@ void processWsPendingCmds() {
       return;
     }
   }
+#if HDS_FEATURE_PULL_OTA
+  if (mask & WSP_WIFI_UPDATE) {
+    uint32_t deferredMask = mask & ~WSP_WIFI_UPDATE;
+    if (deferredMask != 0) remoteQueuePending(deferredMask);
+    wifiUpdate();
+    return;
+  }
+#endif
 #if HDS_ENABLE_ENERGY_MENU
   if (mask & WSP_DISPLAY_ON)  { applyEnergyDisplayCommand(true); }
   if (mask & WSP_DISPLAY_OFF) { applyEnergyDisplayCommand(false); }
@@ -339,11 +347,6 @@ void processWsPendingCmds() {
     } else {
       Serial.println("Samples in use refresh failed");
     }
-  }
-  if (mask & WSP_WIFI_UPDATE) {
-#if HDS_FEATURE_PULL_OTA
-    wifiUpdate();
-#endif
   }
   if (b_ota) {
     remoteQueuePending(mask & WSP_POWER_OFF);
