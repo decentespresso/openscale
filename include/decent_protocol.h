@@ -385,6 +385,12 @@ static inline void handleDecentBinaryCommand(Sink &sink, uint8_t *data, size_t l
                 "WiFi update version")) {
           return;
         }
+        if (!pullOtaTargetBytesAreBiased(data + 2, HDS_OTA_TARGET_PAYLOAD_BYTES)) {
+          Serial.print("Ignoring ");
+          Serial.print(sink.transportName());
+          Serial.println(" WiFi update version with unbiased bytes");
+          return;
+        }
         target = pullOtaTargetFromBiasedBytes(data + 2);
       }
       sink.wifiUpdate(target);

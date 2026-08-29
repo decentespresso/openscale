@@ -43,6 +43,12 @@ static inline size_t decentChecksummedOrShortFrameLength(
   return 0;
 }
 
+static inline bool decentTargetedOtaPayloadIsIntact(const uint8_t *data, size_t len) {
+  const size_t frameLen = 2 + HDS_OTA_TARGET_PAYLOAD_BYTES;
+  const size_t available = len < frameLen ? len : frameLen;
+  return pullOtaTargetBytesAreBiased(data + 3, available - 3);
+}
+
 static inline size_t decentCommandFrameLength(const uint8_t *data, size_t len, bool allowShort) {
   if (data == nullptr || len == 0) {
     return 0;
@@ -77,6 +83,9 @@ static inline size_t decentCommandFrameLength(const uint8_t *data, size_t len, b
       return decentFixedFrameLength(len, 3);
     case 0x1B:
       if (len >= 3 && pullOtaTargetByteIsBiased(data[2])) {
+        if (!decentTargetedOtaPayloadIsIntact(data, len)) {
+          return 1;
+        }
         return decentFixedFrameLength(len, 2 + HDS_OTA_TARGET_PAYLOAD_BYTES);
       }
       return decentFixedFrameLength(len, 2);

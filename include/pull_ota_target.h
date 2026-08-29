@@ -35,6 +35,18 @@ inline bool pullOtaTargetByteIsBiased(uint8_t value) {
   return (value & HDS_OTA_TARGET_BYTE_BIAS) != 0;
 }
 
+inline bool pullOtaTargetBytesAreBiased(const uint8_t *bytes, size_t count) {
+  if (bytes == nullptr) {
+    return false;
+  }
+  for (size_t at = 0; at < count; at++) {
+    if (!pullOtaTargetByteIsBiased(bytes[at])) {
+      return false;
+    }
+  }
+  return true;
+}
+
 inline uint8_t pullOtaEncodeTargetByte(uint8_t value) {
   return (uint8_t)(HDS_OTA_TARGET_BYTE_BIAS | (value & HDS_OTA_TARGET_MAX_COMPONENT));
 }

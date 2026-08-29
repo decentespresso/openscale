@@ -59,6 +59,28 @@ void testWifiUpdateDoesNotSwallowAFollowingCommand() {
       decentCommandFrameLength(frames + firstLength, sizeof(frames) - firstLength, false));
 }
 
+void testWifiUpdateRejectsATruncatedPayloadAtANewFrameBoundary() {
+  const uint8_t frames[] = {0x03, 0x1B, 0x83, 0x03, 0x22};
+  TEST_ASSERT_EQUAL_size_t(1, decentCommandFrameLength(frames, sizeof(frames), false));
+  TEST_ASSERT_EQUAL_size_t(1, decentCommandFrameLength(frames + 1, sizeof(frames) - 1, false));
+  TEST_ASSERT_EQUAL_size_t(1, decentCommandFrameLength(frames + 2, sizeof(frames) - 2, false));
+  TEST_ASSERT_EQUAL_size_t(2, decentCommandFrameLength(frames + 3, sizeof(frames) - 3, false));
+}
+
+void testWifiUpdateRejectsATwoBytePayloadAtANewFrameBoundary() {
+  const uint8_t frames[] = {0x03, 0x1B, 0x83, 0x81, 0x03, 0x22};
+  TEST_ASSERT_EQUAL_size_t(1, decentCommandFrameLength(frames, sizeof(frames), false));
+  TEST_ASSERT_EQUAL_size_t(1, decentCommandFrameLength(frames + 1, sizeof(frames) - 1, false));
+  TEST_ASSERT_EQUAL_size_t(1, decentCommandFrameLength(frames + 2, sizeof(frames) - 2, false));
+  TEST_ASSERT_EQUAL_size_t(1, decentCommandFrameLength(frames + 3, sizeof(frames) - 3, false));
+  TEST_ASSERT_EQUAL_size_t(2, decentCommandFrameLength(frames + 4, sizeof(frames) - 4, false));
+}
+
+void testWifiUpdateKeepsWaitingWhileThePayloadStaysBiased() {
+  const uint8_t partial[] = {0x03, 0x1B, 0x83, 0x81};
+  TEST_ASSERT_EQUAL_size_t(0, decentCommandFrameLength(partial, sizeof(partial), false));
+}
+
 void testWifiUpdateDecodesBiasedVersionBytes() {
   const uint8_t payload[] = {0x83, 0x81, 0x8D};
   const PullOtaTargetVersion target = pullOtaTargetFromBiasedBytes(payload);
@@ -78,6 +100,9 @@ int main() {
   RUN_TEST(testWifiUpdateFramesBiasedVersionPayload);
   RUN_TEST(testWifiUpdateWaitsForAnIncompletePayload);
   RUN_TEST(testWifiUpdateDoesNotSwallowAFollowingCommand);
+  RUN_TEST(testWifiUpdateRejectsATruncatedPayloadAtANewFrameBoundary);
+  RUN_TEST(testWifiUpdateRejectsATwoBytePayloadAtANewFrameBoundary);
+  RUN_TEST(testWifiUpdateKeepsWaitingWhileThePayloadStaysBiased);
   RUN_TEST(testWifiUpdateDecodesBiasedVersionBytes);
   return UNITY_END();
 }

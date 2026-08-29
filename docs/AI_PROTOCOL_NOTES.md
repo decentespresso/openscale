@@ -51,6 +51,8 @@ Decent binary frames begin with model byte `0x03`. Checksums are XORs of the pre
 
 The USB length resolver picks the five-byte form only when `data[2]` has its high bit set. A following command always begins with model byte `0x03`, and a biased version byte never can, so the two forms are distinguished without a checksum and without the receive timeout. A frame whose payload has begun but is shorter than five bytes is refused and logged, never truncated to the bare form.
 
+Every byte of a started payload must stay biased. Once an unbiased byte arrives the resolver consumes one byte and resynchronizes, so a truncated request such as `03 1B 83` followed by `03 22` refuses the update and still delivers the `03 22` command. The dispatcher repeats the check before decoding, so a five-byte packet delivered whole over BLE or USB is refused rather than decoded from a following command's bytes.
+
 The bias is what lets one request form serve every scale. `processUsbRxBuffer()` enters the binary resolver only when the buffer's first byte is `0x03`, so firmware predating the payload frames `03 1B` as two bytes, starts its picker, and then discards the trailing bytes through the text path. A client never has to know the scale's firmware version or negotiate a capability.
 
 The client supplies a version number and nothing else. Every asset URL, size, and hash used for an install comes from the scale's own signature-verified catalog fetch. See `docs/AI_OTA_NOTES.md`.

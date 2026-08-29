@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <string.h>
 
+#include "decent_protocol_frame.h"
 #include "pull_ota_target.h"
 
 static bool parses(const char *text, uint8_t major, uint8_t minor, uint8_t patch) {
@@ -79,6 +80,33 @@ int main() {
   PullOtaTargetVersion decoded = pullOtaTargetFromBiasedBytes(biased);
   assert(decoded.present && decoded.major == 3 && decoded.minor == 1 &&
          decoded.patch == 13);
+
+  const uint8_t bare[] = {0x03, 0x1B};
+  assert(decentCommandFrameLength(bare, sizeof(bare), false) == 2);
+
+  const uint8_t targeted[] = {0x03, 0x1B, 0x83, 0x81, 0x8D};
+  assert(decentCommandFrameLength(targeted, sizeof(targeted), false) == 5);
+
+  const uint8_t partial[] = {0x03, 0x1B, 0x83};
+  assert(decentCommandFrameLength(partial, sizeof(partial), false) == 0);
+
+  const uint8_t truncatedOneByte[] = {0x03, 0x1B, 0x83, 0x03, 0x22};
+  assert(decentCommandFrameLength(truncatedOneByte, sizeof(truncatedOneByte), false) == 1);
+  assert(decentCommandFrameLength(truncatedOneByte + 1, 4, false) == 1);
+  assert(decentCommandFrameLength(truncatedOneByte + 2, 3, false) == 1);
+  assert(decentCommandFrameLength(truncatedOneByte + 3, 2, false) == 2);
+
+  const uint8_t truncatedTwoBytes[] = {0x03, 0x1B, 0x83, 0x81, 0x03, 0x22};
+  assert(decentCommandFrameLength(truncatedTwoBytes, sizeof(truncatedTwoBytes), false) == 1);
+  assert(decentCommandFrameLength(truncatedTwoBytes + 4, 2, false) == 2);
+
+  const uint8_t stillWaiting[] = {0x03, 0x1B, 0x83, 0x81};
+  assert(decentCommandFrameLength(stillWaiting, sizeof(stillWaiting), false) == 0);
+
+  assert(pullOtaTargetBytesAreBiased(biased, 3));
+  const uint8_t mixed[3] = {0x83, 0x03, 0x22};
+  assert(!pullOtaTargetBytesAreBiased(mixed, 3));
+  assert(!pullOtaTargetBytesAreBiased(NULL, 3));
 
   return 0;
 }
