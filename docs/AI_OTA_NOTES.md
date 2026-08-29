@@ -63,6 +63,8 @@ A pending staged LittleFS transaction takes priority: `pullOtaRunUpdate()` resum
 
 The client contributes a version number and no other input. Asset URLs, sizes, and hashes all come from the scale's own signature-verified fetch.
 
+Only one start request exists at a time. `remoteQueueWifiUpdate()` refuses a second request while `WSP_WIFI_UPDATE` is queued and while `pendingOtaDispatching` is set. `processWsPendingCmds()` sets that flag in the same critical section that clears the pending bit and calls `remoteFinishWifiUpdateDispatch()` only after `wifiUpdate()` has marked the update running, so acceptance stays atomic across the handoff. A request deferred back to the queue clears the flag with the bit.
+
 Acceptance is not installability. A transport acknowledges only that a well-formed request was queued. Accept-time refusals are limited to pull OTA being compiled out, a malformed version, and an update already running. Every catalog-level refusal happens later on the `Pull OTA` task, after `pullOtaPauseFilesystemServices()` has called `stopWebServer()` and closed every WebSocket client, so those refusals surface on the display and the serial log only. Do not add a client progress stream; progress stays on the OLED.
 
 ## Staged LittleFS OTA

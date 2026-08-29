@@ -165,6 +165,7 @@ volatile uint8_t pendingOtaTargetMajor = 0;
 volatile uint8_t pendingOtaTargetMinor = 0;
 volatile uint8_t pendingOtaTargetPatch = 0;
 volatile bool pendingOtaTargetPresent = false;
+volatile bool pendingOtaDispatching = false;
 volatile uint8_t requestedOtaTargetMajor = 0;
 volatile uint8_t requestedOtaTargetMinor = 0;
 volatile uint8_t requestedOtaTargetPatch = 0;

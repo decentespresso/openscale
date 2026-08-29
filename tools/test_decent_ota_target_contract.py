@@ -54,6 +54,12 @@ def test_framer_uses_high_bit_to_detect_the_payload():
     assert "return decentFixedFrameLength(len, 2);" in frame_case, (
         "a bare 0x1B must still frame as two bytes with no timeout dependence"
     )
+    assert "if (!decentTargetedOtaPayloadIsIntact(data, len)) {\n          return 1;\n" in frame_case, (
+        "a targeted payload interrupted by a new frame boundary must be resynced, not consumed"
+    )
+    assert "pullOtaTargetBytesAreBiased(data + 3, available - 3)" in frame, (
+        "every payload byte received so far must carry the bias"
+    )
     assert "decentCommandFrameLength" not in source(PROTOCOL_HEADER), (
         "the framer lives in decent_protocol_frame.h; do not reintroduce a copy"
     )
@@ -70,6 +76,12 @@ def test_dispatch_refuses_a_started_but_short_payload():
     assert "sink.wifiUpdate(target)" in dispatch
     assert dispatch.index("decentRequireLength") < dispatch.index("pullOtaTargetFromBiasedBytes"), (
         "length must be checked before the payload is decoded"
+    )
+    assert "pullOtaTargetBytesAreBiased(data + 2, HDS_OTA_TARGET_PAYLOAD_BYTES)" in dispatch, (
+        "a payload holding an unbiased byte must be refused instead of decoded"
+    )
+    assert dispatch.index("pullOtaTargetBytesAreBiased") < dispatch.index("pullOtaTargetFromBiasedBytes"), (
+        "the bias check must run before the payload is decoded"
     )
 
 
@@ -113,8 +125,8 @@ def test_pending_target_state_is_volatile_and_mutex_guarded():
     assert "portEXIT_CRITICAL(&wsPendingMux);" in helper
     assert helper.index("pendingOtaTargetPresent = target.present;") < helper.index("portEXIT_CRITICAL")
     assert "wsPendingMask |= WSP_WIFI_UPDATE;" in helper
-    assert "if (!(wsPendingMask & WSP_WIFI_UPDATE)) {" in helper, (
-        "a second start request must not overwrite an already queued target"
+    assert "if (!(wsPendingMask & WSP_WIFI_UPDATE) && !pendingOtaDispatching) {" in helper, (
+        "a second start request must be refused while one is queued or dispatching"
     )
     for forbidden in ("u8g2", "LittleFS", "WiFi.", "pullOtaUpdate", "delay("):
         assert forbidden not in helper, f"remoteQueueWifiUpdate must not call {forbidden}"
@@ -128,6 +140,30 @@ def test_dispatch_snapshots_the_target_inside_the_critical_section():
         "the pending target must be copied out before the critical section is released"
     )
     assert "wifiUpdate(otaTarget);" in websocket
+
+
+def test_dispatch_holds_the_request_until_the_update_is_running():
+    parameter = source(PARAMETER_HEADER)
+    assert "volatile bool pendingOtaDispatching = false;" in parameter, (
+        "the dispatch handoff flag must be volatile in parameter.h"
+    )
+
+    websocket = source(WEBSOCKET_HEADER)
+    start = websocket.index("void processWsPendingCmds() {")
+    snapshot = websocket[start : websocket.index("portEXIT_CRITICAL", start)]
+    assert "pendingOtaDispatching = true;" in snapshot, (
+        "clearing WSP_WIFI_UPDATE must mark the request as dispatching in the same critical section"
+    )
+
+    body = websocket[start : websocket.index("#if HDS_FEATURE_WEBSOCKET", start)]
+    deferral = body[body.index("wsPendingMask |= deferredMask;") :]
+    assert "pendingOtaDispatching = false;" in deferral[: deferral.index("mask &= WSP_OTA_RESET;")], (
+        "a request deferred back to the queue must not stay marked as dispatching"
+    )
+    dispatch = body[body.index("if (mask & WSP_WIFI_UPDATE) {") :]
+    assert dispatch.index("wifiUpdate(otaTarget);") < dispatch.index("remoteFinishWifiUpdateDispatch();"), (
+        "the dispatching mark must be cleared only after the update has been started"
+    )
 
 
 def test_websocket_command_is_guarded_and_answers_accept_time_refusals():

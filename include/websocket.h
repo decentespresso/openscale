@@ -205,7 +205,7 @@ inline void remoteQueueSamplesInUse(uint8_t samplesInUse) {
 inline bool remoteQueueWifiUpdate(const PullOtaTargetVersion &target) {
   bool queued = false;
   portENTER_CRITICAL(&wsPendingMux);
-  if (!(wsPendingMask & WSP_WIFI_UPDATE)) {
+  if (!(wsPendingMask & WSP_WIFI_UPDATE) && !pendingOtaDispatching) {
     pendingOtaTargetMajor = target.major;
     pendingOtaTargetMinor = target.minor;
     pendingOtaTargetPatch = target.patch;
@@ -221,6 +221,12 @@ inline bool remoteQueueWifiUpdate(const PullOtaTargetVersion &target) {
   notifyEnergyMainLoop();
 #endif
   return true;
+}
+
+inline void remoteFinishWifiUpdateDispatch() {
+  portENTER_CRITICAL(&wsPendingMux);
+  pendingOtaDispatching = false;
+  portEXIT_CRITICAL(&wsPendingMux);
 }
 
 inline void wsQueuePending(uint32_t bits) {
@@ -244,6 +250,9 @@ void processWsPendingCmds() {
   unsigned long resetAt = pendingResetAt;
   unsigned long otaResetAt = pendingOtaResetAt;
   wsPendingMask &= ~mask;
+  if (mask & WSP_WIFI_UPDATE) {
+    pendingOtaDispatching = true;
+  }
   if (mask & WSP_RESET) {
     pendingResetAt = 0;
   }
@@ -272,6 +281,9 @@ void processWsPendingCmds() {
       pendingResetAt = resetAt;
     }
     wsPendingMask |= deferredMask;
+    if (mask & WSP_WIFI_UPDATE) {
+      pendingOtaDispatching = false;
+    }
     mask &= WSP_OTA_RESET;
   }
   portEXIT_CRITICAL(&wsPendingMux);
@@ -371,6 +383,7 @@ void processWsPendingCmds() {
 #if HDS_FEATURE_PULL_OTA
     wifiUpdate(otaTarget);
 #endif
+    remoteFinishWifiUpdateDispatch();
   }
   if (b_ota) {
     remoteQueuePending(mask & WSP_POWER_OFF);
