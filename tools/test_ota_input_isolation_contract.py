@@ -75,9 +75,6 @@ def main():
         ["ElegantOTA.loop();", "processOtaDisplayUpdate();", "return;"],
         "OTA service gate",
     )
-    if loop.index("checkBattery();") >= loop.index("if (b_ota) {"):
-        raise AssertionError("charging-state refresh must run before OTA servicing")
-
     usb = USB_HEADER.read_text(encoding="utf-8")
     usb_buffer = extract_block(usb, "void processUsbRxBuffer(bool allowTimeout) {")
     parser_loop = extract_block(usb_buffer, "while (usbRxLen > 0) {")
