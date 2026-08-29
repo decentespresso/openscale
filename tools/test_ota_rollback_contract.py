@@ -41,7 +41,7 @@ def main():
     assert_contains(ROLLBACK_HEADER, "LittleFS.totalBytes()")
     pull_ota = PULL_OTA_HEADER.read_text(encoding="utf-8")
     resume_start = pull_ota.index("bool pullOtaResumePendingLittleFs()")
-    resume_end = pull_ota.index("void pullOtaRunUpdate()", resume_start)
+    resume_end = pull_ota.index("void pullOtaRunUpdate(", resume_start)
     resume = pull_ota[resume_start:resume_end]
     recovery_loop = "while (!updated && attempts < maxAttempts)"
     if resume.index("bool updated = pullOtaVerifyPendingLittleFs(pending);") >= resume.index(recovery_loop):

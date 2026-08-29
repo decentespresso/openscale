@@ -100,7 +100,7 @@ def main():
         [
             "if (b_softSleep)",
             'wakeScaleFromSoftSleep("WiFi OTA wake")',
-            "pullOtaUpdate();",
+            "pullOtaUpdate(target);",
         ],
     )
 

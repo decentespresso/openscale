@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import json, sys, time, websocket
 
-HOST = sys.argv[1] if len(sys.argv) > 1 else "hds.local"
+ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
+START_REAL_UPDATE = "--start-update" in sys.argv
+HOST = ARGS[0] if ARGS else "hds.local"
 URL = f"ws://{HOST}/snapshot"
 results = []
 
@@ -157,15 +159,47 @@ def main():
     st = get_status(ws)
     record("sleep wake", st.get("soft_sleep") is False, f"soft_sleep={st.get('soft_sleep')}")
 
-    print("ERROR HANDLING")
-    resp = send_capture(ws, '{"command":"zzz"}', expect=("error", "status"))
-    record("bogus command -> error", bool(resp) and resp.get("type") == "error", f"resp={resp}")
+    print("WIFI UPDATE")
+    resp = send_capture(ws, "wifi_update 9.9", expect=("error", "status"))
+    record("wifi_update bad version -> error",
+           bool(resp) and resp.get("type") == "error"
+           and resp.get("code") == "ota_version_invalid",
+           f"resp={resp}")
+    resp = send_capture(ws, '{"command":"wifi_update","action":"3.1.15-rc1"}', expect=("error", "status"))
+    record("wifi_update suffixed version -> error",
+           bool(resp) and resp.get("type") == "error"
+           and resp.get("code") == "ota_version_invalid",
+           f"resp={resp}")
 
-    send_capture(ws, '{"command":"display","action":"on"}', expect=("status",))
-    send_capture(ws, '{"command":"low_power","action":"off"}', expect=("status",))
-    send_capture(ws, '{"command":"sleep","action":"wake"}', expect=("status",))
-    send_capture(ws, "rate 10k", expect=("rate",))
-    ws.close()
+    for label, payload in (
+            ("boolean", '{"command":"wifi_update","action":false}'),
+            ("numeric", '{"command":"wifi_update","action":3}'),
+            ("object", '{"command":"wifi_update","action":{"version":"3.1.13"}}')):
+        resp = send_capture(ws, payload, expect=("error", "status"))
+        record(f"wifi_update {label} action -> error",
+               bool(resp) and resp.get("type") == "error"
+               and resp.get("code") == "invalid_action",
+               f"resp={resp}")
+
+    if START_REAL_UPDATE:
+        print("WIFI UPDATE (live install - this reflashes the scale)")
+        resp = send_capture(ws, "wifi_update", expect=("status",))
+        record("wifi_update bare -> accepted",
+               bool(resp) and resp.get("type") == "status", f"resp={resp}")
+        ws.close()
+        print("update started; the scale reboots and the socket closes")
+    else:
+        print("skipping live wifi_update start; pass --start-update to run it")
+
+        print("ERROR HANDLING")
+        resp = send_capture(ws, '{"command":"zzz"}', expect=("error", "status"))
+        record("bogus command -> error", bool(resp) and resp.get("type") == "error", f"resp={resp}")
+
+        send_capture(ws, '{"command":"display","action":"on"}', expect=("status",))
+        send_capture(ws, '{"command":"low_power","action":"off"}', expect=("status",))
+        send_capture(ws, '{"command":"sleep","action":"wake"}', expect=("status",))
+        send_capture(ws, "rate 10k", expect=("rate",))
+        ws.close()
 
     npass = sum(1 for _, ok, _ in results if ok)
     print(f"\n==== {npass}/{len(results)} PASS ====")

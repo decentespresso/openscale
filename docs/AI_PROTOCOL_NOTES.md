@@ -44,6 +44,21 @@ Decent binary frames begin with model byte `0x03`. Checksums are XORs of the pre
 - The `03 0A` LED response stores weight in bytes 2-3, battery state in byte 4, firmware major in byte 5, and checksum in byte 6. The firmware byte must be assigned before calculating the checksum.
 - Weight packets use command `0xCE` and signed tenths of a gram. Decent fixed-point values are rounded to the nearest tenth rather than truncated, then clamped to the `int16_t` range.
 
+`0x1B` starts a WiFi pull OTA and has two accepted forms:
+
+- `03 1B` is the bare form. It starts the interactive on-OLED release picker and frames as exactly two bytes, with no wait for the USB receive timeout.
+- `03 1B <major> <minor> <patch>` names a target release for an unattended install. Each version byte is encoded `0x80 | value`, so every component is capped at 127 and the firmware masks with `0x7F` on receipt.
+
+The USB length resolver picks the five-byte form only when `data[2]` has its high bit set. A following command always begins with model byte `0x03`, and a biased version byte never can, so the two forms are distinguished without a checksum and without the receive timeout. A frame whose payload has begun but is shorter than five bytes is refused and logged, never truncated to the bare form.
+
+Every byte of a started payload must stay biased. An unbiased byte resynchronizes the resolver after one byte, so `03 1B 83` followed by `03 22` refuses the update and still delivers `03 22`. The dispatcher repeats the check, since BLE delivers whole packets and never reaches the resolver.
+
+The bias is what lets one request form serve every scale. `processUsbRxBuffer()` enters the binary resolver only when the buffer's first byte is `0x03`, so firmware predating the payload frames `03 1B` as two bytes, starts its picker, and then discards the trailing bytes through the text path. A client never has to know the scale's firmware version or negotiate a capability.
+
+The client supplies a version number and nothing else. Every asset URL, size, and hash used for an install comes from the scale's own signature-verified catalog fetch. See `docs/AI_OTA_NOTES.md`.
+
+The `/snapshot` WebSocket carries the same request as a `wifi_update` control command, accepted bare, as `wifi_update <version>`, and as `{"command":"wifi_update","action":"<version>"}`. The version is dotted `major.minor.patch` with an optional leading `v`. The command is compiled out when `HDS_FEATURE_PULL_OTA` is disabled and then answers `unknown_command`. A JSON `action` that is present but not a string answers `invalid_action`: an omitted action means the bare form, so a boolean, number, or object must not silently collapse into it.
+
 ADS debug responses are separate fixed formats: the debug packet is 41 bytes and the reset response is 5 bytes. Keep their Python helpers, decoder, and firmware builders aligned.
 
 ## Runtime Effects
@@ -66,6 +81,7 @@ Preserve response ownership: BLE replies notify `fff4`; USB replies use `Serial.
 - Do not add a WebSocket `type` field to weight snapshots; clients use its absence to identify legacy snapshot frames.
 - Keep the legacy WebSocket text `tare` command silent; JSON tare returns a status response.
 - Treat `03 0A` as compatibility-sensitive because it covers display, power, low-power, heartbeat, soft-sleep, and the LED response.
+- Keep `0x1B` version bytes biased with `0x80`. An unbiased payload could hold `0x03`, which older firmware would read as the start of a command: a `3.10.2` target would decode to `03 0A 02`, the power-off command, and `3.11.x` would land on the timer opcode.
 
 ## Checks
 
@@ -76,6 +92,7 @@ python tools/test_ads_debug_protocol.py
 python tools/test_decode_ads_debug.py
 python tools/test_soft_sleep_ads_wake.py
 python tools/test_ble_subscription_contract.py
+python tools/test_decent_ota_target_contract.py
 pio run -e esp32s3
 ```
 
