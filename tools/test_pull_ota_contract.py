@@ -26,6 +26,20 @@ def assert_before(path, first, second):
         raise AssertionError(f"{path.name} must place {first} before {second}")
 
 
+def function_body(source, name):
+    start = source.index(f"{name}(")
+    opening = source.index("{", start)
+    depth = 0
+    for index in range(opening, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[opening + 1:index]
+    raise AssertionError(f"unterminated function: {name}")
+
+
 def main():
     assert_contains(HDS_SOURCE, '#include "pull_ota.h"')
     assert_contains(MENU_HEADER, "menuWiFiPullUpdateOption")
@@ -120,6 +134,14 @@ def main():
     assert_not_contains(PULL_OTA_HEADER, "setupWifi();")
     assert_not_contains(PULL_OTA_HEADER, "setInsecure")
     assert_not_contains(PULL_OTA_HEADER, "if (list.count == 1)")
+    pull_ota = PULL_OTA_HEADER.read_text(encoding="utf-8")
+    assert "b_ota = false;" not in function_body(pull_ota, "pullOtaFail")
+    assert "b_ota = false;" not in function_body(pull_ota, "pullOtaInstall")
+    update_task = function_body(pull_ota, "pullOtaUpdateTask")
+    assert "restartPending = (wsPendingMask & WSP_OTA_RESET) != 0" in update_task
+    assert "if (!restartPending)" in update_task
+    update = function_body(pull_ota, "pullOtaUpdate")
+    assert "b_pullOtaRunning || b_ota" in update
     if OTA_STAGE_MARKER.exists():
         raise AssertionError("OTA stage marker must not be tracked")
     print("pull OTA contract tests passed")

@@ -202,7 +202,6 @@ bool pullOtaFail(const char *line1, const char *line2 = "") {
   Serial.printf("[pull-ota] error %s %s\n", line1, line2);
   pullOtaDraw(line1, line2);
   delay(2000);
-  b_ota = false;
   return false;
 }
 
@@ -1297,12 +1296,10 @@ bool pullOtaInstall(
     const PullOtaManifest &rollbackManifest) {
   b_ota = true;
   if (!pullOtaStorePendingLittleFs(manifest, rollbackManifest)) {
-    b_ota = false;
     return pullOtaFail("FS state failed");
   }
   if (!pullOtaStreamAsset(manifest.firmware, U_FLASH, "Firmware")) {
     pullOtaClearPendingLittleFs();
-    b_ota = false;
     return false;
   }
   pullOtaDraw("Firmware done", "Restarting", "Web UI next");
@@ -1434,7 +1431,6 @@ void pullOtaRunUpdate() {
   if (selection.count == 0) {
     pullOtaDraw("Newest stable", pullOtaCurrentVersion().c_str());
     delay(2000);
-    b_ota = false;
     return;
   }
   rollbackFound = pullOtaFindCurrentRelease(catalog, rollbackManifest);
@@ -1460,12 +1456,18 @@ void pullOtaRunUpdate() {
 void pullOtaUpdateTask(void *args) {
   (void)args;
   pullOtaRunUpdate();
-  b_pullOtaRunning = false;
+  portENTER_CRITICAL(&wsPendingMux);
+  const bool restartPending = (wsPendingMask & WSP_OTA_RESET) != 0;
+  portEXIT_CRITICAL(&wsPendingMux);
+  if (!restartPending) {
+    b_ota = false;
+    b_pullOtaRunning = false;
+  }
   vTaskDelete(NULL);
 }
 
 void pullOtaUpdate() {
-  if (b_pullOtaRunning) {
+  if (b_pullOtaRunning || b_ota) {
     return;
   }
   b_pullOtaRunning = true;
@@ -1479,6 +1481,7 @@ void pullOtaUpdate() {
       NULL);
   if (started != pdPASS) {
     b_pullOtaRunning = false;
+    b_ota = false;
     pullOtaFail("OTA task failed");
   }
 }
