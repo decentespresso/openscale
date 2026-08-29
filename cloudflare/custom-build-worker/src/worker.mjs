@@ -476,8 +476,8 @@ async function dispatchBuild(env, build) {
       ref: build.builderRef,
       inputs: {
         firmware_ref: build.configuration.firmware_ref,
-        features: build.configuration.features.join(","),
-        plugins: build.configuration.plugins.join(","),
+        features: build.configuration.features.join(",") || ",",
+        plugins: build.configuration.plugins.join(",") || ",",
         builder_ref: build.builderRef,
         builder_commit: build.builderCommit,
         source_commit: build.sourceCommit,

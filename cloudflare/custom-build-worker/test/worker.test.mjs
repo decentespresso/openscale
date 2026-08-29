@@ -243,8 +243,8 @@ test("publishes immutable cache entries and deduplicates public builds", async (
       assert.equal(request.inputs.source_commit, commit);
       if (dispatches === 1) {
         assert.equal(request.inputs.combination_hash, "280d0fb981fa56f7753846b33b91a5b053145d41360551f8c27c0b38e7ee955c");
-        assert.equal(request.inputs.features, "");
-        assert.equal(request.inputs.plugins, "");
+        assert.equal(request.inputs.features, ",");
+        assert.equal(request.inputs.plugins, ",");
       }
       if (failDispatch) return Response.json({message: "unavailable"}, {status: 503});
       return new Response(null, {status: 204});
