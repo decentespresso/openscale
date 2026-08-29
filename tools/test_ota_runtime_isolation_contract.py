@@ -54,6 +54,8 @@ def main():
     assert 'url == "/ota/upload"' in webserver
     assert 'url.startsWith("/ota/")' in webserver
     assert 'request->send(409, "text/plain", "pull OTA in progress")' in webserver
+    assert 'request->getParam("mode")->value() == "fs"' in webserver
+    assert '"filesystem OTA requires WiFi Update"' in webserver
 
     assert "b_ota ? (wsPendingMask & WSP_OTA_RESET) : wsPendingMask" in pending
     assert "wsPendingMask &= ~mask;" in pending

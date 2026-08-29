@@ -174,6 +174,11 @@ void startWebServer() {
       }
 #endif
 #if HDS_FEATURE_ELEGANT_OTA
+      if (url == "/ota/start" && request->hasParam("mode") &&
+          request->getParam("mode")->value() == "fs") {
+        request->send(400, "text/plain", "filesystem OTA requires WiFi Update");
+        return;
+      }
       if (b_ota && !b_pullOtaRunning && url == "/ota/upload") {
         next();
         return;

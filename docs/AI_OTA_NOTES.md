@@ -83,6 +83,8 @@ Both OTA paths stop BLE advertising and disconnect an active peer before flash w
 
 While OTA is active, the main loop closes WebSocket clients and the HTTP middleware rejects new non-OTA work. ElegantOTA upload traffic remains available until its response completes.
 
+ElegantOTA accepts firmware images only. Direct filesystem uploads are rejected because they bypass the signed, staged LittleFS transaction and its rollback protection. Use the WiFi Update menu for firmware and filesystem release updates.
+
 The rollback path withdraws WiFi and mDNS with `stopWifi()` before `esp_ota_mark_app_invalid_rollback_and_reboot()`. Do not bypass this routing: a direct reboot can leave the service advertised until resolver caches expire.
 
 ## OTA Files And Tests
