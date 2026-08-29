@@ -690,14 +690,14 @@ void button_init() {
 void _wifi_init(void *args) {
   b_wifiEnabled = true;
   setupWifi();
+#if HDS_FEATURE_ELEGANT_OTA
+  wifiOta();
+#endif
 #if HDS_FEATURE_WEBSOCKET
   setupWebsocketEvents();
 #endif
 #if HDS_FEATURE_WEBSERVER
   startWebServer();
-#endif
-#if HDS_FEATURE_ELEGANT_OTA
-  wifiOta();
 #endif
   vTaskDelete(NULL);
 }
