@@ -22,7 +22,9 @@ def main():
     loop = function_body((ROOT / "src" / "hds.ino").read_text(encoding="utf-8"), "loop")
     setup = function_body((ROOT / "src" / "hds.ino").read_text(encoding="utf-8"), "setup")
     ble = (ROOT / "include" / "ble.h").read_text(encoding="utf-8")
+    parameter = (ROOT / "include" / "parameter.h").read_text(encoding="utf-8")
     webserver = (ROOT / "include" / "webserver.h").read_text(encoding="utf-8")
+    wifi_ota = (ROOT / "include" / "wifi_ota.h").read_text(encoding="utf-8")
     pending = function_body(
         (ROOT / "include" / "websocket.h").read_text(encoding="utf-8"),
         "processWsPendingCmds",
@@ -36,6 +38,7 @@ def main():
     assert ota_at < loop.index("checkBattery();")
     assert loop.index("blePauseForOta();") < loop.index("ElegantOTA.loop();")
     assert loop.index("websocket.closeAll();") < loop.index("ElegantOTA.loop();")
+    assert loop.index("processOtaDisplayUpdate();") < loop.index("processElegantOtaTimeout();")
     assert loop.index("bleResumeAfterOta();") < loop.index("processBleStatusResponse();")
 
     pending_at = setup.index("if (b_pendingOtaLittleFs)")
@@ -56,6 +59,16 @@ def main():
     assert 'request->send(409, "text/plain", "pull OTA in progress")' in webserver
     assert 'request->getParam("mode")->value() == "fs"' in webserver
     assert '"filesystem OTA requires WiFi Update"' in webserver
+
+    start = function_body(wifi_ota, "onOTAStart")
+    progress = function_body(wifi_ota, "onOTAProgress")
+    timeout = function_body(wifi_ota, "processElegantOtaTimeout")
+    assert start.index("recordElegantOtaActivity(millis());") < start.index("b_ota = true;")
+    assert "recordElegantOtaActivity(ota_progress_millis);" in progress
+    assert "b_pullOtaRunning" in timeout
+    assert "now - activityAt < OTA_ACTIVITY_TIMEOUT_MS" in timeout
+    assert "remoteQueueOtaResetAt(now);" in timeout
+    assert "volatile unsigned long otaActivityAt = 0;" in parameter
 
     assert "b_ota ? (wsPendingMask & WSP_OTA_RESET) : wsPendingMask" in pending
     assert "wsPendingMask &= ~mask;" in pending

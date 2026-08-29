@@ -13,6 +13,7 @@ const char *password = "12345678";
 unsigned long ota_progress_millis = 0;
 unsigned long t_otaEnd = 0;
 static const unsigned long OTA_RESTART_DELAY_MS = 2000;
+static const unsigned long OTA_ACTIVITY_TIMEOUT_MS = 30000;
 
 uint8_t calculateOtaPercent(size_t current, size_t final) {
   if (final == 0) {
@@ -33,6 +34,29 @@ void queueOtaDisplay(uint8_t state, uint8_t percent = 0) {
 #if HDS_ENABLE_ENERGY_MENU
   notifyEnergyMainLoop();
 #endif
+}
+
+void recordElegantOtaActivity(unsigned long activityAt) {
+  portENTER_CRITICAL(&otaDisplayMux);
+  otaActivityAt = activityAt;
+  portEXIT_CRITICAL(&otaDisplayMux);
+}
+
+void processElegantOtaTimeout() {
+  if (!b_ota || b_pullOtaRunning) {
+    return;
+  }
+
+  const unsigned long now = millis();
+  portENTER_CRITICAL(&otaDisplayMux);
+  const unsigned long activityAt = otaActivityAt;
+  portEXIT_CRITICAL(&otaDisplayMux);
+  if (now - activityAt < OTA_ACTIVITY_TIMEOUT_MS) {
+    return;
+  }
+
+  Serial.println("OTA update timed out; restarting");
+  remoteQueueOtaResetAt(now);
 }
 
 void processOtaDisplayUpdate() {
@@ -76,6 +100,7 @@ void onOTAStart() {
 #endif
   Serial.println("OTA update started!");
   std::lock_guard<std::mutex> otaDispatchLock(otaDispatchMutex);
+  recordElegantOtaActivity(millis());
   portENTER_CRITICAL(&wsPendingMux);
   b_ota = true;
   portEXIT_CRITICAL(&wsPendingMux);
@@ -87,6 +112,7 @@ void onOTAStart() {
 void onOTAProgress(size_t current, size_t final) {
   if (millis() - ota_progress_millis > 50) {
     ota_progress_millis = millis();
+    recordElegantOtaActivity(ota_progress_millis);
     Serial.printf("OTA Progress Current: %u bytes, Final: %u bytes\n", current,
                   final);
     uint8_t percent = calculateOtaPercent(current, final);

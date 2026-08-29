@@ -2073,6 +2073,7 @@ void loop() {
 #if HDS_FEATURE_ELEGANT_OTA
     ElegantOTA.loop();
     processOtaDisplayUpdate();
+    processElegantOtaTimeout();
 #endif
     return;
   }

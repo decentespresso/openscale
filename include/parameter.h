@@ -171,6 +171,7 @@ const uint8_t OTA_DISPLAY_FAILURE = 3;
 portMUX_TYPE otaDisplayMux = portMUX_INITIALIZER_UNLOCKED;
 volatile uint8_t otaDisplayState = OTA_DISPLAY_NONE;
 volatile uint8_t otaDisplayPercent = 0;
+volatile unsigned long otaActivityAt = 0;
 
 inline void remoteQueueResetAt(unsigned long resetAt) {
   portENTER_CRITICAL(&wsPendingMux);
