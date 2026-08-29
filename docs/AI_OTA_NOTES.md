@@ -81,6 +81,8 @@ ElegantOTA start and main-loop remote action dispatch share `otaDispatchMutex`. 
 
 Both OTA paths stop BLE advertising and disconnect an active peer before flash work. Failed or cancelled updates resume advertising from the main loop. Do not shut BLE down from an AsyncTCP callback.
 
+While OTA is active, the main loop closes WebSocket clients and the HTTP middleware rejects new non-OTA work. ElegantOTA upload traffic remains available until its response completes.
+
 The rollback path withdraws WiFi and mDNS with `stopWifi()` before `esp_ota_mark_app_invalid_rollback_and_reboot()`. Do not bypass this routing: a direct reboot can leave the service advertised until resolver caches expire.
 
 ## OTA Files And Tests

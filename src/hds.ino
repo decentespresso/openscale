@@ -2051,15 +2051,18 @@ void serviceEnergyHousekeeping(unsigned long now) {
 
 
 void loop() {
-  static bool otaBlePaused = false;
+  static bool otaTransportsPaused = false;
 #if HDS_ENABLE_ENERGY_MENU
   serviceEnergyLightSleepWakeRestore();
 #endif
   processWsPendingCmds();
   if (b_ota) {
-    if (!otaBlePaused) {
+    if (!otaTransportsPaused) {
       blePauseForOta();
-      otaBlePaused = true;
+#if HDS_FEATURE_WEBSOCKET
+      websocket.closeAll();
+#endif
+      otaTransportsPaused = true;
     }
     if (b_softSleep) {
       wakeScaleFromSoftSleep("OTA wake");
@@ -2073,9 +2076,9 @@ void loop() {
 #endif
     return;
   }
-  if (otaBlePaused) {
+  if (otaTransportsPaused) {
     bleResumeAfterOta();
-    otaBlePaused = false;
+    otaTransportsPaused = false;
   }
 
   processBleStatusResponse();

@@ -22,6 +22,7 @@ def main():
     loop = function_body((ROOT / "src" / "hds.ino").read_text(encoding="utf-8"), "loop")
     setup = function_body((ROOT / "src" / "hds.ino").read_text(encoding="utf-8"), "setup")
     ble = (ROOT / "include" / "ble.h").read_text(encoding="utf-8")
+    webserver = (ROOT / "include" / "webserver.h").read_text(encoding="utf-8")
     pending = function_body(
         (ROOT / "include" / "websocket.h").read_text(encoding="utf-8"),
         "processWsPendingCmds",
@@ -34,6 +35,7 @@ def main():
     assert ota_at < loop.index("buttonCircle.check();")
     assert ota_at < loop.index("checkBattery();")
     assert loop.index("blePauseForOta();") < loop.index("ElegantOTA.loop();")
+    assert loop.index("websocket.closeAll();") < loop.index("ElegantOTA.loop();")
     assert loop.index("bleResumeAfterOta();") < loop.index("processBleStatusResponse();")
 
     pending_at = setup.index("if (b_pendingOtaLittleFs)")
@@ -46,6 +48,12 @@ def main():
     assert pause.index("pAdvertising->stop();") < pause.index("pServer->disconnect")
     assert "b_ble_enabled" in resume
     assert ble.count("OTA active, advertising paused") == 2
+
+    ota_gate = webserver.index("if (b_ota)")
+    assert ota_gate < webserver.index('if (url == "/snapshot")')
+    assert 'url == "/ota/upload"' in webserver
+    assert 'url.startsWith("/ota/")' in webserver
+    assert 'request->send(409, "text/plain", "pull OTA in progress")' in webserver
 
     assert "b_ota ? (wsPendingMask & WSP_OTA_RESET) : wsPendingMask" in pending
     assert "wsPendingMask &= ~mask;" in pending
