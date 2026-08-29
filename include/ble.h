@@ -117,6 +117,10 @@ class MyServerCallbacks : public BLEServerCallbacks {
     restoreDisplayAfterBleDisconnect();
     Serial.print("Device disconnected (connId: ");
     Serial.print(desc->conn_handle);
+    if (b_ota) {
+      Serial.println("), OTA active, advertising paused");
+      return;
+    }
     Serial.println("), restarting advertising...");
     delay(100);
     pAdvertising->start();
@@ -148,6 +152,10 @@ class MyServerCallbacks : public BLEServerCallbacks {
     b_beep = storageGetInt(KEY_BEEP, 1);
 #endif
     restoreDisplayAfterBleDisconnect();
+    if (b_ota) {
+      Serial.println("Device disconnected, OTA active, advertising paused");
+      return;
+    }
     Serial.println("Device disconnected, restarting advertising...");
     delay(100);
     pAdvertising->start();
@@ -428,6 +436,22 @@ static bool bleHasLiveClient() {
 #else
   return deviceConnected;
 #endif
+}
+
+void blePauseForOta() {
+  bleDebugMode = DEBUG_OFF;
+  if (pAdvertising != nullptr) {
+    pAdvertising->stop();
+  }
+  if (pServer != nullptr && bleHasLiveClient() && connId != 0xFFFF) {
+    pServer->disconnect(connId, 0x13);
+  }
+}
+
+void bleResumeAfterOta() {
+  if (b_ble_enabled && pAdvertising != nullptr && !bleHasLiveClient()) {
+    pAdvertising->start();
+  }
 }
 
 static void logBleDirectNotifyFailure(uint16_t connectionHandle, int rc) {

@@ -1182,6 +1182,8 @@ void setup() {
   updateBattery(BATTERY_PIN);
 #if HDS_FEATURE_PULL_OTA
   if (b_pendingOtaLittleFs) {
+    b_ota = true;
+    blePauseForOta();
     if (!pullOtaResumePendingLittleFs()) {
       hdsOtaRollback("LittleFS update");
     }
@@ -2049,11 +2051,16 @@ void serviceEnergyHousekeeping(unsigned long now) {
 
 
 void loop() {
+  static bool otaBlePaused = false;
 #if HDS_ENABLE_ENERGY_MENU
   serviceEnergyLightSleepWakeRestore();
 #endif
   processWsPendingCmds();
   if (b_ota) {
+    if (!otaBlePaused) {
+      blePauseForOta();
+      otaBlePaused = true;
+    }
     if (b_softSleep) {
       wakeScaleFromSoftSleep("OTA wake");
     }
@@ -2065,6 +2072,10 @@ void loop() {
     processOtaDisplayUpdate();
 #endif
     return;
+  }
+  if (otaBlePaused) {
+    bleResumeAfterOta();
+    otaBlePaused = false;
   }
 
   processBleStatusResponse();

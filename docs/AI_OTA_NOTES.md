@@ -79,6 +79,8 @@ ElegantOTA auto-reboot stays disabled with `ElegantOTA.setAutoReboot(false)`. Su
 
 ElegantOTA start and main-loop remote action dispatch share `otaDispatchMutex`. Hold it across the complete extracted action batch so `onOTAStart()` cannot publish active OTA until in-flight hardware work finishes. If OTA starts first, restore extracted actions without overwriting newer pending members of the display, low-power, soft-sleep, or timer replacement groups.
 
+Both OTA paths stop BLE advertising and disconnect an active peer before flash work. Failed or cancelled updates resume advertising from the main loop. Do not shut BLE down from an AsyncTCP callback.
+
 The rollback path withdraws WiFi and mDNS with `stopWifi()` before `esp_ota_mark_app_invalid_rollback_and_reboot()`. Do not bypass this routing: a direct reboot can leave the service advertised until resolver caches expire.
 
 ## OTA Files And Tests
