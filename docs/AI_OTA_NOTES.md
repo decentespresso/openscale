@@ -87,6 +87,8 @@ ElegantOTA accepts firmware images only. Direct filesystem uploads are rejected 
 
 ElegantOTA firmware sessions with no progress for 30 seconds restart through the main-loop reset queue. This recovers both `Update.begin()` failures and uploads abandoned by a disconnected client without resuming normal work around an incomplete flash session.
 
+ElegantOTA progress logging and full-screen OLED updates are limited to 2 Hz while the upload is active.
+
 The rollback path withdraws WiFi and mDNS with `stopWifi()` before `esp_ota_mark_app_invalid_rollback_and_reboot()`. Do not bypass this routing: a direct reboot can leave the service advertised until resolver caches expire.
 
 ## OTA Files And Tests

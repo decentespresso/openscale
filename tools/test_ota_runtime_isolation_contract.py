@@ -65,6 +65,8 @@ def main():
     timeout = function_body(wifi_ota, "processElegantOtaTimeout")
     assert start.index("recordElegantOtaActivity(millis());") < start.index("b_ota = true;")
     assert "recordElegantOtaActivity(ota_progress_millis);" in progress
+    assert "millis() - ota_progress_millis >= OTA_PROGRESS_INTERVAL_MS" in progress
+    assert "OTA_PROGRESS_INTERVAL_MS = 500" in wifi_ota
     assert "b_pullOtaRunning" in timeout
     assert "now - activityAt < OTA_ACTIVITY_TIMEOUT_MS" in timeout
     assert "remoteQueueOtaResetAt(now);" in timeout

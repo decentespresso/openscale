@@ -14,6 +14,7 @@ unsigned long ota_progress_millis = 0;
 unsigned long t_otaEnd = 0;
 static const unsigned long OTA_RESTART_DELAY_MS = 2000;
 static const unsigned long OTA_ACTIVITY_TIMEOUT_MS = 30000;
+static const unsigned long OTA_PROGRESS_INTERVAL_MS = 500;
 
 uint8_t calculateOtaPercent(size_t current, size_t final) {
   if (final == 0) {
@@ -110,7 +111,7 @@ void onOTAStart() {
 }
 
 void onOTAProgress(size_t current, size_t final) {
-  if (millis() - ota_progress_millis > 50) {
+  if (millis() - ota_progress_millis >= OTA_PROGRESS_INTERVAL_MS) {
     ota_progress_millis = millis();
     recordElegantOtaActivity(ota_progress_millis);
     Serial.printf("OTA Progress Current: %u bytes, Final: %u bytes\n", current,
