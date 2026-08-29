@@ -205,7 +205,8 @@ inline void remoteQueueSamplesInUse(uint8_t samplesInUse) {
 inline bool remoteQueueWifiUpdate(const PullOtaTargetVersion &target) {
   bool queued = false;
   portENTER_CRITICAL(&wsPendingMux);
-  if (!(wsPendingMask & WSP_WIFI_UPDATE) && !pendingOtaDispatching) {
+  if (!(wsPendingMask & WSP_WIFI_UPDATE) && !pendingOtaDispatching &&
+      !b_ota && !b_pullOtaRunning) {
     pendingOtaTargetMajor = target.major;
     pendingOtaTargetMinor = target.minor;
     pendingOtaTargetPatch = target.patch;
@@ -263,8 +264,10 @@ void processWsPendingCmds() {
   if (mask == 0) return;
 
   std::lock_guard<std::mutex> otaDispatchLock(otaDispatchMutex);
+  bool droppedWifiUpdate = false;
   portENTER_CRITICAL(&wsPendingMux);
   if (b_ota) {
+    droppedWifiUpdate = (mask & WSP_WIFI_UPDATE) != 0;
     uint32_t deferredMask = mask & ~WSP_OTA_RESET;
     const uint32_t replacementGroups[] = {
       WSP_DISPLAY_ON | WSP_DISPLAY_OFF,
@@ -280,13 +283,16 @@ void processWsPendingCmds() {
     if ((deferredMask & WSP_RESET) && !(wsPendingMask & WSP_RESET)) {
       pendingResetAt = resetAt;
     }
-    wsPendingMask |= deferredMask;
+    wsPendingMask |= deferredMask & ~WSP_WIFI_UPDATE;
     if (mask & WSP_WIFI_UPDATE) {
       pendingOtaDispatching = false;
     }
     mask &= WSP_OTA_RESET;
   }
   portEXIT_CRITICAL(&wsPendingMux);
+  if (droppedWifiUpdate) {
+    Serial.println("WiFi OTA start dropped; an update is already running.");
+  }
   if (mask == 0) return;
 
   if (mask & WSP_OTA_RESET) {

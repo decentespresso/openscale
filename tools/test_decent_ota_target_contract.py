@@ -94,10 +94,13 @@ def test_sinks_forward_the_target_and_refuse_while_busy():
         assert "if (b_pullOtaRunning || b_ota) {" in text, (
             f"{header.name} must refuse a start while an update runs"
         )
-    assert_contains(BLE_HEADER, "if (!remoteQueueWifiUpdate(target)) {")
-    assert_contains(USB_HEADER, "::wifiUpdate(target);")
-    assert "remoteQueuePending(WSP_WIFI_UPDATE)" not in source(BLE_HEADER), (
-        "the BLE sink must queue through remoteQueueWifiUpdate so a target is always written"
+    for header in (BLE_HEADER, USB_HEADER):
+        assert_contains(header, "if (!remoteQueueWifiUpdate(target)) {")
+        assert "remoteQueuePending(WSP_WIFI_UPDATE)" not in source(header), (
+            f"{header.name} must queue through remoteQueueWifiUpdate so a target is always written"
+        )
+    assert "::wifiUpdate(target);" not in source(USB_HEADER), (
+        "USB must not start an update directly; a queued request would then be overtaken"
     )
 
 
@@ -125,8 +128,8 @@ def test_pending_target_state_is_volatile_and_mutex_guarded():
     assert "portEXIT_CRITICAL(&wsPendingMux);" in helper
     assert helper.index("pendingOtaTargetPresent = target.present;") < helper.index("portEXIT_CRITICAL")
     assert "wsPendingMask |= WSP_WIFI_UPDATE;" in helper
-    assert "if (!(wsPendingMask & WSP_WIFI_UPDATE) && !pendingOtaDispatching) {" in helper, (
-        "a second start request must be refused while one is queued or dispatching"
+    assert "if (!(wsPendingMask & WSP_WIFI_UPDATE) && !pendingOtaDispatching &&\n      !b_ota && !b_pullOtaRunning) {" in helper, (
+        "admission must refuse a request that is queued, dispatching, or already running"
     )
     for forbidden in ("u8g2", "LittleFS", "WiFi.", "pullOtaUpdate", "delay("):
         assert forbidden not in helper, f"remoteQueueWifiUpdate must not call {forbidden}"
@@ -156,7 +159,7 @@ def test_dispatch_holds_the_request_until_the_update_is_running():
     )
 
     body = websocket[start : websocket.index("#if HDS_FEATURE_WEBSOCKET", start)]
-    deferral = body[body.index("wsPendingMask |= deferredMask;") :]
+    deferral = body[body.index("wsPendingMask |= deferredMask & ~WSP_WIFI_UPDATE;") :]
     assert "pendingOtaDispatching = false;" in deferral[: deferral.index("mask &= WSP_OTA_RESET;")], (
         "a request deferred back to the queue must not stay marked as dispatching"
     )
@@ -164,6 +167,16 @@ def test_dispatch_holds_the_request_until_the_update_is_running():
     assert dispatch.index("wifiUpdate(otaTarget);") < dispatch.index("remoteFinishWifiUpdateDispatch();"), (
         "the dispatching mark must be cleared only after the update has been started"
     )
+
+
+def test_a_request_that_cannot_dispatch_is_dropped_rather_than_requeued():
+    websocket = source(WEBSOCKET_HEADER)
+    start = websocket.index("void processWsPendingCmds() {")
+    body = websocket[start : websocket.index("#if HDS_FEATURE_WEBSOCKET", start)]
+    assert "wsPendingMask |= deferredMask & ~WSP_WIFI_UPDATE;" in body, (
+        "a start request deferred while an update runs must be dropped, not left to fire later"
+    )
+    assert "droppedWifiUpdate" in body, "the dropped request must be logged"
 
 
 def test_websocket_command_is_guarded_and_answers_accept_time_refusals():

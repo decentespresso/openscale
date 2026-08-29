@@ -133,8 +133,11 @@ struct UsbDecentCommandSink {
       Serial.println("WiFi OTA already running; start ignored.");
       return;
     }
-    Serial.println("Start WiFi OTA");
-    ::wifiUpdate(target);
+    if (!remoteQueueWifiUpdate(target)) {
+      Serial.println("WiFi OTA start already queued; start ignored.");
+      return;
+    }
+    Serial.println("Start WiFi OTA queued.");
 #else
     (void)target;
     Serial.println("WiFi OTA unavailable.");
