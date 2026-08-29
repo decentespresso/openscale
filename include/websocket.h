@@ -825,6 +825,10 @@ bool handleWebsocketNamedJsonCommand(AsyncWebSocketClient *client, JsonDocument 
   }
 
   std::string_view command = websocketTrimView(doc[key].as<const char *>());
+  if (!doc["action"].isNull() && !doc["action"].is<const char *>()) {
+    sendWebsocketError(client, "invalid_action", "action must be a string");
+    return true;
+  }
   const char *action = doc["action"].is<const char *>()
                            ? doc["action"].as<const char *>()
                            : "";

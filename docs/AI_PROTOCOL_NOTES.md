@@ -57,7 +57,7 @@ The bias is what lets one request form serve every scale. `processUsbRxBuffer()`
 
 The client supplies a version number and nothing else. Every asset URL, size, and hash used for an install comes from the scale's own signature-verified catalog fetch. See `docs/AI_OTA_NOTES.md`.
 
-The `/snapshot` WebSocket carries the same request as a `wifi_update` control command, accepted bare, as `wifi_update <version>`, and as `{"command":"wifi_update","action":"<version>"}`. The version is dotted `major.minor.patch` with an optional leading `v`. The command is compiled out when `HDS_FEATURE_PULL_OTA` is disabled and then answers `unknown_command`.
+The `/snapshot` WebSocket carries the same request as a `wifi_update` control command, accepted bare, as `wifi_update <version>`, and as `{"command":"wifi_update","action":"<version>"}`. The version is dotted `major.minor.patch` with an optional leading `v`. The command is compiled out when `HDS_FEATURE_PULL_OTA` is disabled and then answers `unknown_command`. A JSON `action` that is present but not a string answers `invalid_action`: an omitted action means the bare form, so a boolean, number, or object must not silently collapse into it.
 
 ADS debug responses are separate fixed formats: the debug packet is 41 bytes and the reset response is 5 bytes. Keep their Python helpers, decoder, and firmware builders aligned.
 

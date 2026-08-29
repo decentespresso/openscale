@@ -179,6 +179,19 @@ def test_a_request_that_cannot_dispatch_is_dropped_rather_than_requeued():
     assert "droppedWifiUpdate" in body, "the dropped request must be logged"
 
 
+def test_a_non_string_action_is_refused():
+    websocket = source(WEBSOCKET_HEADER)
+    start = websocket.index("bool handleWebsocketNamedJsonCommand(")
+    body = websocket[start : websocket.index("bool handleWebsocketRateCommand(", start)]
+    assert 'if (!doc["action"].isNull() && !doc["action"].is<const char *>()) {' in body, (
+        "a present action of the wrong type must not fall through to the bare command"
+    )
+    assert '"invalid_action"' in body
+    assert body.index('"invalid_action"') < body.index("const char *action ="), (
+        "the type check must run before the action is coerced to an empty string"
+    )
+
+
 def test_websocket_command_is_guarded_and_answers_accept_time_refusals():
     websocket = source(WEBSOCKET_HEADER)
     start = websocket.index('if (websocketEqualsIgnoreCase(command, "wifi_update")) {')

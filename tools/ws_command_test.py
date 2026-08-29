@@ -171,6 +171,16 @@ def main():
            and resp.get("code") == "ota_version_invalid",
            f"resp={resp}")
 
+    for label, payload in (
+            ("boolean", '{"command":"wifi_update","action":false}'),
+            ("numeric", '{"command":"wifi_update","action":3}'),
+            ("object", '{"command":"wifi_update","action":{"version":"3.1.13"}}')):
+        resp = send_capture(ws, payload, expect=("error", "status"))
+        record(f"wifi_update {label} action -> error",
+               bool(resp) and resp.get("type") == "error"
+               and resp.get("code") == "invalid_action",
+               f"resp={resp}")
+
     if START_REAL_UPDATE:
         print("WIFI UPDATE (live install - this reflashes the scale)")
         resp = send_capture(ws, "wifi_update", expect=("status",))
