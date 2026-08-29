@@ -51,7 +51,8 @@ def main():
 
     assert "[env:esp32s3-grinder]" in platformio
     assert "[env:esp32s3-pressensor]" in patch
-    assert "#ifdef HDS_CUSTOM_BUILD" in patch
+    assert "#if HDS_CUSTOM_BUILD" in patch
+    assert "#ifdef HDS_CUSTOM_BUILD" not in patch
     assert manifest["patches"] == {
         "v3.1.14-preview.1": "patches/main.patch",
     }
