@@ -33,7 +33,7 @@ Patch plugins must be absent from an unmodified checkout and disabled when their
 
 ```c
 #ifndef HDS_ENABLE_EXAMPLE
-#ifdef HDS_CUSTOM_BUILD
+#if HDS_CUSTOM_BUILD
 #define HDS_ENABLE_EXAMPLE 1
 #else
 #define HDS_ENABLE_EXAMPLE 0

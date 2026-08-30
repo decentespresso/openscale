@@ -75,7 +75,7 @@ The applied patch must support these modes:
 
 ```c
 #ifndef HDS_ENABLE_MY_PLUGIN
-#ifdef HDS_CUSTOM_BUILD
+#if HDS_CUSTOM_BUILD
 #define HDS_ENABLE_MY_PLUGIN 1
 #else
 #define HDS_ENABLE_MY_PLUGIN 0
