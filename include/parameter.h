@@ -8,6 +8,7 @@
 #include <mutex>
 #include "calibration_validation.h"
 #include "energy_runtime_policy.h"
+#include "pull_ota_target.h"
 #if HDS_ENABLE_ENERGY_MENU
 #include "energy_policy.h"
 #include "energy_power_management.h"
@@ -160,6 +161,15 @@ const uint32_t WSP_OTA_RESET   = 1u << 14;
 portMUX_TYPE wsPendingMux = portMUX_INITIALIZER_UNLOCKED;
 volatile uint32_t wsPendingMask = 0;
 volatile uint8_t pendingSamplesInUse = 0;
+volatile uint8_t pendingOtaTargetMajor = 0;
+volatile uint8_t pendingOtaTargetMinor = 0;
+volatile uint8_t pendingOtaTargetPatch = 0;
+volatile bool pendingOtaTargetPresent = false;
+volatile bool pendingOtaDispatching = false;
+volatile uint8_t requestedOtaTargetMajor = 0;
+volatile uint8_t requestedOtaTargetMinor = 0;
+volatile uint8_t requestedOtaTargetPatch = 0;
+volatile bool requestedOtaTargetPresent = false;
 volatile unsigned long pendingResetAt = 0;
 volatile unsigned long pendingOtaResetAt = 0;
 std::mutex otaDispatchMutex;

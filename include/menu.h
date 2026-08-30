@@ -75,6 +75,7 @@ void calibrate();
 void drawButton();
 #if HDS_FEATURE_PULL_OTA
 void wifiUpdate();
+void wifiUpdate(const PullOtaTargetVersion &target);
 #endif
 void showStatus();
 void showAbout();
@@ -1521,7 +1522,7 @@ void calibration(int input) {
 }
 
 #if HDS_FEATURE_PULL_OTA
-void wifiUpdate() {
+void wifiUpdate(const PullOtaTargetVersion &target) {
   if (b_softSleep) {
     wakeScaleFromSoftSleep("WiFi OTA wake");
   }
@@ -1531,8 +1532,12 @@ void wifiUpdate() {
 #ifdef BUZZER
   buzzer.off();
 #endif
-  pullOtaUpdate();
+  pullOtaUpdate(target);
   leaveMenu();
+}
+
+void wifiUpdate() {
+  wifiUpdate(pullOtaNoTargetVersion());
 }
 #endif
 

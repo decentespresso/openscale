@@ -63,6 +63,10 @@ def main():
     start = function_body(wifi_ota, "onOTAStart")
     progress = function_body(wifi_ota, "onOTAProgress")
     timeout = function_body(wifi_ota, "processElegantOtaTimeout")
+    ota_start = function_body(wifi_ota, "handleElegantOtaStart")
+    ota_upload = function_body(wifi_ota, "handleElegantOtaUpload")
+    ota_complete = function_body(wifi_ota, "completeElegantOtaUpload")
+    ota_setup = function_body(wifi_ota, "wifiOta")
     assert start.index("recordElegantOtaActivity(millis());") < start.index("b_ota = true;")
     assert "recordElegantOtaActivity(ota_progress_millis);" in progress
     assert "millis() - ota_progress_millis >= OTA_PROGRESS_INTERVAL_MS" in progress
@@ -71,12 +75,39 @@ def main():
     assert "now - activityAt < OTA_ACTIVITY_TIMEOUT_MS" in timeout
     assert "remoteQueueOtaResetAt(now);" in timeout
     assert "volatile unsigned long otaActivityAt = 0;" in parameter
+    assert ota_start.index("otaDispatchMutex") < ota_start.index("b_pullOtaRunning || b_ota")
+    assert ota_start.index("b_pullOtaRunning || b_ota") < ota_start.index("Update.begin")
+    assert ota_upload.index("otaDispatchMutex") < ota_upload.index("b_pullOtaRunning || !b_ota")
+    assert ota_upload.index("b_pullOtaRunning || !b_ota") < ota_upload.index("Update.write")
+    assert ota_upload.index("b_pullOtaRunning || !b_ota") < ota_upload.index("Update.end(true)")
+    assert "std::try_to_lock" in ota_start
+    assert "std::try_to_lock" in ota_upload
+    assert "std::try_to_lock" in ota_complete
+    assert "OTA_UPLOAD_REJECTED_ATTRIBUTE" in ota_upload
+    assert "OTA_UPLOAD_REJECTED_ATTRIBUTE" in ota_complete
+    assert ota_setup.index('server.on("/ota/upload"') < ota_setup.index("ElegantOTA.begin(&server)")
 
     assert "b_ota ? (wsPendingMask & WSP_OTA_RESET) : wsPendingMask" in pending
     assert "wsPendingMask &= ~mask;" in pending
     update_at = pending.index("if (mask & WSP_WIFI_UPDATE)")
     assert update_at < pending.index("if (mask & WSP_DISPLAY_ON)")
-    assert "remoteQueuePending(deferredMask);" in pending
+    assert "wifiUpdate(otaTarget);" in pending
+    assert pending.count("remoteRestoreDeferredPendingLocked(") == 2
+    assert "remoteQueuePending(deferredMask);" not in pending
+
+    restore = function_body(
+        (ROOT / "include" / "websocket.h").read_text(encoding="utf-8"),
+        "remoteRestoreDeferredPendingLocked",
+    )
+    for group in (
+        "WSP_DISPLAY_ON | WSP_DISPLAY_OFF",
+        "WSP_LOWPWR_ON | WSP_LOWPWR_OFF",
+        "WSP_SLEEP_ON | WSP_SLEEP_OFF",
+        "WSP_TIMER_START | WSP_TIMER_STOP | WSP_TIMER_ZERO",
+    ):
+        assert group in restore
+    assert "if (wsPendingMask & group)" in restore
+    assert "deferredMask &= ~group;" in restore
 
     print("OTA runtime isolation contract tests passed")
 

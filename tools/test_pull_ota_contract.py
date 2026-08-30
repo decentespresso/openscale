@@ -5,6 +5,8 @@ ROOT = Path(__file__).resolve().parents[1]
 HDS_SOURCE = ROOT / "src" / "hds.ino"
 MENU_HEADER = ROOT / "include" / "menu.h"
 PULL_OTA_HEADER = ROOT / "include" / "pull_ota.h"
+PARAMETER_HEADER = ROOT / "include" / "parameter.h"
+WEBSOCKET_HEADER = ROOT / "include" / "websocket.h"
 OTA_STAGE_MARKER = ROOT / "plugins" / "default-web-apps" / "assets" / ("ota-stage-" + "test.txt")
 
 
@@ -144,6 +146,64 @@ def main():
     assert "b_pullOtaRunning || b_ota" in update
     if OTA_STAGE_MARKER.exists():
         raise AssertionError("OTA stage marker must not be tracked")
+    assert_contains(PULL_OTA_HEADER, "void pullOtaRunUpdate(const PullOtaTargetVersion &target) {")
+    assert_contains(PULL_OTA_HEADER, "void pullOtaUpdate(const PullOtaTargetVersion &target) {")
+    assert_contains(PULL_OTA_HEADER, "pullOtaRunUpdate(pullOtaLoadRequestedTarget())")
+    assert_contains(PULL_OTA_HEADER, "pullOtaFindTargetRelease")
+    assert_contains(PULL_OTA_HEADER, "for (uint8_t i = 0; i < selection.count; i++) {")
+    assert_contains(PULL_OTA_HEADER, "pullOtaFindTargetRelease(catalog, selection, target, &selectedCatalogIndex)")
+    assert_contains(PULL_OTA_HEADER, 'pullOtaFail("Version not offered")')
+
+    contents = PULL_OTA_HEADER.read_text(encoding="utf-8")
+    run_start = contents.index("void pullOtaRunUpdate(const PullOtaTargetVersion &target) {")
+    run = contents[run_start:contents.index("void pullOtaStoreRequestedTarget(", run_start)]
+
+    resume_at = run.index("pullOtaResumePendingLittleFs();")
+    if resume_at > run.index("if (target.present) {"):
+        raise AssertionError("a pending LittleFS transaction must take priority over a requested target")
+
+    targeted_start = run.index("if (target.present) {", run.index("uint8_t selectedCatalogIndex = 0;"))
+    targeted = run[targeted_start:run.index("if (!pullOtaHasNewerRelease(catalog, selection)) {")]
+    if "pullOtaPickRelease" in targeted or "pullOtaConfirmInstall" in targeted:
+        raise AssertionError("an unattended install must not open the picker or the confirm prompt")
+    if "pullOtaInstall(manifest, rollbackManifest);" not in targeted:
+        raise AssertionError("an unattended install must reuse pullOtaInstall")
+    if run.index("pullOtaFindCurrentRelease(catalog, rollbackManifest)") > targeted_start:
+        raise AssertionError("the rollback manifest must be resolved before an unattended install")
+
+    interactive = run[run.index("if (!pullOtaHasNewerRelease(catalog, selection)) {"):]
+    if "pullOtaPickRelease(catalog, selection, &selectedCatalogIndex)" not in interactive:
+        raise AssertionError("the interactive picker must remain on the no-target path")
+    if "pullOtaConfirmInstall(manifest)" not in interactive:
+        raise AssertionError("the confirm prompt must remain on the no-target path")
+
+    parameter = PARAMETER_HEADER.read_text(encoding="utf-8")
+    for name in ("pendingOtaTargetMajor", "pendingOtaTargetMinor", "pendingOtaTargetPatch",
+                 "requestedOtaTargetMajor", "requestedOtaTargetMinor", "requestedOtaTargetPatch"):
+        if f"volatile uint8_t {name}" not in parameter:
+            raise AssertionError(f"{name} must be volatile in parameter.h")
+    for name in ("pendingOtaTargetPresent", "requestedOtaTargetPresent"):
+        if f"volatile bool {name}" not in parameter:
+            raise AssertionError(f"{name} must be volatile in parameter.h")
+
+    for helper in ("void pullOtaStoreRequestedTarget(", "PullOtaTargetVersion pullOtaLoadRequestedTarget("):
+        start = contents.index(helper)
+        body = contents[start:contents.index("}", contents.index("portEXIT_CRITICAL", start))]
+        if "portENTER_CRITICAL(&wsPendingMux);" not in body:
+            raise AssertionError(f"{helper} must access the requested target under wsPendingMux")
+
+    if "strcmp(offered, wanted) == 0" not in contents:
+        raise AssertionError("target matching must compare normalized versions exactly")
+    if "pullOtaCompareVersions(catalog.releases[catalogIndex].version" in contents:
+        raise AssertionError(
+            "target matching must not use pullOtaCompareVersions, which returns 0 for unparseable input")
+
+    websocket = WEBSOCKET_HEADER.read_text(encoding="utf-8")
+    helper_start = websocket.index("inline bool remoteQueueWifiUpdate(")
+    helper = websocket[helper_start:websocket.index("inline void wsQueuePending(", helper_start)]
+    if "portENTER_CRITICAL(&wsPendingMux);" not in helper or "portEXIT_CRITICAL(&wsPendingMux);" not in helper:
+        raise AssertionError("the pending target must be written under wsPendingMux")
+
     print("pull OTA contract tests passed")
 
 

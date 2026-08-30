@@ -15,6 +15,7 @@
 
 #if HDS_FEATURE_PULL_OTA
 void wifiUpdate();
+void wifiUpdate(const PullOtaTargetVersion &target);
 #endif
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 void sendBleGyro();
@@ -201,6 +202,53 @@ inline void remoteQueueSamplesInUse(uint8_t samplesInUse) {
 #endif
 }
 
+inline bool remoteQueueWifiUpdate(const PullOtaTargetVersion &target) {
+  bool queued = false;
+  portENTER_CRITICAL(&wsPendingMux);
+  if (!(wsPendingMask & WSP_WIFI_UPDATE) && !pendingOtaDispatching &&
+      !b_ota && !b_pullOtaRunning) {
+    pendingOtaTargetMajor = target.major;
+    pendingOtaTargetMinor = target.minor;
+    pendingOtaTargetPatch = target.patch;
+    pendingOtaTargetPresent = target.present;
+    wsPendingMask |= WSP_WIFI_UPDATE;
+    queued = true;
+  }
+  portEXIT_CRITICAL(&wsPendingMux);
+  if (!queued) {
+    return false;
+  }
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
+  return true;
+}
+
+inline void remoteFinishWifiUpdateDispatch() {
+  portENTER_CRITICAL(&wsPendingMux);
+  pendingOtaDispatching = false;
+  portEXIT_CRITICAL(&wsPendingMux);
+}
+
+inline void remoteRestoreDeferredPendingLocked(uint32_t deferredMask,
+                                               unsigned long resetAt) {
+  const uint32_t replacementGroups[] = {
+    WSP_DISPLAY_ON | WSP_DISPLAY_OFF,
+    WSP_LOWPWR_ON | WSP_LOWPWR_OFF,
+    WSP_SLEEP_ON | WSP_SLEEP_OFF,
+    WSP_TIMER_START | WSP_TIMER_STOP | WSP_TIMER_ZERO,
+  };
+  for (const uint32_t group : replacementGroups) {
+    if (wsPendingMask & group) {
+      deferredMask &= ~group;
+    }
+  }
+  if ((deferredMask & WSP_RESET) && !(wsPendingMask & WSP_RESET)) {
+    pendingResetAt = resetAt;
+  }
+  wsPendingMask |= deferredMask;
+}
+
 inline void wsQueuePending(uint32_t bits) {
   remoteQueuePending(bits);
 }
@@ -214,9 +262,17 @@ void processWsPendingCmds() {
   portENTER_CRITICAL(&wsPendingMux);
   uint32_t mask = b_ota ? (wsPendingMask & WSP_OTA_RESET) : wsPendingMask;
   uint8_t samplesInUse = pendingSamplesInUse;
+  PullOtaTargetVersion otaTarget;
+  otaTarget.major = pendingOtaTargetMajor;
+  otaTarget.minor = pendingOtaTargetMinor;
+  otaTarget.patch = pendingOtaTargetPatch;
+  otaTarget.present = pendingOtaTargetPresent;
   unsigned long resetAt = pendingResetAt;
   unsigned long otaResetAt = pendingOtaResetAt;
   wsPendingMask &= ~mask;
+  if (mask & WSP_WIFI_UPDATE) {
+    pendingOtaDispatching = true;
+  }
   if (mask & WSP_RESET) {
     pendingResetAt = 0;
   }
@@ -227,27 +283,21 @@ void processWsPendingCmds() {
   if (mask == 0) return;
 
   std::lock_guard<std::mutex> otaDispatchLock(otaDispatchMutex);
+  bool droppedWifiUpdate = false;
   portENTER_CRITICAL(&wsPendingMux);
   if (b_ota) {
-    uint32_t deferredMask = mask & ~WSP_OTA_RESET;
-    const uint32_t replacementGroups[] = {
-      WSP_DISPLAY_ON | WSP_DISPLAY_OFF,
-      WSP_LOWPWR_ON | WSP_LOWPWR_OFF,
-      WSP_SLEEP_ON | WSP_SLEEP_OFF,
-      WSP_TIMER_START | WSP_TIMER_STOP | WSP_TIMER_ZERO,
-    };
-    for (const uint32_t group : replacementGroups) {
-      if (wsPendingMask & group) {
-        deferredMask &= ~group;
-      }
+    droppedWifiUpdate = (mask & WSP_WIFI_UPDATE) != 0;
+    remoteRestoreDeferredPendingLocked(
+        mask & ~(WSP_OTA_RESET | WSP_WIFI_UPDATE), resetAt);
+    if (mask & WSP_WIFI_UPDATE) {
+      pendingOtaDispatching = false;
     }
-    if ((deferredMask & WSP_RESET) && !(wsPendingMask & WSP_RESET)) {
-      pendingResetAt = resetAt;
-    }
-    wsPendingMask |= deferredMask;
     mask &= WSP_OTA_RESET;
   }
   portEXIT_CRITICAL(&wsPendingMux);
+  if (droppedWifiUpdate) {
+    Serial.println("WiFi OTA start dropped; an update is already running.");
+  }
   if (mask == 0) return;
 
   if (mask & WSP_OTA_RESET) {
@@ -280,14 +330,16 @@ void processWsPendingCmds() {
       return;
     }
   }
-#if HDS_FEATURE_PULL_OTA
   if (mask & WSP_WIFI_UPDATE) {
-    uint32_t deferredMask = mask & ~WSP_WIFI_UPDATE;
-    if (deferredMask != 0) remoteQueuePending(deferredMask);
-    wifiUpdate();
+    portENTER_CRITICAL(&wsPendingMux);
+    remoteRestoreDeferredPendingLocked(mask & ~WSP_WIFI_UPDATE, resetAt);
+    portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_FEATURE_PULL_OTA
+    wifiUpdate(otaTarget);
+#endif
+    remoteFinishWifiUpdateDispatch();
     return;
   }
-#endif
 #if HDS_ENABLE_ENERGY_MENU
   if (mask & WSP_DISPLAY_ON)  { applyEnergyDisplayCommand(true); }
   if (mask & WSP_DISPLAY_OFF) { applyEnergyDisplayCommand(false); }
@@ -549,7 +601,11 @@ bool handleWebsocketControlCommand(
       ((websocketEqualsIgnoreCase(command, "sleep") ||
         websocketEqualsIgnoreCase(command, "soft_sleep")) && sleepAction) ||
       (websocketEqualsIgnoreCase(command, "power") &&
-       websocketEqualsIgnoreCase(action, "off"))) {
+       websocketEqualsIgnoreCase(action, "off"))
+#if HDS_FEATURE_PULL_OTA
+      || websocketEqualsIgnoreCase(command, "wifi_update")
+#endif
+      ) {
     recordEnergyActivity();
   }
 #endif
@@ -703,6 +759,29 @@ bool handleWebsocketControlCommand(
     return true;
   }
 
+#if HDS_FEATURE_PULL_OTA
+  if (websocketEqualsIgnoreCase(command, "wifi_update")) {
+    if (b_pullOtaRunning || b_ota) {
+      sendWebsocketError(client, "ota_busy", "an update is already running");
+      return true;
+    }
+    PullOtaTargetVersion target = pullOtaNoTargetVersion();
+    if (!action.empty() &&
+        !pullOtaParseTargetVersion(action.data(), action.size(), target)) {
+      sendWebsocketError(client, "ota_version_invalid",
+                         "version must be major.minor.patch");
+      return true;
+    }
+    if (!remoteQueueWifiUpdate(target)) {
+      sendWebsocketError(client, "ota_busy", "a start request is already queued");
+      return true;
+    }
+    Serial.println("Websocket WiFi update queued.");
+    sendWebsocketStatus(client, "ok");
+    return true;
+  }
+#endif
+
   return false;
 }
 
@@ -755,6 +834,10 @@ bool handleWebsocketNamedJsonCommand(AsyncWebSocketClient *client, JsonDocument 
   }
 
   std::string_view command = websocketTrimView(doc[key].as<const char *>());
+  if (!doc["action"].isNull() && !doc["action"].is<const char *>()) {
+    sendWebsocketError(client, "invalid_action", "action must be a string");
+    return true;
+  }
   const char *action = doc["action"].is<const char *>()
                            ? doc["action"].as<const char *>()
                            : "";

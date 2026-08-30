@@ -47,6 +47,26 @@ Do not offer:
 
 Compatible older stable releases at `v3.1.13+` may be offered as signed downgrades.
 
+## Unattended Install
+
+A start request may name a target release. Over BLE and USB that is the five-byte `0x1B` form; over the `/snapshot` WebSocket it is the `wifi_update` command's version argument. See `docs/AI_PROTOCOL_NOTES.md` for the wire forms. A request with no target keeps the interactive picker on every transport.
+
+`pullOtaRunUpdate()` resolves a target against `selection`, the picker's own list, never against the raw catalog. That inheritance is the safeguard: `pullOtaAddParsedRelease()` has already dropped ineligible and incompatible entries, and `pullOtaBuildSelectableReleases()` has already dropped the installed version. A release the picker would not have offered is simply not found. Do not resolve against `catalog` or reimplement the eligibility rules; a second copy is where the two paths would drift.
+
+The unattended path skips only `pullOtaPickRelease()` and `pullOtaConfirmInstall()`. Everything else is shared and unchanged: WiFi, clock, signed catalog fetch and signature verification, rollback-manifest resolution before any write, `pullOtaInstall()`, HTTPS with CA validation, asset URL allowlisting, exact size checks, SHA-256 verification, and the staged LittleFS transaction with its bounded retries and rollback metadata.
+
+A request is refused when the target is absent from the verified catalog, incompatible with this hardware, not a stable numeric release, below `HDS_OTA_MIN_INSTALL_VERSION`, equal to the installed version, or when no signed rollback manifest can be resolved. A refusal calls `pullOtaFail()` and returns. It must never fall back to the picker, and it must never install a release other than the one requested.
+
+An eligible downgrade is accepted, matching picker behavior.
+
+A pending staged LittleFS transaction takes priority: `pullOtaRunUpdate()` resumes it and ignores the target.
+
+The client contributes a version number and no other input. Asset URLs, sizes, and hashes all come from the scale's own signature-verified fetch.
+
+Only one start request exists at a time. Every transport admits through `remoteQueueWifiUpdate()`, USB included; nothing else may call `wifiUpdate()`. `pendingOtaDispatching` covers the gap between clearing the pending bit and the update being marked running, so a request cannot be accepted mid-dispatch. A request that reaches dispatch while an update is already running is dropped, not requeued: requeuing is what let a stale request fire once an unrelated update ended.
+
+Acceptance is not installability. A transport acknowledges only that a well-formed request was queued. Accept-time refusals are limited to pull OTA being compiled out, a malformed version, and an update already running. Every catalog-level refusal happens later on the `Pull OTA` task, after `pullOtaPauseFilesystemServices()` has called `stopWebServer()` and closed every WebSocket client, so those refusals surface on the display and the serial log only. Do not add a client progress stream; progress stays on the OLED.
+
 ## Staged LittleFS OTA
 
 Staged LittleFS OTA stores target and rollback metadata in NVS namespace `ota_fs`, including `target_try`, `fs_dirty`, `restore`, and `restore_try` recovery state.
@@ -77,11 +97,11 @@ The single LittleFS partition has no independent rollback slot. Do not weaken si
 
 ElegantOTA auto-reboot stays disabled with `ElegantOTA.setAutoReboot(false)`. Successful ElegantOTA and pull OTA paths call `remoteQueueOtaResetAt()` so their reset remains distinguishable from ordinary remote resets during an active update. Other scheduled main-loop resets use `remoteQueueResetAt()`; neither path should call `ESP.restart()` directly.
 
-ElegantOTA start and main-loop remote action dispatch share `otaDispatchMutex`. Hold it across the complete extracted action batch so `onOTAStart()` cannot publish active OTA until in-flight hardware work finishes. If OTA starts first, restore extracted actions without overwriting newer pending members of the display, low-power, soft-sleep, or timer replacement groups.
+The project-owned `/ota/start` handler and main-loop remote action dispatch share `otaDispatchMutex`. The handler claims `b_ota` and completes `Update.begin()` while holding the mutex, so a Pull OTA and an ElegantOTA session cannot claim the global `Update` object together. Hold the mutex across the complete extracted action batch. Restore extracted actions through `remoteRestoreDeferredPendingLocked()` so older display, low-power, soft-sleep, or timer commands cannot replace newer pending commands.
 
 Both OTA paths stop BLE advertising and disconnect an active peer before flash work. Failed or cancelled updates resume advertising from the main loop. Do not shut BLE down from an AsyncTCP callback.
 
-While OTA is active, the main loop closes WebSocket clients and the HTTP middleware rejects new non-OTA work. ElegantOTA upload traffic remains available until its response completes.
+While OTA is active, the main loop closes WebSocket clients and the HTTP middleware rejects new non-OTA work. The project-owned `/ota/upload` handler is registered before ElegantOTA's handler and checks Pull OTA ownership under `otaDispatchMutex` before every `Update.write()` and `Update.end()`. The middleware alone is not an upload guard because ESPAsyncWebServer parses multipart bodies before running server middleware.
 
 ElegantOTA accepts firmware images only. Direct filesystem uploads are rejected because they bypass the signed, staged LittleFS transaction and its rollback protection. Use the WiFi Update menu for firmware and filesystem release updates.
 
@@ -106,6 +126,7 @@ Relevant checks:
 
 ```sh
 python tools/test_generate_release_manifest.py
+python tools/test_decent_ota_target_contract.py
 python tools/test_pull_ota_contract.py
 python tools/test_release_workflow_contract.py
 python tools/test_ota_rollback_contract.py

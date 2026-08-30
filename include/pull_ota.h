@@ -1399,7 +1399,32 @@ bool pullOtaResumePendingLittleFs() {
   return true;
 }
 
-void pullOtaRunUpdate() {
+bool pullOtaFindTargetRelease(
+    const PullOtaReleaseList &catalog,
+    const PullOtaReleaseSelection &selection,
+    const PullOtaTargetVersion &target,
+    uint8_t *selectedCatalogIndex) {
+  char wanted[HDS_OTA_TARGET_VERSION_BUFFER_BYTES];
+  if (selectedCatalogIndex == nullptr ||
+      !pullOtaFormatTargetVersion(target, wanted, sizeof(wanted))) {
+    return false;
+  }
+  for (uint8_t i = 0; i < selection.count; i++) {
+    uint8_t catalogIndex = selection.indices[i];
+    char offered[HDS_OTA_TARGET_VERSION_BUFFER_BYTES];
+    if (!pullOtaNormalizeVersionPrefix(
+            catalog.releases[catalogIndex].version.c_str(), offered, sizeof(offered))) {
+      continue;
+    }
+    if (strcmp(offered, wanted) == 0) {
+      *selectedCatalogIndex = catalogIndex;
+      return true;
+    }
+  }
+  return false;
+}
+
+void pullOtaRunUpdate(const PullOtaTargetVersion &target) {
   if (pullOtaHasPendingLittleFs()) {
     pullOtaResumePendingLittleFs();
     return;
@@ -1429,6 +1454,10 @@ void pullOtaRunUpdate() {
   }
   pullOtaBuildSelectableReleases(catalog, selection);
   if (selection.count == 0) {
+    if (target.present) {
+      pullOtaFail("Version not offered");
+      return;
+    }
     pullOtaDraw("Newest stable", pullOtaCurrentVersion().c_str());
     delay(2000);
     return;
@@ -1438,11 +1467,20 @@ void pullOtaRunUpdate() {
     pullOtaFail("Rollback missing");
     return;
   }
+  uint8_t selectedCatalogIndex = 0;
+  if (target.present) {
+    if (!pullOtaFindTargetRelease(catalog, selection, target, &selectedCatalogIndex)) {
+      pullOtaFail("Version not offered");
+      return;
+    }
+    PullOtaManifest manifest = std::move(catalog.releases[selectedCatalogIndex]);
+    pullOtaInstall(manifest, rollbackManifest);
+    return;
+  }
   if (!pullOtaHasNewerRelease(catalog, selection)) {
     pullOtaDraw("Newest stable", pullOtaCurrentVersion().c_str());
     delay(1500);
   }
-  uint8_t selectedCatalogIndex = 0;
   if (!pullOtaPickRelease(catalog, selection, &selectedCatalogIndex)) {
     return;
   }
@@ -1453,9 +1491,29 @@ void pullOtaRunUpdate() {
   pullOtaInstall(manifest, rollbackManifest);
 }
 
+void pullOtaStoreRequestedTarget(const PullOtaTargetVersion &target) {
+  portENTER_CRITICAL(&wsPendingMux);
+  requestedOtaTargetMajor = target.major;
+  requestedOtaTargetMinor = target.minor;
+  requestedOtaTargetPatch = target.patch;
+  requestedOtaTargetPresent = target.present;
+  portEXIT_CRITICAL(&wsPendingMux);
+}
+
+PullOtaTargetVersion pullOtaLoadRequestedTarget() {
+  PullOtaTargetVersion target;
+  portENTER_CRITICAL(&wsPendingMux);
+  target.major = requestedOtaTargetMajor;
+  target.minor = requestedOtaTargetMinor;
+  target.patch = requestedOtaTargetPatch;
+  target.present = requestedOtaTargetPresent;
+  portEXIT_CRITICAL(&wsPendingMux);
+  return target;
+}
+
 void pullOtaUpdateTask(void *args) {
   (void)args;
-  pullOtaRunUpdate();
+  pullOtaRunUpdate(pullOtaLoadRequestedTarget());
   portENTER_CRITICAL(&wsPendingMux);
   const bool restartPending = (wsPendingMask & WSP_OTA_RESET) != 0;
   portEXIT_CRITICAL(&wsPendingMux);
@@ -1466,12 +1524,13 @@ void pullOtaUpdateTask(void *args) {
   vTaskDelete(NULL);
 }
 
-void pullOtaUpdate() {
+void pullOtaUpdate(const PullOtaTargetVersion &target) {
   if (b_pullOtaRunning || b_ota) {
     return;
   }
   b_pullOtaRunning = true;
   b_ota = true;
+  pullOtaStoreRequestedTarget(target);
   BaseType_t started = xTaskCreate(
       pullOtaUpdateTask,
       "Pull OTA",
