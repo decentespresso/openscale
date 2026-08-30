@@ -42,6 +42,8 @@ constexpr const char *ENERGY_FEATURE_KEYS[] = {
 static_assert(sizeof(ENERGY_FEATURE_KEYS) / sizeof(ENERGY_FEATURE_KEYS[0]) ==
               static_cast<size_t>(EnergyFeature::Count));
 #endif
+constexpr const char *KEY_TAP_TARE = "tap_tare";
+constexpr const char *KEY_TAP_TIMER = "tap_timer";
 
 constexpr size_t LEGACY_EEPROM_BYTES = 512;
 constexpr size_t LEGACY_CAL1_ADDRESS = 0;
@@ -175,7 +177,7 @@ inline bool storageHasAllSettings() {
     KEY_CAL1, KEY_CONTAINER, KEY_MODE, KEY_POUROVER, KEY_ESPRESSO,
     KEY_BEEP, KEY_WELCOME, KEY_BAT_CAL, KEY_HEARTBEAT, KEY_SCREEN_FLIP,
     KEY_TIME_ON_TOP, KEY_BTN_CONN, KEY_WIFI_BOOT, KEY_AUTO_SLEEP,
-    KEY_QUICK_BOOT, KEY_DRIFT_MAX
+    KEY_QUICK_BOOT, KEY_DRIFT_MAX, KEY_TAP_TARE, KEY_TAP_TIMER
   };
   for (const char *key : keys) {
     if (!settingsPreferences.isKey(key)) {
@@ -201,7 +203,9 @@ inline bool storageEnsureDefaults() {
          storageEnsureBool(KEY_WIFI_BOOT, false) &&
          storageEnsureBool(KEY_AUTO_SLEEP, true) &&
          storageEnsureBool(KEY_QUICK_BOOT, false) &&
-         storageEnsureFloat(KEY_DRIFT_MAX, 0.05f);
+         storageEnsureFloat(KEY_DRIFT_MAX, 0.05f) &&
+         storageEnsureBool(KEY_TAP_TARE, false) &&
+         storageEnsureBool(KEY_TAP_TIMER, false);
 }
 
 inline bool storageLegacyBool(size_t address, bool defaultValue) {
@@ -291,7 +295,9 @@ inline bool storageMigrateLegacyEeprom() {
                   storageEnsureBool(KEY_WIFI_BOOT, storageLegacyBool(LEGACY_WIFI_BOOT_ADDRESS, false)) &&
                   storageEnsureBool(KEY_AUTO_SLEEP, storageLegacyBool(LEGACY_AUTO_SLEEP_ADDRESS, true)) &&
                   storageEnsureBool(KEY_QUICK_BOOT, storageLegacyBool(LEGACY_QUICK_BOOT_ADDRESS, false)) &&
-                  storageEnsureFloat(KEY_DRIFT_MAX, driftMax);
+                  storageEnsureFloat(KEY_DRIFT_MAX, driftMax) &&
+                  storageEnsureBool(KEY_TAP_TARE, false) &&
+                  storageEnsureBool(KEY_TAP_TIMER, false);
   EEPROM.end();
   return migrated;
 }

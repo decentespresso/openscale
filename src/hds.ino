@@ -50,6 +50,7 @@ void waitForEnergyMainLoopWork();
 #include "usbcomm.h"
 #include "finger_detection.h"
 #include "timing.h"
+#include "tap_detection.h"
 
 #if HDS_ENABLE_GRINDER
 #ifndef GRINDER_MENU_CHORD_HOLD_MS
@@ -1008,6 +1009,8 @@ void setup() {
   b_timeOnTop = storageGetBool(KEY_TIME_ON_TOP, false);
   b_btnFuncWhileConnected = storageGetBool(KEY_BTN_CONN, false);
   b_autoSleep = storageGetBool(KEY_AUTO_SLEEP, true);
+  b_tapTareEnabled = storageGetBool(KEY_TAP_TARE, false);
+  b_tapTimerEnabled = storageGetBool(KEY_TAP_TIMER, false);
   if (b_mode > 1) {
     b_mode = 0;
     storagePutInt(KEY_MODE, b_mode);
@@ -2297,6 +2300,7 @@ void loop() {
           }
         }
         pureScale();
+        tapDetectTick();
         updateOled();
 #if HDS_ENABLE_GRINDER
         grinderRuntimeTick(f_displayedValue);

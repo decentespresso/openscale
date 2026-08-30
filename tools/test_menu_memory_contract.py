@@ -16,6 +16,7 @@ SUBMENU_LINKS = {
     "menuGrinder": "menuGrinderBack",
     "menuHeartbeat": "menuHeartbeatBack",
     "menuQuickBoot": "menuQuickBootBack",
+    "menuTapActions": "menuTapActionsBack",
     "menuTimeOnTop": "menuTimeOnTopBack",
     "menuWifi": "menuWiFiUpdateBack",
 }
