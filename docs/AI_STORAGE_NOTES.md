@@ -45,6 +45,8 @@ The device name lives in `wifi`, not `hds`, so renaming a scale never touches th
 | `auto_sleep` | bool | `true` |
 | `quick_boot` | bool | `false` |
 | `drift_max` | float | `0.05` |
+| `tap_tare` | bool | `false` |
+| `tap_timer` | bool | `false` |
 
 `schema` is a `uint16_t`, currently `1`. Do not rename a key or change its stored type in place. Add an explicit migration, preserve old data until the new schema is complete, then increment the schema version.
 

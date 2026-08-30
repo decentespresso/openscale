@@ -79,6 +79,10 @@ void driftComp0050();
 void driftComp0075();
 void driftComp0100();
 void driftComp0200();
+void tapTareOn();
+void tapTareOff();
+void tapTimerOn();
+void tapTimerOff();
 #if HDS_ENABLE_GRINDER
 void grinderOn();
 void grinderOff();
@@ -113,6 +117,7 @@ Menu menuBtnFuncWhileConnected = { "Button with BLE", NULL, NULL, NULL };
 Menu menuAutoSleep = { "Auto Sleep", NULL, NULL, NULL };
 Menu menuQuickBoot = { "Quick Boot", NULL, NULL, NULL };
 Menu menuDriftComp = { "Drift Comp", NULL, NULL, NULL };
+Menu menuTapActions = { "DoubleTapTare", NULL, NULL, NULL };
 #if HDS_ENABLE_GRINDER
 Menu menuGrinder = { "Grind by weight", NULL, NULL, NULL };
 #endif
@@ -202,6 +207,14 @@ Menu menuQuickBoot0100 = { "0.1g", driftComp0100, NULL, &menuDriftComp };
 Menu menuQuickBoot0200 = { "0.2g", driftComp0200, NULL, &menuDriftComp };
 Menu *driftCompMenu[] = { &menuDriftCompBack, &menuDriftCompOff, &menuQuickBoot0050, &menuQuickBoot0075, &menuQuickBoot0100, &menuQuickBoot0200 };
 
+Menu menuTapBack = { "Back", NULL, NULL, &menuTapActions };
+Menu menuTapTareOn = { "2x Tare On", tapTareOn, NULL, &menuTapActions };
+Menu menuTapTareOff = { "2x Tare Off", tapTareOff, NULL, &menuTapActions };
+Menu menuTapTimerOn = { "3x Timer On", tapTimerOn, NULL, &menuTapActions };
+Menu menuTapTimerOff = { "3x Timer Off", tapTimerOff, NULL, &menuTapActions };
+Menu *tapActionsMenu[] = { &menuTapBack, &menuTapTareOn, &menuTapTareOff,
+                           &menuTapTimerOn, &menuTapTimerOff };
+
 #if HDS_ENABLE_GRINDER
 Menu menuGrinderBack = { "Back", NULL, NULL, &menuGrinder };
 Menu menuGrinderOn = { "Enable", grinderOn, NULL, &menuGrinder };
@@ -226,7 +239,7 @@ Menu *mainMenu[] = {
   &menuStatus,
   &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen, &menuTimeOnTop,
   &menuBtnFuncWhileConnected, &menuAutoSleep, &menuQuickBoot, &menuDriftComp,
-  &menuBatInfo,
+  &menuTapActions, &menuBatInfo,
   &menuBatteryProtect,
 #if HDS_ENABLE_GRINDER
   &menuGrinder,
@@ -264,6 +277,7 @@ void linkSubmenus() {
   menuAutoSleep.subMenu = autoSleepMenu[0];
   menuQuickBoot.subMenu = quickBootMenu[0];
   menuDriftComp.subMenu = driftCompMenu[0];
+  menuTapActions.subMenu = tapActionsMenu[0];
 #if HDS_ENABLE_GRINDER
   menuGrinder.subMenu = grinderMenu[0];
 #endif
@@ -510,6 +524,42 @@ void heartbeatOff() {
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_HEARTBEAT, b_requireHeartBeat);
   Serial.println("Heartbeat detection...Off");
+}
+
+void tapTareOn() {
+  b_tapTareEnabled = true;
+  actionMessage = "2x Tare On";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  storagePutBool(KEY_TAP_TARE, b_tapTareEnabled);
+  Serial.println("2x tap tare On stored in NVS.");
+}
+
+void tapTareOff() {
+  b_tapTareEnabled = false;
+  actionMessage = "2x Tare Off";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  storagePutBool(KEY_TAP_TARE, b_tapTareEnabled);
+  Serial.println("2x tap tare Off stored in NVS.");
+}
+
+void tapTimerOn() {
+  b_tapTimerEnabled = true;
+  actionMessage = "3x Timer On";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  storagePutBool(KEY_TAP_TIMER, b_tapTimerEnabled);
+  Serial.println("3x tap timer On stored in NVS.");
+}
+
+void tapTimerOff() {
+  b_tapTimerEnabled = false;
+  actionMessage = "3x Timer Off";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  storagePutBool(KEY_TAP_TIMER, b_tapTimerEnabled);
+  Serial.println("3x tap timer Off stored in NVS.");
 }
 
 void flipScreenOn() {
@@ -1720,6 +1770,9 @@ void selectMenu() {
     } else if (currentSelection == &menuDriftComp) {
       currentMenu = driftCompMenu;
       currentMenuSize = getMenuSize(driftCompMenu);
+    } else if (currentSelection == &menuTapActions) {
+      currentMenu = tapActionsMenu;
+      currentMenuSize = getMenuSize(tapActionsMenu);
 #if HDS_ENABLE_GRINDER
     } else if (currentSelection == &menuGrinder) {
       b_grinderMenuDirectEntry = false;
