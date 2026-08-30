@@ -140,6 +140,9 @@ def main():
     assert "b_ota = false;" not in function_body(pull_ota, "pullOtaFail")
     assert "b_ota = false;" not in function_body(pull_ota, "pullOtaInstall")
     update_task = function_body(pull_ota, "pullOtaUpdateTask")
+    assert update_task.index("otaRuntimeIsPaused()") < update_task.index("pullOtaRunUpdate")
+    assert "millis() - pauseStartedAt < OTA_RUNTIME_PAUSE_TIMEOUT_MS" in update_task
+    assert "pullOtaFail(\"OTA runtime pause failed\")" in update_task
     assert "restartPending = (wsPendingMask & WSP_OTA_RESET) != 0" in update_task
     assert "if (!restartPending)" in update_task
     update = function_body(pull_ota, "pullOtaUpdate")

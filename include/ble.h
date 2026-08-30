@@ -111,16 +111,18 @@ class MyServerCallbacks : public BLEServerCallbacks {
     }
     deviceConnected = false;
     bleState = DISCONNECTED;
+    if (b_ota) {
+      Serial.print("Device disconnected (connId: ");
+      Serial.print(desc->conn_handle);
+      Serial.println("), OTA active, advertising paused");
+      return;
+    }
 #ifdef BUZZER
     b_beep = storageGetInt(KEY_BEEP, 1);
 #endif
     restoreDisplayAfterBleDisconnect();
     Serial.print("Device disconnected (connId: ");
     Serial.print(desc->conn_handle);
-    if (b_ota) {
-      Serial.println("), OTA active, advertising paused");
-      return;
-    }
     Serial.println("), restarting advertising...");
     delay(100);
     pAdvertising->start();
@@ -148,14 +150,14 @@ class MyServerCallbacks : public BLEServerCallbacks {
     setBleFff4Connection(0xFFFF, 0xFFFF);
     deviceConnected = false;
     bleState = DISCONNECTED;
-#ifdef BUZZER
-    b_beep = storageGetInt(KEY_BEEP, 1);
-#endif
-    restoreDisplayAfterBleDisconnect();
     if (b_ota) {
       Serial.println("Device disconnected, OTA active, advertising paused");
       return;
     }
+#ifdef BUZZER
+    b_beep = storageGetInt(KEY_BEEP, 1);
+#endif
+    restoreDisplayAfterBleDisconnect();
     Serial.println("Device disconnected, restarting advertising...");
     delay(100);
     pAdvertising->start();
@@ -320,6 +322,7 @@ struct BleDecentCommandSink {
 
 class MyCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pWriteCharacteristic) {
+    if (b_ota) return;
     Serial.print("Timer");
     Serial.print(millis());
     Serial.print(" onWrite counter:");
@@ -446,17 +449,26 @@ static bool bleHasLiveClient() {
 #endif
 }
 
-void blePauseForOta() {
+bool blePauseForOta() {
   bleDebugMode = DEBUG_OFF;
+  const bool disconnectedClient = bleHasLiveClient();
   if (pAdvertising != nullptr) {
     pAdvertising->stop();
   }
-  if (pServer != nullptr && bleHasLiveClient() && connId != 0xFFFF) {
+  if (pServer != nullptr && disconnectedClient && connId != 0xFFFF) {
     pServer->disconnect(connId, 0x13);
   }
+  return disconnectedClient;
 }
 
-void bleResumeAfterOta() {
+void bleResumeAfterOta(bool restoreDisconnectedClient) {
+#ifdef BUZZER
+  if (restoreDisconnectedClient) {
+    b_beep = storageGetInt(KEY_BEEP, 1);
+  }
+#else
+  (void)restoreDisconnectedClient;
+#endif
   if (b_ble_enabled && pAdvertising != nullptr && !bleHasLiveClient()) {
     pAdvertising->start();
   }

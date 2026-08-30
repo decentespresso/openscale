@@ -178,10 +178,26 @@ const uint8_t OTA_DISPLAY_NONE = 0;
 const uint8_t OTA_DISPLAY_PROGRESS = 1;
 const uint8_t OTA_DISPLAY_SUCCESS = 2;
 const uint8_t OTA_DISPLAY_FAILURE = 3;
+const unsigned long OTA_RUNTIME_PAUSE_TIMEOUT_MS = 2000;
 portMUX_TYPE otaDisplayMux = portMUX_INITIALIZER_UNLOCKED;
 volatile uint8_t otaDisplayState = OTA_DISPLAY_NONE;
 volatile uint8_t otaDisplayPercent = 0;
 volatile unsigned long otaActivityAt = 0;
+volatile bool otaRuntimePaused = false;
+bool elegantOtaUploadClaimed = false;
+
+inline bool otaRuntimeIsPaused() {
+  portENTER_CRITICAL(&otaDisplayMux);
+  const bool paused = otaRuntimePaused;
+  portEXIT_CRITICAL(&otaDisplayMux);
+  return paused;
+}
+
+inline void setOtaRuntimePaused(bool paused) {
+  portENTER_CRITICAL(&otaDisplayMux);
+  otaRuntimePaused = paused;
+  portEXIT_CRITICAL(&otaDisplayMux);
+}
 
 inline void remoteQueueResetAt(unsigned long resetAt) {
   portENTER_CRITICAL(&wsPendingMux);

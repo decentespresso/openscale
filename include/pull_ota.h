@@ -1513,6 +1513,18 @@ PullOtaTargetVersion pullOtaLoadRequestedTarget() {
 
 void pullOtaUpdateTask(void *args) {
   (void)args;
+  const unsigned long pauseStartedAt = millis();
+  while (!otaRuntimeIsPaused() &&
+         millis() - pauseStartedAt < OTA_RUNTIME_PAUSE_TIMEOUT_MS) {
+    delay(1);
+  }
+  if (!otaRuntimeIsPaused()) {
+    pullOtaFail("OTA runtime pause failed");
+    b_ota = false;
+    b_pullOtaRunning = false;
+    vTaskDelete(NULL);
+    return;
+  }
   pullOtaRunUpdate(pullOtaLoadRequestedTarget());
   portENTER_CRITICAL(&wsPendingMux);
   const bool restartPending = (wsPendingMask & WSP_OTA_RESET) != 0;
@@ -1528,6 +1540,7 @@ void pullOtaUpdate(const PullOtaTargetVersion &target) {
   if (b_pullOtaRunning || b_ota) {
     return;
   }
+  setOtaRuntimePaused(false);
   b_pullOtaRunning = true;
   b_ota = true;
   pullOtaStoreRequestedTarget(target);

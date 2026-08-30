@@ -17,6 +17,8 @@ static const unsigned long OTA_ACTIVITY_TIMEOUT_MS = 30000;
 static const unsigned long OTA_PROGRESS_INTERVAL_MS = 500;
 static const char OTA_UPLOAD_REJECTED_ATTRIBUTE[] = "otaUploadRejected";
 static const char OTA_UPLOAD_FAILED_ATTRIBUTE[] = "otaUploadFailed";
+static const char OTA_UPLOAD_FINISHED_ATTRIBUTE[] = "otaUploadFinished";
+static const char OTA_UPLOAD_OWNER_ATTRIBUTE[] = "otaUploadOwner";
 
 uint8_t calculateOtaPercent(size_t current, size_t final) {
   if (final == 0) {
@@ -103,6 +105,7 @@ void onOTAStart() {
 #endif
   Serial.println("OTA update started!");
   recordElegantOtaActivity(millis());
+  setOtaRuntimePaused(false);
   portENTER_CRITICAL(&wsPendingMux);
   b_ota = true;
   portEXIT_CRITICAL(&wsPendingMux);
@@ -148,15 +151,33 @@ void handleElegantOtaStart(AsyncWebServerRequest *request) {
     request->send(409, "text/plain", "OTA already in progress");
     return;
   }
-  if (request->hasParam("hash") &&
-      !Update.setMD5(request->getParam("hash")->value().c_str())) {
-    request->send(400, "text/plain", "MD5 parameter invalid");
-    return;
+  const String hash = request->hasParam("hash")
+                          ? request->getParam("hash")->value()
+                          : "";
+  elegantOtaUploadClaimed = false;
+  onOTAStart();
+  otaDispatchLock.unlock();
+
+  const unsigned long pauseStartedAt = millis();
+  while (!otaRuntimeIsPaused()) {
+    if (millis() - pauseStartedAt >= OTA_RUNTIME_PAUSE_TIMEOUT_MS) {
+      onOTAEnd(false);
+      request->send(503, "text/plain", "OTA runtime pause failed");
+      return;
+    }
+    delay(1);
   }
 
-  onOTAStart();
+  std::lock_guard<std::mutex> updateLock(otaDispatchMutex);
   if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) {
+    onOTAEnd(false);
     request->send(400, "text/plain", Update.errorString());
+    return;
+  }
+  if (hash.length() > 0 && !Update.setMD5(hash.c_str())) {
+    Update.abort();
+    onOTAEnd(false);
+    request->send(400, "text/plain", "MD5 parameter invalid");
     return;
   }
   request->send(200, "text/plain", "OK");
@@ -175,9 +196,18 @@ void handleElegantOtaUpload(AsyncWebServerRequest *request,
   if (request->getAttribute(OTA_UPLOAD_REJECTED_ATTRIBUTE, false)) {
     return;
   }
-  if (b_pullOtaRunning || !b_ota) {
+  if (b_pullOtaRunning || !b_ota || !otaRuntimeIsPaused() ||
+      !Update.isRunning()) {
     request->setAttribute(OTA_UPLOAD_REJECTED_ATTRIBUTE, true);
     return;
+  }
+  if (!request->getAttribute(OTA_UPLOAD_OWNER_ATTRIBUTE, false)) {
+    if (elegantOtaUploadClaimed) {
+      request->setAttribute(OTA_UPLOAD_REJECTED_ATTRIBUTE, true);
+      return;
+    }
+    elegantOtaUploadClaimed = true;
+    request->setAttribute(OTA_UPLOAD_OWNER_ATTRIBUTE, true);
   }
 
   bool failed = request->getAttribute(OTA_UPLOAD_FAILED_ATTRIBUTE, false);
@@ -189,8 +219,12 @@ void handleElegantOtaUpload(AsyncWebServerRequest *request,
       onOTAProgress(index + len, request->contentLength());
     }
   }
-  if (final && !Update.end(true)) {
-    request->setAttribute(OTA_UPLOAD_FAILED_ATTRIBUTE, true);
+  if (final) {
+    if (failed || !Update.end(true)) {
+      request->setAttribute(OTA_UPLOAD_FAILED_ATTRIBUTE, true);
+    } else {
+      request->setAttribute(OTA_UPLOAD_FINISHED_ATTRIBUTE, true);
+    }
   }
 }
 
@@ -198,15 +232,24 @@ void completeElegantOtaUpload(AsyncWebServerRequest *request) {
   std::unique_lock<std::mutex> otaDispatchLock(otaDispatchMutex,
                                                std::try_to_lock);
   if (!otaDispatchLock.owns_lock() ||
-      request->getAttribute(OTA_UPLOAD_REJECTED_ATTRIBUTE, false) ||
       b_pullOtaRunning || !b_ota) {
+    request->send(409, "text/plain", "OTA upload rejected");
+    return;
+  }
+  if (!request->getAttribute(OTA_UPLOAD_OWNER_ATTRIBUTE, false)) {
     request->send(409, "text/plain", "OTA upload rejected");
     return;
   }
 
   const bool success =
+      !request->getAttribute(OTA_UPLOAD_REJECTED_ATTRIBUTE, false) &&
       !request->getAttribute(OTA_UPLOAD_FAILED_ATTRIBUTE, false) &&
+      request->getAttribute(OTA_UPLOAD_FINISHED_ATTRIBUTE, false) &&
       !Update.hasError();
+  if (!success && Update.isRunning()) {
+    Update.abort();
+  }
+  elegantOtaUploadClaimed = false;
   onOTAEnd(success);
   AsyncWebServerResponse *response = request->beginResponse(
       success ? 200 : 400, "text/plain", success ? "OK" : Update.errorString());

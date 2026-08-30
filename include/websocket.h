@@ -910,6 +910,10 @@ void setupWebsocketEvents() {
   websocket.onEvent([](
                       AsyncWebSocket *server, AsyncWebSocketClient *client,
                       AwsEventType type, void *arg, uint8_t *data, size_t len) {
+    if (b_ota && (type == WS_EVT_CONNECT || type == WS_EVT_DATA)) {
+      client->close();
+      return;
+    }
     if (type == WS_EVT_CONNECT) {
 #if HDS_ENABLE_ENERGY_MENU
       recordEnergyActivity();

@@ -893,9 +893,6 @@ void setup() {
 #endif
   delay(50);
   b_requireHeartBeat = storageGetBool(KEY_HEARTBEAT, true);
-  if (b_ble_enabled) {
-    ble_init();
-  }
   Serial.println("Begin!");
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
   ACC_init();
@@ -1067,10 +1064,13 @@ void setup() {
   grinderRuntimeBegin();
 #endif
 #if HDS_FEATURE_PULL_OTA
-  bool b_pendingOtaLittleFs = pullOtaHasPendingLittleFs();
+  const bool b_pendingOtaLittleFs = pullOtaHasPendingLittleFs();
 #else
-  bool b_pendingOtaLittleFs = false;
+  const bool b_pendingOtaLittleFs = false;
 #endif
+  if (b_ble_enabled && !b_pendingOtaLittleFs) {
+    ble_init();
+  }
 #if HDS_FEATURE_WIFI
   if (b_wifiOnBoot && GPIO_power_on_with != BATTERY_CHARGING && !b_pendingOtaLittleFs) {
     wifi_init();
@@ -2051,25 +2051,40 @@ void serviceEnergyHousekeeping(unsigned long now) {
 
 
 void loop() {
-  static bool otaTransportsPaused = false;
+  static bool otaBleClientDisconnected = false;
+  static bool otaTransportsStopped = false;
 #if HDS_ENABLE_ENERGY_MENU
   serviceEnergyLightSleepWakeRestore();
 #endif
   processWsPendingCmds();
   if (b_ota) {
-    if (!otaTransportsPaused) {
-      blePauseForOta();
+    if (!otaRuntimeIsPaused()) {
+      if (!otaTransportsStopped) {
+        otaBleClientDisconnected =
+            blePauseForOta() || otaBleClientDisconnected;
+        otaTransportsStopped = true;
 #if HDS_FEATURE_WEBSOCKET
-      websocket.closeAll();
+        websocket.closeAll();
 #endif
-      otaTransportsPaused = true;
-    }
-    if (b_softSleep) {
-      wakeScaleFromSoftSleep("OTA wake");
-    }
+      }
+      if (b_softSleep) {
+        wakeScaleFromSoftSleep("OTA wake");
+      }
 #if HDS_ENABLE_ENERGY_MENU
-    setEnergyPerformanceCritical(true);
+      setEnergyPerformanceCritical(true);
 #endif
+      if (!bleHasLiveClient()) {
+        setOtaRuntimePaused(true);
+      }
+    } else {
+      if (bleHasLiveClient()) {
+        otaBleClientDisconnected =
+            blePauseForOta() || otaBleClientDisconnected;
+      }
+#if HDS_ENABLE_ENERGY_MENU
+      setEnergyPerformanceCritical(true);
+#endif
+    }
 #if HDS_FEATURE_ELEGANT_OTA
     ElegantOTA.loop();
     processOtaDisplayUpdate();
@@ -2077,9 +2092,12 @@ void loop() {
 #endif
     return;
   }
-  if (otaTransportsPaused) {
-    bleResumeAfterOta();
-    otaTransportsPaused = false;
+  if (otaTransportsStopped) {
+    setOtaRuntimePaused(false);
+    bleResumeAfterOta(
+        otaBleClientDisconnected && !bleHasLiveClient());
+    otaBleClientDisconnected = false;
+    otaTransportsStopped = false;
   }
 
   processBleStatusResponse();
