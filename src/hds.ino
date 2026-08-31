@@ -690,14 +690,14 @@ void button_init() {
 void _wifi_init(void *args) {
   b_wifiEnabled = true;
   setupWifi();
+#if HDS_FEATURE_ELEGANT_OTA
+  wifiOta();
+#endif
 #if HDS_FEATURE_WEBSOCKET
   setupWebsocketEvents();
 #endif
 #if HDS_FEATURE_WEBSERVER
   startWebServer();
-#endif
-#if HDS_FEATURE_ELEGANT_OTA
-  wifiOta();
 #endif
   vTaskDelete(NULL);
 }
@@ -893,9 +893,6 @@ void setup() {
 #endif
   delay(50);
   b_requireHeartBeat = storageGetBool(KEY_HEARTBEAT, true);
-  if (b_ble_enabled) {
-    ble_init();
-  }
   Serial.println("Begin!");
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
   ACC_init();
@@ -1067,10 +1064,13 @@ void setup() {
   grinderRuntimeBegin();
 #endif
 #if HDS_FEATURE_PULL_OTA
-  bool b_pendingOtaLittleFs = pullOtaHasPendingLittleFs();
+  const bool b_pendingOtaLittleFs = pullOtaHasPendingLittleFs();
 #else
-  bool b_pendingOtaLittleFs = false;
+  const bool b_pendingOtaLittleFs = false;
 #endif
+  if (b_ble_enabled && !b_pendingOtaLittleFs) {
+    ble_init();
+  }
 #if HDS_FEATURE_WIFI
   if (b_wifiOnBoot && GPIO_power_on_with != BATTERY_CHARGING && !b_pendingOtaLittleFs) {
     wifi_init();
@@ -1182,6 +1182,8 @@ void setup() {
   updateBattery(BATTERY_PIN);
 #if HDS_FEATURE_PULL_OTA
   if (b_pendingOtaLittleFs) {
+    b_ota = true;
+    blePauseForOta();
     if (!pullOtaResumePendingLittleFs()) {
       hdsOtaRollback("LittleFS update");
     }
@@ -2049,10 +2051,55 @@ void serviceEnergyHousekeeping(unsigned long now) {
 
 
 void loop() {
+  static bool otaBleClientDisconnected = false;
+  static bool otaTransportsStopped = false;
 #if HDS_ENABLE_ENERGY_MENU
   serviceEnergyLightSleepWakeRestore();
 #endif
   processWsPendingCmds();
+  if (b_ota) {
+    if (!otaRuntimeIsPaused()) {
+      if (!otaTransportsStopped) {
+        otaBleClientDisconnected =
+            blePauseForOta() || otaBleClientDisconnected;
+        otaTransportsStopped = true;
+#if HDS_FEATURE_WEBSOCKET
+        websocket.closeAll();
+#endif
+      }
+      if (b_softSleep) {
+        wakeScaleFromSoftSleep("OTA wake");
+      }
+#if HDS_ENABLE_ENERGY_MENU
+      setEnergyPerformanceCritical(true);
+#endif
+      if (!bleHasLiveClient()) {
+        setOtaRuntimePaused(true);
+      }
+    } else {
+      if (bleHasLiveClient()) {
+        otaBleClientDisconnected =
+            blePauseForOta() || otaBleClientDisconnected;
+      }
+#if HDS_ENABLE_ENERGY_MENU
+      setEnergyPerformanceCritical(true);
+#endif
+    }
+#if HDS_FEATURE_ELEGANT_OTA
+    ElegantOTA.loop();
+    processOtaDisplayUpdate();
+    processElegantOtaTimeout();
+#endif
+    return;
+  }
+  if (otaTransportsStopped) {
+    setOtaRuntimePaused(false);
+    bleResumeAfterOta(
+        otaBleClientDisconnected && !bleHasLiveClient());
+    otaBleClientDisconnected = false;
+    otaTransportsStopped = false;
+  }
+
   processBleStatusResponse();
   processBleVoltageResponse();
 #if HDS_ENABLE_ENERGY_MENU
@@ -2155,13 +2202,6 @@ void loop() {
     }
     if (powerCadence.chargeCheck.shouldRun(millis(), 200)) {
       checkBattery();
-    }
-    if (b_ota) {
-#if HDS_FEATURE_ELEGANT_OTA
-      ElegantOTA.loop();
-      processOtaDisplayUpdate();
-#endif
-      return;
     }
     if (b_menu) {
 #if HDS_FEATURE_WIFI

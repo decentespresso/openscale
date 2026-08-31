@@ -202,7 +202,6 @@ bool pullOtaFail(const char *line1, const char *line2 = "") {
   Serial.printf("[pull-ota] error %s %s\n", line1, line2);
   pullOtaDraw(line1, line2);
   delay(2000);
-  b_ota = false;
   return false;
 }
 
@@ -1297,12 +1296,10 @@ bool pullOtaInstall(
     const PullOtaManifest &rollbackManifest) {
   b_ota = true;
   if (!pullOtaStorePendingLittleFs(manifest, rollbackManifest)) {
-    b_ota = false;
     return pullOtaFail("FS state failed");
   }
   if (!pullOtaStreamAsset(manifest.firmware, U_FLASH, "Firmware")) {
     pullOtaClearPendingLittleFs();
-    b_ota = false;
     return false;
   }
   pullOtaDraw("Firmware done", "Restarting", "Web UI next");
@@ -1463,7 +1460,6 @@ void pullOtaRunUpdate(const PullOtaTargetVersion &target) {
     }
     pullOtaDraw("Newest stable", pullOtaCurrentVersion().c_str());
     delay(2000);
-    b_ota = false;
     return;
   }
   rollbackFound = pullOtaFindCurrentRelease(catalog, rollbackManifest);
@@ -1517,15 +1513,34 @@ PullOtaTargetVersion pullOtaLoadRequestedTarget() {
 
 void pullOtaUpdateTask(void *args) {
   (void)args;
+  const unsigned long pauseStartedAt = millis();
+  while (!otaRuntimeIsPaused() &&
+         millis() - pauseStartedAt < OTA_RUNTIME_PAUSE_TIMEOUT_MS) {
+    delay(1);
+  }
+  if (!otaRuntimeIsPaused()) {
+    pullOtaFail("OTA runtime pause failed");
+    b_ota = false;
+    b_pullOtaRunning = false;
+    vTaskDelete(NULL);
+    return;
+  }
   pullOtaRunUpdate(pullOtaLoadRequestedTarget());
-  b_pullOtaRunning = false;
+  portENTER_CRITICAL(&wsPendingMux);
+  const bool restartPending = (wsPendingMask & WSP_OTA_RESET) != 0;
+  portEXIT_CRITICAL(&wsPendingMux);
+  if (!restartPending) {
+    b_ota = false;
+    b_pullOtaRunning = false;
+  }
   vTaskDelete(NULL);
 }
 
 void pullOtaUpdate(const PullOtaTargetVersion &target) {
-  if (b_pullOtaRunning) {
+  if (b_pullOtaRunning || b_ota) {
     return;
   }
+  setOtaRuntimePaused(false);
   b_pullOtaRunning = true;
   b_ota = true;
   pullOtaStoreRequestedTarget(target);
@@ -1538,6 +1553,7 @@ void pullOtaUpdate(const PullOtaTargetVersion &target) {
       NULL);
   if (started != pdPASS) {
     b_pullOtaRunning = false;
+    b_ota = false;
     pullOtaFail("OTA task failed");
   }
 }

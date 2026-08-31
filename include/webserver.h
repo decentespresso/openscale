@@ -167,6 +167,27 @@ void startWebServer() {
 
     server.addMiddleware([](AsyncWebServerRequest *request, ArMiddlewareNext next) {
       const String &url = request->url();
+#if HDS_FEATURE_PULL_OTA
+      if (b_pullOtaRunning && (url == "/update" || url.startsWith("/ota/"))) {
+        request->send(409, "text/plain", "pull OTA in progress");
+        return;
+      }
+#endif
+#if HDS_FEATURE_ELEGANT_OTA
+      if (url == "/ota/start" && request->hasParam("mode") &&
+          request->getParam("mode")->value() == "fs") {
+        request->send(400, "text/plain", "filesystem OTA requires WiFi Update");
+        return;
+      }
+      if (b_ota && !b_pullOtaRunning && url == "/ota/upload") {
+        next();
+        return;
+      }
+#endif
+      if (b_ota) {
+        request->send(503, "text/plain", "OTA in progress");
+        return;
+      }
       if (url == "/snapshot") {
         next();
         return;
@@ -175,6 +196,12 @@ void startWebServer() {
         request->send(503, "text/plain", "low memory, retry");
         return;
       }
+#if HDS_FEATURE_ELEGANT_OTA
+      if (url.startsWith("/ota/")) {
+        next();
+        return;
+      }
+#endif
 #if HDS_FEATURE_WEBSOCKET
       if (websocketHasClients()) {
         static int tokens = HTTP_STREAMING_BURST;

@@ -159,7 +159,7 @@ def test_dispatch_holds_the_request_until_the_update_is_running():
     )
 
     body = websocket[start : websocket.index("#if HDS_FEATURE_WEBSOCKET", start)]
-    deferral = body[body.index("wsPendingMask |= deferredMask & ~WSP_WIFI_UPDATE;") :]
+    deferral = body[body.index("mask & ~(WSP_OTA_RESET | WSP_WIFI_UPDATE)") :]
     assert "pendingOtaDispatching = false;" in deferral[: deferral.index("mask &= WSP_OTA_RESET;")], (
         "a request deferred back to the queue must not stay marked as dispatching"
     )
@@ -173,7 +173,7 @@ def test_a_request_that_cannot_dispatch_is_dropped_rather_than_requeued():
     websocket = source(WEBSOCKET_HEADER)
     start = websocket.index("void processWsPendingCmds() {")
     body = websocket[start : websocket.index("#if HDS_FEATURE_WEBSOCKET", start)]
-    assert "wsPendingMask |= deferredMask & ~WSP_WIFI_UPDATE;" in body, (
+    assert "mask & ~(WSP_OTA_RESET | WSP_WIFI_UPDATE)" in body, (
         "a start request deferred while an update runs must be dropped, not left to fire later"
     )
     assert "droppedWifiUpdate" in body, "the dropped request must be logged"

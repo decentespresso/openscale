@@ -13,6 +13,12 @@ const char *password = "12345678";
 unsigned long ota_progress_millis = 0;
 unsigned long t_otaEnd = 0;
 static const unsigned long OTA_RESTART_DELAY_MS = 2000;
+static const unsigned long OTA_ACTIVITY_TIMEOUT_MS = 30000;
+static const unsigned long OTA_PROGRESS_INTERVAL_MS = 500;
+static const char OTA_UPLOAD_REJECTED_ATTRIBUTE[] = "otaUploadRejected";
+static const char OTA_UPLOAD_FAILED_ATTRIBUTE[] = "otaUploadFailed";
+static const char OTA_UPLOAD_FINISHED_ATTRIBUTE[] = "otaUploadFinished";
+static const char OTA_UPLOAD_OWNER_ATTRIBUTE[] = "otaUploadOwner";
 
 uint8_t calculateOtaPercent(size_t current, size_t final) {
   if (final == 0) {
@@ -33,6 +39,29 @@ void queueOtaDisplay(uint8_t state, uint8_t percent = 0) {
 #if HDS_ENABLE_ENERGY_MENU
   notifyEnergyMainLoop();
 #endif
+}
+
+void recordElegantOtaActivity(unsigned long activityAt) {
+  portENTER_CRITICAL(&otaDisplayMux);
+  otaActivityAt = activityAt;
+  portEXIT_CRITICAL(&otaDisplayMux);
+}
+
+void processElegantOtaTimeout() {
+  if (!b_ota || b_pullOtaRunning) {
+    return;
+  }
+
+  const unsigned long now = millis();
+  portENTER_CRITICAL(&otaDisplayMux);
+  const unsigned long activityAt = otaActivityAt;
+  portEXIT_CRITICAL(&otaDisplayMux);
+  if (now - activityAt < OTA_ACTIVITY_TIMEOUT_MS) {
+    return;
+  }
+
+  Serial.println("OTA update timed out; restarting");
+  remoteQueueOtaResetAt(now);
 }
 
 void processOtaDisplayUpdate() {
@@ -75,7 +104,8 @@ void onOTAStart() {
   recordEnergyActivity();
 #endif
   Serial.println("OTA update started!");
-  std::lock_guard<std::mutex> otaDispatchLock(otaDispatchMutex);
+  recordElegantOtaActivity(millis());
+  setOtaRuntimePaused(false);
   portENTER_CRITICAL(&wsPendingMux);
   b_ota = true;
   portEXIT_CRITICAL(&wsPendingMux);
@@ -85,8 +115,9 @@ void onOTAStart() {
 }
 
 void onOTAProgress(size_t current, size_t final) {
-  if (millis() - ota_progress_millis > 50) {
+  if (millis() - ota_progress_millis >= OTA_PROGRESS_INTERVAL_MS) {
     ota_progress_millis = millis();
+    recordElegantOtaActivity(ota_progress_millis);
     Serial.printf("OTA Progress Current: %u bytes, Final: %u bytes\n", current,
                   final);
     uint8_t percent = calculateOtaPercent(current, final);
@@ -107,17 +138,137 @@ void onOTAEnd(bool success) {
   }
 }
 
+void handleElegantOtaStart(AsyncWebServerRequest *request) {
+  if (request->hasParam("mode") &&
+      request->getParam("mode")->value() == "fs") {
+    request->send(400, "text/plain", "filesystem OTA requires WiFi Update");
+    return;
+  }
+
+  std::unique_lock<std::mutex> otaDispatchLock(otaDispatchMutex,
+                                               std::try_to_lock);
+  if (!otaDispatchLock.owns_lock() || b_pullOtaRunning || b_ota) {
+    request->send(409, "text/plain", "OTA already in progress");
+    return;
+  }
+  const String hash = request->hasParam("hash")
+                          ? request->getParam("hash")->value()
+                          : "";
+  elegantOtaUploadClaimed = false;
+  onOTAStart();
+  otaDispatchLock.unlock();
+
+  const unsigned long pauseStartedAt = millis();
+  while (!otaRuntimeIsPaused()) {
+    if (millis() - pauseStartedAt >= OTA_RUNTIME_PAUSE_TIMEOUT_MS) {
+      onOTAEnd(false);
+      request->send(503, "text/plain", "OTA runtime pause failed");
+      return;
+    }
+    delay(1);
+  }
+
+  std::lock_guard<std::mutex> updateLock(otaDispatchMutex);
+  if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) {
+    onOTAEnd(false);
+    request->send(400, "text/plain", Update.errorString());
+    return;
+  }
+  if (hash.length() > 0 && !Update.setMD5(hash.c_str())) {
+    Update.abort();
+    onOTAEnd(false);
+    request->send(400, "text/plain", "MD5 parameter invalid");
+    return;
+  }
+  request->send(200, "text/plain", "OK");
+}
+
+void handleElegantOtaUpload(AsyncWebServerRequest *request,
+                            const String &filename, size_t index,
+                            uint8_t *data, size_t len, bool final) {
+  (void)filename;
+  std::unique_lock<std::mutex> otaDispatchLock(otaDispatchMutex,
+                                               std::try_to_lock);
+  if (!otaDispatchLock.owns_lock()) {
+    request->setAttribute(OTA_UPLOAD_REJECTED_ATTRIBUTE, true);
+    return;
+  }
+  if (request->getAttribute(OTA_UPLOAD_REJECTED_ATTRIBUTE, false)) {
+    return;
+  }
+  if (b_pullOtaRunning || !b_ota || !otaRuntimeIsPaused() ||
+      !Update.isRunning()) {
+    request->setAttribute(OTA_UPLOAD_REJECTED_ATTRIBUTE, true);
+    return;
+  }
+  if (!request->getAttribute(OTA_UPLOAD_OWNER_ATTRIBUTE, false)) {
+    if (elegantOtaUploadClaimed) {
+      request->setAttribute(OTA_UPLOAD_REJECTED_ATTRIBUTE, true);
+      return;
+    }
+    elegantOtaUploadClaimed = true;
+    request->setAttribute(OTA_UPLOAD_OWNER_ATTRIBUTE, true);
+  }
+
+  bool failed = request->getAttribute(OTA_UPLOAD_FAILED_ATTRIBUTE, false);
+  if (!failed && len > 0) {
+    if (Update.write(data, len) != len) {
+      request->setAttribute(OTA_UPLOAD_FAILED_ATTRIBUTE, true);
+      failed = true;
+    } else {
+      onOTAProgress(index + len, request->contentLength());
+    }
+  }
+  if (final) {
+    if (failed || !Update.end(true)) {
+      request->setAttribute(OTA_UPLOAD_FAILED_ATTRIBUTE, true);
+    } else {
+      request->setAttribute(OTA_UPLOAD_FINISHED_ATTRIBUTE, true);
+    }
+  }
+}
+
+void completeElegantOtaUpload(AsyncWebServerRequest *request) {
+  std::unique_lock<std::mutex> otaDispatchLock(otaDispatchMutex,
+                                               std::try_to_lock);
+  if (!otaDispatchLock.owns_lock() ||
+      b_pullOtaRunning || !b_ota) {
+    request->send(409, "text/plain", "OTA upload rejected");
+    return;
+  }
+  if (!request->getAttribute(OTA_UPLOAD_OWNER_ATTRIBUTE, false)) {
+    request->send(409, "text/plain", "OTA upload rejected");
+    return;
+  }
+
+  const bool success =
+      !request->getAttribute(OTA_UPLOAD_REJECTED_ATTRIBUTE, false) &&
+      !request->getAttribute(OTA_UPLOAD_FAILED_ATTRIBUTE, false) &&
+      request->getAttribute(OTA_UPLOAD_FINISHED_ATTRIBUTE, false) &&
+      !Update.hasError();
+  if (!success && Update.isRunning()) {
+    Update.abort();
+  }
+  elegantOtaUploadClaimed = false;
+  onOTAEnd(success);
+  AsyncWebServerResponse *response = request->beginResponse(
+      success ? 200 : 400, "text/plain", success ? "OK" : Update.errorString());
+  response->addHeader("Connection", "close");
+  response->addHeader("Access-Control-Allow-Origin", "*");
+  request->send(response);
+}
+
 void wifiOta() {
   static bool otaRegistered = false;
   if (otaRegistered) {
     return;
   }
 
+  server.on("/ota/start", HTTP_GET, handleElegantOtaStart);
+  server.on("/ota/upload", HTTP_POST, completeElegantOtaUpload,
+            handleElegantOtaUpload);
   ElegantOTA.begin(&server);
   ElegantOTA.setAutoReboot(false);
-  ElegantOTA.onStart(onOTAStart);
-  ElegantOTA.onProgress(onOTAProgress);
-  ElegantOTA.onEnd(onOTAEnd);
   otaRegistered = true;
 }
 #endif

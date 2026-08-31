@@ -74,7 +74,7 @@ Staged LittleFS OTA stores target and rollback metadata in NVS namespace `ota_fs
 Flow:
 
 1. Current firmware stores both manifests, writes `firmware.bin` to the inactive app slot, and reboots.
-2. The new firmware calls `hdsOtaRollbackBegin()`, detects pending LittleFS work, and runs `pullOtaResumePendingLittleFs()` before application validity marking.
+2. The new firmware calls `hdsOtaRollbackBegin()`, detects pending LittleFS work, leaves BLE uninitialized, and runs `pullOtaResumePendingLittleFs()` before application validity marking.
 3. Recovery first accepts an already-written filesystem that passes size/schema, raw SHA-256, and mount checks. Otherwise, the target filesystem gets at most two attempts. Each attempt is recorded before network or write work; `fs_dirty` is recorded before `Update.begin()` can modify the partition.
 4. A successful target write passes the same checks. The new application is then marked valid before pending state is cleared, and the device reboots.
 5. If both attempts fail before filesystem writing begins, `setup()` calls `hdsOtaRollback("LittleFS update")`; the previous application remains paired with its unchanged filesystem.
@@ -97,7 +97,17 @@ The single LittleFS partition has no independent rollback slot. Do not weaken si
 
 ElegantOTA auto-reboot stays disabled with `ElegantOTA.setAutoReboot(false)`. Successful ElegantOTA and pull OTA paths call `remoteQueueOtaResetAt()` so their reset remains distinguishable from ordinary remote resets during an active update. Other scheduled main-loop resets use `remoteQueueResetAt()`; neither path should call `ESP.restart()` directly.
 
-ElegantOTA start and main-loop remote action dispatch share `otaDispatchMutex`. Hold it across the complete extracted action batch so `onOTAStart()` cannot publish active OTA until in-flight hardware work finishes. If OTA starts first, restore extracted actions without overwriting newer pending members of the display, low-power, soft-sleep, or timer replacement groups.
+The project-owned `/ota/start` handler and main-loop remote action dispatch share `otaDispatchMutex`. The handler claims `b_ota`, waits for the main loop to stop BLE traffic, close WebSockets, wake the scale, and lock out energy-saving transitions, then calls `Update.begin()` under the mutex. It installs the requested MD5 only after `Update.begin()` because the ESP32 core clears the expected digest when an update begins. Pull OTA waits for the same main-loop pause before downloading or writing. Hold the mutex across the complete extracted action batch. Restore extracted actions through `remoteRestoreDeferredPendingLocked()` so older display, low-power, soft-sleep, or timer commands cannot replace newer pending commands.
+
+Both OTA paths stop BLE advertising and wait for an active peer's disconnect callback before flash work. BLE writes are ignored after OTA claims the runtime. Disconnect callbacks defer the saved buzzer setting until a failed or cancelled update resumes advertising from the main loop; display state is not restored over newer deferred commands. WebSocket connect and data callbacks close without doing application work once OTA is active. Do not shut BLE down from an AsyncTCP callback.
+
+While OTA is active, the main loop closes WebSocket clients and the HTTP middleware rejects new non-OTA work. The project-owned `/ota/upload` handler is registered before ElegantOTA's handler and checks Pull OTA ownership under `otaDispatchMutex` before every `Update.write()` and `Update.end()`. Uploads cannot claim the session until the main-loop pause is complete and `Update.begin()` is live. The first multipart file request then claims the ElegantOTA session, competing requests are rejected without touching that session, and only the owner can report success after its multipart callback completes `Update.end(true)`. The middleware alone is not an upload guard because ESPAsyncWebServer parses multipart bodies before running server middleware.
+
+ElegantOTA accepts firmware images only. Direct filesystem uploads are rejected because they bypass the signed, staged LittleFS transaction and its rollback protection. Use the WiFi Update menu for firmware and filesystem release updates.
+
+ElegantOTA firmware sessions with no progress for 30 seconds restart through the main-loop reset queue. This recovers both `Update.begin()` failures and uploads abandoned by a disconnected client without resuming normal work around an incomplete flash session.
+
+ElegantOTA progress logging and full-screen OLED updates are limited to 2 Hz while the upload is active.
 
 The rollback path withdraws WiFi and mDNS with `stopWifi()` before `esp_ota_mark_app_invalid_rollback_and_reboot()`. Do not bypass this routing: a direct reboot can leave the service advertised until resolver caches expire.
 

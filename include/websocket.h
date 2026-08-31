@@ -230,6 +230,25 @@ inline void remoteFinishWifiUpdateDispatch() {
   portEXIT_CRITICAL(&wsPendingMux);
 }
 
+inline void remoteRestoreDeferredPendingLocked(uint32_t deferredMask,
+                                               unsigned long resetAt) {
+  const uint32_t replacementGroups[] = {
+    WSP_DISPLAY_ON | WSP_DISPLAY_OFF,
+    WSP_LOWPWR_ON | WSP_LOWPWR_OFF,
+    WSP_SLEEP_ON | WSP_SLEEP_OFF,
+    WSP_TIMER_START | WSP_TIMER_STOP | WSP_TIMER_ZERO,
+  };
+  for (const uint32_t group : replacementGroups) {
+    if (wsPendingMask & group) {
+      deferredMask &= ~group;
+    }
+  }
+  if ((deferredMask & WSP_RESET) && !(wsPendingMask & WSP_RESET)) {
+    pendingResetAt = resetAt;
+  }
+  wsPendingMask |= deferredMask;
+}
+
 inline void wsQueuePending(uint32_t bits) {
   remoteQueuePending(bits);
 }
@@ -268,22 +287,8 @@ void processWsPendingCmds() {
   portENTER_CRITICAL(&wsPendingMux);
   if (b_ota) {
     droppedWifiUpdate = (mask & WSP_WIFI_UPDATE) != 0;
-    uint32_t deferredMask = mask & ~WSP_OTA_RESET;
-    const uint32_t replacementGroups[] = {
-      WSP_DISPLAY_ON | WSP_DISPLAY_OFF,
-      WSP_LOWPWR_ON | WSP_LOWPWR_OFF,
-      WSP_SLEEP_ON | WSP_SLEEP_OFF,
-      WSP_TIMER_START | WSP_TIMER_STOP | WSP_TIMER_ZERO,
-    };
-    for (const uint32_t group : replacementGroups) {
-      if (wsPendingMask & group) {
-        deferredMask &= ~group;
-      }
-    }
-    if ((deferredMask & WSP_RESET) && !(wsPendingMask & WSP_RESET)) {
-      pendingResetAt = resetAt;
-    }
-    wsPendingMask |= deferredMask & ~WSP_WIFI_UPDATE;
+    remoteRestoreDeferredPendingLocked(
+        mask & ~(WSP_OTA_RESET | WSP_WIFI_UPDATE), resetAt);
     if (mask & WSP_WIFI_UPDATE) {
       pendingOtaDispatching = false;
     }
@@ -324,6 +329,16 @@ void processWsPendingCmds() {
       reset();
       return;
     }
+  }
+  if (mask & WSP_WIFI_UPDATE) {
+    portENTER_CRITICAL(&wsPendingMux);
+    remoteRestoreDeferredPendingLocked(mask & ~WSP_WIFI_UPDATE, resetAt);
+    portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_FEATURE_PULL_OTA
+    wifiUpdate(otaTarget);
+#endif
+    remoteFinishWifiUpdateDispatch();
+    return;
   }
 #if HDS_ENABLE_ENERGY_MENU
   if (mask & WSP_DISPLAY_ON)  { applyEnergyDisplayCommand(true); }
@@ -384,12 +399,6 @@ void processWsPendingCmds() {
     } else {
       Serial.println("Samples in use refresh failed");
     }
-  }
-  if (mask & WSP_WIFI_UPDATE) {
-#if HDS_FEATURE_PULL_OTA
-    wifiUpdate(otaTarget);
-#endif
-    remoteFinishWifiUpdateDispatch();
   }
   if (b_ota) {
     remoteQueuePending(mask & WSP_POWER_OFF);
@@ -901,6 +910,10 @@ void setupWebsocketEvents() {
   websocket.onEvent([](
                       AsyncWebSocket *server, AsyncWebSocketClient *client,
                       AwsEventType type, void *arg, uint8_t *data, size_t len) {
+    if (b_ota && (type == WS_EVT_CONNECT || type == WS_EVT_DATA)) {
+      client->close();
+      return;
+    }
     if (type == WS_EVT_CONNECT) {
 #if HDS_ENABLE_ENERGY_MENU
       recordEnergyActivity();
