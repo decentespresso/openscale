@@ -29,28 +29,23 @@ index 835c4cb..7387c1f 100644
  #define LCDHeight u8g2.getDisplayHeight()
  #define AC(T) ((LCDWidth - u8g2.getUTF8Width(T)) / 2 - Margin_Left - Margin_Right)
 diff --git a/include/finger_detection.h b/include/finger_detection.h
-index 057610f..4a34efa 100644
 --- a/include/finger_detection.h
 +++ b/include/finger_detection.h
-@@ -222,8 +222,17 @@ bool isFingerPress(int button) {
-           sendBleButton(2, 1);
-         }
-         if (!b_menu && !b_calibration && (!bleClientLive || b_btnFuncWhileConnected)) {
--          if (millis() - t_menuExitTime > 1000)
-+          if (millis() - t_menuExitTime > 1000) {
+@@ -94,6 +94,14 @@ void runRecognizedButtonAction(int button) {
+     b_tareByButton = true;
+   } else if (button == BUTTON_SQUARE && !b_menu && !b_calibration &&
+              millis() - t_menuExitTime > 1000) {
 +#if HDS_ENABLE_PRESSENSOR
-+            if (pressensorActive()) {
-+              pressensorTimerButton(f_displayedValue);
-+            } else {
-+              scaleTimer();
-+            }
++    if (pressensorActive()) {
++      pressensorTimerButton(f_displayedValue);
++    } else {
++      scaleTimer();
++    }
 +#else
-             scaleTimer();
+     scaleTimer();
 +#endif
-+          }
-         }
-       }
-     }
+   }
+ }
 diff --git a/include/menu.h b/include/menu.h
 index d319aa6..2e4282d 100644
 --- a/include/menu.h
