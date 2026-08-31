@@ -13,7 +13,7 @@ Local build, flash, OTA, editor, cache, and CAD files are omitted unless they ar
 | Compile-time feature flags, build environments | `platformio.ini`, `include/config.h`, `src/hds.ino` | `docs/AI_BUILD_NOTES.md` |
 | Approved plugins, patch packages, plugin CI | matching `plugins/<plugin-id>/plugin.json`, `tools/configure_custom_build.py`, `tools/build_custom_firmware.py` | `docs/AI_PLUGIN_NOTES.md`, `docs/plugin-development.md` |
 | Global firmware state | `include/parameter.h`, then every reader and writer | `docs/AI_FIRMWARE_NOTES.md` |
-| Main loop, buttons, weighing, OLED | `docs/AI_DISPLAY_NOTES.md`, `src/hds.ino`, `include/menu.h`, `include/display.h`, `include/finger_detection.h` | `docs/AI_FIRMWARE_NOTES.md` |
+| Main loop, buttons, weighing, OLED | `docs/AI_DISPLAY_NOTES.md`, `src/hds.ino`, `include/menu.h`, `include/display.h`, `include/finger_detection.h`, `include/tap_detection.h` | `docs/AI_FIRMWARE_NOTES.md` |
 | Calibration, ADC, tare stability | `include/calibration_validation.h`, `include/menu.h`, `src/hds.ino` | `docs/AI_FIRMWARE_NOTES.md` |
 | Persistent settings, defaults, migration | `include/storage.h` | `docs/AI_STORAGE_NOTES.md` |
 | Decent binary, BLE, USB, ADS debug | `include/decent_protocol.h`, then `include/ble.h` or `include/usbcomm.h` | `docs/AI_PROTOCOL_NOTES.md` |

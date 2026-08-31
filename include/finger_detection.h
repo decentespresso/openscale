@@ -74,6 +74,29 @@ void onButtonReleased(int button);
 void analyzeCompletePressData(int button);
 void updatePressSampling();
 void scaleTimer();
+void runRecognizedButtonAction(int button);
+
+void runRecognizedButtonAction(int button) {
+  const bool bleClientLive = bleHasLiveClient();
+  if (bleClientLive && !b_btnFuncWhileConnected) return;
+
+  const int buttonNumber = button == BUTTON_CIRCLE ? 1 : 2;
+  sendUsbButton(buttonNumber, 1);
+#if HDS_FEATURE_WEBSOCKET
+  sendWebsocketButton(buttonNumber, 1);
+#endif
+  if (bleClientLive) sendBleButton(buttonNumber, 1);
+
+  if (button == BUTTON_CIRCLE) {
+    b_weight_quick_zero = true;
+    t_quickZeroStart = millis();
+    t_tareByButton = millis();
+    b_tareByButton = true;
+  } else if (button == BUTTON_SQUARE && !b_menu && !b_calibration &&
+             millis() - t_menuExitTime > 1000) {
+    scaleTimer();
+  }
+}
 
 ButtonPressData* getButtonPressData(int button) {
   if (button == BUTTON_CIRCLE) {
@@ -196,37 +219,7 @@ bool isFingerPress(int button) {
   }
   if (is_finger_press) {
     if (b_fingerDetectionSerialOutput) Serial.println("✅ FINGER PRESS");
-
-    const bool bleClientLive = bleHasLiveClient();
-    if (!bleClientLive || b_btnFuncWhileConnected) {
-      if (button == BUTTON_CIRCLE) {
-        sendUsbButton(1, 1);
-#if HDS_FEATURE_WEBSOCKET
-        sendWebsocketButton(1, 1);
-#endif
-        if (bleClientLive) {
-          sendBleButton(1, 1);
-        }
-        if (!bleClientLive || b_btnFuncWhileConnected) {
-          b_weight_quick_zero = true;
-          t_quickZeroStart = millis();
-          t_tareByButton = millis();
-          b_tareByButton = true;
-        }
-      } else if (button == BUTTON_SQUARE) {
-        sendUsbButton(2, 1);
-#if HDS_FEATURE_WEBSOCKET
-        sendWebsocketButton(2, 1);
-#endif
-        if (bleClientLive) {
-          sendBleButton(2, 1);
-        }
-        if (!b_menu && !b_calibration && (!bleClientLive || b_btnFuncWhileConnected)) {
-          if (millis() - t_menuExitTime > 1000)
-            scaleTimer();
-        }
-      }
-    }
+    runRecognizedButtonAction(button);
   } else {
     if (b_fingerDetectionSerialOutput) Serial.println("❌ NOT FINGER PRESS");
   }

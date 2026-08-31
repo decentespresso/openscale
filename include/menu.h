@@ -100,6 +100,10 @@ void driftComp0050();
 void driftComp0075();
 void driftComp0100();
 void driftComp0200();
+void tapTareOn();
+void tapTareOff();
+void tapTimerOn();
+void tapTimerOff();
 #if HDS_ENABLE_GRINDER
 void grinderOn();
 void grinderOff();
@@ -126,6 +130,7 @@ extern const Menu menuBuzzerBack;
 #if HDS_FEATURE_WIFI
 extern const Menu menuWiFiUpdateBack;
 #endif
+extern const Menu menuTapActionsBack;
 #if HDS_ENABLE_GRINDER
 extern const Menu menuGrinderBack;
 #endif
@@ -149,6 +154,7 @@ const Menu menuBtnFuncWhileConnected = { "Button with BLE", NULL, &menuBtnFuncWh
 const Menu menuAutoSleep = { "Auto Sleep", NULL, &menuAutoSleepBack, NULL };
 const Menu menuQuickBoot = { "Quick Boot", NULL, &menuQuickBootBack, NULL };
 const Menu menuDriftComp = { "Drift Comp", NULL, &menuDriftCompBack, NULL };
+const Menu menuTapActions = { "DoubleTapTare", NULL, &menuTapActionsBack, NULL };
 #if HDS_ENABLE_GRINDER
 const Menu menuGrinder = { "Grind by weight", NULL, &menuGrinderBack, NULL };
 #endif
@@ -233,6 +239,15 @@ const Menu menuQuickBoot0100 = { "0.1g", driftComp0100, NULL, &menuDriftComp };
 const Menu menuQuickBoot0200 = { "0.2g", driftComp0200, NULL, &menuDriftComp };
 const Menu *const driftCompMenu[] = { &menuDriftCompBack, &menuDriftCompOff, &menuQuickBoot0050, &menuQuickBoot0075, &menuQuickBoot0100, &menuQuickBoot0200 };
 
+const Menu menuTapActionsBack = { "Back", NULL, NULL, &menuTapActions };
+const Menu menuTapTareOn = { "2x Tare On", tapTareOn, NULL, &menuTapActions };
+const Menu menuTapTareOff = { "2x Tare Off", tapTareOff, NULL, &menuTapActions };
+const Menu menuTapTimerOn = { "3x Timer On", tapTimerOn, NULL, &menuTapActions };
+const Menu menuTapTimerOff = { "3x Timer Off", tapTimerOff, NULL, &menuTapActions };
+const Menu *const tapActionsMenu[] = { &menuTapActionsBack, &menuTapTareOn,
+                                       &menuTapTareOff, &menuTapTimerOn,
+                                       &menuTapTimerOff };
+
 #if HDS_ENABLE_GRINDER
 const Menu menuGrinderBack = { "Back", NULL, NULL, &menuGrinder };
 const Menu menuGrinderOn = { "Enable", grinderOn, NULL, &menuGrinder };
@@ -257,6 +272,7 @@ const Menu *const mainMenu[] = {
   &menuStatus,
   &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen, &menuTimeOnTop,
   &menuBtnFuncWhileConnected, &menuAutoSleep, &menuQuickBoot, &menuDriftComp,
+  &menuTapActions,
 #if HDS_ENABLE_GRINDER
   &menuGrinder,
 #endif
@@ -503,6 +519,42 @@ void heartbeatOff() {
   t_actionMessageDelay = 1000;
   storagePutBool(KEY_HEARTBEAT, b_requireHeartBeat);
   Serial.println("Heartbeat detection...Off");
+}
+
+void tapTareOn() {
+  b_tapTareEnabled = true;
+  actionMessage = "2x Tare On";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  storagePutBool(KEY_TAP_TARE, b_tapTareEnabled);
+  Serial.println("2x tap tare On stored in NVS.");
+}
+
+void tapTareOff() {
+  b_tapTareEnabled = false;
+  actionMessage = "2x Tare Off";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  storagePutBool(KEY_TAP_TARE, b_tapTareEnabled);
+  Serial.println("2x tap tare Off stored in NVS.");
+}
+
+void tapTimerOn() {
+  b_tapTimerEnabled = true;
+  actionMessage = "3x Timer On";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  storagePutBool(KEY_TAP_TIMER, b_tapTimerEnabled);
+  Serial.println("3x tap timer On stored in NVS.");
+}
+
+void tapTimerOff() {
+  b_tapTimerEnabled = false;
+  actionMessage = "3x Timer Off";
+  t_actionMessage = millis();
+  t_actionMessageDelay = 1000;
+  storagePutBool(KEY_TAP_TIMER, b_tapTimerEnabled);
+  Serial.println("3x tap timer Off stored in NVS.");
 }
 
 void flipScreenOn() {
@@ -1723,6 +1775,9 @@ void selectMenu() {
     } else if (currentSelection == &menuDriftComp) {
       currentMenu = driftCompMenu;
       currentMenuSize = getMenuSize(driftCompMenu);
+    } else if (currentSelection == &menuTapActions) {
+      currentMenu = tapActionsMenu;
+      currentMenuSize = getMenuSize(tapActionsMenu);
 #if HDS_ENABLE_GRINDER
     } else if (currentSelection == &menuGrinder) {
       b_grinderMenuDirectEntry = false;
