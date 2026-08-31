@@ -45,7 +45,8 @@ void testDoubleTapRequiresRelease() {
   TEST_ASSERT_EQUAL(TapEvent::None, tap(detector, 550));
   TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(650, 0.0f));
   TEST_ASSERT_EQUAL(TapEvent::None, tap(detector, 700));
-  TEST_ASSERT_EQUAL(TapEvent::Double, detector.tick(1150, 0.0f));
+  TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(1150, 0.0f));
+  TEST_ASSERT_EQUAL(TapEvent::Double, detector.tick(1250, 0.0f));
 }
 
 void testUnreleasedFinalPeakDoesNotCompleteDoubleOrTriple() {
@@ -55,7 +56,7 @@ void testUnreleasedFinalPeakDoesNotCompleteDoubleOrTriple() {
   TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(650, 0.0f));
   TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(700, 100.0f));
   TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(750, 50.0f));
-  TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(1150, 50.0f));
+  TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(1250, 50.0f));
 
   detector.reset(0, 0.0f);
   establishBaseline(detector);
@@ -65,7 +66,7 @@ void testUnreleasedFinalPeakDoesNotCompleteDoubleOrTriple() {
   TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(800, 0.0f));
   TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(850, 100.0f));
   TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(900, 50.0f));
-  TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(1300, 50.0f));
+  TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(1400, 50.0f));
 }
 
 void testFourthPeakCannotReplaceTriple() {

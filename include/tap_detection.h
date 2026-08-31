@@ -6,7 +6,7 @@
 #include "parameter.h"
 #include "tap_detector.h"
 
-constexpr unsigned long TAP_ACTION_DELAY_MS = 500;
+constexpr unsigned long TAP_ACTION_DELAY_MS = 100;
 
 static TapDetector tapDetector;
 static bool tapActionArmed = false;

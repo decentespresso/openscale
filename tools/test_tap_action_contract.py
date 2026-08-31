@@ -31,6 +31,7 @@ def main() -> None:
     recognized = function_body(finger, "isFingerPress")
     detector = function_body(tap, "tapDetectTick")
 
+    assert "TAP_ACTION_DELAY_MS = 100" in tap
     assert "bleClientLive && !b_btnFuncWhileConnected" in shared
     assert "sendUsbButton(buttonNumber, 1);" in shared
     assert "sendWebsocketButton(buttonNumber, 1);" in shared
