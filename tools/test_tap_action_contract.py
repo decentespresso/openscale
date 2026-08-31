@@ -38,6 +38,9 @@ def main() -> None:
     assert "sendBleButton(buttonNumber, 1);" in shared
     assert "runRecognizedButtonAction(button);" in recognized
     assert "now - t_menuExitTime <= 1000" in detector
+    assert "stopWatch.isRunning()" in detector
+    assert "grinderRuntime.state == GRINDER_STATE_GRINDING" in detector
+    assert "grinderRuntime.state == GRINDER_STATE_STOPPING" in detector
     assert "tapDetector.reset(now, weight);" in detector
     assert "power_off(-1);" in detector
     assert "runRecognizedButtonAction(tapTripleArmed ? BUTTON_SQUARE : BUTTON_CIRCLE);" in detector

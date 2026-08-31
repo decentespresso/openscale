@@ -18,7 +18,12 @@ void tapDetectTick() {
   const unsigned long now = millis();
   const float weight = f_current_raw_value;
   if ((!b_tapTareEnabled && !b_tapTimerEnabled) || b_bootTare ||
-      b_bootFreshTarePending || now - t_menuExitTime <= 1000) {
+      b_bootFreshTarePending || stopWatch.isRunning()
+#if HDS_ENABLE_GRINDER
+      || grinderRuntime.state == GRINDER_STATE_GRINDING
+      || grinderRuntime.state == GRINDER_STATE_STOPPING
+#endif
+      || now - t_menuExitTime <= 1000) {
     if (!tapDetectionGated) {
       tapDetector.reset(now, weight);
       tapActionArmed = false;

@@ -74,7 +74,7 @@ class TapDetector {
   static constexpr unsigned long sampleIntervalMs = 100;
   static constexpr uint8_t steadySampleCount = 5;
   static constexpr float steadyRangeG = 0.5f;
-  static constexpr unsigned long doubleWindowMs = 500;
+  static constexpr unsigned long doubleWindowMs = 400;
 
   float history[steadySampleCount];
   uint8_t historyIndex;
