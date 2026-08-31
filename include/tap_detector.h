@@ -31,7 +31,9 @@ class TapDetector {
   }
 
   TapEvent tick(unsigned long now, float weight) {
-    updateSteadyState(now, weight);
+    if (sequenceCount == 0 && !needsRelease && !sequenceLocked) {
+      updateSteadyState(now, weight);
+    }
 
     if (sequenceLocked) {
       if (now - lastPeakMs <= doubleWindowMs) {
@@ -47,6 +49,7 @@ class TapDetector {
 
     if (needsRelease && fabsf(weight - baseline) <= releaseRangeG) {
       needsRelease = false;
+      if (sequenceCount == 3) event = completeTriple();
     }
 
     if (weight > previousWeight + peakSlopeG &&
@@ -56,7 +59,7 @@ class TapDetector {
     } else if (weight < previousWeight - peakSlopeG && rising) {
       rising = false;
       if (previousWeight - baseline > peakHeightG) {
-        event = acceptPeak(now, risingFromSteady);
+        event = acceptPeak(now, weight, risingFromSteady);
       }
     }
 
@@ -116,16 +119,14 @@ class TapDetector {
     if (sequenceCount == 0 || now - lastPeakMs < doubleWindowMs) {
       return TapEvent::None;
     }
-    if (sequenceCount == 2) {
-      sequenceCount = 0;
-      return TapEvent::Double;
-    }
+    const TapEvent event = sequenceCount == 2 && !needsRelease ?
+                               TapEvent::Double : TapEvent::None;
     sequenceCount = 0;
-    return TapEvent::None;
+    return event;
   }
 
-  TapEvent acceptPeak(unsigned long now, bool startedFromSteady) {
-    needsRelease = true;
+  TapEvent acceptPeak(unsigned long now, float weight, bool startedFromSteady) {
+    needsRelease = fabsf(weight - baseline) > releaseRangeG;
     if (sequenceCount == 0) {
       if (!startedFromSteady) return TapEvent::None;
       sequenceCount = 1;
@@ -137,11 +138,15 @@ class TapDetector {
     lastPeakMs = now;
 
     if (sequenceCount == 3) {
-      sequenceCount = 0;
-      sequenceLocked = true;
-      return TapEvent::Triple;
+      return needsRelease ? TapEvent::None : completeTriple();
     }
     return TapEvent::None;
+  }
+
+  TapEvent completeTriple() {
+    sequenceCount = 0;
+    sequenceLocked = true;
+    return TapEvent::Triple;
   }
 };
 

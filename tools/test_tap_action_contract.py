@@ -38,6 +38,7 @@ def main() -> None:
     assert "runRecognizedButtonAction(button);" in recognized
     assert "now - t_menuExitTime <= 1000" in detector
     assert "tapDetector.reset(now, weight);" in detector
+    assert "power_off(-1);" in detector
     assert "runRecognizedButtonAction(tapTripleArmed ? BUTTON_SQUARE : BUTTON_CIRCLE);" in detector
 
 

@@ -48,6 +48,26 @@ void testDoubleTapRequiresRelease() {
   TEST_ASSERT_EQUAL(TapEvent::Double, detector.tick(1150, 0.0f));
 }
 
+void testUnreleasedFinalPeakDoesNotCompleteDoubleOrTriple() {
+  TapDetector detector;
+  establishBaseline(detector);
+  TEST_ASSERT_EQUAL(TapEvent::None, tap(detector, 550));
+  TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(650, 0.0f));
+  TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(700, 100.0f));
+  TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(750, 50.0f));
+  TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(1150, 50.0f));
+
+  detector.reset(0, 0.0f);
+  establishBaseline(detector);
+  TEST_ASSERT_EQUAL(TapEvent::None, tap(detector, 550));
+  TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(650, 0.0f));
+  TEST_ASSERT_EQUAL(TapEvent::None, tap(detector, 700));
+  TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(800, 0.0f));
+  TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(850, 100.0f));
+  TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(900, 50.0f));
+  TEST_ASSERT_EQUAL(TapEvent::None, detector.tick(1300, 50.0f));
+}
+
 void testFourthPeakCannotReplaceTriple() {
   TapDetector detector;
   establishBaseline(detector);
@@ -66,6 +86,7 @@ int main(int argc, char **argv) {
   RUN_TEST(testRequiresStableBaselineAndRecovery);
   RUN_TEST(testResetCancelsMenuExitGesture);
   RUN_TEST(testDoubleTapRequiresRelease);
+  RUN_TEST(testUnreleasedFinalPeakDoesNotCompleteDoubleOrTriple);
   RUN_TEST(testFourthPeakCannotReplaceTriple);
   return UNITY_END();
 }

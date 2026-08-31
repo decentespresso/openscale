@@ -43,6 +43,7 @@ void tapDetectTick() {
 
   if (tapActionArmed && now - tapActionAtMs >= TAP_ACTION_DELAY_MS) {
     tapActionArmed = false;
+    power_off(-1);
     runRecognizedButtonAction(tapTripleArmed ? BUTTON_SQUARE : BUTTON_CIRCLE);
 #ifdef BUZZER
     buzzer.beep(1, BUZZER_DURATION);
