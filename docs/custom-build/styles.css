@@ -674,7 +674,7 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
-      min-height: 42px;
+      min-height: 44px;
       padding: 0 15px;
       border-radius: 8px;
       font-size: .78rem;
@@ -751,7 +751,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      min-height: 38px;
+      min-height: 44px;
       padding: 7px 10px;
       border-radius: 6px;
       color: var(--muted);
@@ -802,7 +802,7 @@
 
     .inline-form input, .recovery-key input, .scale-name {
       min-width: 0;
-      height: 42px;
+      height: 44px;
       padding: 0 12px;
       border: 1px solid var(--line-strong);
       border-radius: 7px;
@@ -819,7 +819,7 @@
     .ghost-bordered-button, .icon-button {
       display: inline-grid;
       place-items: center;
-      min-height: 42px;
+      min-height: 44px;
       padding: 0 14px;
       border: 1px solid var(--line-strong);
       border-radius: 7px;
@@ -850,7 +850,7 @@
     }
 
     .icon-actions { display: flex; align-items: center; gap: 7px; }
-    .icon-button { width: 42px; padding: 0; }
+    .icon-button { width: 44px; padding: 0; }
     .icon-button svg { width: 18px; height: 18px; }
     .pair-scale-form { max-width: 620px; padding: 22px 0 18px; }
     .fleet-status { margin: 0; color: var(--muted); font-size: .82rem; }
@@ -867,13 +867,13 @@
 
     .scale-row:first-child { margin-top: 16px; }
     .scale-identity { min-width: 0; }
-    .scale-name { width: 100%; height: 36px; padding: 0 9px; font-weight: 680; }
+    .scale-name { width: 100%; height: 44px; padding: 0 9px; font-weight: 680; }
     .scale-hint { display: block; margin-top: 5px; color: var(--faint); font: 650 .68rem/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .scale-assignment { min-width: 0; }
     .scale-build-state { display: block; color: var(--muted); font-size: .75rem; font-weight: 680; }
     .scale-assignment code { color: var(--faint); font-size: .67rem; }
     .scale-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
-    .scale-actions .primary-button, .scale-actions .ghost-button { min-height: 36px; white-space: nowrap; }
+    .scale-actions .primary-button, .scale-actions .ghost-button { min-height: 44px; white-space: nowrap; }
 
     .toast {
       position: fixed;
