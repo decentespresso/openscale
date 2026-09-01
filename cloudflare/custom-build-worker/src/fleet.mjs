@@ -169,14 +169,22 @@ async function claimDevice(request, storage) {
     ]);
     const oldDevices = fleetDevices(oldFleet).filter(id => id !== pair.device_id);
     const newDevices = [...new Set([...fleetDevices(newFleet), pair.device_id])];
+    const transferred = oldFleetKey && oldFleetKey !== newFleetKey;
+    const updatedDevice = {
+      ...device,
+      ...(transferred ? {desired_combination: null, name: `Scale ${device.serial_hint}`} : {}),
+      fleet_id: ownerFleetId,
+      pair_code: null,
+      pair_created_at: null,
+    };
     const updates = {
-      [deviceKey]: {...device, fleet_id: ownerFleetId, pair_code: null, pair_created_at: null},
+      [deviceKey]: updatedDevice,
       [newFleetKey]: {devices: newDevices},
     };
     if (oldFleetKey && oldFleetKey !== newFleetKey) updates[oldFleetKey] = {devices: oldDevices};
     await transaction.put(updates);
     await transaction.delete(pairKey);
-    return {device_id: pair.device_id, serial_hint: device.serial_hint, name: device.name};
+    return {device_id: pair.device_id, serial_hint: device.serial_hint, name: updatedDevice.name};
   });
 }
 

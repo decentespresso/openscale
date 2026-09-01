@@ -183,6 +183,8 @@ async function serviceCatalog(env, commit) {
   const catalog = await response.json();
   if (!Number.isSafeInteger(catalog.schema) || !Array.isArray(catalog.firmware_refs) ||
       !catalog.features || !catalog.plugins || !catalog.firmware ||
+      !Number.isSafeInteger(catalog.custom_ota_signing_key_generation) ||
+      catalog.custom_ota_signing_key_generation < 1 ||
       typeof catalog.platformio_environment !== "string" ||
       (catalog.catalog_revision !== undefined && !hashPattern.test(catalog.catalog_revision))) {
     throw new ApiError(503, "invalid_service_catalog");
@@ -354,6 +356,7 @@ async function resolveSelection(env, selection) {
     : catalog.platformio_environment;
   const identity = {
     schema: catalog.schema,
+    custom_ota_signing_key_generation: catalog.custom_ota_signing_key_generation,
     firmware_ref: requested.firmware_ref,
     firmware_version: firmware.custom_version,
     base_source: sourceCommit,

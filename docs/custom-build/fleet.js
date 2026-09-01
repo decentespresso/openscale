@@ -1,4 +1,5 @@
-const storageKey = "hds-custom-build-fleet-v1";
+const storageKey = "hds-custom-build-fleet-v2";
+const legacyStorageKey = "hds-custom-build-fleet-v1";
 const fleetPattern = /^[A-Z2-7]{32}$/;
 const pairPattern = /^[0-9A-F]{6}-[0-9]{6}$/;
 
@@ -22,17 +23,38 @@ const encodeBase32 = bytes => {
   return result;
 };
 
-const loadStoredKey = () => {
+const readStoredKey = (storage, key, version) => {
   try {
-    const stored = JSON.parse(localStorage.getItem(storageKey));
-    const key = normalizedFleetKey(stored?.key);
-    return stored?.version === 1 && fleetPattern.test(key) ? key : "";
+    const stored = JSON.parse(storage.getItem(key));
+    const fleetKey = normalizedFleetKey(stored?.key);
+    return stored?.version === version && fleetPattern.test(fleetKey) ? fleetKey : "";
   } catch {
     return "";
   }
 };
 
-const saveKey = key => localStorage.setItem(storageKey, JSON.stringify({version: 1, key}));
+const removeStoredKey = (storage, key) => {
+  try {
+    storage.removeItem(key);
+  } catch {
+  }
+};
+
+const saveKey = key => {
+  try {
+    sessionStorage.setItem(storageKey, JSON.stringify({version: 2, key}));
+  } catch {
+  }
+};
+
+const loadStoredKey = () => {
+  const current = readStoredKey(sessionStorage, storageKey, 2);
+  if (current) return current;
+  const legacy = readStoredKey(localStorage, legacyStorageKey, 1);
+  removeStoredKey(localStorage, legacyStorageKey);
+  if (legacy) saveKey(legacy);
+  return legacy;
+};
 
 export function initFleet({apiBase, getReadyHash, showToast}) {
   const onboarding = document.querySelector("#fleet-onboarding");
@@ -200,7 +222,8 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   });
   forgetDialog.addEventListener("close", () => {
     if (forgetDialog.returnValue !== "confirm") return;
-    localStorage.removeItem(storageKey);
+    removeStoredKey(sessionStorage, storageKey);
+    removeStoredKey(localStorage, legacyStorageKey);
     fleetKey = "";
     generation += 1;
     scaleList.replaceChildren();

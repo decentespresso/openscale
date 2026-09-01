@@ -41,6 +41,10 @@ void hdsOtaRollbackMarkValid();
 #define HDS_OTA_ASSET_URL_PREFIX "https://github.com/decentespresso/openscale/releases/download/"
 #endif
 
+#ifndef HDS_CUSTOM_BUILD_SERVICE_URL
+#define HDS_CUSTOM_BUILD_SERVICE_URL "https://openscale-custom-builds.odevstudio.workers.dev"
+#endif
+
 #ifndef HDS_OTA_MANIFEST_PUBLIC_KEY_1_PEM
 #define HDS_OTA_MANIFEST_PUBLIC_KEY_1_PEM ""
 #endif
@@ -271,6 +275,19 @@ bool pullOtaShaLooksValid(String value) {
     if (!digit && !lower && !upper) {
       return false;
     }
+  }
+  return true;
+}
+
+bool pullOtaCustomLittleFsUrlAllowed(const String &url) {
+  const String prefix = String(HDS_CUSTOM_BUILD_SERVICE_URL) + "/v1/";
+  const String suffix = "/littlefs.bin";
+  if (url.length() != prefix.length() + 64 + suffix.length() ||
+      !url.startsWith(prefix) || !url.endsWith(suffix)) return false;
+  for (size_t index = prefix.length(); index < prefix.length() + 64; index++) {
+    const char character = url.charAt(index);
+    if (!((character >= '0' && character <= '9') ||
+          (character >= 'a' && character <= 'f'))) return false;
   }
   return true;
 }
@@ -1017,7 +1034,10 @@ bool pullOtaLoadPendingLittleFs(PullOtaPendingLittleFs &pending) {
   loaded.fsPartitionSize = preferences.getUInt("fs_size", 0);
   loaded.fsSchema = preferences.getUInt("fs_schema", 0);
   preferences.end();
-  if (!pullOtaUrlAllowed(loaded.asset.url) ||
+  const bool targetUrlAllowed = pullOtaUrlAllowed(loaded.asset.url) ||
+                                (!loaded.restore &&
+                                 pullOtaCustomLittleFsUrlAllowed(loaded.asset.url));
+  if (!targetUrlAllowed ||
       !pullOtaShaLooksValid(loaded.asset.sha256) ||
       loaded.asset.size != HDS_OTA_FS_PARTITION_SIZE ||
       loaded.fsPartitionLabel != HDS_OTA_FS_PARTITION_LABEL ||

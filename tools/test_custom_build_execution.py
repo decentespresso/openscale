@@ -319,6 +319,7 @@ def main():
             assert first["base_source"] == sourceCommit
             assert first["builder_source"] == sourceCommit
             assert first["firmware_version"] == "3.1.14-preview.1-custom"
+            assert first["combination_input"]["custom_ota_signing_key_generation"] == 1
             assert first["combination_hash"] == customBuild.combinationHash(first["combination_input"])
             assert first["partition_schema"]["path"] == "partitions/test.csv"
             assert list(first["binaries"]) == sorted(customBuild.PUBLIC_BINARIES)

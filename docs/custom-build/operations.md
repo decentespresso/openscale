@@ -21,6 +21,10 @@ The Worker stores SHA-256 hashes of fleet and device secrets, never their raw va
 recovery key as a bearer credential. A scale's `device_secret` stays in the `ota_custom` NVS
 namespace and must never be displayed or logged.
 
+The browser keeps the fleet recovery key only in tab-scoped session storage. It removes the legacy
+persistent copy when the configurator next opens. Move the configurator to a dedicated origin before
+making recovery keys persistent again.
+
 ## Deployment Order
 
 1. Create the custom OTA RSA private key and save it as the
@@ -78,9 +82,10 @@ If the upload token may be exposed, rotate `UPLOAD_TOKEN` and
 new one, and update the Worker secret before re-enabling builds.
 
 If the custom OTA signing key is compromised, disable scale installation, rotate the repository
-secret, publish official firmware containing the replacement public key, and only then resume
-custom OTA builds. A lost but uncompromised key must remain trusted until existing firmware has
-migrated to its replacement.
+secret, increment `CUSTOM_OTA_SIGNING_KEY_GENERATION`, publish official firmware containing the
+replacement public key, and only then resume custom OTA builds. The generation change invalidates
+cached combinations signed with the old key. A lost but uncompromised key must remain trusted until
+existing firmware has migrated to its replacement.
 
 ## Public Failure Codes
 

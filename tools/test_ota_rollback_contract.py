@@ -29,6 +29,20 @@ def main():
     assert_contains(PULL_OTA_HEADER, "loaded.filesystemDirty")
     assert_contains(PULL_OTA_HEADER, "pending.restoreAttempted")
     assert_contains(PULL_OTA_HEADER, "pullOtaRecoveryError();")
+    hds = HDS_SOURCE.read_text(encoding="utf-8")
+    pending_setup_start = hds.index("if (b_pendingOtaLittleFs) {")
+    pending_setup_end = hds.index("#endif", pending_setup_start)
+    pending_setup = hds[pending_setup_start:pending_setup_end]
+    assert pending_setup.index("pullOtaResumePendingLittleFs()") < pending_setup.index(
+        "hdsOtaRollbackMarkValid()"
+    )
+    pull_ota = PULL_OTA_HEADER.read_text(encoding="utf-8")
+    pending_load_start = pull_ota.index("bool pullOtaLoadPendingLittleFs(")
+    pending_load_end = pull_ota.index("bool pullOtaActivateRollbackLittleFs(", pending_load_start)
+    pending_load = pull_ota[pending_load_start:pending_load_end]
+    assert "pullOtaCustomLittleFsUrlAllowed(loaded.asset.url)" in pending_load
+    assert "!loaded.restore &&" in pending_load
+    assert "pullOtaCustomLittleFsUrlAllowed(loaded.rollbackAsset.url)" not in pending_load
     assert_contains(ROLLBACK_HEADER, 'extern "C" bool verifyRollbackLater()')
     assert_contains(ROLLBACK_HEADER, "return true;")
     assert_contains(ROLLBACK_HEADER, "ESP_OTA_IMG_PENDING_VERIFY")
@@ -39,10 +53,10 @@ def main():
     assert_contains(ROLLBACK_HEADER, "attempts == 0")
     assert_contains(ROLLBACK_HEADER, "LittleFS.begin()")
     assert_contains(ROLLBACK_HEADER, "LittleFS.totalBytes()")
-    pull_ota = PULL_OTA_HEADER.read_text(encoding="utf-8")
     resume_start = pull_ota.index("bool pullOtaResumePendingLittleFs()")
     resume_end = pull_ota.index("void pullOtaRunUpdate(", resume_start)
     resume = pull_ota[resume_start:resume_end]
+    assert resume.index("pullOtaAttemptPendingLittleFs") < resume.index("hdsOtaRollbackMarkValid()")
     recovery_loop = "while (!updated && attempts < maxAttempts)"
     if resume.index("bool updated = pullOtaVerifyPendingLittleFs(pending);") >= resume.index(recovery_loop):
         raise AssertionError("pending LittleFS must be verified before consuming another attempt")

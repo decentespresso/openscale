@@ -170,6 +170,16 @@ test("pairs, assigns, authenticates, and physically relinks a scale", async () =
     browser: true,
   });
   assert.equal(oldFleetUpdate.status, 404);
+  const transferred = await request(env, "/api/v1/fleet/scales", {
+    authorization: secondFleetSecret,
+    browser: true,
+  });
+  assert.deepEqual((await transferred.json()).scales, [{
+    device_id: deviceId,
+    serial_hint: "A3F921",
+    name: "Scale A3F921",
+    desired_combination: null,
+  }]);
 });
 
 test("rejects unready assignments and invalid device credentials", async () => {

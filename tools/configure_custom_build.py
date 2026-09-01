@@ -18,7 +18,7 @@ DEFAULT_FIRMWARE_VERSION_PATTERN = re.compile(
     r'^\s*#define\s+HDS_FIRMWARE_VERSION\s+"([0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9]+(?:[.-][a-z0-9]+)*)?)"\s*$',
     re.MULTILINE,
 )
-FIRMWARE_REFS = ("v3.1.14-preview.1",)
+FIRMWARE_REFS = ("main",)
 FEATURES = {
     "wifi": ("HDS_FEATURE_WIFI", (), FIRMWARE_REFS),
     "mdns": ("HDS_FEATURE_MDNS", ("wifi",), FIRMWARE_REFS),
@@ -91,6 +91,7 @@ OPTIONAL_PLUGIN_KEYS = {"depends_on", "recommends", "conflicts_features"}
 RECOMMENDATION_KEYS = {"features", "plugins"}
 BUDGET_KEYS = {"firmware_flash_bytes", "static_ram_bytes", "littlefs_bytes"}
 BUILD_CONTRACT_SCHEMA = 2
+CUSTOM_OTA_SIGNING_KEY_GENERATION = 1
 PLATFORMIO_ENVIRONMENT = "esp32s3-custom"
 ENERGY_MENU_PLATFORMIO_ENVIRONMENT = "esp32s3-energy-menu-custom"
 PUBLIC_BINARIES = ("firmware.bin", "bootloader.bin", "partitions.bin", "littlefs.bin")
@@ -390,6 +391,7 @@ def loadPluginCatalog(validateDefaults=False):
 def catalogRevision(plugins):
     contract = {
         "schema": BUILD_CONTRACT_SCHEMA,
+        "custom_ota_signing_key_generation": CUSTOM_OTA_SIGNING_KEY_GENERATION,
         "firmware_refs": list(FIRMWARE_REFS),
         "features": {
             featureId: {
@@ -433,6 +435,7 @@ def buildBrowserCatalog():
         features.append(feature)
     return {
         "catalog_revision": catalogRevision(plugins),
+        "custom_ota_signing_key_generation": CUSTOM_OTA_SIGNING_KEY_GENERATION,
         "firmware_refs": list(FIRMWARE_REFS),
         "features": features,
         "plugins": [
@@ -461,6 +464,7 @@ def buildServiceCatalog(sourceRoot=ROOT):
     plugins = loadPluginCatalog(validateDefaults=True)
     return {
         "schema": BUILD_CONTRACT_SCHEMA,
+        "custom_ota_signing_key_generation": CUSTOM_OTA_SIGNING_KEY_GENERATION,
         "catalog_revision": catalogRevision(plugins),
         "firmware_refs": list(FIRMWARE_REFS),
         "platformio_environment": PLATFORMIO_ENVIRONMENT,
@@ -744,6 +748,7 @@ def combinationInput(configuration, commitSha, sourceRoot=ROOT, builderCommit=No
     firmware = firmwareMetadata(configuration["firmware_ref"], sourceRoot)
     return {
         "schema": BUILD_CONTRACT_SCHEMA,
+        "custom_ota_signing_key_generation": CUSTOM_OTA_SIGNING_KEY_GENERATION,
         "firmware_ref": configuration["firmware_ref"],
         "firmware_version": firmware["custom_version"],
         "base_source": commitSha,
