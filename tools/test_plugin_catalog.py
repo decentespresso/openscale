@@ -252,7 +252,7 @@ def main():
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
     assert 'type="module" src="app.js?v=14"' in indexPage
-    assert 'href="styles.css?v=8"' in indexPage
+    assert 'href="styles.css?v=9"' in indexPage
     assert 'id="request-build"' in indexPage
     assert "catalog-data" not in indexPage
     assert 'fetch("catalog.json"' in appScript
