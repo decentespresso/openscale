@@ -102,9 +102,12 @@ def main():
             check=True,
         )
         subprocess.run(
-            ["git", "switch", "--quiet", "--detach", "origin/main"],
+            ["git", "fetch", "--quiet", "origin", "refs/remotes/origin/main"],
             cwd=directory,
             check=True,
+        )
+        subprocess.run(
+            ["git", "switch", "--quiet", "--detach", "FETCH_HEAD"], cwd=directory, check=True
         )
         subprocess.run(
             ["git", "apply", "--check", "--whitespace=error", str(patchPath)],
