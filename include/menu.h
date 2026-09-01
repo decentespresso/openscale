@@ -77,6 +77,7 @@ void drawButton();
 #if HDS_FEATURE_PULL_OTA
 void wifiUpdate();
 void wifiUpdate(const PullOtaTargetVersion &target);
+void customBuildMenu();
 #endif
 void showStatus();
 void showAbout();
@@ -158,6 +159,7 @@ const Menu menuWifiToggle = { menuWifiLabel, toggleWifi, NULL, &menuConnections 
 const Menu menuWiFiStatusOption = { "WiFi Status", showWifiStatus, NULL, &menuConnections };
 #if HDS_FEATURE_PULL_OTA
 const Menu menuWiFiPullUpdateOption = { "WiFi Update", wifiUpdate, NULL, &menuConnections };
+const Menu menuCustomBuildOption = { "Custom Build", customBuildMenu, NULL, &menuConnections };
 #endif
 const Menu menuWiFiResetOption = { "Reset WiFi", resetWifi, NULL, &menuConnections };
 #endif
@@ -174,6 +176,7 @@ const Menu *const connectionsMenu[] = {
   &menuWiFiStatusOption,
 #if HDS_FEATURE_PULL_OTA
   &menuWiFiPullUpdateOption,
+  &menuCustomBuildOption,
 #endif
   &menuWiFiResetOption,
 #endif

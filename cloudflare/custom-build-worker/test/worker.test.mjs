@@ -376,10 +376,14 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     const payloads = {
       "HDS_FW_custom.zip": "archive",
       "dependencies.txt": "dependencies",
+      "firmware.bin": binaryPayloads["firmware.bin"],
+      "littlefs.bin": binaryPayloads["littlefs.bin"],
+      "ota-manifest.json": "ota manifest",
+      "ota-manifest.sig": "ota signature",
     };
     assert.equal((await put(env, hash, "HDS_FW_custom.zip", payloads["HDS_FW_custom.zip"], "wrong-token-with-at-least-32-chars")).status, 401);
-    assert.equal((await put(env, hash, "firmware.bin", binaryPayloads["firmware.bin"])).status, 404);
-    assert.equal((await put(env, hash, "HDS_FW_custom.zip", new Uint8Array(4 * 1024 * 1024 + 1))).status, 413);
+    assert.equal((await put(env, hash, "bootloader.bin", binaryPayloads["bootloader.bin"])).status, 404);
+    assert.equal((await put(env, hash, "HDS_FW_custom.zip", new Uint8Array(12 * 1024 * 1024 + 1))).status, 413);
     for (const [filename, payload] of Object.entries(payloads)) {
       assert.equal((await put(env, hash, filename, payload)).status, 201);
     }
@@ -400,6 +404,16 @@ test("publishes immutable cache entries and deduplicates public builds", async (
       dependencies: {
         bytes: encoder.encode(payloads["dependencies.txt"]).byteLength,
         sha256: await sha256(payloads["dependencies.txt"]),
+      },
+      custom_ota: {
+        manifest: {
+          bytes: encoder.encode(payloads["ota-manifest.json"]).byteLength,
+          sha256: await sha256(payloads["ota-manifest.json"]),
+        },
+        signature: {
+          bytes: encoder.encode(payloads["ota-manifest.sig"]).byteLength,
+          sha256: await sha256(payloads["ota-manifest.sig"]),
+        },
       },
     };
     assert.equal((await put(env, hash, "build-manifest.json", JSON.stringify(completeManifest))).status, 201);

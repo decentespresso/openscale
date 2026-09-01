@@ -15,6 +15,8 @@ AI-documentation audit, read `docs/AI_RELEASE_NOTES.md`.
 - Keep signing with Key 1 until firmware containing all three public keys has rolled out.
 - Firmware predating the three-key migration cannot recover with Key 2 or Key 3 if the Key 1 private key is lost.
 - Keep a lost private key's public key in firmware unless the key was compromised.
+- Custom OTA uses a separate signing key supplied as `HDS_CUSTOM_OTA_SIGNING_KEY_PEM`.
+- Custom OTA assignments contain only a canonical combination hash, never an asset URL.
 
 ## Release Assets
 
@@ -26,6 +28,12 @@ Release builds publish WiFi OTA assets at the GitHub Release root:
 - `manifest.sig`
 
 The release workflow creates draft releases, uploads binary assets first, uploads `manifest.sig` and `manifest.json` last, then publishes the release.
+
+Official releases also derive and embed the custom OTA public key. Custom builds publish
+`firmware.bin`, `littlefs.bin`, `ota-manifest.sig`, and `ota-manifest.json` under the immutable
+R2 combination-hash prefix. The custom manifest is accepted only when its separate signature,
+combination hash, fixed Worker asset prefix, hardware compatibility, sizes, and SHA-256 hashes all
+validate.
 
 Catalog manifests merge the previous latest stable signed manifest, dedupe by model, PCB, version, chip, and environment, sort newest to oldest, and keep the latest 10 production entries at `v3.1.13+`. Generated JSON is compact and limited to 16 KiB.
 
@@ -118,8 +126,11 @@ Core files:
 - `include/wifi_ota.h`
 - `include/pull_ota.h`
 - `include/ota_rollback.h`
+- `include/custom_build_ota.h`
 - `tools/generate_release_manifest.py`
 - `tools/write_ota_public_key_header.py`
+- `tools/write_custom_ota_public_key_header.py`
+- `tools/generate_custom_ota_manifest.py`
 - `.github/workflows/release.yml`
 
 Relevant checks:
@@ -132,5 +143,6 @@ python tools/test_release_workflow_contract.py
 python tools/test_ota_rollback_contract.py
 python tools/test_ota_public_key_header.py
 python tools/test_ota_reboot_routing_contract.py
+python tools/test_custom_build_ota_contract.py
 pio run -e esp32s3
 ```

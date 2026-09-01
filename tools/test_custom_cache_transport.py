@@ -45,8 +45,14 @@ def createEntry(root):
         "archive": customBuild.fileMetadata(entry / customBuild.FIRMWARE_ARCHIVE),
         "dependencies": customBuild.fileMetadata(entry / "dependencies.txt"),
     }
+    (entry / "ota-manifest.json").write_text("{}\n", encoding="utf-8")
+    (entry / "ota-manifest.sig").write_bytes(b"signature")
+    manifest["custom_ota"] = {
+        "manifest": customBuild.fileMetadata(entry / "ota-manifest.json"),
+        "signature": customBuild.fileMetadata(entry / "ota-manifest.sig"),
+    }
     (entry / "build-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    for name in customBuild.PUBLIC_BINARIES:
+    for name in ("bootloader.bin", "partitions.bin"):
         (entry / name).unlink()
     return entry, manifest
 
@@ -80,6 +86,10 @@ def main():
         assert [Path(request.full_url).name for request in requests] == [
             "HDS_FW_custom.zip",
             "dependencies.txt",
+            "firmware.bin",
+            "littlefs.bin",
+            "ota-manifest.json",
+            "ota-manifest.sig",
             "build-manifest.json",
         ]
         for request in requests:

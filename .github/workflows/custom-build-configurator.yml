@@ -27,4 +27,5 @@ jobs:
           python tools/test_plugin_catalog.py
           python tools/test_custom_build_execution.py
           node --check docs/custom-build/app.js
+          node --check docs/custom-build/fleet.js
           node --test cloudflare/custom-build-worker/test/configurator.test.mjs

@@ -42,6 +42,7 @@ void waitForEnergyMainLoopWork();
 #if HDS_FEATURE_PULL_OTA
 #include "pull_ota.h"
 #include "ota_rollback.h"
+#include "custom_build_ota.h"
 #endif
 
 

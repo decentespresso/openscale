@@ -8,6 +8,7 @@ import {
   resolveSelection,
   selectionQuery,
 } from "./selection.mjs?v=5";
+import {initFleet} from "./fleet.js?v=1";
 
 (async () => {
   const apiBase = "https://openscale-custom-builds.odevstudio.workers.dev";
@@ -19,6 +20,19 @@ import {
     info: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>'
   };
   const defaults = defaultSelection(catalog);
+  const installStorageKey = "hds-custom-build-install-v1";
+  let installMethod = "wifi";
+  try {
+    const storedInstall = JSON.parse(localStorage.getItem(installStorageKey));
+    if (storedInstall?.version === 1 && ["wifi", "usb"].includes(storedInstall.method)) {
+      installMethod = storedInstall.method;
+    }
+  } catch {
+  }
+  const withInstallRequirements = candidate => installMethod === "wifi" ? {
+    ...candidate,
+    features: [...new Set([...candidate.features, "pull-ota"])],
+  } : candidate;
   let invalidLink = false;
   let selected = defaults;
   if (location.search) {
@@ -28,6 +42,7 @@ import {
       invalidLink = true;
     }
   }
+  selected = withInstallRequirements(selected);
   const refSelect = document.querySelector("#firmware-ref");
   const featureRoot = document.querySelector("#features");
   const pluginRoot = document.querySelector("#plugins");
@@ -44,6 +59,7 @@ import {
   let selectionController;
   let currentSelection;
   let currentCombinationHash = "";
+  let currentBuildState = "checking";
   let catalogRetryDelay = 2000;
 
   const escapeHtml = value => String(value).replace(/[&<>'"]/g, character => ({
@@ -141,6 +157,7 @@ import {
     buildState.className = `ready state-${result.state}`;
     buildState.textContent = labels[result.state] || result.state[0].toUpperCase() + result.state.slice(1);
     currentCombinationHash = combinationHash;
+    currentBuildState = result.state;
     document.querySelector("#combination-hash").textContent = combinationHash;
     hashButton.hidden = !combinationHash;
     const retryMessage = result.state === "failed" ?
@@ -170,6 +187,9 @@ import {
     if (["queued", "building"].includes(result.state) && combinationHash) {
       schedulePoll(combinationHash, generation);
     }
+    document.dispatchEvent(new CustomEvent("openscale-build-status", {
+      detail: {state: result.state, combinationHash},
+    }));
   };
 
   const apiRequest = async (path, options = {}) => {
@@ -284,7 +304,8 @@ import {
       const card = input.closest(".option-card");
       const isRequested = selected.features.includes(id);
       const isResolved = resolved.features.includes(id);
-      const isRequired = isResolved && !isRequested;
+      const installRequired = id === "pull-ota" && installMethod === "wifi";
+      const isRequired = installRequired || isResolved && !isRequested;
       const unavailableReason = isResolved ? "" : optionReason(catalog, selected, "feature", id);
       input.checked = isResolved;
       input.disabled = isRequired || Boolean(unavailableReason);
@@ -292,8 +313,8 @@ import {
       card.classList.toggle("is-required", isRequired);
       card.classList.toggle("is-disabled", input.disabled);
       card.classList.toggle("is-unavailable", Boolean(unavailableReason));
-      card.querySelector(".status-badge").textContent = isRequired ?
-        requirementReason(id, resolved) : unavailableReason;
+      card.querySelector(".status-badge").textContent = installRequired ?
+        "Required for scale install" : isRequired ? requirementReason(id, resolved) : unavailableReason;
     });
     document.querySelectorAll('[data-kind="plugin"]').forEach(input => {
       const plugin = pluginById.get(input.value);
@@ -352,11 +373,12 @@ import {
 
   const applySelection = (candidate, message) => {
     try {
-      resolveSelection(catalog, candidate);
+      const requiredCandidate = withInstallRequirements(candidate);
+      resolveSelection(catalog, requiredCandidate);
       selected = {
-        firmware_ref: candidate.firmware_ref,
-        features: [...candidate.features].sort(),
-        plugins: [...candidate.plugins].sort()
+        firmware_ref: requiredCandidate.firmware_ref,
+        features: [...requiredCandidate.features].sort(),
+        plugins: [...requiredCandidate.plugins].sort()
       };
       render();
       if (message) showToast(message);
@@ -388,6 +410,17 @@ import {
   });
 
   refSelect.addEventListener("change", () => applySelection({...selected, firmware_ref: refSelect.value}));
+  document.querySelectorAll('[name="install-method"]').forEach(input => {
+    input.checked = input.value === installMethod;
+    input.addEventListener("change", () => {
+      installMethod = input.value;
+      localStorage.setItem(installStorageKey, JSON.stringify({version: 1, method: installMethod}));
+      const nextSelection = installMethod === "usb"
+        ? {...selected, features: selected.features.filter(feature => feature !== "pull-ota")}
+        : selected;
+      applySelection(nextSelection, installMethod === "wifi" ? "Pull OTA included for scale install" : "USB install selected");
+    });
+  });
   buildButton.addEventListener("click", async () => {
     const generation = selectionGeneration;
     const selection = currentSelection;
@@ -431,6 +464,11 @@ import {
     applySelection(defaults, "Defaults restored");
   });
 
+  initFleet({
+    apiBase,
+    getReadyHash: () => currentBuildState === "ready" ? currentCombinationHash : "",
+    showToast,
+  });
   render();
   if (invalidLink) showToast("Invalid selection link discarded");
 })().catch(() => {

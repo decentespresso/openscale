@@ -157,6 +157,10 @@ def main():
         builderTools = catalogRoot / "tools"
         builderTools.mkdir()
         shutil.copy2(customBuild.SCRIPT_ROOT / "tools" / "configure_custom_build.py", builderTools)
+        shutil.copy2(
+            customBuild.SCRIPT_ROOT / "tools" / "write_custom_ota_public_key_header.py",
+            builderTools,
+        )
         shutil.copy2(customBuild.SCRIPT_ROOT / "git_rev_macro.py", catalogRoot)
         writePlugin(catalogRoot, "asset-only")
         writePlugin(catalogRoot, "dependency")
@@ -255,6 +259,9 @@ def main():
             assert (trustedTools / "git_rev_macro.py").read_bytes() == (
                 catalogRoot / "git_rev_macro.py"
             ).read_bytes()
+            assert (trustedTools / "write_custom_ota_public_key_header.py").read_bytes() == (
+                catalogRoot / "tools" / "write_custom_ota_public_key_header.py"
+            ).read_bytes()
             incompatibleCheckout = root / "incompatible-checkout"
             customRunner.cloneSource(sourceRoot, sourceCommit, incompatibleCheckout)
             incompatiblePlatformio = incompatibleCheckout / "platformio.ini"
@@ -327,6 +334,26 @@ def main():
             assetPackage = next(item for item in first["packages"] if item["id"] == "asset-only")
             assert assetPackage["assets"][0]["target"] == "plugins/asset/index.html"
             (buildDir / "build-manifest.json").write_bytes(firstManifest.read_bytes())
+            signingKey = root / "custom-ota.pem"
+            publicKey = root / "custom-ota-public.pem"
+            subprocess.run([
+                "openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048",
+                "-out", str(signingKey),
+            ], check=True, capture_output=True)
+            subprocess.run([
+                "openssl", "pkey", "-in", str(signingKey), "-pubout", "-out", str(publicKey),
+            ], check=True, capture_output=True)
+            customRunner.customOta.writeArtifacts(
+                buildDir,
+                buildDir / "build-manifest.json",
+                "https://builds.example.test",
+                signingKey.read_text(encoding="utf-8"),
+            )
+            subprocess.run([
+                "openssl", "dgst", "-sha256", "-verify", str(publicKey),
+                "-signature", str(buildDir / "ota-manifest.sig"),
+                str(buildDir / "ota-manifest.json"),
+            ], check=True, capture_output=True)
             customRunner.requireBuildFiles(buildDir)
             combinationHash = first["combination_hash"]
             combinationInput = first["combination_input"]

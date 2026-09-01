@@ -11,16 +11,27 @@ The Worker rejects any `GITHUB_REPOSITORY` value other than
 `decentespresso/openscale`. Installation tokens are additionally requested for only the
 `openscale` repository and only the Actions write permission.
 
-Custom builds are unsigned USB installation archives. They are not official signed OTA
-releases and must not be presented as verified or signed builds.
+Custom OTA manifests use a signing key that is separate from the official release keys. Store
+the private key only as the `HDS_CUSTOM_OTA_SIGNING_KEY_PEM` GitHub Actions secret. The release
+workflow derives and embeds its public key in official firmware; the custom-build workflow embeds
+the same public key and signs each immutable custom OTA manifest. Never reuse an official release
+signing key for custom builds.
+
+The Worker stores SHA-256 hashes of fleet and device secrets, never their raw values. Treat a fleet
+recovery key as a bearer credential. A scale's `device_secret` stays in the `ota_custom` NVS
+namespace and must never be displayed or logged.
 
 ## Deployment Order
 
-1. Deploy the Worker first. It accepts requests without `catalog_revision`, legacy feature
-   arrays, and plugin catalogs without `conflicts_features`.
-2. Merge the regenerated service catalog, browser catalog, and configurator together.
-3. Confirm that a status request with the published `catalog_revision` succeeds.
-4. Treat sustained `409 catalog_stale` responses as an incomplete deployment. The browser
+1. Create the custom OTA RSA private key and save it as the
+   `HDS_CUSTOM_OTA_SIGNING_KEY_PEM` repository secret.
+2. Deploy the Worker before publishing firmware with the Custom Build menu.
+3. Merge the firmware, workflow, catalogs, and configurator together.
+4. Publish an official release that embeds the custom OTA public key.
+5. Confirm that pairing, fleet recovery, build assignment, signed manifest verification, and
+   rollback work on hardware before enabling scale installation in the configurator.
+6. Confirm that a status request with the published `catalog_revision` succeeds.
+7. Treat sustained `409 catalog_stale` responses as an incomplete deployment. The browser
    retries one catalog reload and then displays `Configurator update in progress`.
 
 ## Clearing Pre-Launch Builds
@@ -38,6 +49,10 @@ dependency inventory:
 npx wrangler r2 object delete openscale-custom-builds/v1/<hash>/build-manifest.json --remote --config cloudflare/custom-build-worker/wrangler.toml
 npx wrangler r2 object delete openscale-custom-builds/v1/<hash>/HDS_FW_custom.zip --remote --config cloudflare/custom-build-worker/wrangler.toml
 npx wrangler r2 object delete openscale-custom-builds/v1/<hash>/dependencies.txt --remote --config cloudflare/custom-build-worker/wrangler.toml
+npx wrangler r2 object delete openscale-custom-builds/v1/<hash>/firmware.bin --remote --config cloudflare/custom-build-worker/wrangler.toml
+npx wrangler r2 object delete openscale-custom-builds/v1/<hash>/littlefs.bin --remote --config cloudflare/custom-build-worker/wrangler.toml
+npx wrangler r2 object delete openscale-custom-builds/v1/<hash>/ota-manifest.sig --remote --config cloudflare/custom-build-worker/wrangler.toml
+npx wrangler r2 object delete openscale-custom-builds/v1/<hash>/ota-manifest.json --remote --config cloudflare/custom-build-worker/wrangler.toml
 ```
 
 R2 deletion does not reset weekly rate-limit counters; the next request for that combination
@@ -52,7 +67,8 @@ is a new build and consumes a build slot.
 3. Collect every affected combination hash from incident records and each build manifest.
 4. In the Cloudflare dashboard, delete `v1/<hash>/build-manifest.json` first. This immediately
    makes every public download for that hash return `404`.
-5. Delete `v1/<hash>/HDS_FW_custom.zip` and `v1/<hash>/dependencies.txt` after the manifest.
+5. Delete the archive, dependency inventory, OTA binaries, and signed OTA manifest after the
+   build manifest.
 6. Verify the archive, manifest, and status endpoints from an unauthenticated client.
 7. Record the plugin version, firmware refs, hashes, reason, operator, and deletion time in the
    incident record.
@@ -60,6 +76,11 @@ is a new build and consumes a build slot.
 If the upload token may be exposed, rotate `UPLOAD_TOKEN` and
 `CUSTOM_BUILD_UPLOAD_TOKEN`. If the GitHub App key may be exposed, revoke the key, create a
 new one, and update the Worker secret before re-enabling builds.
+
+If the custom OTA signing key is compromised, disable scale installation, rotate the repository
+secret, publish official firmware containing the replacement public key, and only then resume
+custom OTA builds. A lost but uncompromised key must remain trusted until existing firmware has
+migrated to its replacement.
 
 ## Public Failure Codes
 

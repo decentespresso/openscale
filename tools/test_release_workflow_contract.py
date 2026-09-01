@@ -50,6 +50,8 @@ def main():
     assert_contains(text, "tag $TAG predates the dependency pin migration")
     assert_contains(text, '[ ! -f requirements-platformio.txt ]')
     assert_contains(text, "python tools/write_ota_public_key_header.py")
+    assert_contains(text, 'test -n "$HDS_CUSTOM_OTA_SIGNING_KEY_PEM"')
+    assert_contains(text, "python tools/write_custom_ota_public_key_header.py")
     assert_contains(text, 'echo "HDS_FIRMWARE_VERSION=${TAG#v}" >> "$GITHUB_ENV"')
     assert_contains(text, "HDS_OTA_SIGNING_KEY_PEM secret is required")
     assert_contains(text, "keys/ota/hds_ota_manifest_public_key_{1..3}.pem")

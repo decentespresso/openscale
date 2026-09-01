@@ -275,7 +275,11 @@ bool pullOtaShaLooksValid(String value) {
   return true;
 }
 
-bool pullOtaParseAsset(JsonVariant variant, PullOtaAsset &asset, bool requiredDefault) {
+bool pullOtaParseAsset(
+    JsonVariant variant,
+    PullOtaAsset &asset,
+    bool requiredDefault,
+    const char *assetUrlPrefix = HDS_OTA_ASSET_URL_PREFIX) {
   JsonObject object = variant.as<JsonObject>();
   if (object.isNull()) {
     return false;
@@ -294,7 +298,7 @@ bool pullOtaParseAsset(JsonVariant variant, PullOtaAsset &asset, bool requiredDe
   asset.url = url;
   asset.size = (size_t)size;
   asset.sha256 = shaValue;
-  return pullOtaUrlAllowed(asset.url);
+  return assetUrlPrefix != nullptr && asset.url.startsWith(assetUrlPrefix);
 }
 
 bool pullOtaManifestCompatible(const PullOtaManifest &manifest) {
@@ -343,7 +347,11 @@ bool pullOtaReleaseCanRunFromCurrent(const PullOtaManifest &manifest) {
   return true;
 }
 
-bool pullOtaParseManifestObject(JsonObject root, PullOtaManifest &manifest) {
+bool pullOtaParseManifestObject(
+    JsonObject root,
+    PullOtaManifest &manifest,
+    const char *assetUrlPrefix = HDS_OTA_ASSET_URL_PREFIX,
+    bool requireStableVersion = true) {
   const char *model = root["model"] | "";
   const char *version = root["version"] | "";
   const char *minFrom = root["min_from"] | "";
@@ -357,7 +365,10 @@ bool pullOtaParseManifestObject(JsonObject root, PullOtaManifest &manifest) {
   unsigned long appPartitionMinSize = root["app_partition_min_size"] | 0UL;
   unsigned long fsPartitionSize = root["fs_partition_size"] | 0UL;
   unsigned long fsSchema = root["fs_schema"] | 0UL;
-  if (String(model) != "hds" || !pullOtaVersionLooksStable(version)) {
+  PullOtaVersionTriplet parsedVersion;
+  if (String(model) != "hds" ||
+      (requireStableVersion ? !pullOtaVersionLooksStable(version)
+                            : !pullOtaVersionHasComparablePrefix(version, parsedVersion))) {
     return false;
   }
   if (minFrom[0] != '\0' && !pullOtaVersionLooksStable(minFrom)) {
@@ -384,11 +395,11 @@ bool pullOtaParseManifestObject(JsonObject root, PullOtaManifest &manifest) {
   manifest.appPartitionMinSize = (uint32_t)appPartitionMinSize;
   manifest.fsPartitionSize = (uint32_t)fsPartitionSize;
   manifest.fsSchema = (uint32_t)fsSchema;
-  if (!pullOtaParseAsset(root["firmware"], manifest.firmware, true)) {
+  if (!pullOtaParseAsset(root["firmware"], manifest.firmware, true, assetUrlPrefix)) {
     return false;
   }
   if (!root["littlefs"].isNull() &&
-      !pullOtaParseAsset(root["littlefs"], manifest.littlefs, false)) {
+      !pullOtaParseAsset(root["littlefs"], manifest.littlefs, false, assetUrlPrefix)) {
     return false;
   }
   return pullOtaManifestCompatible(manifest);
@@ -611,24 +622,22 @@ bool pullOtaSha256String(const String &body, uint8_t digest[32]) {
   return pullOtaHashFinish(hash, digest) && ok;
 }
 
-bool pullOtaVerifyManifestSignature(
+bool pullOtaVerifyManifestSignatureWithKeys(
     const String &body,
     const uint8_t *signature,
-    size_t signatureLen) {
-  if (!pullOtaPublicKeysConfigured() ||
-      signature == nullptr || signatureLen == 0) {
+    size_t signatureLen,
+    const char *const *publicKeys,
+    size_t publicKeyCount) {
+  if (signature == nullptr || signatureLen == 0 || publicKeys == nullptr || publicKeyCount == 0) {
     return false;
   }
   uint8_t digest[32];
   if (!pullOtaSha256String(body, digest)) {
     return false;
   }
-  const char *const publicKeys[] = {
-      HDS_OTA_MANIFEST_PUBLIC_KEY_1_PEM,
-      HDS_OTA_MANIFEST_PUBLIC_KEY_2_PEM,
-      HDS_OTA_MANIFEST_PUBLIC_KEY_3_PEM,
-  };
-  for (const char *key : publicKeys) {
+  for (size_t keyIndex = 0; keyIndex < publicKeyCount; keyIndex++) {
+    const char *key = publicKeys[keyIndex];
+    if (key == nullptr || key[0] == '\0') continue;
     mbedtls_pk_context publicKey;
     mbedtls_pk_init(&publicKey);
     int parsed = mbedtls_pk_parse_public_key(
@@ -644,6 +653,20 @@ bool pullOtaVerifyManifestSignature(
     }
   }
   return false;
+}
+
+bool pullOtaVerifyManifestSignature(
+    const String &body,
+    const uint8_t *signature,
+    size_t signatureLen) {
+  if (!pullOtaPublicKeysConfigured()) return false;
+  const char *const publicKeys[] = {
+      HDS_OTA_MANIFEST_PUBLIC_KEY_1_PEM,
+      HDS_OTA_MANIFEST_PUBLIC_KEY_2_PEM,
+      HDS_OTA_MANIFEST_PUBLIC_KEY_3_PEM,
+  };
+  return pullOtaVerifyManifestSignatureWithKeys(
+      body, signature, signatureLen, publicKeys, sizeof(publicKeys) / sizeof(publicKeys[0]));
 }
 
 bool pullOtaPartitionShaMatches(const PullOtaAsset &asset) {

@@ -82,6 +82,8 @@ jobs:
           python tools/test_plugin_ci_contract.py
           node --test cloudflare/custom-build-worker/test/configurator.test.mjs
           node --test cloudflare/custom-build-worker/test/worker.test.mjs
+          node --test cloudflare/custom-build-worker/test/fleet.test.mjs
+          node --check docs/custom-build/fleet.js
       - name: Detect changed patch plugins
         id: plugins
         run: >-
@@ -179,6 +181,14 @@ jobs:
               "plugins": [],
           }) + "\n", encoding="utf-8")
           PY
+      - name: Create test custom OTA key
+        run: |
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$RUNNER_TEMP/custom-ota.pem" 2>/dev/null
+          {
+            echo 'HDS_CUSTOM_OTA_SIGNING_KEY_PEM<<CUSTOM_OTA_KEY'
+            cat "$RUNNER_TEMP/custom-ota.pem"
+            echo 'CUSTOM_OTA_KEY'
+          } >> "$GITHUB_ENV"
       - name: Build minimal custom firmware and filesystem
         run: >-
           python tools/build_custom_firmware.py
@@ -243,6 +253,8 @@ jobs:
           python tools/test_custom_cache_transport.py
           node --test cloudflare/custom-build-worker/test/configurator.test.mjs
           node --test cloudflare/custom-build-worker/test/worker.test.mjs
+          node --test cloudflare/custom-build-worker/test/fleet.test.mjs
+          node --check docs/custom-build/fleet.js
       - name: Mark custom build as running
         if: >-
           github.event_name == 'workflow_dispatch' &&
@@ -261,6 +273,8 @@ jobs:
           --state building
       - name: Build isolated custom firmware and filesystem
         id: custom_build
+        env:
+          HDS_CUSTOM_OTA_SIGNING_KEY_PEM: ${{ secrets.HDS_CUSTOM_OTA_SIGNING_KEY_PEM }}
         run: >-
           python tools/build_custom_firmware.py
           --cache-url https://openscale-custom-builds.odevstudio.workers.dev
