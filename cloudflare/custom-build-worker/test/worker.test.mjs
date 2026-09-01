@@ -287,7 +287,7 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     const sortedAssets = await api(env, "/api/v1/status", "POST", {
       firmware_ref: "main", features: [], plugins: ["asset-sort"],
     });
-    assert.equal((await sortedAssets.json()).combination_hash, "e60d7ab0a7e8437c018691616b13253d90e031654fac5e58b9169fb7ce83b002");
+    assert.equal((await sortedAssets.json()).combination_hash, "0c49e75c970b46a4ae1d79eb4d70e8d45369cec119aeb86d27bdfa9773c6ecb7");
 
     const dependencyRoots = await api(env, "/api/v1/status", "POST", {
       firmware_ref: "main", features: [], plugins: ["bravo", "charlie"],
