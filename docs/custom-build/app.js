@@ -8,7 +8,7 @@ import {
   resolveSelection,
   selectionQuery,
 } from "./selection.mjs?v=5";
-import {initFleet} from "./fleet.js?v=3";
+import {initFleet} from "./fleet.js?v=4";
 
 (async () => {
   const apiBase = "https://openscale-custom-builds.odevstudio.workers.dev";

@@ -46,6 +46,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   const fleetStatus = document.querySelector("#fleet-status");
   const pairInput = document.querySelector("#pair-code");
   const existingInput = document.querySelector("#existing-fleet-key");
+  const forgetDialog = document.querySelector("#forget-fleet-dialog");
   let fleetKey = loadStoredKey();
   let generation = 0;
 
@@ -195,7 +196,10 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
     }
   });
   document.querySelector("#forget-fleet").addEventListener("click", () => {
-    if (!confirm("Forget this fleet key in this browser? Linked scales will not be deleted.")) return;
+    forgetDialog.showModal();
+  });
+  forgetDialog.addEventListener("close", () => {
+    if (forgetDialog.returnValue !== "confirm") return;
     localStorage.removeItem(storageKey);
     fleetKey = "";
     generation += 1;

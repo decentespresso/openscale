@@ -932,6 +932,43 @@
     .toast.is-visible { opacity: 1; transform: translate(-50%, 0); visibility: visible; }
     .toast svg { width: 16px; height: 16px; color: #58d59e; }
 
+    .confirm-dialog {
+      width: min(420px, calc(100% - 32px));
+      padding: 0;
+      border: 0;
+      border-radius: 8px;
+      color: var(--ink);
+      background: var(--surface);
+      box-shadow: var(--shadow-lg);
+    }
+
+    .confirm-dialog::backdrop { background: rgba(23, 33, 29, .42); }
+    .confirm-dialog form { padding: 24px; }
+    .confirm-dialog h3 { margin: 0; font-size: 1.05rem; }
+    .confirm-dialog p { margin: 8px 0 0; color: var(--muted); font-size: .82rem; line-height: 1.55; }
+
+    .dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .danger-button {
+      min-height: 44px;
+      padding: 0 15px;
+      border: 1px solid var(--danger);
+      border-radius: 8px;
+      color: white;
+      background: var(--danger);
+      font-size: .78rem;
+      font-weight: 720;
+      cursor: pointer;
+    }
+
+    .danger-button:hover { background: #8f3030; }
+    .danger-button:focus-visible { outline: 3px solid rgba(164, 60, 60, .2); outline-offset: 2px; }
+
     .sr-only {
       position: absolute;
       width: 1px;
@@ -982,6 +1019,8 @@
       .scale-assignment, .scale-actions { grid-column: 1; grid-row: auto; padding: 0; }
       .scale-actions { justify-content: stretch; }
       .scale-actions .primary-button, .scale-actions .ghost-button { flex: 1; }
+      .dialog-actions { align-items: stretch; flex-direction: column-reverse; }
+      .dialog-actions button { width: 100%; }
     }
 
     @media (prefers-reduced-motion: reduce) {

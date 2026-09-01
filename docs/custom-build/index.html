@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#0d6b4f">
   <title>HDS Custom Build</title>
-  <link rel="stylesheet" href="styles.css?v=13">
+  <link rel="stylesheet" href="styles.css?v=14">
 </head>
 <body>
   <header class="topbar">
@@ -194,6 +194,17 @@
     <span id="toast-message">Command copied</span>
   </div>
 
-  <script type="module" src="app.js?v=16"></script>
+  <dialog id="forget-fleet-dialog" class="confirm-dialog" aria-labelledby="forget-fleet-heading" aria-describedby="forget-fleet-description">
+    <form method="dialog">
+      <h3 id="forget-fleet-heading">Forget fleet on this browser?</h3>
+      <p id="forget-fleet-description">Linked scales will not be deleted. You will need the recovery key to open this fleet again.</p>
+      <div class="dialog-actions">
+        <button class="ghost-bordered-button" type="submit" value="cancel" autofocus>Cancel</button>
+        <button class="danger-button" type="submit" value="confirm">Forget fleet</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="app.js?v=17"></script>
 </body>
 </html>
