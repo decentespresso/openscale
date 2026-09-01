@@ -64,6 +64,14 @@ def main():
     )
     assert "void backMenu()" in menu
     assert "navigateMenu(-1);" in sketch
+    for view in ("showWifiStatus", "showStatus", "showAbout", "showLogo"):
+        body = menu[menu.rindex(f"void {view}()") :]
+        body = body[: body.index("\n}")]
+        assert "waitForMenuButtonRelease();" in body
+    pressed = sketch[sketch.index("case AceButton::kEventPressed:") :]
+    pressed = pressed[: pressed.index("case AceButton::kEventDoubleClicked:")]
+    menu_pressed = pressed[pressed.index("if (b_menu) {") :]
+    assert "recordEnergyActivity();" in menu_pressed
 
     print("menu memory contract tests passed")
 

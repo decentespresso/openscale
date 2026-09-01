@@ -407,6 +407,7 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
         buzzer.beep(1, BUZZER_DURATION);
 #endif
       if (b_menu) {
+        recordEnergyActivity();
         if (pin == BUTTON_CIRCLE) {
           b_menuCirclePressPending = true;
           b_menuCircleLongHandled = false;

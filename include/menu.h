@@ -44,6 +44,12 @@ inline void menuActionMessageChanged() {
   invalidateMenuFrame();
 }
 
+void waitForMenuButtonRelease() {
+  while (digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW) {
+    delay(20);
+  }
+}
+
 template<typename T> int getMenuSize(T &menu) {
   return sizeof(menu) / sizeof(menu[0]);
 }
@@ -373,6 +379,7 @@ void showWifiStatus() {
       b_showWifiData = false;
     }
   }
+  waitForMenuButtonRelease();
 }
 #endif
 
@@ -441,6 +448,7 @@ void showStatus() {
       b_showStatusData = false;
     }
   }
+  waitForMenuButtonRelease();
 }
 
 #if HDS_FEATURE_WIFI
@@ -589,12 +597,6 @@ uint8_t grinderFindPlugsForSelection() {
   return count;
 }
 
-void grinderWaitForButtonRelease() {
-  while (digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW) {
-    delay(20);
-  }
-}
-
 void grinderDrawPlugList(uint8_t selected) {
   const uint8_t total = grinderRuntime.discoveredCount + 1;
   const uint8_t rows = 6;
@@ -625,7 +627,7 @@ void grinderSelectPlugMenu() {
   if (grinderFindPlugsForSelection() == 0) {
     return;
   }
-  grinderWaitForButtonRelease();
+  waitForMenuButtonRelease();
   uint8_t selected = 0;
   bool selecting = true;
   while (selecting) {
@@ -633,7 +635,7 @@ void grinderSelectPlugMenu() {
     grinderDrawPlugList(selected);
     if (digitalRead(BUTTON_CIRCLE) == LOW) {
       selected = (selected + 1) % (grinderRuntime.discoveredCount + 1);
-      grinderWaitForButtonRelease();
+      waitForMenuButtonRelease();
     }
     if (digitalRead(BUTTON_SQUARE) == LOW) {
       if (selected == 0) {
@@ -649,7 +651,7 @@ void grinderSelectPlugMenu() {
         grinderSetActionMessage("Plug Selected", grinderSettings.enabled ? "Saved" : "Enable in menu");
         selecting = false;
       }
-      grinderWaitForButtonRelease();
+      waitForMenuButtonRelease();
     }
     delay(40);
   }
@@ -712,17 +714,17 @@ static inline float grinderHandleDraftAdjust(const char *title, float draft, flo
 static inline bool grinderEditNumber(const char *title, float *output, float minValue, float maxValue) {
   float draft = *output;
   uint8_t selected = 0;
-  grinderWaitForButtonRelease();
+  waitForMenuButtonRelease();
   while (true) {
     power_off(-1);
     grinderDrawNumberEditor(title, draft, selected);
     if (digitalRead(BUTTON_CIRCLE) == LOW) {
       selected = (selected + 1) % 4;
-      grinderWaitForButtonRelease();
+      waitForMenuButtonRelease();
     }
     if (digitalRead(BUTTON_SQUARE) == LOW) {
       if (selected == 0) {
-        grinderWaitForButtonRelease();
+        waitForMenuButtonRelease();
         return false;
       }
       if (selected == 1) {
@@ -731,7 +733,7 @@ static inline bool grinderEditNumber(const char *title, float *output, float min
         draft = grinderHandleDraftAdjust(title, draft, 0.1f, minValue, maxValue, selected);
       } else {
         *output = draft;
-        grinderWaitForButtonRelease();
+        waitForMenuButtonRelease();
         return true;
       }
     }
@@ -1432,6 +1434,7 @@ void showAbout() {
     if (digitalRead(BUTTON_SQUARE) == LOW)
       b_showAbout = false;
   }
+  waitForMenuButtonRelease();
 }
 
 void showLogo() {
@@ -1501,6 +1504,7 @@ void showLogo() {
       b_showLogo = false;
     }
   }
+  waitForMenuButtonRelease();
 }
 
 void enableDebug() {
