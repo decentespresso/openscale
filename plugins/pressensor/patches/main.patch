@@ -1,3 +1,60 @@
+diff --git a/docs/AI_DISPLAY_NOTES.md b/docs/AI_DISPLAY_NOTES.md
+index eff748a..41a0019 100644
+--- a/docs/AI_DISPLAY_NOTES.md
++++ b/docs/AI_DISPLAY_NOTES.md
+@@ -163,6 +163,21 @@ Restore the draw color and font assumptions required by later helpers.
+ 
+ ## Setup Menu Model
+ 
++The setup menu has one ordinary category level:
++
++```text
++Main
++  Scale
++  Connections
++  Display
++  Power
++  Grind by weight (HDS_ENABLE_GRINDER)
++  Pressensor (Pressensor patch only)
++  Info
++```
++
++Energy rows are part of `Power` only when `HDS_ENABLE_ENERGY_MENU` is enabled. Grind by weight remains entirely behind `HDS_ENABLE_GRINDER`. Pressensor remains absent from the normal tree and is added by its approved patch.
++
+ The menu item type is:
+ 
+ ```cpp
+@@ -174,23 +189,24 @@ struct Menu {
+ };
+ ```
+ 
+-Circle advances the current selection. Square selects it.
++Circle short advances and Circle long moves to the previous row. Square short toggles, cycles, activates, or enters the selected category. Square long returns to Main, or exits when already on Main. Every category retains a visible `Back` row. Returning to Main selects the category that was just exited.
++
++Menu short actions are classified on button release. A recognized long press suppresses its release action, so it cannot also trigger the short action. Normal weighing-mode gestures remain unchanged.
+ 
+ Display order comes from pointer arrays such as `mainMenu[]`, not declaration order.
+ 
+-Adding a submenu requires all of these:
++Adding a category requires all of these:
+ 
+ 1. parent and child `Menu` declarations
+ 2. child pointer array
+ 3. parent pointer in `mainMenu[]` or another reachable array
+-4. `linkSubmenus()` registration
+-5. `selectMenu()` branch that selects the array and sets its size
++4. `selectMenu()` branch that selects the array and sets its size
+ 
+-Missing one can produce an item that is visible but not enterable, has the wrong item count, or cannot be reached.
++Do not add a third ordinary menu level. Dedicated calibration, discovery, OTA, and numeric editors may temporarily own their own interaction flow.
+ 
+ `showMenu()` currently uses four rows per page, a `>` marker, and a top-right page count. Long labels do not wrap. After changing font, row spacing, or labels, check every menu and the page indicator.
+ 
+-The current Back implementation returns to `mainMenu`; `parentMenu` does not provide generic arbitrary-depth traversal. Do not add a third menu level without first introducing a real parent-array stack or equivalent navigation state.
++Ordinary booleans are direct rows with a visible `o` or `x`. Square calculates the desired value, persists and applies it, refreshes the row, shows brief feedback, and remains on the row. A failed persistence call must leave runtime state and the row truthful. Drift compensation cycles directly through `Off`, `0.05g`, `0.075g`, `0.10g`, and `0.20g`. Timer position alternates directly between `Top: Time` and `Top: Weight`.
+ 
+ Menu actions may show temporary feedback through:
+ 
 diff --git a/include/config.h b/include/config.h
 index ab61821..65f4068 100644
 --- a/include/config.h
@@ -28,28 +85,70 @@ index 835c4cb..7387c1f 100644
  #define LCDWidth u8g2.getDisplayWidth()
  #define LCDHeight u8g2.getDisplayHeight()
  #define AC(T) ((LCDWidth - u8g2.getUTF8Width(T)) / 2 - Margin_Left - Margin_Right)
+diff --git a/include/energy_menu.h b/include/energy_menu.h
+index 0d2ce7c..2e44e51 100644
+--- a/include/energy_menu.h
++++ b/include/energy_menu.h
+@@ -7,29 +7,17 @@ void toggleEnergyOledIdle();
+ void toggleEnergyLightSleep();
+ void toggleEnergyUsbSleepTest();
+ 
+-extern Menu menuEnergy;
+-Menu menuEnergyBack = { "Back", NULL, NULL, &menuEnergy };
+-Menu menuEnergy = { "Energy Saving", NULL, &menuEnergyBack, NULL };
+ char menuEnergySerialQuietLabel[] = "Serial Quiet o";
+ char menuEnergyOledRedrawLabel[] = "OLED Redraw o";
+ char menuEnergyOledIdleLabel[] = "OLED Idle o";
+ char menuEnergyLightSleepLabel[] = "Light Sleep o";
+ char menuEnergyUsbSleepTestLabel[] = "USB Sleep Test o";
+ 
+-const Menu menuEnergySerialQuiet = { menuEnergySerialQuietLabel, toggleEnergySerialQuiet, NULL, &menuEnergy };
+-const Menu menuEnergyOledRedraw = { menuEnergyOledRedrawLabel, toggleEnergyOledRedraw, NULL, &menuEnergy };
+-const Menu menuEnergyOledIdle = { menuEnergyOledIdleLabel, toggleEnergyOledIdle, NULL, &menuEnergy };
+-const Menu menuEnergyLightSleep = { menuEnergyLightSleepLabel, toggleEnergyLightSleep, NULL, &menuEnergy };
+-const Menu menuEnergyUsbSleepTest = { menuEnergyUsbSleepTestLabel, toggleEnergyUsbSleepTest, NULL, &menuEnergy };
+-
+-const Menu *const energyMenu[] = {
+-  &menuEnergyBack,
+-  &menuEnergySerialQuiet,
+-  &menuEnergyOledRedraw,
+-  &menuEnergyOledIdle,
+-  &menuEnergyLightSleep,
+-  &menuEnergyUsbSleepTest,
+-};
++const Menu menuEnergySerialQuiet = { menuEnergySerialQuietLabel, toggleEnergySerialQuiet, NULL, &menuPower };
++const Menu menuEnergyOledRedraw = { menuEnergyOledRedrawLabel, toggleEnergyOledRedraw, NULL, &menuPower };
++const Menu menuEnergyOledIdle = { menuEnergyOledIdleLabel, toggleEnergyOledIdle, NULL, &menuPower };
++const Menu menuEnergyLightSleep = { menuEnergyLightSleepLabel, toggleEnergyLightSleep, NULL, &menuPower };
++const Menu menuEnergyUsbSleepTest = { menuEnergyUsbSleepTestLabel, toggleEnergyUsbSleepTest, NULL, &menuPower };
+ 
+ char *energyFeatureRows[] = {
+   menuEnergySerialQuietLabel,
 diff --git a/include/finger_detection.h b/include/finger_detection.h
-index 91a43cd..e1666b4 100644
+index 057610f..4a34efa 100644
 --- a/include/finger_detection.h
 +++ b/include/finger_detection.h
-@@ -94,7 +94,15 @@ void runRecognizedButtonAction(int button) {
-     b_tareByButton = true;
-   } else if (button == BUTTON_SQUARE && !b_menu && !b_calibration &&
-              millis() - t_menuExitTime > 1000) {
+@@ -222,8 +222,17 @@ bool isFingerPress(int button) {
+           sendBleButton(2, 1);
+         }
+         if (!b_menu && !b_calibration && (!bleClientLive || b_btnFuncWhileConnected)) {
+-          if (millis() - t_menuExitTime > 1000)
++          if (millis() - t_menuExitTime > 1000) {
 +#if HDS_ENABLE_PRESSENSOR
-+    if (pressensorActive()) {
-+      pressensorTimerButton(f_displayedValue);
-+    } else {
-+      scaleTimer();
-+    }
++            if (pressensorActive()) {
++              pressensorTimerButton(f_displayedValue);
++            } else {
++              scaleTimer();
++            }
 +#else
-     scaleTimer();
+             scaleTimer();
 +#endif
-   }
- }
- 
++          }
+         }
+       }
+     }
 diff --git a/include/menu.h b/include/menu.h
-index 3c65383..6e84c5c 100644
+index 34bb48f..069e7ee 100644
 --- a/include/menu.h
 +++ b/include/menu.h
 @@ -11,6 +11,9 @@
@@ -62,7 +161,78 @@ index 3c65383..6e84c5c 100644
  #include <string.h>
  const char *const weights[] = { "Exit", "50g", "100g", "200g", "500g", "1000g" };
  const float weight_values[] = { 0.0, 50.0, 100.0, 200.0, 500.0, 1000.0 };
-@@ -96,6 +99,13 @@ void grinderTargetMenu();
+@@ -44,6 +47,12 @@ inline void menuActionMessageChanged() {
+   invalidateMenuFrame();
+ }
+ 
++void waitForMenuButtonRelease() {
++  while (digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW) {
++    delay(20);
++  }
++}
++
+ template<typename T> int getMenuSize(T &menu) {
+   return sizeof(menu) / sizeof(menu[0]);
+ }
+@@ -55,22 +64,17 @@ struct Menu {
+   const Menu *parentMenu;
+ };
+ 
+-#if HDS_ENABLE_ENERGY_MENU
+-#include "energy_menu.h"
+-#endif
+ void exitMenu();
++void backMenu();
+ #ifdef BUZZER
+-void buzzerOn();
+-void buzzerOff();
++void toggleBuzzer();
+ #endif
+ #if HDS_FEATURE_WIFI
+-void toggleWifiOff();
+-void toggleWifiOn();
++void toggleWifi();
+ void resetWifi();
+ void showWifiStatus();
+ #endif
+-void heartbeatOn();
+-void heartbeatOff();
++void toggleHeartbeat();
+ void calibrate();
+ void drawButton();
+ #if HDS_FEATURE_PULL_OTA
+@@ -84,184 +88,179 @@ void calibrateVoltage();
+ void navigateMenu(int direction);
+ void selectMenu();
+ void enableDebug();
+-void flipScreenOn();
+-void flipScreenOff();
+-void timeOnTopOn();
+-void timeOnTopOff();
+-void btnFuncWhileConnectedOn();
+-void btnFuncWhileConnectedOff();
+-void autoSleepOn();
+-void autoSleepOff();
+-void quickBootOn();
+-void quickBootOff();
+-void driftCompOff();
+-void driftComp0050();
+-void driftComp0075();
+-void driftComp0100();
+-void driftComp0200();
++void toggleFlipScreen();
++void toggleTimeOnTop();
++void toggleBtnFuncWhileConnected();
++void toggleAutoSleep();
++void toggleQuickBoot();
++void cycleDriftComp();
++void refreshMenuRows();
+ #if HDS_ENABLE_GRINDER
+-void grinderOn();
+-void grinderOff();
++void toggleGrinder();
+ void grinderSelectPlugMenu();
+ void grinderTargetMenu();
  void grinderSafetyMenu();
  void grinderZeroRangeMenu();
  #endif
@@ -76,7 +246,26 @@ index 3c65383..6e84c5c 100644
  #if HDS_FEATURE_WIFI
  void wifi_init();
  #endif
-@@ -108,6 +118,9 @@ extern const Menu menuInfoBack;
+ 
+-extern const Menu menuCalibrationBack;
+-extern const Menu menuHeartbeatBack;
+-extern const Menu menuFlipScreenBack;
+-extern const Menu menuTimeOnTopBack;
+-extern const Menu menuBtnFuncWhileConnectedBack;
+-extern const Menu menuAutoSleepBack;
+-extern const Menu menuQuickBootBack;
+-extern const Menu menuDriftCompBack;
+-#ifdef BUZZER
+-extern const Menu menuBuzzerBack;
+-#endif
+-#if HDS_FEATURE_WIFI
+-extern const Menu menuWiFiUpdateBack;
+-#endif
++extern const Menu menuScaleBack;
++extern const Menu menuConnectionsBack;
++extern const Menu menuDisplayBack;
++extern const Menu menuPowerBack;
++extern const Menu menuInfoBack;
  #if HDS_ENABLE_GRINDER
  extern const Menu menuGrinderBack;
  #endif
@@ -85,8 +274,32 @@ index 3c65383..6e84c5c 100644
 +#endif
  
  const Menu menuExit = { "Exit", exitMenu, NULL, NULL };
- const Menu menuScale = { "Scale", NULL, &menuScaleBack, NULL };
-@@ -121,6 +134,9 @@ const Menu menuLogo = { "Show Logo", showLogo, NULL, &menuDisplay };
+-#ifdef BUZZER
+-const Menu menuBuzzer = { "Buzzer", NULL, &menuBuzzerBack, NULL };
+-#endif
+-const Menu menuCalibration = { "Calibration", NULL, &menuCalibrationBack, NULL };
+-#if HDS_FEATURE_WIFI
+-const Menu menuWifi = { "WiFi Settings", NULL, &menuWiFiUpdateBack, NULL };
+-#endif
+-const Menu menuStatus = { "Status", showStatus, NULL, NULL };
+-const Menu menuAbout = { "About", showAbout, NULL, NULL };
+-const Menu menuLogo = { "Show Logo", showLogo, NULL, NULL };
+-const Menu menuFactory = { "Factory", NULL, NULL, NULL };
+-const Menu menuHeartbeat = { "Heartbeat", NULL, &menuHeartbeatBack, NULL };
+-const Menu menuFlipScreen = { "Flip Screen", NULL, &menuFlipScreenBack, NULL };
+-const Menu menuTimeOnTop = { "Time On Top", NULL, &menuTimeOnTopBack, NULL };
+-const Menu menuBtnFuncWhileConnected = { "Button with BLE", NULL, &menuBtnFuncWhileConnectedBack, NULL };
+-const Menu menuAutoSleep = { "Auto Sleep", NULL, &menuAutoSleepBack, NULL };
+-const Menu menuQuickBoot = { "Quick Boot", NULL, &menuQuickBootBack, NULL };
+-const Menu menuDriftComp = { "Drift Comp", NULL, &menuDriftCompBack, NULL };
++const Menu menuScale = { "Scale", NULL, &menuScaleBack, NULL };
++const Menu menuConnections = { "Connections", NULL, &menuConnectionsBack, NULL };
++const Menu menuDisplay = { "Display", NULL, &menuDisplayBack, NULL };
++const Menu menuPower = { "Power", NULL, &menuPowerBack, NULL };
++const Menu menuInfo = { "Info", NULL, &menuInfoBack, NULL };
++const Menu menuStatus = { "Status", showStatus, NULL, &menuInfo };
++const Menu menuAbout = { "About", showAbout, NULL, &menuInfo };
++const Menu menuLogo = { "Show Logo", showLogo, NULL, &menuDisplay };
  #if HDS_ENABLE_GRINDER
  const Menu menuGrinder = { "Grind by weight", NULL, &menuGrinderBack, NULL };
  #endif
@@ -94,12 +307,169 @@ index 3c65383..6e84c5c 100644
 +const Menu menuPressensor = { "Pressensor", NULL, &menuPressensorBack, NULL };
 +#endif
  
- char menuDriftLabel[18] = "Drift: 0.05g";
- char menuTapTareLabel[] = "2x Tap Tare o";
-@@ -219,6 +235,21 @@ const Menu *const grinderMenu[] = { &menuGrinderBack, &menuGrinderEnabled,
-                                    &menuGrinderSafety, &menuGrinderZero };
+-
++char menuDriftLabel[18] = "Drift: 0.05g";
++char menuHeartbeatLabel[] = "Heartbeat o";
++char menuBleButtonsLabel[] = "BLE Buttons o";
++char menuFlipScreenLabel[] = "Flip Screen o";
++char menuTimeOnTopLabel[] = "Top: Weight";
++char menuAutoSleepLabel[] = "Auto Sleep o";
++char menuQuickBootLabel[] = "Quick Boot o";
++#if HDS_FEATURE_WIFI
++char menuWifiLabel[] = "WiFi o";
++#endif
+ #ifdef BUZZER
+-const Menu menuBuzzerBack = { "Back", NULL, NULL, &menuBuzzer };
+-const Menu menuBuzzerOn = { "Buzzer On", buzzerOn, NULL, &menuBuzzer };
+-const Menu menuBuzzerOff = { "Buzzer Off", buzzerOff, NULL, &menuBuzzer };
+-const Menu *const buzzerMenu[] = { &menuBuzzerBack, &menuBuzzerOn, &menuBuzzerOff };
++char menuBuzzerLabel[] = "Buzzer o";
  #endif
+-const Menu menuCalibrationBack = { "Back", NULL, NULL, &menuCalibration };
+-const Menu menuCalibrate = { "Calibrate", calibrate, NULL, &menuCalibration };
+-const Menu *const calibrationMenu[] = { &menuCalibrationBack, &menuCalibrate };
  
++const Menu menuScaleBack = { "Back", NULL, NULL, &menuScale };
++const Menu menuCalibrate = { "Calibrate", calibrate, NULL, &menuScale };
++const Menu menuDriftComp = { menuDriftLabel, cycleDriftComp, NULL, &menuScale };
++const Menu *const scaleMenu[] = { &menuScaleBack, &menuCalibrate, &menuDriftComp };
++
++const Menu menuConnectionsBack = { "Back", NULL, NULL, &menuConnections };
+ #if HDS_FEATURE_WIFI
+-const Menu menuWiFiUpdateBack = { "Back", NULL, NULL, &menuWifi };
+-const Menu menuWiFiOnOption = { "WiFi On", toggleWifiOn, NULL, &menuWifi };
+-const Menu menuWiFiOffOption = { "WiFi Off", toggleWifiOff, NULL, &menuWifi };
+-const Menu menuWiFiStatusOption = { "WiFi Status", showWifiStatus, NULL, &menuWifi };
++const Menu menuWifiToggle = { menuWifiLabel, toggleWifi, NULL, &menuConnections };
++const Menu menuWiFiStatusOption = { "WiFi Status", showWifiStatus, NULL, &menuConnections };
+ #if HDS_FEATURE_PULL_OTA
+-const Menu menuWiFiPullUpdateOption = { "WiFi Update", wifiUpdate, NULL, &menuWifi };
++const Menu menuWiFiPullUpdateOption = { "WiFi Update", wifiUpdate, NULL, &menuConnections };
+ #endif
+-const Menu menuWiFiResetOption = { "Reset WiFi", resetWifi, NULL, &menuWifi };
+-
+-const Menu *const wifiUpdateMenu[] = {
+-  &menuWiFiUpdateBack,
+-  &menuWiFiOnOption,
+-  &menuWiFiOffOption,
++const Menu menuWiFiResetOption = { "Reset WiFi", resetWifi, NULL, &menuConnections };
++#endif
++const Menu menuHeartbeat = { menuHeartbeatLabel, toggleHeartbeat, NULL, &menuConnections };
++const Menu menuBleButtons = { menuBleButtonsLabel, toggleBtnFuncWhileConnected, NULL, &menuConnections };
++const Menu *const connectionsMenu[] = {
++  &menuConnectionsBack,
++#if HDS_FEATURE_WIFI
++  &menuWifiToggle,
++#endif
++  &menuHeartbeat,
++  &menuBleButtons,
++#if HDS_FEATURE_WIFI
+   &menuWiFiStatusOption,
+ #if HDS_FEATURE_PULL_OTA
+   &menuWiFiPullUpdateOption,
+ #endif
+   &menuWiFiResetOption,
++#endif
+ };
++
++const Menu menuDisplayBack = { "Back", NULL, NULL, &menuDisplay };
++const Menu menuFlipScreen = { menuFlipScreenLabel, toggleFlipScreen, NULL, &menuDisplay };
++const Menu menuTimeOnTop = { menuTimeOnTopLabel, toggleTimeOnTop, NULL, &menuDisplay };
++#ifdef BUZZER
++const Menu menuBuzzer = { menuBuzzerLabel, toggleBuzzer, NULL, &menuDisplay };
++#endif
++const Menu *const displayMenu[] = { &menuDisplayBack, &menuFlipScreen,
++                                   &menuTimeOnTop,
++#ifdef BUZZER
++                                   &menuBuzzer,
+ #endif
++                                   &menuLogo };
+ 
+-const Menu menuHeartbeatBack = { "Back", NULL, NULL, &menuHeartbeat };
+-const Menu menuHeartbeatOn = { "Heartbeat On", heartbeatOn, NULL, &menuHeartbeat };
+-const Menu menuHeartbeatOff = { "Heartbeat Off", heartbeatOff, NULL, &menuHeartbeat };
+-const Menu *const heartbeatMenu[] = { &menuHeartbeatBack, &menuHeartbeatOn,
+-                          &menuHeartbeatOff };
+-
+-const Menu menuFlipScreenBack = { "Back", NULL, NULL, &menuFlipScreen };
+-const Menu menuFlipScreenOn = { "Flip On", flipScreenOn, NULL, &menuFlipScreen };
+-const Menu menuFlipScreenOff = { "Flip Off", flipScreenOff, NULL, &menuFlipScreen };
+-const Menu *const flipScreenMenu[] = { &menuFlipScreenBack, &menuFlipScreenOn,
+-                           &menuFlipScreenOff };
+-
+-const Menu menuTimeOnTopBack = { "Back", NULL, NULL, &menuTimeOnTop };
+-const Menu menuTimeOnTopOn = { "Time On Top", timeOnTopOn, NULL, &menuTimeOnTop };
+-const Menu menuTimeOnTopOff = { "Weight On Top", timeOnTopOff, NULL, &menuTimeOnTop };
+-const Menu *const timeOnTopMenu[] = { &menuTimeOnTopBack, &menuTimeOnTopOn,
+-                          &menuTimeOnTopOff };
+-
+-const Menu menuBtnFuncWhileConnectedBack = { "Back", NULL, NULL,
+-                                       &menuBtnFuncWhileConnected };
+-const Menu menuBtnFuncWhileConnectedOn = { "Enable Buttons", btnFuncWhileConnectedOn,
+-                                     NULL, &menuBtnFuncWhileConnected };
+-const Menu menuBtnFuncWhileConnectedOff = { "Disable Buttons",
+-                                       btnFuncWhileConnectedOff, NULL,
+-                                       &menuBtnFuncWhileConnected };
+-const Menu *const btnFuncWhileConnectedMenu[] = { &menuBtnFuncWhileConnectedBack,
+-                                       &menuBtnFuncWhileConnectedOn,
+-                                       &menuBtnFuncWhileConnectedOff };
+-
+-const Menu menuAutoSleepBack = { "Back", NULL, NULL, &menuAutoSleep };
+-const Menu menuAutoSleepOn = { "Auto Sleep On", autoSleepOn, NULL, &menuAutoSleep };
+-const Menu menuAutoSleepOff = { "Auto Sleep Off", autoSleepOff, NULL, &menuAutoSleep };
+-const Menu *const autoSleepMenu[] = { &menuAutoSleepBack, &menuAutoSleepOn, &menuAutoSleepOff };
+-
+-const Menu menuQuickBootBack = { "Back", NULL, NULL, &menuQuickBoot };
+-const Menu menuQuickBootOn = { "Quick Boot On", quickBootOn, NULL, &menuQuickBoot };
+-const Menu menuQuickBootOff = { "Quick Boot Off", quickBootOff, NULL, &menuQuickBoot };
+-const Menu *const quickBootMenu[] = { &menuQuickBootBack, &menuQuickBootOn, &menuQuickBootOff };
+-
+-const Menu menuDriftCompBack = { "Back", NULL, NULL, &menuDriftComp };
+-const Menu menuDriftCompOff = { "Drift Comp Off", driftCompOff, NULL, &menuDriftComp };
+-const Menu menuQuickBoot0050 = { "0.05g", driftComp0050, NULL, &menuDriftComp };
+-const Menu menuQuickBoot0075 = { "0.075g", driftComp0075, NULL, &menuDriftComp };
+-const Menu menuQuickBoot0100 = { "0.1g", driftComp0100, NULL, &menuDriftComp };
+-const Menu menuQuickBoot0200 = { "0.2g", driftComp0200, NULL, &menuDriftComp };
+-const Menu *const driftCompMenu[] = { &menuDriftCompBack, &menuDriftCompOff, &menuQuickBoot0050, &menuQuickBoot0075, &menuQuickBoot0100, &menuQuickBoot0200 };
++const Menu menuPowerBack = { "Back", NULL, NULL, &menuPower };
++const Menu menuAutoSleep = { menuAutoSleepLabel, toggleAutoSleep, NULL, &menuPower };
++const Menu menuQuickBoot = { menuQuickBootLabel, toggleQuickBoot, NULL, &menuPower };
++#if HDS_ENABLE_ENERGY_MENU
++#include "energy_menu.h"
++#endif
++const Menu *const powerMenu[] = { &menuPowerBack, &menuAutoSleep, &menuQuickBoot,
++#if HDS_ENABLE_ENERGY_MENU
++                                  &menuEnergySerialQuiet, &menuEnergyOledRedraw,
++                                  &menuEnergyOledIdle, &menuEnergyLightSleep,
++                                  &menuEnergyUsbSleepTest,
++#endif
++};
++
++const Menu menuInfoBack = { "Back", NULL, NULL, &menuInfo };
++const Menu *const infoMenu[] = { &menuInfoBack, &menuStatus, &menuAbout };
+ 
+ #if HDS_ENABLE_GRINDER
+ const Menu menuGrinderBack = { "Back", NULL, NULL, &menuGrinder };
+-const Menu menuGrinderOn = { "Enable", grinderOn, NULL, &menuGrinder };
+-const Menu menuGrinderOff = { "Disable", grinderOff, NULL, &menuGrinder };
++char menuGrinderEnabledLabel[] = "Enabled o";
++char menuGrinderTargetLabel[22] = "Target: 15.0g";
++char menuGrinderSafetyLabel[22] = "Safety: 2.0g";
++char menuGrinderZeroLabel[22] = "Zero Range: 1.0g";
++const Menu menuGrinderEnabled = { menuGrinderEnabledLabel, toggleGrinder, NULL, &menuGrinder };
+ const Menu menuGrinderSelect = { "Select Plug", grinderSelectPlugMenu, NULL, &menuGrinder };
+-const Menu menuGrinderTarget = { "Target g", grinderTargetMenu, NULL, &menuGrinder };
+-const Menu menuGrinderSafety = { "Safety g", grinderSafetyMenu, NULL, &menuGrinder };
+-const Menu menuGrinderZero = { "Zero Range", grinderZeroRangeMenu, NULL, &menuGrinder };
+-const Menu *const grinderMenu[] = { &menuGrinderBack, &menuGrinderOn, &menuGrinderOff, &menuGrinderSelect, &menuGrinderTarget, &menuGrinderSafety, &menuGrinderZero };
++const Menu menuGrinderTarget = { menuGrinderTargetLabel, grinderTargetMenu, NULL, &menuGrinder };
++const Menu menuGrinderSafety = { menuGrinderSafetyLabel, grinderSafetyMenu, NULL, &menuGrinder };
++const Menu menuGrinderZero = { menuGrinderZeroLabel, grinderZeroRangeMenu, NULL, &menuGrinder };
++const Menu *const grinderMenu[] = { &menuGrinderBack, &menuGrinderEnabled,
++                                   &menuGrinderSelect, &menuGrinderTarget,
++                                   &menuGrinderSafety, &menuGrinderZero };
++#endif
++
 +#if HDS_ENABLE_PRESSENSOR
 +const Menu menuPressensorBack = { "Back", NULL, NULL, &menuPressensor };
 +char menuPressensorEnabledLabel[] = "Enabled o";
@@ -113,22 +483,483 @@ index 3c65383..6e84c5c 100644
 +const Menu *const pressensorMenu[] = { &menuPressensorBack, &menuPressensorEnabled,
 +                                      &menuPressensorSelect, &menuPressensorZero,
 +                                      &menuPressensorAutoStart, &menuPressensorAutoStop };
-+#endif
-+
+ #endif
+ 
+-
  const Menu *const mainMenu[] = {
    &menuExit,
-   &menuScale,
-@@ -227,6 +258,9 @@ const Menu *const mainMenu[] = {
-   &menuPower,
+-#ifdef BUZZER
+-  &menuBuzzer,
+-#endif
+-  &menuCalibration,
+-#if HDS_FEATURE_WIFI
+-  &menuWifi,
+-#endif
+-  &menuStatus,
+-  &menuAbout, &menuLogo, &menuHeartbeat, &menuFlipScreen, &menuTimeOnTop,
+-  &menuBtnFuncWhileConnected, &menuAutoSleep, &menuQuickBoot, &menuDriftComp,
++  &menuScale,
++  &menuConnections,
++  &menuDisplay,
++  &menuPower,
  #if HDS_ENABLE_GRINDER
    &menuGrinder,
-+#endif
+ #endif
+-#if HDS_ENABLE_ENERGY_MENU
+-  &menuEnergy,
 +#if HDS_ENABLE_PRESSENSOR
 +  &menuPressensor,
  #endif
-   &menuInfo,
++  &menuInfo,
  };
-@@ -770,6 +804,126 @@ void grinderZeroRangeMenu() {
+ const Menu *const *currentMenu = mainMenu;
+ const Menu *currentSelection = mainMenu[0];
+@@ -298,51 +297,46 @@ void exitMenu() {
+   t_menuExitTime = millis();
+ }
+ 
+-#ifdef BUZZER
+-void buzzerOn() {
+-  if (b_beep == false) {
+-    b_beep = true;
+-    buzzer.beep(1, BUZZER_DURATION);
+-  }
+-  actionMessage = "Buzzer on";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutInt(KEY_BEEP, b_beep);
+-  Serial.println("Buzzer On stored in NVS.");
++inline void updateToggleLabel(char *label, bool enabled) {
++  label[strlen(label) - 1] = enabled ? 'x' : 'o';
+ }
+ 
+-void buzzerOff() {
+-  b_beep = false;
+-  actionMessage = "Buzzer off";
++inline void showStoredAction(const char *label, bool enabled, bool stored) {
++  actionMessage = stored ? String(label) : "Save Failed";
++  actionMessage2 = stored ? (enabled ? "ON" : "OFF") : String(label);
+   menuActionMessageChanged();
+   t_actionMessageDelay = 1000;
+-  storagePutInt(KEY_BEEP, b_beep);
+-  Serial.println("Buzzer off stored in NVS.");
+ }
+-#endif
+ 
+-#if HDS_FEATURE_WIFI
+-void toggleWifiOn() {
+-  b_wifiOnBoot = true;
+-#if HDS_ENABLE_GRINDER
+-  if (grinderSettings.enabled) {
+-    grinderSettings.previousWifiOnBoot = true;
+-    grinderSettings.previousWifiOnBootSaved = true;
+-    grinderSaveSettings();
++template<typename State>
++bool toggleStoredBool(State &state, const char *key, const char *label,
++                      char *row) {
++  const bool enabled = !static_cast<bool>(state);
++  const bool stored = storagePutBool(key, enabled);
++  if (stored) state = enabled;
++  updateToggleLabel(row, static_cast<bool>(state));
++  showStoredAction(label, enabled, stored);
++  return stored;
++}
++
++#ifdef BUZZER
++void toggleBuzzer() {
++  const bool enabled = !static_cast<bool>(b_beep);
++  const bool stored = storagePutInt(KEY_BEEP, enabled);
++  if (stored) {
++    b_beep = enabled;
++    if (enabled) buzzer.beep(1, BUZZER_DURATION);
+   }
+-#endif
+-  actionMessage = "WiFi Enabled";
+-  actionMessage2 = "Restart on exit";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutBool(KEY_WIFI_BOOT, true);
+-  markMenuRestartRequired();
+-  Serial.printf("%s\n", actionMessage);
++  updateToggleLabel(menuBuzzerLabel, b_beep);
++  showStoredAction("Buzzer", enabled, stored);
+ }
++#endif
+ 
+-void toggleWifiOff() {
++#if HDS_FEATURE_WIFI
++void toggleWifi() {
++  const bool enabled = !b_wifiOnBoot;
+ #if HDS_ENABLE_GRINDER
+-  if (grinderSettings.enabled) {
++  if (!enabled && grinderSettings.enabled) {
+     grinderSettings.previousWifiOnBoot = false;
+     grinderSettings.previousWifiOnBootSaved = true;
+     grinderSaveSettings();
+@@ -350,18 +344,23 @@ void toggleWifiOff() {
+     actionMessage2 = "Needs WiFi";
+     menuActionMessageChanged();
+     t_actionMessageDelay = 1500;
+-    Serial.println("WiFi Off deferred until Grind by weight is disabled.");
+     return;
+   }
+ #endif
+-  b_wifiOnBoot = false;
+-  actionMessage = "WiFi Disabled";
+-  actionMessage2 = "Restart on exit";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutBool(KEY_WIFI_BOOT, false);
+-  markMenuRestartRequired();
+-  Serial.printf("%s\n", actionMessage);
++  const bool stored = storagePutBool(KEY_WIFI_BOOT, enabled);
++  if (stored) {
++    b_wifiOnBoot = enabled;
++#if HDS_ENABLE_GRINDER
++    if (grinderSettings.enabled) {
++      grinderSettings.previousWifiOnBoot = enabled;
++      grinderSettings.previousWifiOnBootSaved = true;
++      grinderSaveSettings();
++    }
++#endif
++    markMenuRestartRequired();
++  }
++  updateToggleLabel(menuWifiLabel, b_wifiOnBoot);
++  showStoredAction("WiFi", enabled, stored);
+ }
+ 
+ void showWifiStatus() {
+@@ -405,6 +404,7 @@ void showWifiStatus() {
+       b_showWifiData = false;
+     }
+   }
++  waitForMenuButtonRelease();
+ }
+ #endif
+ 
+@@ -473,6 +473,7 @@ void showStatus() {
+       b_showStatusData = false;
+     }
+   }
++  waitForMenuButtonRelease();
+ }
+ 
+ #if HDS_FEATURE_WIFI
+@@ -486,159 +487,56 @@ void resetWifi() {
+ }
+ #endif
+ 
+-void heartbeatOn() {
+-  b_requireHeartBeat = true;
+-  actionMessage = "Heartbeat On";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutBool(KEY_HEARTBEAT, b_requireHeartBeat);
+-  Serial.println("Heartbeat detection...On");
+-}
+-
+-void heartbeatOff() {
+-  b_requireHeartBeat = false;
+-  actionMessage = "Heartbeat Off";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutBool(KEY_HEARTBEAT, b_requireHeartBeat);
+-  Serial.println("Heartbeat detection...Off");
+-}
+-
+-void flipScreenOn() {
+-  b_screenFlipped = true;
+-  actionMessage = "Flip On";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutBool(KEY_SCREEN_FLIP, b_screenFlipped);
+-  u8g2.setDisplayRotation(U8G2_R0);
+-  Serial.println("Screen flipped...On");
++void toggleHeartbeat() {
++  toggleStoredBool(b_requireHeartBeat, KEY_HEARTBEAT, "Heartbeat",
++                   menuHeartbeatLabel);
+ }
+ 
+-void flipScreenOff() {
+-  b_screenFlipped = false;
+-  actionMessage = "Flip Off";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutBool(KEY_SCREEN_FLIP, b_screenFlipped);
+-  u8g2.setDisplayRotation(U8G2_R2);
+-  Serial.println("Screen flipped...Off");
+-}
+-
+-void timeOnTopOn() {
+-  b_timeOnTop = true;
+-  actionMessage = "Time On Top";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutBool(KEY_TIME_ON_TOP, b_timeOnTop);
+-  Serial.println("Time On Top");
+-}
+-
+-void timeOnTopOff() {
+-  b_timeOnTop = false;
+-  actionMessage = "Weight On Top";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutBool(KEY_TIME_ON_TOP, b_timeOnTop);
+-  Serial.println("Weight On Top");
+-}
+-
+-void btnFuncWhileConnectedOn() {
+-  b_btnFuncWhileConnected = true;
+-  actionMessage = "BLE Btns On";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutBool(KEY_BTN_CONN, b_btnFuncWhileConnected);
+-  Serial.println("BLE Btns On");
+-}
+-
+-void btnFuncWhileConnectedOff() {
+-  b_btnFuncWhileConnected = false;
+-  actionMessage = "BLE Btns Off";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutBool(KEY_BTN_CONN, b_btnFuncWhileConnected);
+-  Serial.println("BLE Btns Off");
+-}
+-
+-void autoSleepOn() {
+-  b_autoSleep = true;
+-  actionMessage = "Autosleep On";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutBool(KEY_AUTO_SLEEP, b_autoSleep);
+-  Serial.println("Autosleep on stored in NVS.");
+-}
+-
+-void autoSleepOff() {
+-  b_autoSleep = false;
+-  actionMessage = "Autosleep Off";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutBool(KEY_AUTO_SLEEP, b_autoSleep);
+-  Serial.println("Autosleep off stored in NVS.");
++void toggleFlipScreen() {
++  if (toggleStoredBool(b_screenFlipped, KEY_SCREEN_FLIP, "Flip Screen",
++                       menuFlipScreenLabel)) {
++    u8g2.setDisplayRotation(b_screenFlipped ? U8G2_R0 : U8G2_R2);
++  }
+ }
+ 
+-void quickBootOn() {
+-  b_quickBoot = true;
+-  actionMessage = "Quick Boot On";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutBool(KEY_QUICK_BOOT, b_quickBoot);
+-  Serial.println("Quick boot on stored in NVS.");
++void toggleTimeOnTop() {
++  const bool enabled = !b_timeOnTop;
++  const bool stored = storagePutBool(KEY_TIME_ON_TOP, enabled);
++  if (stored) b_timeOnTop = enabled;
++  snprintf(menuTimeOnTopLabel, sizeof(menuTimeOnTopLabel), "Top: %s",
++           b_timeOnTop ? "Time" : "Weight");
++  showStoredAction("Top", enabled, stored);
+ }
+ 
+-void quickBootOff() {
+-  b_quickBoot = false;
+-  actionMessage = "Quick Boot Off";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutBool(KEY_QUICK_BOOT, b_quickBoot);
+-  Serial.println("Quick boot off stored in NVS.");
++void toggleBtnFuncWhileConnected() {
++  toggleStoredBool(b_btnFuncWhileConnected, KEY_BTN_CONN, "BLE Buttons",
++                   menuBleButtonsLabel);
+ }
+ 
+-void driftCompOff() {
+-  f_maxDriftCompensation = 0.0;
+-  actionMessage = "Drift Comp Off";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
+-  Serial.println("Drift Comp Off stored in NVS.");
++void toggleAutoSleep() {
++  toggleStoredBool(b_autoSleep, KEY_AUTO_SLEEP, "Auto Sleep",
++                   menuAutoSleepLabel);
+ }
+ 
+-void driftComp0050() {
+-  f_maxDriftCompensation = 0.05;
+-  actionMessage = "Drift Comp 0.05g";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
+-  Serial.println("Drift Comp 0.05g stored in NVS.");
++void toggleQuickBoot() {
++  toggleStoredBool(b_quickBoot, KEY_QUICK_BOOT, "Quick Boot",
++                   menuQuickBootLabel);
+ }
+ 
+-void driftComp0075() {
+-  f_maxDriftCompensation = 0.075;
+-  actionMessage = "Drift Comp 0.075g";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
+-  Serial.println("Drift Comp 0.075g stored in NVS.");
+-}
+-
+-void driftComp0100() {
+-  f_maxDriftCompensation = 0.1;
+-  actionMessage = "Drift Comp 0.1g";
+-  menuActionMessageChanged();
+-  t_actionMessageDelay = 1000;
+-  storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
+-  Serial.println("Drift Comp 0.1g stored in NVS.");
+-}
+-
+-void driftComp0200() {
+-  f_maxDriftCompensation = 0.2;
+-  actionMessage = "Drift Comp 0.2g";
++void cycleDriftComp() {
++  constexpr float values[] = { 0.0f, 0.05f, 0.075f, 0.10f, 0.20f };
++  uint8_t current = 0;
++  for (uint8_t index = 0; index < getMenuSize(values); ++index) {
++    if (fabsf(f_maxDriftCompensation - values[index]) < 0.0001f) current = index;
++  }
++  const float next = values[(current + 1) % getMenuSize(values)];
++  const bool stored = storagePutFloat(KEY_DRIFT_MAX, next);
++  if (stored) f_maxDriftCompensation = next;
++  refreshMenuRows();
++  actionMessage = stored ? "Drift" : "Save Failed";
++  actionMessage2 = stored ? String(menuDriftLabel + 7) : "Drift";
+   menuActionMessageChanged();
+   t_actionMessageDelay = 1000;
+-  storagePutFloat(KEY_DRIFT_MAX, f_maxDriftCompensation);
+-  Serial.println("Drift Comp 0.2g stored in NVS.");
+ }
+ 
+ #if HDS_ENABLE_GRINDER
+@@ -649,24 +547,20 @@ void grinderSetActionMessage(const char *line1, const char *line2 = nullptr) {
+   t_actionMessageDelay = 1500;
+ }
+ 
+-void grinderOn() {
+-  if (!grinderSettings.previousWifiOnBootSaved) {
+-    grinderSettings.previousWifiOnBoot = b_wifiOnBoot;
+-    grinderSettings.previousWifiOnBootSaved = true;
+-  }
+-  grinderSetEnabled(true);
+-  b_wifiOnBoot = true;
+-  storagePutBool(KEY_WIFI_BOOT, true);
+-  if (!b_wifiEnabled) {
+-    wifi_init();
++void toggleGrinder() {
++  if (!grinderSettings.enabled) {
++    if (!grinderSettings.previousWifiOnBootSaved) {
++      grinderSettings.previousWifiOnBoot = b_wifiOnBoot;
++      grinderSettings.previousWifiOnBootSaved = true;
++    }
++    grinderSetEnabled(true);
++    b_wifiOnBoot = true;
++    storagePutBool(KEY_WIFI_BOOT, true);
++    if (!b_wifiEnabled) wifi_init();
++    refreshMenuRows();
++    grinderSetActionMessage("Grind by weight", "Enabled");
++    return;
+   }
+-  grinderSetActionMessage("Grind by weight", "Enabled");
+-  Serial.printf("[grinder] enabled selected=%s ip=%s\n",
+-                grinderSettings.selectedMac,
+-                grinderSettings.lastIp.toString().c_str());
+-}
+-
+-void grinderOff() {
+   const bool restoreWifiOnBoot = grinderSettings.previousWifiOnBoot;
+   const bool restoreWifiOnBootSaved = grinderSettings.previousWifiOnBootSaved;
+   grinderSetEnabled(false);
+@@ -677,8 +571,8 @@ void grinderOff() {
+     grinderSettings.previousWifiOnBootSaved = false;
+     grinderSaveSettings();
+   }
++  refreshMenuRows();
+   grinderSetActionMessage("Grind by weight", "Disabled");
+-  Serial.println("Grind by weight disabled and stored in NVS.");
+ }
+ 
+ bool grinderEnsureWifiReadyForDiscovery() {
+@@ -718,12 +612,6 @@ uint8_t grinderFindPlugsForSelection() {
+   return count;
+ }
+ 
+-void grinderWaitForButtonRelease() {
+-  while (digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW) {
+-    delay(20);
+-  }
+-}
+-
+ void grinderDrawPlugList(uint8_t selected) {
+   const uint8_t total = grinderRuntime.discoveredCount + 1;
+   const uint8_t rows = 6;
+@@ -754,7 +642,7 @@ void grinderSelectPlugMenu() {
+   if (grinderFindPlugsForSelection() == 0) {
+     return;
+   }
+-  grinderWaitForButtonRelease();
++  waitForMenuButtonRelease();
+   uint8_t selected = 0;
+   bool selecting = true;
+   while (selecting) {
+@@ -762,7 +650,7 @@ void grinderSelectPlugMenu() {
+     grinderDrawPlugList(selected);
+     if (digitalRead(BUTTON_CIRCLE) == LOW) {
+       selected = (selected + 1) % (grinderRuntime.discoveredCount + 1);
+-      grinderWaitForButtonRelease();
++      waitForMenuButtonRelease();
+     }
+     if (digitalRead(BUTTON_SQUARE) == LOW) {
+       if (selected == 0) {
+@@ -778,7 +666,7 @@ void grinderSelectPlugMenu() {
+         grinderSetActionMessage("Plug Selected", grinderSettings.enabled ? "Saved" : "Enable in menu");
+         selecting = false;
+       }
+-      grinderWaitForButtonRelease();
++      waitForMenuButtonRelease();
+     }
+     delay(40);
+   }
+@@ -841,17 +729,17 @@ static inline float grinderHandleDraftAdjust(const char *title, float draft, flo
+ static inline bool grinderEditNumber(const char *title, float *output, float minValue, float maxValue) {
+   float draft = *output;
+   uint8_t selected = 0;
+-  grinderWaitForButtonRelease();
++  waitForMenuButtonRelease();
+   while (true) {
+     power_off(-1);
+     grinderDrawNumberEditor(title, draft, selected);
+     if (digitalRead(BUTTON_CIRCLE) == LOW) {
+       selected = (selected + 1) % 4;
+-      grinderWaitForButtonRelease();
++      waitForMenuButtonRelease();
+     }
+     if (digitalRead(BUTTON_SQUARE) == LOW) {
+       if (selected == 0) {
+-        grinderWaitForButtonRelease();
++        waitForMenuButtonRelease();
+         return false;
+       }
+       if (selected == 1) {
+@@ -860,7 +748,7 @@ static inline bool grinderEditNumber(const char *title, float *output, float min
+         draft = grinderHandleDraftAdjust(title, draft, 0.1f, minValue, maxValue, selected);
+       } else {
+         *output = draft;
+-        grinderWaitForButtonRelease();
++        waitForMenuButtonRelease();
+         return true;
+       }
+     }
+@@ -900,6 +788,126 @@ void grinderZeroRangeMenu() {
  }
  #endif
  
@@ -136,7 +967,7 @@ index 3c65383..6e84c5c 100644
 +void pressensorSetActionMessage(const char *line1, const char *line2 = nullptr) {
 +  actionMessage = line1;
 +  actionMessage2 = line2 == nullptr ? "Default" : line2;
-+  t_actionMessage = millis();
++  menuActionMessageChanged();
 +  t_actionMessageDelay = 1500;
 +}
 +
@@ -255,23 +1086,162 @@ index 3c65383..6e84c5c 100644
  void calibrate() {
    leaveMenu();
    b_calibration = true;
-@@ -1575,6 +1729,11 @@ void refreshMenuRows() {
-   snprintf(menuGrinderZeroLabel, sizeof(menuGrinderZeroLabel),
-            "Zero Range: %.1fg", grinderSettings.zeroMaxGrams);
- #endif
+@@ -1557,6 +1565,7 @@ void showAbout() {
+     if (digitalRead(BUTTON_SQUARE) == LOW)
+       b_showAbout = false;
+   }
++  waitForMenuButtonRelease();
+ }
+ 
+ void showLogo() {
+@@ -1626,6 +1635,7 @@ void showLogo() {
+       b_showLogo = false;
+     }
+   }
++  waitForMenuButtonRelease();
+ }
+ 
+ void enableDebug() {
+@@ -1668,6 +1678,47 @@ void calibrateVoltage() {
+   Serial.println(f_batteryCalibrationFactor);
+ }
+ 
++void refreshMenuRows() {
++  updateToggleLabel(menuHeartbeatLabel, b_requireHeartBeat);
++  updateToggleLabel(menuBleButtonsLabel, b_btnFuncWhileConnected);
++  updateToggleLabel(menuFlipScreenLabel, b_screenFlipped);
++  updateToggleLabel(menuAutoSleepLabel, b_autoSleep);
++  updateToggleLabel(menuQuickBootLabel, b_quickBoot);
++  snprintf(menuTimeOnTopLabel, sizeof(menuTimeOnTopLabel), "Top: %s",
++           b_timeOnTop ? "Time" : "Weight");
++  if (fabsf(f_maxDriftCompensation) < 0.0001f) {
++    snprintf(menuDriftLabel, sizeof(menuDriftLabel), "Drift: Off");
++  } else if (fabsf(f_maxDriftCompensation - 0.075f) < 0.0001f) {
++    snprintf(menuDriftLabel, sizeof(menuDriftLabel), "Drift: 0.075g");
++  } else {
++    snprintf(menuDriftLabel, sizeof(menuDriftLabel), "Drift: %.2fg",
++             f_maxDriftCompensation);
++  }
++#ifdef BUZZER
++  updateToggleLabel(menuBuzzerLabel, b_beep);
++#endif
++#if HDS_FEATURE_WIFI
++  updateToggleLabel(menuWifiLabel, b_wifiOnBoot);
++#endif
++#if HDS_ENABLE_GRINDER
++  updateToggleLabel(menuGrinderEnabledLabel, grinderSettings.enabled);
++  snprintf(menuGrinderTargetLabel, sizeof(menuGrinderTargetLabel),
++           "Target: %.1fg", grinderSettings.targetGrams);
++  snprintf(menuGrinderSafetyLabel, sizeof(menuGrinderSafetyLabel),
++           "Safety: %.1fg", grinderSettings.safetyMarginGrams);
++  snprintf(menuGrinderZeroLabel, sizeof(menuGrinderZeroLabel),
++           "Zero Range: %.1fg", grinderSettings.zeroMaxGrams);
++#endif
 +#if HDS_ENABLE_PRESSENSOR
 +  updateToggleLabel(menuPressensorEnabledLabel, pressensorSettings.enabled);
 +  updateToggleLabel(menuPressensorAutoStartLabel, pressensorSettings.autoStart);
 +  updateToggleLabel(menuPressensorAutoStopLabel, pressensorSettings.autoStop);
 +#endif
++#if HDS_ENABLE_ENERGY_MENU
++  refreshEnergyMenuRows();
++#endif
++}
++
+ void navigateMenu(int direction) {
+   recordEnergyActivity();
+   currentIndex = (currentIndex + direction + currentMenuSize) % currentMenuSize;
+@@ -1677,57 +1728,59 @@ void navigateMenu(int direction) {
+   Serial.println(currentIndex);
+ }
+ 
++void backMenu() {
++  if (currentMenu == mainMenu) {
++    exitMenu();
++    return;
++  }
++#if HDS_ENABLE_GRINDER
++  if (currentMenu == grinderMenu && b_grinderMenuDirectEntry) {
++    exitMenu();
++    return;
++  }
++#endif
++  const Menu *origin = currentSelection->parentMenu;
++  currentMenu = mainMenu;
++  currentMenuSize = getMenuSize(mainMenu);
++  currentIndex = 0;
++  for (int index = 0; index < currentMenuSize; ++index) {
++    if (currentMenu[index] == origin) currentIndex = index;
++  }
++  currentSelection = currentMenu[currentIndex];
++  invalidateMenuFrame();
++}
++
+ void selectMenu() {
  #if HDS_ENABLE_ENERGY_MENU
-   refreshEnergyMenuRows();
+   recordEnergyActivity();
  #endif
-@@ -1637,6 +1796,11 @@ void selectMenu() {
+   invalidateMenuFrame();
+   if (currentSelection->subMenu) {
+-#ifdef BUZZER
+-    if (currentSelection == &menuBuzzer) {
+-      currentMenu = buzzerMenu;
+-      currentMenuSize = getMenuSize(buzzerMenu);
+-    } else
+-#endif
+-      if (currentSelection == &menuCalibration) {
+-      currentMenu = calibrationMenu;
+-      currentMenuSize = getMenuSize(calibrationMenu);
+-#if HDS_FEATURE_WIFI
+-    } else if (currentSelection == &menuWifi) {
+-      currentMenu = wifiUpdateMenu;
+-      currentMenuSize = getMenuSize(wifiUpdateMenu);
+-#endif
+-    } else if (currentSelection == &menuHeartbeat) {
+-      currentMenu = heartbeatMenu;
+-      currentMenuSize = getMenuSize(heartbeatMenu);
+-    } else if (currentSelection == &menuFlipScreen) {
+-      currentMenu = flipScreenMenu;
+-      currentMenuSize = getMenuSize(flipScreenMenu);
+-    } else if (currentSelection == &menuTimeOnTop) {
+-      currentMenu = timeOnTopMenu;
+-      currentMenuSize = getMenuSize(timeOnTopMenu);
+-    } else if (currentSelection == &menuBtnFuncWhileConnected) {
+-      currentMenu = btnFuncWhileConnectedMenu;
+-      currentMenuSize = getMenuSize(btnFuncWhileConnectedMenu);
+-    } else if (currentSelection == &menuAutoSleep) {
+-      currentMenu = autoSleepMenu;
+-      currentMenuSize = getMenuSize(autoSleepMenu);
+-    } else if (currentSelection == &menuQuickBoot) {
+-      currentMenu = quickBootMenu;
+-      currentMenuSize = getMenuSize(quickBootMenu);
+-    } else if (currentSelection == &menuDriftComp) {
+-      currentMenu = driftCompMenu;
+-      currentMenuSize = getMenuSize(driftCompMenu);
++    if (currentSelection == &menuScale) {
++      currentMenu = scaleMenu;
++      currentMenuSize = getMenuSize(scaleMenu);
++    } else if (currentSelection == &menuConnections) {
++      currentMenu = connectionsMenu;
++      currentMenuSize = getMenuSize(connectionsMenu);
++    } else if (currentSelection == &menuDisplay) {
++      currentMenu = displayMenu;
++      currentMenuSize = getMenuSize(displayMenu);
++    } else if (currentSelection == &menuPower) {
++      currentMenu = powerMenu;
++      currentMenuSize = getMenuSize(powerMenu);
++    } else if (currentSelection == &menuInfo) {
++      currentMenu = infoMenu;
++      currentMenuSize = getMenuSize(infoMenu);
+ #if HDS_ENABLE_GRINDER
+     } else if (currentSelection == &menuGrinder) {
        b_grinderMenuDirectEntry = false;
        currentMenu = grinderMenu;
        currentMenuSize = getMenuSize(grinderMenu);
-+#endif
+ #endif
+-#if HDS_ENABLE_ENERGY_MENU
+-    } else if (currentSelection == &menuEnergy) {
+-      currentMenu = energyMenu;
+-      currentMenuSize = getMenuSize(energyMenu);
 +#if HDS_ENABLE_PRESSENSOR
 +    } else if (currentSelection == &menuPressensor) {
 +      currentMenu = pressensorMenu;
@@ -279,11 +1249,36 @@ index 3c65383..6e84c5c 100644
  #endif
      }
      currentIndex = 0;
+@@ -1735,22 +1788,14 @@ void selectMenu() {
+   } else if (currentSelection->action) {
+     currentSelection->action();
+   } else if (currentSelection->parentMenu) {
+-#if HDS_ENABLE_GRINDER
+-    if (currentSelection->parentMenu == &menuGrinder && b_grinderMenuDirectEntry) {
+-      exitMenu();
+-      return;
+-    }
+-#endif
+-    currentMenu = mainMenu;
+-    currentMenuSize = getMenuSize(mainMenu);
+-    currentIndex = 0;
+-    currentSelection = currentMenu[currentIndex];
++    backMenu();
+   }
+ }
+ 
+ void showMenu() {
+   const unsigned long now = millis();
+   if (!menuFrameNeedsRender(now)) return;
++  refreshMenuRows();
+   const bool actionMessageVisible = now - t_actionMessage < t_actionMessageDelay;
+   if (b_screenFlipped)
+     u8g2.setDisplayRotation(U8G2_R0);
 diff --git a/include/parameter.h b/include/parameter.h
-index afda7fa..d4a71f3 100644
+index 7c103f2..f154fb4 100644
 --- a/include/parameter.h
 +++ b/include/parameter.h
-@@ -390,6 +390,17 @@ extern GrinderRuntime grinderRuntime;
+@@ -361,6 +361,17 @@ extern GrinderRuntime grinderRuntime;
  portMUX_TYPE grinderMdnsMux = portMUX_INITIALIZER_UNLOCKED;
  GrinderMdnsCandidate * volatile grinderMdnsCandidateBuffer = nullptr;
  #endif
@@ -301,6 +1296,17 @@ index afda7fa..d4a71f3 100644
  
  //电子秤参数和计时点
  // Enhanced tracking system global variables
+@@ -486,6 +497,10 @@ int b_mode = 0;             //0 = pourover; 1 = espresso;
+ 
+ bool b_menu = false;
+ volatile bool b_menuRestartRequired = false;
++bool b_menuCirclePressPending = false;
++bool b_menuSquarePressPending = false;
++bool b_menuCircleLongHandled = false;
++bool b_menuSquareLongHandled = false;
+ unsigned long t_menuExitTime = 0;
+ 
+ inline void markMenuRestartRequired() {
 diff --git a/include/pressensor_ble.h b/include/pressensor_ble.h
 new file mode 100644
 index 0000000..9d54dfc
@@ -1382,7 +2388,7 @@ index c43ea7a..43e9333 100644
  platform = native
  test_build_src = no
 diff --git a/src/hds.ino b/src/hds.ino
-index 8cd994a..3637239 100644
+index 6ba9cd4..874cebf 100644
 --- a/src/hds.ino
 +++ b/src/hds.ino
 @@ -39,6 +39,9 @@ void waitForEnergyMainLoopWork();
@@ -1395,7 +2401,61 @@ index 8cd994a..3637239 100644
  #if HDS_FEATURE_PULL_OTA
  #include "pull_ota.h"
  #include "ota_rollback.h"
-@@ -806,6 +809,9 @@ void setup() {
+@@ -405,6 +408,17 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
+       if (GPIO_power_on_with != BATTERY_CHARGING)
+         buzzer.beep(1, BUZZER_DURATION);
+ #endif
++      if (b_menu) {
++        recordEnergyActivity();
++        if (pin == BUTTON_CIRCLE) {
++          b_menuCirclePressPending = true;
++          b_menuCircleLongHandled = false;
++        } else if (pin == BUTTON_SQUARE) {
++          b_menuSquarePressPending = true;
++          b_menuSquareLongHandled = false;
++        }
++        break;
++      }
+       switch (pin) {
+         case BUTTON_CIRCLE:
+           buttonCircle_Pressed();
+@@ -425,6 +439,16 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
+       }
+       break;
+     case AceButton::kEventLongPressed:
++      if (pin == BUTTON_CIRCLE && b_menuCirclePressPending) {
++        b_menuCircleLongHandled = true;
++        navigateMenu(-1);
++        break;
++      }
++      if (pin == BUTTON_SQUARE && b_menuSquarePressPending) {
++        b_menuSquareLongHandled = true;
++        backMenu();
++        break;
++      }
+       switch (pin) {
+         case BUTTON_CIRCLE:
+           buttonCircle_LongPressed();
+@@ -435,6 +459,18 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
+       }
+       break;
+     case AceButton::kEventReleased:
++      if (pin == BUTTON_CIRCLE && b_menuCirclePressPending) {
++        if (!b_menuCircleLongHandled && b_menu) navigateMenu(1);
++        b_menuCirclePressPending = false;
++        b_menuCircleLongHandled = false;
++        break;
++      }
++      if (pin == BUTTON_SQUARE && b_menuSquarePressPending) {
++        if (!b_menuSquareLongHandled && b_menu) selectMenu();
++        b_menuSquarePressPending = false;
++        b_menuSquareLongHandled = false;
++        break;
++      }
+       switch (pin) {
+         case BUTTON_CIRCLE:
+           buttonCircle_Released();
+@@ -773,6 +809,9 @@ void setup() {
  #if HDS_ENABLE_GRINDER
    grinderLoadSettings();
  #endif
@@ -1405,7 +2465,15 @@ index 8cd994a..3637239 100644
  
    b_quickBoot = storageGetBool(KEY_QUICK_BOOT, false);
    i_buttonBootDelay = b_quickBoot ? 0 : 500;
-@@ -2169,6 +2175,9 @@ void loop() {
+@@ -1066,6 +1105,7 @@ void setup() {
+   }
+   grinderRuntimeBegin();
+ #endif
++  refreshMenuRows();
+ #if HDS_FEATURE_PULL_OTA
+   bool b_pendingOtaLittleFs = pullOtaHasPendingLittleFs();
+ #else
+@@ -2086,6 +2126,9 @@ void loop() {
  #endif
  #if HDS_ENABLE_GRINDER
        || grinderRuntimeKeepsAwake()
@@ -1415,7 +2483,7 @@ index 8cd994a..3637239 100644
  #endif
    ) {
      power_off(-1);
-@@ -2250,6 +2259,9 @@ void loop() {
+@@ -2174,6 +2217,9 @@ void loop() {
  #endif
  #if HDS_ENABLE_GRINDER
        grinderRuntimeTick(f_displayedValue);
@@ -1425,10 +2493,10 @@ index 8cd994a..3637239 100644
  #endif
        showMenu();
      } else if (GPIO_power_on_with == BATTERY_CHARGING) {
-@@ -2374,7 +2386,16 @@ void loop() {
+@@ -2297,7 +2343,16 @@ void loop() {
+           }
          }
          pureScale();
-         tapDetectTick();
 +#if HDS_ENABLE_PRESSENSOR
 +        pressensorRuntimeTick(f_displayedValue, false);
 +        if (pressensorActive()) {
@@ -1442,7 +2510,7 @@ index 8cd994a..3637239 100644
  #if HDS_ENABLE_GRINDER
          grinderRuntimeTick(f_displayedValue);
  #endif
-@@ -2593,6 +2614,119 @@ void drawGrinder() {
+@@ -2516,6 +2571,119 @@ void drawGrinder() {
  }
  #endif
  
@@ -1563,16 +2631,76 @@ index 8cd994a..3637239 100644
  #if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
    if (digitalRead(USB_DET) == LOW) {
 diff --git a/tools/test_menu_memory_contract.py b/tools/test_menu_memory_contract.py
-index 383a308..16395fb 100644
+index 7c4232f..f4fa464 100644
 --- a/tools/test_menu_memory_contract.py
 +++ b/tools/test_menu_memory_contract.py
-@@ -12,6 +12,7 @@ SUBMENU_LINKS = {
+@@ -7,19 +7,28 @@ ROOT = Path(__file__).resolve().parents[1]
+ MENU = ROOT / "include" / "menu.h"
+ SKETCH = ROOT / "src" / "hds.ino"
+ SUBMENU_LINKS = {
+-    "menuAutoSleep": "menuAutoSleepBack",
+-    "menuBtnFuncWhileConnected": "menuBtnFuncWhileConnectedBack",
+-    "menuBuzzer": "menuBuzzerBack",
+-    "menuCalibration": "menuCalibrationBack",
+-    "menuDriftComp": "menuDriftCompBack",
+-    "menuFlipScreen": "menuFlipScreenBack",
++    "menuConnections": "menuConnectionsBack",
++    "menuDisplay": "menuDisplayBack",
      "menuGrinder": "menuGrinderBack",
-     "menuInfo": "menuInfoBack",
-     "menuPower": "menuPowerBack",
+-    "menuHeartbeat": "menuHeartbeatBack",
+-    "menuQuickBoot": "menuQuickBootBack",
+-    "menuTimeOnTop": "menuTimeOnTopBack",
+-    "menuWifi": "menuWiFiUpdateBack",
++    "menuInfo": "menuInfoBack",
++    "menuPower": "menuPowerBack",
 +    "menuPressensor": "menuPressensorBack",
-     "menuScale": "menuScaleBack",
++    "menuScale": "menuScaleBack",
  }
+ 
++OBSOLETE_SUBMENUS = (
++    "buzzerMenu",
++    "heartbeatMenu",
++    "flipScreenMenu",
++    "timeOnTopMenu",
++    "btnFuncWhileConnectedMenu",
++    "autoSleepMenu",
++    "quickBootMenu",
++    "driftCompMenu",
++    "tapActionsMenu",
++    "energyMenu",
++)
++
+ 
+ def main():
+     menu = MENU.read_text(encoding="utf-8")
+@@ -42,6 +51,28 @@ def main():
+     assert "currentSelection->subMenu" in menu
+     assert "linkSubmenus" not in menu
+     assert "linkSubmenus" not in sketch
++    assert all(name not in menu for name in OBSOLETE_SUBMENUS)
++    assert "const Menu *const scaleMenu[]" in menu
++    assert "const Menu *const connectionsMenu[]" in menu
++    assert "const Menu *const displayMenu[]" in menu
++    assert "const Menu *const powerMenu[]" in menu
++    assert "const Menu *const infoMenu[]" in menu
++    assert re.search(
++        r"#if HDS_ENABLE_GRINDER\s+&menuGrinder,\s+#endif", menu
++    )
++    assert re.search(
++        r"#if HDS_ENABLE_ENERGY_MENU\s+&menuEnergySerialQuiet", menu
++    )
++    assert "void backMenu()" in menu
++    assert "navigateMenu(-1);" in sketch
++    for view in ("showWifiStatus", "showStatus", "showAbout", "showLogo"):
++        body = menu[menu.rindex(f"void {view}()") :]
++        body = body[: body.index("\n}")]
++        assert "waitForMenuButtonRelease();" in body
++    pressed = sketch[sketch.index("case AceButton::kEventPressed:") :]
++    pressed = pressed[: pressed.index("case AceButton::kEventDoubleClicked:")]
++    menu_pressed = pressed[pressed.index("if (b_menu) {") :]
++    assert "recordEnergyActivity();" in menu_pressed
+ 
+     print("menu memory contract tests passed")
  
 diff --git a/tools/test_pressensor_ble_contract.py b/tools/test_pressensor_ble_contract.py
 new file mode 100644

@@ -143,7 +143,6 @@ jobs:
         run: >-
           python tools/build_custom_firmware.py
           --config .pio.nosync/plugin-ci.json
-          --source-commit "${{ github.sha }}"
           --verify-plugin-environment "esp32s3-$PLUGIN_ID"
 
   compile_custom:
