@@ -77,7 +77,7 @@ Acceptance is not installability. A transport acknowledges only that a well-form
 
 ## Staged LittleFS OTA
 
-Staged LittleFS OTA stores target and rollback metadata in NVS namespace `ota_fs`, including `target_try`, `fs_dirty`, `restore`, and `restore_try` recovery state.
+Staged LittleFS OTA stores target and rollback metadata in NVS namespace `ota_fs`, including custom combination hashes and `target_try`, `fs_dirty`, `restore`, and `restore_try` recovery state. Custom-to-custom rollback fetches the installed combination's signed custom manifest and identifies both app slots by combination hash rather than their shared version string.
 
 Flow:
 

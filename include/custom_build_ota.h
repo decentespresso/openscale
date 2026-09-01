@@ -347,11 +347,19 @@ void customBuildRun() {
     if (relink) customBuildPairScale(false);
     return;
   }
-  if (!pullOtaFetchCurrentReleaseManifest(rollbackManifest)) {
+  const String rollbackCombinationHash = pullOtaCurrentCombinationHash();
+  const bool rollbackFound = rollbackCombinationHash.length() > 0
+      ? customBuildFetchManifest(rollbackCombinationHash, rollbackManifest)
+      : pullOtaFetchCurrentReleaseManifest(rollbackManifest);
+  if (!rollbackFound) {
     pullOtaFail("Rollback missing");
     return;
   }
-  pullOtaInstall(manifest, rollbackManifest);
+  pullOtaInstall(
+      manifest,
+      rollbackManifest,
+      assignment.combinationHash,
+      rollbackCombinationHash);
 }
 
 void customBuildTask(void *args) {

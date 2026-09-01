@@ -17,6 +17,15 @@ def main():
     require("include/custom_build_ota.h", "pullOtaVerifyManifestSignatureWithKeys")
     require("include/custom_build_ota.h", 'pullOtaDraw("Pair code", pairCode, "Valid 12 hours")')
     require("include/custom_build_ota.h", 'String(HDS_CUSTOM_BUILD_SERVICE_URL) + "/v1/" + combinationHash')
+    require("include/custom_build_ota.h", "customBuildFetchManifest(rollbackCombinationHash, rollbackManifest)")
+    require("include/custom_build_ota.h", "assignment.combinationHash,")
+    require("include/custom_build_ota.h", "rollbackCombinationHash);")
+    pull_ota = require("include/pull_ota.h", 'preferences.putString("combo", combinationHash) == 64')
+    assert 'preferences.putString("rb_combo", rollbackCombinationHash) == 64' in pull_ota
+    assert "pullOtaIdentityMatches(loaded.version, loaded.combinationHash)" in pull_ota
+    assert "loaded.rollbackVersion, loaded.rollbackCombinationHash" in pull_ota
+    assert "loaded.asset.url, loaded.combinationHash" in pull_ota
+    assert "loaded.rollbackAsset.url, loaded.rollbackCombinationHash" in pull_ota
     assert "fleet_secret" not in header
     require("include/menu.h", '"Custom Build", customBuildMenu')
     require("src/hds.ino", '#include "custom_build_ota.h"')

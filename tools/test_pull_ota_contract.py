@@ -140,13 +140,14 @@ def main():
     assert_not_contains(PULL_OTA_HEADER, "if (list.count == 1)")
     pull_ota = PULL_OTA_HEADER.read_text(encoding="utf-8")
     pending_load = function_body(pull_ota, "pullOtaLoadPendingLittleFs")
-    assert "pullOtaCustomLittleFsUrlAllowed(loaded.asset.url)" in pending_load
-    assert "!loaded.restore &&" in pending_load
-    assert "pullOtaCustomLittleFsUrlAllowed(loaded.rollbackAsset.url)" not in pending_load
+    assert "loaded.asset.url, loaded.combinationHash" in pending_load
+    assert "loaded.rollbackAsset.url, loaded.rollbackCombinationHash" in pending_load
+    assert "pullOtaIdentityMatches(loaded.version, loaded.combinationHash)" in pending_load
+    assert "loaded.rollbackVersion, loaded.rollbackCombinationHash" in pending_load
     custom_url_check = function_body(pull_ota, "pullOtaCustomLittleFsUrlAllowed")
     assert 'String(HDS_CUSTOM_BUILD_SERVICE_URL) + "/v1/"' in custom_url_check
-    assert 'const String suffix = "/littlefs.bin"' in custom_url_check
-    assert "prefix.length() + 64 + suffix.length()" in custom_url_check
+    assert 'combinationHash + "/littlefs.bin"' in custom_url_check
+    assert "pullOtaShaLooksValid(combinationHash)" in custom_url_check
     assert "b_ota = false;" not in function_body(pull_ota, "pullOtaFail")
     assert "b_ota = false;" not in function_body(pull_ota, "pullOtaInstall")
     update_task = function_body(pull_ota, "pullOtaUpdateTask")

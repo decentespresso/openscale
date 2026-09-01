@@ -15,6 +15,9 @@
 #if __has_include("ota_public_key.h")
 #include "ota_public_key.h"
 #endif
+#if __has_include("custom_ota_public_key.h")
+#include "custom_ota_public_key.h"
+#endif
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
@@ -43,6 +46,10 @@ void hdsOtaRollbackMarkValid();
 
 #ifndef HDS_CUSTOM_BUILD_SERVICE_URL
 #define HDS_CUSTOM_BUILD_SERVICE_URL "https://openscale-custom-builds.odevstudio.workers.dev"
+#endif
+
+#ifndef HDS_CUSTOM_BUILD_COMBINATION_HASH
+#define HDS_CUSTOM_BUILD_COMBINATION_HASH ""
 #endif
 
 #ifndef HDS_OTA_MANIFEST_PUBLIC_KEY_1_PEM
@@ -166,6 +173,8 @@ struct PullOtaPendingLittleFs {
   uint8_t targetAttempts = 0;
   String version = "";
   String rollbackVersion = "";
+  String combinationHash = "";
+  String rollbackCombinationHash = "";
   String fsPartitionLabel = "";
   uint32_t fsPartitionSize = 0;
   uint32_t fsSchema = 0;
@@ -279,17 +288,30 @@ bool pullOtaShaLooksValid(String value) {
   return true;
 }
 
-bool pullOtaCustomLittleFsUrlAllowed(const String &url) {
-  const String prefix = String(HDS_CUSTOM_BUILD_SERVICE_URL) + "/v1/";
-  const String suffix = "/littlefs.bin";
-  if (url.length() != prefix.length() + 64 + suffix.length() ||
-      !url.startsWith(prefix) || !url.endsWith(suffix)) return false;
-  for (size_t index = prefix.length(); index < prefix.length() + 64; index++) {
-    const char character = url.charAt(index);
-    if (!((character >= '0' && character <= '9') ||
-          (character >= 'a' && character <= 'f'))) return false;
+bool pullOtaCustomLittleFsUrlAllowed(
+    const String &url,
+    const String &combinationHash) {
+  return pullOtaShaLooksValid(combinationHash) &&
+         url == String(HDS_CUSTOM_BUILD_SERVICE_URL) + "/v1/" +
+                    combinationHash + "/littlefs.bin";
+}
+
+String pullOtaCurrentCombinationHash() {
+  String combinationHash = HDS_CUSTOM_BUILD_COMBINATION_HASH;
+  combinationHash.trim();
+  combinationHash.toLowerCase();
+  return pullOtaShaLooksValid(combinationHash) ? combinationHash : "";
+}
+
+bool pullOtaIdentityMatches(
+    const String &version,
+    const String &combinationHash) {
+  const String currentCombinationHash = pullOtaCurrentCombinationHash();
+  if (combinationHash.length() > 0 || currentCombinationHash.length() > 0) {
+    return pullOtaShaLooksValid(combinationHash) &&
+           combinationHash == currentCombinationHash;
   }
-  return true;
+  return version == pullOtaCurrentVersion();
 }
 
 bool pullOtaParseAsset(
@@ -963,9 +985,14 @@ bool pullOtaClearPendingLittleFs() {
 
 bool pullOtaStorePendingLittleFs(
     const PullOtaManifest &manifest,
-    const PullOtaManifest &rollbackManifest) {
+    const PullOtaManifest &rollbackManifest,
+    const String &combinationHash = "",
+    const String &rollbackCombinationHash = "") {
   if (!manifest.littlefs.present || !manifest.littlefs.required ||
-      !rollbackManifest.littlefs.present || !rollbackManifest.littlefs.required) {
+      !rollbackManifest.littlefs.present || !rollbackManifest.littlefs.required ||
+      (combinationHash.length() > 0 && !pullOtaShaLooksValid(combinationHash)) ||
+      (rollbackCombinationHash.length() > 0 &&
+       !pullOtaShaLooksValid(rollbackCombinationHash))) {
     return false;
   }
   Preferences preferences;
@@ -973,7 +1000,11 @@ bool pullOtaStorePendingLittleFs(
     return false;
   }
   preferences.clear();
-  bool ok = preferences.putString("url", manifest.littlefs.url) > 0 &&
+  bool ok = (combinationHash.length() == 0 ||
+             preferences.putString("combo", combinationHash) == 64) &&
+            (rollbackCombinationHash.length() == 0 ||
+             preferences.putString("rb_combo", rollbackCombinationHash) == 64) &&
+            preferences.putString("url", manifest.littlefs.url) > 0 &&
             preferences.putUInt("size", (uint32_t)manifest.littlefs.size) > 0 &&
             preferences.putString("sha", manifest.littlefs.sha256) > 0 &&
             preferences.putString("version", manifest.version) > 0 &&
@@ -1017,6 +1048,9 @@ bool pullOtaLoadPendingLittleFs(PullOtaPendingLittleFs &pending) {
   loaded.asset.sha256.toLowerCase();
   loaded.version = preferences.getString("version", "");
   loaded.version.trim();
+  loaded.combinationHash = preferences.getString("combo", "");
+  loaded.combinationHash.trim();
+  loaded.combinationHash.toLowerCase();
   loaded.restore = preferences.getBool("restore", false);
   loaded.restoreAttempted = preferences.getBool("restore_try", false);
   loaded.filesystemDirty = preferences.getBool("fs_dirty", false);
@@ -1030,13 +1064,17 @@ bool pullOtaLoadPendingLittleFs(PullOtaPendingLittleFs &pending) {
   loaded.rollbackAsset.sha256.toLowerCase();
   loaded.rollbackVersion = preferences.getString("rb_ver", "");
   loaded.rollbackVersion.trim();
+  loaded.rollbackCombinationHash = preferences.getString("rb_combo", "");
+  loaded.rollbackCombinationHash.trim();
+  loaded.rollbackCombinationHash.toLowerCase();
   loaded.fsPartitionLabel = preferences.getString("label", "");
   loaded.fsPartitionSize = preferences.getUInt("fs_size", 0);
   loaded.fsSchema = preferences.getUInt("fs_schema", 0);
   preferences.end();
-  const bool targetUrlAllowed = pullOtaUrlAllowed(loaded.asset.url) ||
-                                (!loaded.restore &&
-                                 pullOtaCustomLittleFsUrlAllowed(loaded.asset.url));
+  const bool targetUrlAllowed = loaded.combinationHash.length() == 0
+      ? pullOtaUrlAllowed(loaded.asset.url)
+      : pullOtaCustomLittleFsUrlAllowed(
+          loaded.asset.url, loaded.combinationHash);
   if (!targetUrlAllowed ||
       !pullOtaShaLooksValid(loaded.asset.sha256) ||
       loaded.asset.size != HDS_OTA_FS_PARTITION_SIZE ||
@@ -1046,17 +1084,23 @@ bool pullOtaLoadPendingLittleFs(PullOtaPendingLittleFs &pending) {
     pullOtaClearPendingLittleFs();
     return false;
   }
+  const bool rollbackUrlAllowed = loaded.rollbackCombinationHash.length() == 0
+      ? pullOtaUrlAllowed(loaded.rollbackAsset.url)
+      : pullOtaCustomLittleFsUrlAllowed(
+          loaded.rollbackAsset.url, loaded.rollbackCombinationHash);
   if (!loaded.restore &&
-      (!pullOtaUrlAllowed(loaded.rollbackAsset.url) ||
+      (!rollbackUrlAllowed ||
        !pullOtaShaLooksValid(loaded.rollbackAsset.sha256) ||
        loaded.rollbackAsset.size != HDS_OTA_FS_PARTITION_SIZE ||
-       !pullOtaVersionLooksStable(loaded.rollbackVersion))) {
+       (loaded.rollbackCombinationHash.length() == 0 &&
+        !pullOtaVersionLooksStable(loaded.rollbackVersion)))) {
     pullOtaClearPendingLittleFs();
     return false;
   }
-  if (loaded.version != pullOtaCurrentVersion()) {
+  if (!pullOtaIdentityMatches(loaded.version, loaded.combinationHash)) {
     if (!loaded.restore && loaded.filesystemDirty &&
-        loaded.rollbackVersion == pullOtaCurrentVersion()) {
+        pullOtaIdentityMatches(
+            loaded.rollbackVersion, loaded.rollbackCombinationHash)) {
       if (!pullOtaActivateRollbackLittleFs(loaded)) {
         pullOtaRecoveryError();
       }
@@ -1075,7 +1119,10 @@ bool pullOtaActivateRollbackLittleFs(const PullOtaPendingLittleFs &pending) {
     return false;
   }
   preferences.clear();
-  bool ok = preferences.putString("url", pending.rollbackAsset.url) > 0 &&
+  bool ok = (pending.rollbackCombinationHash.length() == 0 ||
+             preferences.putString(
+                 "combo", pending.rollbackCombinationHash) == 64) &&
+            preferences.putString("url", pending.rollbackAsset.url) > 0 &&
             preferences.putUInt("size", (uint32_t)pending.rollbackAsset.size) > 0 &&
             preferences.putString("sha", pending.rollbackAsset.sha256) > 0 &&
             preferences.putString("version", pending.rollbackVersion) > 0 &&
@@ -1336,9 +1383,15 @@ bool pullOtaStreamAsset(
 
 bool pullOtaInstall(
     const PullOtaManifest &manifest,
-    const PullOtaManifest &rollbackManifest) {
+    const PullOtaManifest &rollbackManifest,
+    const String &combinationHash = "",
+    const String &rollbackCombinationHash = "") {
   b_ota = true;
-  if (!pullOtaStorePendingLittleFs(manifest, rollbackManifest)) {
+  if (!pullOtaStorePendingLittleFs(
+          manifest,
+          rollbackManifest,
+          combinationHash,
+          rollbackCombinationHash)) {
     return pullOtaFail("FS state failed");
   }
   if (!pullOtaStreamAsset(manifest.firmware, U_FLASH, "Firmware")) {

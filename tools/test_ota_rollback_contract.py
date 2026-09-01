@@ -40,9 +40,10 @@ def main():
     pending_load_start = pull_ota.index("bool pullOtaLoadPendingLittleFs(")
     pending_load_end = pull_ota.index("bool pullOtaActivateRollbackLittleFs(", pending_load_start)
     pending_load = pull_ota[pending_load_start:pending_load_end]
-    assert "pullOtaCustomLittleFsUrlAllowed(loaded.asset.url)" in pending_load
-    assert "!loaded.restore &&" in pending_load
-    assert "pullOtaCustomLittleFsUrlAllowed(loaded.rollbackAsset.url)" not in pending_load
+    assert "loaded.asset.url, loaded.combinationHash" in pending_load
+    assert "loaded.rollbackAsset.url, loaded.rollbackCombinationHash" in pending_load
+    assert "pullOtaIdentityMatches(loaded.version, loaded.combinationHash)" in pending_load
+    assert "loaded.rollbackVersion, loaded.rollbackCombinationHash" in pending_load
     assert_contains(ROLLBACK_HEADER, 'extern "C" bool verifyRollbackLater()')
     assert_contains(ROLLBACK_HEADER, "return true;")
     assert_contains(ROLLBACK_HEADER, "ESP_OTA_IMG_PENDING_VERIFY")
