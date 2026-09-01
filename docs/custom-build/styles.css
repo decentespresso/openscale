@@ -812,11 +812,12 @@
     .fleet-head p { max-width: 680px; margin: 5px 0 0; color: var(--muted); font-size: .82rem; line-height: 1.55; }
 
     .fleet-onboarding {
-      display: grid;
-      grid-template-columns: auto minmax(320px, 1fr);
-      align-items: end;
-      gap: 28px;
       padding-top: 22px;
+    }
+
+    .fleet-settings {
+      padding: 22px 0;
+      border-bottom: 1px solid var(--line);
     }
 
     .existing-fleet-form { max-width: 720px; }
@@ -865,8 +866,7 @@
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: end;
       gap: 18px;
-      padding: 22px 0;
-      border-bottom: 1px solid var(--line);
+      padding: 0;
     }
 
     .recovery-key input {
@@ -972,22 +972,13 @@
       .ghost-button { order: 2; }
       .primary-button { width: 100%; }
       .helper-card { display: none; }
-      .firmware-row, .install-options, .fleet-onboarding, .recovery-row, .inline-form, .scale-row { grid-template-columns: 1fr; }
+      .firmware-row, .install-options, .recovery-row, .inline-form, .scale-row { grid-template-columns: 1fr; }
       .fleet-panel { padding: 18px; }
-      .fleet-onboarding { align-items: stretch; gap: 18px; }
       .icon-actions { flex-wrap: wrap; }
       .scale-row { gap: 10px; padding: 16px 0; }
       .scale-assignment, .scale-actions { grid-column: 1; grid-row: auto; padding: 0; }
       .scale-actions { justify-content: stretch; }
       .scale-actions .primary-button, .scale-actions .ghost-button { flex: 1; }
-    }
-
-    @media print {
-      body * { visibility: hidden; }
-      .recovery-row, .recovery-row * { visibility: visible; }
-      .recovery-row { position: absolute; inset: 24mm; display: block; border: 0; }
-      .recovery-key input { margin-top: 12px; border: 0; font-size: 16pt; }
-      .icon-actions { display: none; }
     }
 
     @media (prefers-reduced-motion: reduce) {

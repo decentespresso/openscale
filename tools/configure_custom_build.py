@@ -72,7 +72,7 @@ FEATURE_PRESENTATION = {
         "Internal compile gate selected by the Grind by weight plugin.",
     ),
     "energy-menu": (
-        "Energy Saving",
+        "Energy Saving Beta",
         "Enable optional energy-saving controls.",
         "Adds the Energy Saving menu and its persistent feature toggles.",
     ),

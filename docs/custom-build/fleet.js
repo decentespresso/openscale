@@ -37,6 +37,10 @@ const saveKey = key => localStorage.setItem(storageKey, JSON.stringify({version:
 export function initFleet({apiBase, getReadyHash, showToast}) {
   const onboarding = document.querySelector("#fleet-onboarding");
   const consoleRoot = document.querySelector("#fleet-console");
+  const settings = document.querySelector("#fleet-settings");
+  const settingsToggle = document.querySelector("#fleet-settings-toggle");
+  const useFleet = document.querySelector("#use-fleet");
+  const recovery = document.querySelector("#fleet-recovery");
   const recoveryKey = document.querySelector("#fleet-recovery-key");
   const scaleList = document.querySelector("#fleet-scales");
   const fleetStatus = document.querySelector("#fleet-status");
@@ -44,6 +48,11 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   const existingInput = document.querySelector("#existing-fleet-key");
   let fleetKey = loadStoredKey();
   let generation = 0;
+
+  const setSettingsOpen = open => {
+    settings.hidden = !open;
+    settingsToggle.setAttribute("aria-expanded", String(open));
+  };
 
   const api = async (path, options = {}) => {
     const response = await fetch(`${apiBase}${path}`, {
@@ -61,6 +70,8 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   const setMode = linked => {
     onboarding.hidden = linked;
     consoleRoot.hidden = !linked;
+    useFleet.hidden = linked;
+    recovery.hidden = !linked;
     recoveryKey.value = formattedFleetKey(fleetKey);
   };
 
@@ -161,6 +172,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
     }
     saveKey(fleetKey);
     setMode(true);
+    setSettingsOpen(false);
     loadScales();
     return true;
   };
@@ -169,6 +181,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
     const key = encodeBase32(crypto.getRandomValues(new Uint8Array(20)));
     if (activateKey(key)) showToast("Recovery key created");
   });
+  settingsToggle.addEventListener("click", () => setSettingsOpen(settings.hidden));
   document.querySelector("#use-fleet").addEventListener("submit", event => {
     event.preventDefault();
     activateKey(existingInput.value);
@@ -181,7 +194,6 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
       showToast("Fleet key could not be copied");
     }
   });
-  document.querySelector("#print-fleet-key").addEventListener("click", () => window.print());
   document.querySelector("#forget-fleet").addEventListener("click", () => {
     if (!confirm("Forget this fleet key in this browser? Linked scales will not be deleted.")) return;
     localStorage.removeItem(storageKey);
