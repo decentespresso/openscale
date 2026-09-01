@@ -102,7 +102,7 @@ def main():
             check=True,
         )
         subprocess.run(
-            ["git", "checkout", "--quiet", "--detach", manifest["firmware_refs"][0]],
+            ["git", "checkout", "--quiet", "--detach", "origin/main"],
             cwd=directory,
             check=True,
         )
