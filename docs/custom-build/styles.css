@@ -866,8 +866,11 @@
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: end;
       gap: 18px;
+      margin-top: 8px;
       padding: 0;
     }
+
+    .recovery-row[hidden] { display: none; }
 
     .recovery-key input {
       width: 100%;
