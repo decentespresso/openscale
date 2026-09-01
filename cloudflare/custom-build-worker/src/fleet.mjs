@@ -103,28 +103,30 @@ async function pairDevice(request, storage) {
   const body = requireObject(await readJson(request), ["pair_code"]);
   const pairCode = normalizedPairCode(body.pair_code);
   const serialHint = pairCode.slice(0, 6);
-  const authenticated = await authenticatedDevice(request, storage, true, serialHint);
-  if (authenticated.device.serial_hint !== serialHint) throw new FleetError(400, "serial_hint_mismatch");
-  const now = Date.now();
-  if (authenticated.device.pair_created_at && now - authenticated.device.pair_created_at < pairRefreshMs) {
-    throw new FleetError(429, "pairing_too_fast");
-  }
-  const pairKey = `pair:${pairCode}`;
-  const existing = await storage.get(pairKey);
-  if (existing && existing.device_id !== authenticated.deviceId && existing.expires_at > now) {
-    throw new FleetError(409, "pair_code_collision");
-  }
-  if (authenticated.device.pair_code) await storage.delete(`pair:${authenticated.device.pair_code}`);
-  const expiresAt = now + pairLifetimeMs;
-  await storage.put({
-    [pairKey]: {device_id: authenticated.deviceId, expires_at: expiresAt},
-    [authenticated.key]: {
-      ...authenticated.device,
-      pair_code: pairCode,
-      pair_created_at: now,
-    },
+  return storage.transaction(async transaction => {
+    const authenticated = await authenticatedDevice(request, transaction, true, serialHint);
+    if (authenticated.device.serial_hint !== serialHint) throw new FleetError(400, "serial_hint_mismatch");
+    const now = Date.now();
+    if (authenticated.device.pair_created_at && now - authenticated.device.pair_created_at < pairRefreshMs) {
+      throw new FleetError(429, "pairing_too_fast");
+    }
+    const pairKey = `pair:${pairCode}`;
+    const existing = await transaction.get(pairKey);
+    if (existing && existing.device_id !== authenticated.deviceId && existing.expires_at > now) {
+      throw new FleetError(409, "pair_code_collision");
+    }
+    if (authenticated.device.pair_code) await transaction.delete(`pair:${authenticated.device.pair_code}`);
+    const expiresAt = now + pairLifetimeMs;
+    await transaction.put({
+      [pairKey]: {device_id: authenticated.deviceId, expires_at: expiresAt},
+      [authenticated.key]: {
+        ...authenticated.device,
+        pair_code: pairCode,
+        pair_created_at: now,
+      },
+    });
+    return {pair_code: pairCode, expires_at: new Date(expiresAt).toISOString()};
   });
-  return {pair_code: pairCode, expires_at: new Date(expiresAt).toISOString()};
 }
 
 async function enforceClaimRate(request, storage) {
@@ -208,27 +210,29 @@ async function updateScale(request, storage, deviceId) {
   if (!keys.length || keys.some(key => !["desired_combination", "name"].includes(key))) {
     throw new FleetError(400, "invalid_request");
   }
-  const deviceKey = `device:${deviceId}`;
-  const device = await storage.get(deviceKey);
-  if (!device || device.fleet_id !== ownerFleetId) throw new FleetError(404, "device_not_found");
-  const desiredCombination = body.desired_combination === undefined
-    ? device.desired_combination
-    : body.desired_combination;
-  if (desiredCombination !== null && !hashPattern.test(desiredCombination || "")) {
-    throw new FleetError(400, "invalid_combination_hash");
-  }
-  const updated = {
-    ...device,
-    name: body.name === undefined ? device.name : normalizedName(body.name),
-    desired_combination: desiredCombination,
-  };
-  await storage.put(deviceKey, updated);
-  return {
-    device_id: deviceId,
-    serial_hint: updated.serial_hint,
-    name: updated.name,
-    desired_combination: updated.desired_combination,
-  };
+  return storage.transaction(async transaction => {
+    const deviceKey = `device:${deviceId}`;
+    const device = await transaction.get(deviceKey);
+    if (!device || device.fleet_id !== ownerFleetId) throw new FleetError(404, "device_not_found");
+    const desiredCombination = body.desired_combination === undefined
+      ? device.desired_combination
+      : body.desired_combination;
+    if (desiredCombination !== null && !hashPattern.test(desiredCombination || "")) {
+      throw new FleetError(400, "invalid_combination_hash");
+    }
+    const updated = {
+      ...device,
+      name: body.name === undefined ? device.name : normalizedName(body.name),
+      desired_combination: desiredCombination,
+    };
+    await transaction.put(deviceKey, updated);
+    return {
+      device_id: deviceId,
+      serial_hint: updated.serial_hint,
+      name: updated.name,
+      desired_combination: updated.desired_combination,
+    };
+  });
 }
 
 async function deviceAssignment(request, storage) {

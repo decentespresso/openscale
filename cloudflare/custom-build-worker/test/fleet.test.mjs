@@ -159,6 +159,13 @@ test("pairs, assigns, authenticates, and physically relinks a scale", async () =
   });
   const oldFleet = await request(env, "/api/v1/fleet/scales", {authorization: fleetSecret, browser: true});
   assert.deepEqual((await oldFleet.json()).scales, []);
+  const oldFleetUpdate = await request(env, `/api/v1/fleet/scales/${deviceId}`, {
+    method: "PATCH",
+    body: {name: "Stale owner"},
+    authorization: fleetSecret,
+    browser: true,
+  });
+  assert.equal(oldFleetUpdate.status, 404);
 });
 
 test("rejects unready assignments and invalid device credentials", async () => {
