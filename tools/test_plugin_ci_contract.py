@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import subprocess
+import tempfile
 import tomllib
 
 import list_changed_patch_plugins as changedPlugins
@@ -40,7 +41,8 @@ def main():
     assert "fromJSON(needs.detect_plugins.outputs.matrix)" in customWorkflow
     assert '--verify-plugin-environment "esp32s3-$PLUGIN_ID"' in customWorkflow
     assert "recommendedPluginSelection" in customWorkflow
-    assert '--source-commit "${{ github.sha }}"' in customWorkflow
+    verifyPlugins = customWorkflow.split("\n  verify_plugins:\n", 1)[1].split("\n  compile_custom:\n", 1)[0]
+    assert "--source-commit" not in verifyPlugins
     assert "verify-pressensor:" not in customWorkflow
     assert "compile-matrix:" not in customWorkflow
     dispatchBuild = customWorkflow.split("\n  build:\n", 1)[1]
@@ -94,11 +96,21 @@ def main():
     assert '"firmware_ref": "v3.1.14-preview.1"' in compileCustom
     assert "--config .pio.nosync/pr-ci.json" in compileCustom
     assert '--source-commit "${{ github.sha }}"' in compileCustom
-    subprocess.run(
-        ["git", "apply", "--check", "--whitespace=error", str(patchPath)],
-        cwd=ROOT,
-        check=True,
-    )
+    with tempfile.TemporaryDirectory() as directory:
+        subprocess.run(
+            ["git", "clone", "--quiet", "--no-checkout", str(ROOT), directory],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "checkout", "--quiet", "--detach", manifest["firmware_refs"][0]],
+            cwd=directory,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "apply", "--check", "--whitespace=error", str(patchPath)],
+            cwd=directory,
+            check=True,
+        )
 
     print("plugin CI contract tests passed")
 

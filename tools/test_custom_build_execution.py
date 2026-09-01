@@ -420,6 +420,8 @@ def main():
     assert "fromJSON(needs.detect_plugins.outputs.matrix)" in workflow
     assert '--verify-plugin-environment "esp32s3-$PLUGIN_ID"' in workflow
     assert "recommendedPluginSelection" in workflow
+    verifyPlugins = workflow.split("\n  verify_plugins:\n", 1)[1].split("\n  compile_custom:\n", 1)[0]
+    assert "--source-commit" not in verifyPlugins
     assert "verify-pressensor:" not in workflow
     assert "compile-matrix:" not in workflow
     assert "default-web-apps" in workflow

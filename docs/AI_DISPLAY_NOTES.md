@@ -163,6 +163,21 @@ Restore the draw color and font assumptions required by later helpers.
 
 ## Setup Menu Model
 
+The setup menu has one ordinary category level:
+
+```text
+Main
+  Scale
+  Connections
+  Display
+  Power
+  Grind by weight (HDS_ENABLE_GRINDER)
+  Pressensor (Pressensor patch only)
+  Info
+```
+
+Energy rows are part of `Power` only when `HDS_ENABLE_ENERGY_MENU` is enabled. Grind by weight remains entirely behind `HDS_ENABLE_GRINDER`. Pressensor remains absent from the normal tree and is added by its approved patch.
+
 The menu item type is:
 
 ```cpp
@@ -174,23 +189,24 @@ struct Menu {
 };
 ```
 
-Circle advances the current selection. Square selects it.
+Circle short advances and Circle long moves to the previous row. Square short toggles, cycles, activates, or enters the selected category. Square long returns to Main, or exits when already on Main. Every category retains a visible `Back` row. Returning to Main selects the category that was just exited.
+
+Menu short actions are classified on button release. A recognized long press suppresses its release action, so it cannot also trigger the short action. Normal weighing-mode gestures remain unchanged.
 
 Display order comes from pointer arrays such as `mainMenu[]`, not declaration order.
 
-Adding a submenu requires all of these:
+Adding a category requires all of these:
 
 1. parent and child `Menu` declarations
 2. child pointer array
 3. parent pointer in `mainMenu[]` or another reachable array
-4. `linkSubmenus()` registration
-5. `selectMenu()` branch that selects the array and sets its size
+4. `selectMenu()` branch that selects the array and sets its size
 
-Missing one can produce an item that is visible but not enterable, has the wrong item count, or cannot be reached.
+Do not add a third ordinary menu level. Dedicated calibration, discovery, OTA, and numeric editors may temporarily own their own interaction flow.
 
 `showMenu()` currently uses four rows per page, a `>` marker, and a top-right page count. Long labels do not wrap. After changing font, row spacing, or labels, check every menu and the page indicator.
 
-The current Back implementation returns to `mainMenu`; `parentMenu` does not provide generic arbitrary-depth traversal. Do not add a third menu level without first introducing a real parent-array stack or equivalent navigation state.
+Ordinary booleans are direct rows with a visible `o` or `x`. Square calculates the desired value, persists and applies it, refreshes the row, shows brief feedback, and remains on the row. A failed persistence call must leave runtime state and the row truthful. Drift compensation cycles directly through `Off`, `0.05g`, `0.075g`, `0.10g`, and `0.20g`. Timer position alternates directly between `Top: Time` and `Top: Weight`.
 
 Menu actions may show temporary feedback through:
 

@@ -233,8 +233,8 @@ def main():
     assert_contains(MENU_HEADER, "pullOtaUpdate(target);\n  leaveMenu();")
     assert_contains(MENU_HEADER, "b_debug = true;\n  leaveMenu();")
     menu_contents = MENU_HEADER.read_text(encoding="utf-8")
-    if menu_contents.count("markMenuRestartRequired();") != 3:
-        raise AssertionError("menu.h expected three restart-requiring WiFi actions")
+    if menu_contents.count("markMenuRestartRequired();") != 2:
+        raise AssertionError("menu.h expected restart routing for WiFi toggle and reset")
     for path in [*ROOT.glob("include/*.h"), *ROOT.glob("src/*.ino"), *ROOT.glob("src/*.cpp")]:
         if path != PARAMETER_HEADER:
             assert_not_contains(path, "b_menu = false;")

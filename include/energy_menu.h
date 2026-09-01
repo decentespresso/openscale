@@ -7,29 +7,17 @@ void toggleEnergyOledIdle();
 void toggleEnergyLightSleep();
 void toggleEnergyUsbSleepTest();
 
-extern Menu menuEnergy;
-Menu menuEnergyBack = { "Back", NULL, NULL, &menuEnergy };
-Menu menuEnergy = { "Energy Saving", NULL, &menuEnergyBack, NULL };
 char menuEnergySerialQuietLabel[] = "Serial Quiet o";
 char menuEnergyOledRedrawLabel[] = "OLED Redraw o";
 char menuEnergyOledIdleLabel[] = "OLED Idle o";
 char menuEnergyLightSleepLabel[] = "Light Sleep o";
 char menuEnergyUsbSleepTestLabel[] = "USB Sleep Test o";
 
-const Menu menuEnergySerialQuiet = { menuEnergySerialQuietLabel, toggleEnergySerialQuiet, NULL, &menuEnergy };
-const Menu menuEnergyOledRedraw = { menuEnergyOledRedrawLabel, toggleEnergyOledRedraw, NULL, &menuEnergy };
-const Menu menuEnergyOledIdle = { menuEnergyOledIdleLabel, toggleEnergyOledIdle, NULL, &menuEnergy };
-const Menu menuEnergyLightSleep = { menuEnergyLightSleepLabel, toggleEnergyLightSleep, NULL, &menuEnergy };
-const Menu menuEnergyUsbSleepTest = { menuEnergyUsbSleepTestLabel, toggleEnergyUsbSleepTest, NULL, &menuEnergy };
-
-const Menu *const energyMenu[] = {
-  &menuEnergyBack,
-  &menuEnergySerialQuiet,
-  &menuEnergyOledRedraw,
-  &menuEnergyOledIdle,
-  &menuEnergyLightSleep,
-  &menuEnergyUsbSleepTest,
-};
+const Menu menuEnergySerialQuiet = { menuEnergySerialQuietLabel, toggleEnergySerialQuiet, NULL, &menuPower };
+const Menu menuEnergyOledRedraw = { menuEnergyOledRedrawLabel, toggleEnergyOledRedraw, NULL, &menuPower };
+const Menu menuEnergyOledIdle = { menuEnergyOledIdleLabel, toggleEnergyOledIdle, NULL, &menuPower };
+const Menu menuEnergyLightSleep = { menuEnergyLightSleepLabel, toggleEnergyLightSleep, NULL, &menuPower };
+const Menu menuEnergyUsbSleepTest = { menuEnergyUsbSleepTestLabel, toggleEnergyUsbSleepTest, NULL, &menuPower };
 
 char *energyFeatureRows[] = {
   menuEnergySerialQuietLabel,

@@ -515,6 +515,10 @@ int b_mode = 0;             //0 = pourover; 1 = espresso;
 
 bool b_menu = false;
 volatile bool b_menuRestartRequired = false;
+bool b_menuCirclePressPending = false;
+bool b_menuSquarePressPending = false;
+bool b_menuCircleLongHandled = false;
+bool b_menuSquareLongHandled = false;
 unsigned long t_menuExitTime = 0;
 
 inline void markMenuRestartRequired() {

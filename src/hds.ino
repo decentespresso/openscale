@@ -406,6 +406,17 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
       if (GPIO_power_on_with != BATTERY_CHARGING)
         buzzer.beep(1, BUZZER_DURATION);
 #endif
+      if (b_menu) {
+        recordEnergyActivity();
+        if (pin == BUTTON_CIRCLE) {
+          b_menuCirclePressPending = true;
+          b_menuCircleLongHandled = false;
+        } else if (pin == BUTTON_SQUARE) {
+          b_menuSquarePressPending = true;
+          b_menuSquareLongHandled = false;
+        }
+        break;
+      }
       switch (pin) {
         case BUTTON_CIRCLE:
           buttonCircle_Pressed();
@@ -426,6 +437,16 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
       }
       break;
     case AceButton::kEventLongPressed:
+      if (pin == BUTTON_CIRCLE && b_menuCirclePressPending) {
+        b_menuCircleLongHandled = true;
+        navigateMenu(-1);
+        break;
+      }
+      if (pin == BUTTON_SQUARE && b_menuSquarePressPending) {
+        b_menuSquareLongHandled = true;
+        backMenu();
+        break;
+      }
       switch (pin) {
         case BUTTON_CIRCLE:
           buttonCircle_LongPressed();
@@ -436,6 +457,18 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
       }
       break;
     case AceButton::kEventReleased:
+      if (pin == BUTTON_CIRCLE && b_menuCirclePressPending) {
+        if (!b_menuCircleLongHandled && b_menu) navigateMenu(1);
+        b_menuCirclePressPending = false;
+        b_menuCircleLongHandled = false;
+        break;
+      }
+      if (pin == BUTTON_SQUARE && b_menuSquarePressPending) {
+        if (!b_menuSquareLongHandled && b_menu) selectMenu();
+        b_menuSquarePressPending = false;
+        b_menuSquareLongHandled = false;
+        break;
+      }
       switch (pin) {
         case BUTTON_CIRCLE:
           buttonCircle_Released();
@@ -1066,6 +1099,7 @@ void setup() {
   }
   grinderRuntimeBegin();
 #endif
+  refreshMenuRows();
 #if HDS_FEATURE_PULL_OTA
   const bool b_pendingOtaLittleFs = pullOtaHasPendingLittleFs();
 #else
