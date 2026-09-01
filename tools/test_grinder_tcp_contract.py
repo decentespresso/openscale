@@ -323,7 +323,7 @@ def test_firmware_contracts():
     assert_contains(PARAMETER_HEADER, "bool b_buttonChordSuppressUntilRelease = false")
     assert_contains(PARAMETER_HEADER, "extern GrinderSettings grinderSettings")
     assert_contains(PARAMETER_HEADER, "extern GrinderRuntime grinderRuntime")
-    assert_contains(MENU_HEADER, "currentSelection->parentMenu == &menuGrinder && b_grinderMenuDirectEntry")
+    assert_contains(MENU_HEADER, "currentMenu == grinderMenu && b_grinderMenuDirectEntry")
     assert_not_contains(MENU_HEADER, "menuGrinderFind")
     assert_not_contains(MENU_HEADER, "menuGrinderLightScan")
     assert_not_contains(MENU_HEADER, "grinderLightScanMenu")

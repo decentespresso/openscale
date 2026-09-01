@@ -367,11 +367,9 @@ def main():
             raise AssertionError(f"boot tare input gate missing {expected}")
 
     menu_header = HEADER.parent / "menu.h"
-    for name in ("driftCompOff", "driftComp0050", "driftComp0075",
-                 "driftComp0100", "driftComp0200"):
-        body = method_body(menu_header, name)
-        if "tare" in body.lower():
-            raise AssertionError(f"{name} must not tare")
+    drift_body = method_body(menu_header, "cycleDriftComp")
+    if "tare" in drift_body.lower():
+        raise AssertionError("cycleDriftComp must not tare")
 
     assert_not_contains(USBCOMM_HEADER, "scale.setSamplesInUse")
     assert_not_contains(WEBSOCKET_HEADER, "scale.setSamplesInUse")

@@ -312,6 +312,7 @@ void toggleWifi() {
     actionMessage2 = "Needs WiFi";
     menuActionMessageChanged();
     t_actionMessageDelay = 1500;
+    Serial.println("WiFi Off deferred until Grind by weight is disabled.");
     return;
   }
 #endif
