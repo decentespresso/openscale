@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#0d6b4f">
   <title>HDS Custom Build</title>
-  <link rel="stylesheet" href="styles.css?v=10">
+  <link rel="stylesheet" href="styles.css?v=11">
 </head>
 <body>
   <header class="topbar">
@@ -49,12 +49,21 @@
               <span class="count-pill">Step 1</span>
             </div>
             <label class="field-label" for="firmware-ref">Firmware version</label>
-            <div class="select-wrap"><select id="firmware-ref"></select></div>
+            <div class="firmware-row">
+              <div class="select-wrap"><select id="firmware-ref"></select></div>
+              <button id="reset" class="ghost-bordered-button" type="button">Reset defaults</button>
+            </div>
             <fieldset class="install-method">
               <legend class="field-label">Install method</legend>
-              <div class="segmented-control">
-                <label><input type="radio" name="install-method" value="wifi"><span>WiFi from scale</span></label>
-                <label><input type="radio" name="install-method" value="usb"><span>Download ZIP / USB</span></label>
+              <div class="install-options">
+                <label class="install-option">
+                  <input type="radio" name="install-method" value="wifi">
+                  <span><strong>WiFi from scale</strong><small>Assign and install from the scale</small></span>
+                </label>
+                <label class="install-option">
+                  <input type="radio" name="install-method" value="usb">
+                  <span><strong>Download ZIP / USB</strong><small>Flash manually with HDS Updater</small></span>
+                </label>
               </div>
               <p>Scale install includes WiFi and Pull OTA automatically.</p>
             </fieldset>
@@ -114,7 +123,6 @@
             <div id="downloads" class="downloads" aria-label="Build downloads"></div>
             <div class="actions">
               <button id="request-build" class="primary-button" type="button" disabled>Request build</button>
-              <button id="reset" class="ghost-button" type="button">Reset defaults</button>
             </div>
           </div>
         </section>
@@ -128,17 +136,17 @@
       </aside>
     </div>
 
-    <section class="panel fleet-panel" aria-labelledby="fleet-heading">
+    <section id="fleet-panel" class="panel fleet-panel" aria-labelledby="fleet-heading" hidden>
       <div class="fleet-head">
         <div>
           <h3 id="fleet-heading">My scales</h3>
-          <p>Link scales with the temporary code shown on their OLED, then assign the ready build.</p>
+          <p>Add a scale using the temporary code shown on its OLED, then assign a ready build.</p>
         </div>
         <span class="count-pill">Accountless</span>
       </div>
 
       <div id="fleet-onboarding" class="fleet-onboarding">
-        <button id="start-fleet" class="primary-button" type="button">Start new fleet</button>
+        <button id="start-fleet" class="primary-button" type="button">Add scale</button>
         <form id="use-fleet" class="existing-fleet-form">
           <label class="field-label" for="existing-fleet-key">Use existing fleet</label>
           <div class="inline-form">
@@ -166,10 +174,10 @@
         </div>
 
         <form id="pair-scale" class="pair-scale-form">
-          <label class="field-label" for="pair-code">Pair a scale</label>
+          <label class="field-label" for="pair-code">Pairing code</label>
           <div class="inline-form">
             <input id="pair-code" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="13" placeholder="A3F921-482193">
-            <button class="primary-button" type="submit">Link scale</button>
+            <button class="primary-button" type="submit">Add scale</button>
           </div>
         </form>
 
@@ -184,6 +192,6 @@
     <span id="toast-message">Command copied</span>
   </div>
 
-  <script type="module" src="app.js?v=14"></script>
+  <script type="module" src="app.js?v=15"></script>
 </body>
 </html>

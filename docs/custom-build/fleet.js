@@ -167,7 +167,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
 
   document.querySelector("#start-fleet").addEventListener("click", () => {
     const key = encodeBase32(crypto.getRandomValues(new Uint8Array(20)));
-    if (activateKey(key)) showToast("New fleet key created");
+    if (activateKey(key)) showToast("Recovery key created");
   });
   document.querySelector("#use-fleet").addEventListener("submit", event => {
     event.preventDefault();

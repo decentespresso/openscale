@@ -499,6 +499,7 @@
     .summary-kicker h3 { font-size: 1.04rem; }
 
     .ready {
+      position: relative;
       display: inline-flex;
       align-items: center;
       gap: 6px;
@@ -517,12 +518,35 @@
     }
 
     .state-checking::before, .state-queued::before, .state-building::before,
-    .state-rate-limited::before, .state-updating::before {
+    .state-updating::before {
       background: #b77a20;
       box-shadow: 0 0 0 4px var(--amber-soft);
     }
 
+    .state-checking::after, .state-queued::after, .state-building::after,
+    .state-updating::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 50%;
+      width: 7px;
+      height: 7px;
+      border: 1px solid #b77a20;
+      border-radius: 999px;
+      animation: status-pulse 1.6s cubic-bezier(.22, 1, .36, 1) infinite;
+    }
+
+    @keyframes status-pulse {
+      from { opacity: .75; transform: translateY(-50%) scale(1); }
+      to { opacity: 0; transform: translateY(-50%) scale(2.8); }
+    }
+
     .state-rate-limited { color: var(--amber); }
+
+    .state-rate-limited::before {
+      background: #b77a20;
+      box-shadow: 0 0 0 4px var(--amber-soft);
+    }
 
     .state-missing::before, .state-unavailable::before {
       background: var(--faint);
@@ -734,40 +758,43 @@
       border: 0;
     }
 
-    .segmented-control {
+    .firmware-row {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 4px;
-      padding: 4px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--surface-soft);
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
     }
 
-    .segmented-control label { position: relative; min-width: 0; }
-    .segmented-control input { position: absolute; opacity: 0; pointer-events: none; }
+    .install-options {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
 
-    .segmented-control span {
-      display: flex;
+    .install-option {
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr);
       align-items: center;
-      justify-content: center;
-      min-height: 44px;
-      padding: 7px 10px;
-      border-radius: 6px;
+      gap: 10px;
+      min-height: 68px;
+      padding: 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
       color: var(--muted);
-      font-size: .78rem;
-      font-weight: 690;
-      text-align: center;
+      background: var(--surface);
       cursor: pointer;
     }
 
-    .segmented-control input:checked + span {
+    .install-option:has(input:checked) {
+      border-color: var(--green);
       color: var(--green-dark);
-      background: var(--surface);
-      box-shadow: 0 1px 4px rgba(20, 45, 33, .12);
+      background: var(--green-soft);
     }
 
-    .segmented-control input:focus-visible + span { outline: 3px solid rgba(13, 121, 85, .18); }
+    .install-option:has(input:focus-visible) { outline: 3px solid rgba(13, 121, 85, .18); outline-offset: 2px; }
+    .install-option input { width: 16px; height: 16px; margin: 0; accent-color: var(--green); }
+    .install-option strong, .install-option small { display: block; }
+    .install-option strong { color: var(--ink); font-size: .78rem; }
+    .install-option small { margin-top: 3px; font-size: .69rem; line-height: 1.35; }
     .install-method > p { margin: 8px 0 0; color: var(--muted); font-size: .72rem; line-height: 1.45; }
 
     .fleet-panel { margin-top: 22px; padding: 24px; }
@@ -945,7 +972,7 @@
       .ghost-button { order: 2; }
       .primary-button { width: 100%; }
       .helper-card { display: none; }
-      .segmented-control, .fleet-onboarding, .recovery-row, .inline-form, .scale-row { grid-template-columns: 1fr; }
+      .firmware-row, .install-options, .fleet-onboarding, .recovery-row, .inline-form, .scale-row { grid-template-columns: 1fr; }
       .fleet-panel { padding: 18px; }
       .fleet-onboarding { align-items: stretch; gap: 18px; }
       .icon-actions { flex-wrap: wrap; }
@@ -965,5 +992,6 @@
 
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+      .state-checking::after, .state-queued::after, .state-building::after, .state-updating::after { animation: none; }
       .workflow-link.is-next-step { animation: none; color: white; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
     }

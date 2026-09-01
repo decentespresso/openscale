@@ -8,7 +8,7 @@ import {
   resolveSelection,
   selectionQuery,
 } from "./selection.mjs?v=5";
-import {initFleet} from "./fleet.js?v=1";
+import {initFleet} from "./fleet.js?v=2";
 
 (async () => {
   const apiBase = "https://openscale-custom-builds.odevstudio.workers.dev";
@@ -50,6 +50,7 @@ import {initFleet} from "./fleet.js?v=1";
   const pluginById = new Map(catalog.plugins.map(item => [item.id, item]));
   const buildButton = document.querySelector("#request-build");
   const hashButton = document.querySelector("#copy-hash");
+  const fleetPanel = document.querySelector("#fleet-panel");
   let toastTimer;
   let updaterTimer;
   let statusTimer;
@@ -414,6 +415,7 @@ import {initFleet} from "./fleet.js?v=1";
     input.checked = input.value === installMethod;
     input.addEventListener("change", () => {
       installMethod = input.value;
+      fleetPanel.hidden = installMethod !== "wifi";
       localStorage.setItem(installStorageKey, JSON.stringify({version: 1, method: installMethod}));
       const nextSelection = installMethod === "usb"
         ? {...selected, features: selected.features.filter(feature => feature !== "pull-ota")}
@@ -421,6 +423,7 @@ import {initFleet} from "./fleet.js?v=1";
       applySelection(nextSelection, installMethod === "wifi" ? "Pull OTA included for scale install" : "USB install selected");
     });
   });
+  fleetPanel.hidden = installMethod !== "wifi";
   buildButton.addEventListener("click", async () => {
     const generation = selectionGeneration;
     const selection = currentSelection;

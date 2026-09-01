@@ -251,8 +251,8 @@ def main():
     pageRoot = customBuild.ROOT / "docs" / "custom-build"
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
-    assert 'type="module" src="app.js?v=14"' in indexPage
-    assert 'href="styles.css?v=10"' in indexPage
+    assert 'type="module" src="app.js?v=15"' in indexPage
+    assert 'href="styles.css?v=11"' in indexPage
     assert 'id="request-build"' in indexPage
     assert "catalog-data" not in indexPage
     assert 'fetch("catalog.json"' in appScript
@@ -266,7 +266,8 @@ def main():
     assert "firmwareRefLabel(ref)" in appScript
     assert "firmwareRefLabel(selected.firmware_ref)" in appScript
     assert 'selection.mjs?v=5' in appScript
-    assert 'fleet.js?v=1' in appScript
+    assert 'fleet.js?v=2' in appScript
+    assert 'fleetPanel.hidden = installMethod !== "wifi"' in appScript
     assert "manifest_url" not in appScript
     grinderFeature = next(feature for feature in generatedCatalog["features"] if feature["id"] == "grinder")
     grindByWeight = next(plugin for plugin in generatedCatalog["plugins"] if plugin["id"] == "grind-by-weight")
