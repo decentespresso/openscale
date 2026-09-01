@@ -182,9 +182,15 @@ def main():
         assert stableFirmware["custom_version"] == "1.2.3-custom"
         assert previewFirmware["custom_version"] == "3.1.14-preview.1-custom"
         assert stableFirmware["partition_schema"]["path"] == "partitions/test.csv"
+        previewFeatures = {
+            featureId: (macro, dependencies, ("v3.1.14-preview.1",))
+            for featureId, (macro, dependencies, _) in customBuild.FEATURES.items()
+        }
         with patch.object(customBuild, "ROOT", catalogRoot), patch.object(
             customBuild, "FIRMWARE_REFS", ("v3.1.14-preview.1",)
-        ), patch.object(customRunner, "ROOT", sourceRoot):
+        ), patch.object(customBuild, "FEATURES", previewFeatures), patch.object(
+            customRunner, "ROOT", sourceRoot
+        ):
             configuration = customBuild.resolveConfiguration(configPath)
             assert [plugin["id"] for plugin in configuration["plugins"]] == [
                 "asset-only", "dependency", "patch-a", "patch-b",
