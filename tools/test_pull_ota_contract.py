@@ -106,7 +106,7 @@ def main():
     assert_contains(PULL_OTA_HEADER, "pullOtaStorePendingLittleFs")
     assert_contains(PULL_OTA_HEADER, "pullOtaLoadPendingLittleFs")
     assert_contains(PULL_OTA_HEADER, "pullOtaCustomLittleFsUrlAllowed")
-    assert_contains(PULL_OTA_HEADER, "loaded.version != pullOtaCurrentVersion()")
+    assert_contains(PULL_OTA_HEADER, "pullOtaIdentityMatches(loaded.version, loaded.combinationHash)")
     assert_contains(PULL_OTA_HEADER, "pullOtaResumePendingLittleFs")
     assert_contains(PULL_OTA_HEADER, "pullOtaClearPendingLittleFs")
     assert_contains(PULL_OTA_HEADER, 'preferences.begin("ota_fs"')
