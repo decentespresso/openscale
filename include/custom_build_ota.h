@@ -198,7 +198,7 @@ bool customBuildPairScale(bool requireConfirmation) {
   customBuildSerialHint(serialHint);
   snprintf(pairCode, sizeof(pairCode), "%s-%06lu", serialHint, (unsigned long)customBuildPairPin());
   if (!customBuildRegisterPairCode(pairCode)) return pullOtaFail("Pairing failed");
-  pullOtaDraw("Pair code", pairCode, "Valid 10 min");
+  pullOtaDraw("Pair code", pairCode, "Valid 12 hours");
   customBuildWaitForDismiss(HDS_CUSTOM_BUILD_SCREEN_TIMEOUT_MS);
   return true;
 }

@@ -15,6 +15,7 @@ def main():
     require("include/custom_build_ota.h", "customBuildRandomHex(newDeviceId, 16)")
     require("include/custom_build_ota.h", "customBuildRandomHex(newDeviceSecret, 32)")
     require("include/custom_build_ota.h", "pullOtaVerifyManifestSignatureWithKeys")
+    require("include/custom_build_ota.h", 'pullOtaDraw("Pair code", pairCode, "Valid 12 hours")')
     require("include/custom_build_ota.h", 'String(HDS_CUSTOM_BUILD_SERVICE_URL) + "/v1/" + combinationHash')
     assert "fleet_secret" not in header
     require("include/menu.h", '"Custom Build", customBuildMenu')

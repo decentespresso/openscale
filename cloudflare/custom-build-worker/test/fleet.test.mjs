@@ -97,6 +97,10 @@ test("pairs, assigns, authenticates, and physically relinks a scale", async () =
   const storedDevice = storage.values.get(`device:${deviceId}`);
   assert.notEqual(storedDevice.secret_hash, deviceSecret);
   assert.equal(JSON.stringify([...storage.values.values()]).includes(deviceSecret), false);
+  assert.equal(
+    storage.values.get("pair:A3F921-482193").expires_at - storedDevice.pair_created_at,
+    12 * 60 * 60 * 1000,
+  );
 
   const claim = await request(env, "/api/v1/fleet/claim", {
     method: "POST",
