@@ -539,7 +539,7 @@ void toggleQuickBoot() {
 
 #ifdef ADS1232ADC
 void updateWakeOnWeightLabel() {
-  static const char *const labels[] = { "Off", "0.5s", "1s", "2s" };
+  static const char *const labels[] = { "Off", "2s", "3s", "4s" };
   const uint8_t index = (i_wow_interval > 0 && i_wow_interval < WOW_INTERVAL_COUNT)
                             ? i_wow_interval
                             : 0;

@@ -183,7 +183,6 @@ void esp32_sleep() {
   setEnergyIdleWakeEnabled(false);
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
 #endif
-  wowArmSleepTimer();
 #if HDS_ENABLE_GRINDER
   beforeDeepSleepFlush();
 #endif
@@ -204,6 +203,7 @@ void esp32_sleep() {
   }
 #endif
   wowCaptureBaselineForSleep();
+  wowArmSleepTimer();
   scale.powerDown();
 #ifdef ESP32C3
   esp_deep_sleep_enable_gpio_wakeup(1 << GPIO_NUM_BUTTON_POWER, ESP_GPIO_WAKEUP_GPIO_LOW);

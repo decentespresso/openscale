@@ -379,7 +379,7 @@ bool b_ads1115InitFail = true;  //ads1115 not detected flag
 volatile bool b_wifiOnBoot = false;
 volatile bool b_autoSleep = true;
 volatile bool b_quickBoot = false;
-int i_wow_interval = 0;  // Wake-on-Weight tick selection: 0=off 1=0.5s 2=1s 3=2s
+int i_wow_interval = 0;  // Wake-on-Weight: 0=off 1=2s 2=3s 3=4s
 unsigned int i_buttonBootDelay = 500;
 bool b_showChargingUI = false;
 #if HDS_ENABLE_GRINDER

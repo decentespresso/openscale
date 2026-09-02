@@ -15,12 +15,12 @@
 #include "declare.h"
 
 const float WOW_TRIGGER_GRAMS = 50.0f;
-const unsigned long WOW_READ_TIMEOUT_MS = 250;
-const unsigned long WOW_RAIL_SETTLE_MS = 10;
+const unsigned long WOW_READ_TIMEOUT_MS = 900;
+const unsigned long WOW_RAIL_SETTLE_MS = 100;
 const int32_t WOW_MIN_THRESHOLD_RAW = 500;
 const uint32_t WOW_RTC_MAGIC = 0x574F5731;
 const uint8_t WOW_INTERVAL_COUNT = 4;
-const uint32_t wowIntervalUs[WOW_INTERVAL_COUNT] = { 0, 500000, 1000000, 2000000 };
+const uint64_t wowIntervalUs[WOW_INTERVAL_COUNT] = { 0, 2000000, 3000000, 4000000 };
 
 struct WowRtcState {
   uint32_t magic;
@@ -43,30 +43,42 @@ void wowCaptureBaselineForSleep() {
   wowRtc.armed = 1;
   wowRtc.baselineRaw = scale.getDebugInfo().smoothedValue;
   wowRtc.thresholdRaw =
-      max((int32_t)(WOW_TRIGGER_GRAMS * f_calibration_value + 0.5f),
+      max((int32_t)(WOW_TRIGGER_GRAMS * fabsf(f_calibration_value) + 0.5f),
           WOW_MIN_THRESHOLD_RAW);
   const uint8_t index =
-      (i_wow_interval > 0 && i_wow_interval < WOW_INTERVAL_COUNT) ? i_wow_interval : 0;
+      (i_wow_interval > 0 && i_wow_interval < WOW_INTERVAL_COUNT)
+          ? i_wow_interval
+          : 0;
   wowRtc.intervalUs = wowIntervalUs[index];
 }
+
+static bool wowTimerArmedThisBoot = false;
 
 void wowArmSleepTimer() {
   if (wowRtc.armed && wowRtc.intervalUs > 0) {
     esp_sleep_enable_timer_wakeup(wowRtc.intervalUs);
-  } else {
+    wowTimerArmedThisBoot = true;
+  } else if (wowTimerArmedThisBoot) {
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+    wowTimerArmedThisBoot = false;
   }
 }
 
-static bool wowReadOneSample(ADS1232_ADC &adc, int32_t &rawSample) {
+static bool wowReadOneSample(ADS1232_ADC &adc, int32_t &rawSample,
+                             bool &outOfRange, unsigned long &elapsedMs) {
   const unsigned long startedAt = millis();
   while (millis() - startedAt < WOW_READ_TIMEOUT_MS) {
-    if (adc.update()) {
-      rawSample = adc.getDebugInfo().rawValue;
-      return true;
+    if (digitalRead(SCALE_DOUT) == LOW) {
+      if (adc.update()) {
+        elapsedMs = millis() - startedAt;
+        rawSample = adc.getDebugInfo().rawValue;
+        outOfRange = adc.getDebugInfo().dataOutOfRange;
+        return true;
+      }
     }
     delay(2);
   }
+  elapsedMs = millis() - startedAt;
   return false;
 }
 
@@ -85,10 +97,8 @@ static void wowLatchMicroPins() {
 void wowMicroWakeOrContinue() {
   if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER) return;
   if (wowRtc.magic != WOW_RTC_MAGIC || !wowRtc.armed) return;
-  Serial.printf("[wow] tick=%lu armed=1 interval=%lu us\n",
-                (unsigned long)wowRtc.tickCount,
-                (unsigned long)wowRtc.intervalUs);
-  setCpuFrequencyMhz(80);
+  const unsigned long bootFreqMhz = getCpuFrequencyMhz();
+  setCpuFrequencyMhz(20);
   gpio_hold_dis((gpio_num_t)SCALE_SCLK);
   gpio_hold_dis((gpio_num_t)SCALE_PDWN);
   gpio_hold_dis((gpio_num_t)SCALE_DOUT);
@@ -101,11 +111,14 @@ void wowMicroWakeOrContinue() {
 
   ADS1232_ADC wowAdc(SCALE_DOUT, SCALE_SCLK, SCALE_PDWN, SCALE_A0);
   wowAdc.begin();
+  bool outOfRange = false;
+  unsigned long elapsedMs = 0;
   int32_t rawSample = 0;
-  const bool gotSample = wowReadOneSample(wowAdc, rawSample);
+  const bool gotSample =
+      wowReadOneSample(wowAdc, rawSample, outOfRange, elapsedMs);
   wowAdc.powerDown();
 
-  if (gotSample && !wowAdc.getDebugInfo().dataOutOfRange) {
+  if (gotSample && !outOfRange) {
     const int32_t delta = rawSample > wowRtc.baselineRaw
                               ? rawSample - wowRtc.baselineRaw
                               : wowRtc.baselineRaw - rawSample;
@@ -115,11 +128,12 @@ void wowMicroWakeOrContinue() {
       wowRtc.armed = 0;
       Serial.printf("[wow] weight detected: delta=%ld > thresh=%ld, full boot\n",
                     (long)delta, (long)wowRtc.thresholdRaw);
+      setCpuFrequencyMhz(bootFreqMhz);
       return;
     }
-    Serial.printf("[wow] tick=%lu delta=%ld thresh=%ld\n",
-                  (unsigned long)wowRtc.tickCount, (long)delta,
-                  (long)wowRtc.thresholdRaw);
+    Serial.printf("[wow] tick=%lu raw=%ld delta=%ld thresh=%ld\n",
+                  (unsigned long)wowRtc.tickCount, (long)rawSample,
+                  (long)delta, (long)wowRtc.thresholdRaw);
   } else {
     Serial.printf("[wow] tick=%lu no reliable sample, retrying next tick\n",
                   (unsigned long)wowRtc.tickCount);

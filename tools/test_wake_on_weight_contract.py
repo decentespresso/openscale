@@ -1,4 +1,3 @@
-import re
 import unittest
 from pathlib import Path
 
@@ -32,8 +31,13 @@ class WakeOnWeightContractTests(unittest.TestCase):
     def test_feature_header_exists_with_rtc_state(self):
         self.assertIn("RTC_DATA_ATTR", WOW)
         self.assertIn("WOW_RTC_MAGIC", WOW)
-        self.assertIn("wowIntervalUs", WOW)
         self.assertIn("WOW_TRIGGER_GRAMS", WOW)
+        self.assertIn("WOW_INTERVAL_COUNT", WOW)
+        self.assertIn("2000000", WOW)
+        self.assertIn("3000000", WOW)
+        self.assertIn("4000000", WOW)
+        self.assertNotIn("500000", WOW)
+        self.assertNotIn("1000000", WOW)
 
     def test_micro_wake_uses_timer_wakeup_apis(self):
         self.assertIn("esp_sleep_enable_timer_wakeup", WOW)
@@ -41,12 +45,12 @@ class WakeOnWeightContractTests(unittest.TestCase):
         self.assertIn("esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER)", WOW)
         self.assertIn("esp_deep_sleep_start", WOW)
 
-    def test_micro_wake_restores_80mhz_clock(self):
-        self.assertIn("setCpuFrequencyMhz(80)", WOW)
+    def test_micro_wake_downclocks_to_minimum_clock(self):
+        self.assertIn("setCpuFrequencyMhz(20)", WOW)
+        self.assertNotIn("setCpuFrequencyMhz(80)", WOW)
         self.assertNotIn("setCpuFrequencyMhz(240)", WOW)
-        self.assertNotIn(" 240", WOW.replace("0x", ""))
 
-    def test_feature_never_touches_nvs_or_battery_in_micro_path(self):
+    def test_micro_wake_never_touches_nvs_or_battery(self):
         self.assertNotIn("storageGet", WOW)
         self.assertNotIn("Preferences", WOW)
         self.assertNotIn("analogRead", WOW)
@@ -68,6 +72,8 @@ class WakeOnWeightContractTests(unittest.TestCase):
         self.assertIn("wowCaptureBaselineForSleep();", POWER)
         self.assertIn("wowArmSleepTimer();", POWER)
         self.assertLess(POWER.index("wowCaptureBaselineForSleep();"),
+                        POWER.index("wowArmSleepTimer();"))
+        self.assertLess(POWER.index("wowArmSleepTimer();"),
                         POWER.index("scale.powerDown();"))
         self.assertLess(POWER.index("esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER)"),
                         POWER.index("wowArmSleepTimer();"))
@@ -85,9 +91,13 @@ class WakeOnWeightContractTests(unittest.TestCase):
         self.assertIn("CALIBRATION_VALUE_DEFAULT", baseline)
         self.assertIn("validSamples <= 0", baseline)
         self.assertIn("smoothedValue", baseline)
+        self.assertIn("fabsf(f_calibration_value)", baseline)
+        self.assertIn("wowRtc.intervalUs = wowIntervalUs", baseline)
 
     def test_micro_wakeup_gates(self):
         micro = body(WOW_ADS, "void wowMicroWakeOrContinue()")
+        self.assertIn("getCpuFrequencyMhz()", micro)
+        self.assertIn("setCpuFrequencyMhz(bootFreqMhz)", micro)
         self.assertIn("ESP_SLEEP_WAKEUP_TIMER", micro)
         self.assertIn("WOW_RTC_MAGIC", micro)
         self.assertIn("gpio_hold_dis", micro)
@@ -95,8 +105,8 @@ class WakeOnWeightContractTests(unittest.TestCase):
         self.assertIn("digitalWrite(PWR_CTRL, HIGH)", micro)
         self.assertIn("wowAdc.begin()", micro)
         self.assertIn("wowAdc.powerDown()", micro)
-        self.assertIn("dataOutOfRange", micro)
-        self.assertIn("wowRtc.intervalUs", micro)
+        self.assertIn("!outOfRange", micro)
+        self.assertIn("esp_sleep_enable_timer_wakeup(wowRtc.intervalUs)", micro)
 
     def test_boot_interceptor_slots_in_setup(self):
         self.assertLess(FIRMWARE.index("wowMicroWakeOrContinue();"),
@@ -105,8 +115,6 @@ class WakeOnWeightContractTests(unittest.TestCase):
                         FIRMWARE.index("pinMode(PWR_CTRL, OUTPUT)"))
         self.assertLess(FIRMWARE.index("storageGetInt(KEY_WOW_INTERVAL, 0)"),
                         FIRMWARE.index("esp32_sleep();"))
-
-    def test_setting_loaded_before_any_sleep_path(self):
         self.assertLess(FIRMWARE.index("i_wow_interval = storageGetInt(KEY_WOW_INTERVAL, 0)"),
                         FIRMWARE.index("releaseWakePinsFromRtcMode();"))
 
@@ -118,7 +126,6 @@ class WakeOnWeightContractTests(unittest.TestCase):
 
     def test_menu_row_and_cycle_action(self):
         self.assertIn("menuWakeOnWeight", MENU)
-        self.assertIn("\"Wake: Off\"", MENU)
         self.assertIn("menuWakeOnWeightLabel, cycleWakeOnWeight, NULL, &menuPower", MENU)
         self.assertIn("&menuWakeOnWeight", body(MENU, "powerMenu[]"))
         cycle = body(MENU, "void cycleWakeOnWeight()")
@@ -126,6 +133,14 @@ class WakeOnWeightContractTests(unittest.TestCase):
         self.assertIn("storagePutInt(KEY_WOW_INTERVAL, next)", cycle)
         self.assertIn("i_wow_interval = next", cycle)
         self.assertIn("updateWakeOnWeightLabel()", cycle)
+
+    def test_menu_label_uses_cycle_pattern(self):
+        self.assertIn("char menuWakeOnWeightLabel[20] = \"Wake: Off\"", MENU)
+        labels = body(MENU, "void updateWakeOnWeightLabel()")
+        self.assertIn("\"Off\"", labels)
+        self.assertIn("\"2s\"", labels)
+        self.assertIn("\"3s\"", labels)
+        self.assertIn("\"4s\"", labels)
 
     def test_refresh_menu_rows_updates_label(self):
         refresh = body(MENU, "void refreshMenuRows()")
@@ -144,8 +159,9 @@ class WakeOnWeightContractTests(unittest.TestCase):
     def test_docs_state_machine(self):
         self.assertIn("10 SPS", DOCS)
         self.assertIn("50 g", DOCS)
-        self.assertIn("0.5 s", DOCS)
         self.assertIn("2 s", DOCS)
+        self.assertIn("3 s", DOCS)
+        self.assertIn("4 s", DOCS)
         self.assertIn("defaults to off", DOCS)
 
 
