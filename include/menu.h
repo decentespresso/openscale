@@ -95,6 +95,9 @@ void toggleBtnFuncWhileConnected();
 void toggleAutoSleep();
 void toggleQuickBoot();
 void cycleDriftComp();
+#ifdef ADS1232ADC
+void cycleWakeOnWeight();
+#endif
 void toggleTapTare();
 void toggleTapTimer();
 void refreshMenuRows();
@@ -140,6 +143,9 @@ char menuFlipScreenLabel[] = "Flip Screen o";
 char menuTimeOnTopLabel[] = "Top: Weight";
 char menuAutoSleepLabel[] = "Auto Sleep o";
 char menuQuickBootLabel[] = "Quick Boot o";
+#ifdef ADS1232ADC
+char menuWakeOnWeightLabel[20] = "Wake: Off";
+#endif
 #if HDS_FEATURE_WIFI
 char menuWifiLabel[] = "WiFi o";
 #endif
@@ -212,10 +218,16 @@ const Menu *const displayMenu[] = { &menuDisplayBack, &menuFlipScreen,
 const Menu menuPowerBack = { "Back", NULL, NULL, &menuPower };
 const Menu menuAutoSleep = { menuAutoSleepLabel, toggleAutoSleep, NULL, &menuPower };
 const Menu menuQuickBoot = { menuQuickBootLabel, toggleQuickBoot, NULL, &menuPower };
+#ifdef ADS1232ADC
+const Menu menuWakeOnWeight = { menuWakeOnWeightLabel, cycleWakeOnWeight, NULL, &menuPower };
+#endif
 #if HDS_ENABLE_ENERGY_MENU
 #include "energy_menu.h"
 #endif
 const Menu *const powerMenu[] = { &menuPowerBack, &menuAutoSleep, &menuQuickBoot,
+#ifdef ADS1232ADC
+                                  &menuWakeOnWeight,
+#endif
 #if HDS_ENABLE_ENERGY_MENU
                                   &menuEnergyOledRedraw, &menuEnergyOledIdle,
                                   &menuEnergyLightSleep,
@@ -524,6 +536,28 @@ void toggleQuickBoot() {
   toggleStoredBool(b_quickBoot, KEY_QUICK_BOOT, "Quick Boot",
                    menuQuickBootLabel);
 }
+
+#ifdef ADS1232ADC
+void updateWakeOnWeightLabel() {
+  static const char *const labels[] = { "Off", "0.5s", "1s", "2s" };
+  const uint8_t index = (i_wow_interval > 0 && i_wow_interval < WOW_INTERVAL_COUNT)
+                            ? i_wow_interval
+                            : 0;
+  snprintf(menuWakeOnWeightLabel, sizeof(menuWakeOnWeightLabel), "Wake: %s",
+           labels[index]);
+}
+
+void cycleWakeOnWeight() {
+  const int next = (i_wow_interval + 1) % WOW_INTERVAL_COUNT;
+  const bool stored = storagePutInt(KEY_WOW_INTERVAL, next);
+  if (stored) i_wow_interval = next;
+  updateWakeOnWeightLabel();
+  actionMessage = stored ? "Wake on" : "Save Failed";
+  actionMessage2 = stored ? String(menuWakeOnWeightLabel + 6) : "Wake on Weight";
+  menuActionMessageChanged();
+  t_actionMessageDelay = 1000;
+}
+#endif
 
 void cycleDriftComp() {
   constexpr float values[] = { 0.0f, 0.05f, 0.075f, 0.10f, 0.20f };
@@ -1570,6 +1604,9 @@ void refreshMenuRows() {
   updateToggleLabel(menuFlipScreenLabel, b_screenFlipped);
   updateToggleLabel(menuAutoSleepLabel, b_autoSleep);
   updateToggleLabel(menuQuickBootLabel, b_quickBoot);
+#ifdef ADS1232ADC
+  updateWakeOnWeightLabel();
+#endif
   updateToggleLabel(menuTapTareLabel, b_tapTareEnabled);
   updateToggleLabel(menuTapTimerLabel, b_tapTimerEnabled);
   snprintf(menuTimeOnTopLabel, sizeof(menuTimeOnTopLabel), "Top: %s",

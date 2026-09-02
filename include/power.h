@@ -115,6 +115,8 @@ void releaseWakePinsFromRtcMode() {
   rtc_gpio_deinit((gpio_num_t)BATTERY_CHARGING);
 }
 
+#include "wake_on_weight.h"
+
 void print_wakeup_reason() {
   esp_sleep_wakeup_cause_t wakeup_reason;
 
@@ -181,6 +183,7 @@ void esp32_sleep() {
   setEnergyIdleWakeEnabled(false);
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
 #endif
+  wowArmSleepTimer();
 #if HDS_ENABLE_GRINDER
   beforeDeepSleepFlush();
 #endif
@@ -200,6 +203,7 @@ void esp32_sleep() {
     mpu.enableSleep(true);
   }
 #endif
+  wowCaptureBaselineForSleep();
   scale.powerDown();
 #ifdef ESP32C3
   esp_deep_sleep_enable_gpio_wakeup(1 << GPIO_NUM_BUTTON_POWER, ESP_GPIO_WAKEUP_GPIO_LOW);
@@ -355,8 +359,6 @@ float getUsbVoltage(int usbPin) {
   return usbVoltage;
 }
 
-int i_lowBatteryCount = 0;
-int i_lowBatteryCountTotal = 0;
 bool processNewBatterySample() {
   if (!powerCadence.batterySamples.shouldEvaluate(powerCadence.batterySampleSequence)) {
     return false;

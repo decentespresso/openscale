@@ -775,6 +775,7 @@ void setup() {
   Serial.begin(115200);
   while (!Serial)
     ;
+  wowMicroWakeOrContinue();
   {
     esp_reset_reason_t r = esp_reset_reason();
     g_resetReasonCode = (uint8_t)r;
@@ -811,6 +812,7 @@ void setup() {
 
   b_quickBoot = storageGetBool(KEY_QUICK_BOOT, false);
   i_buttonBootDelay = b_quickBoot ? 0 : 500;
+  i_wow_interval = storageGetInt(KEY_WOW_INTERVAL, 0);
 
   Serial.println("NVS settings init success");
 

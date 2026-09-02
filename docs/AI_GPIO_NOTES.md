@@ -80,6 +80,15 @@ Current active config is `V8_1` with `TWO_BUTTON`.
 | `PWR_CTRL` | output low, `gpio_hold_en` | yes |
 | `BUTTON_CIRCLE`, `BUTTON_SQUARE`, `BATTERY_CHARGING` | RTC input pull-up, EXT1 wake any-low | RTC mode released in setup |
 
+Wake-on-Weight (`include/wake_on_weight.h`) adds a second release/re-latch
+path: an RTC-timer micro-wakeup releases `gpio_hold` on `SCALE_SCLK`,
+`SCALE_PDWN`, `SCALE_DOUT`, `PWR_CTRL` only, raises `PWR_CTRL` briefly to
+read one ADS1232 conversion, then re-latches exactly those four pins before
+re-entering deep sleep. OLED, I2C, secondary-scale, and `ACC_PWR_CTRL` holds
+are never touched by the micro path; the normal `setup()` release block
+(`gpio_hold_dis` sequence in `src/hds.ino`) is idempotent on pins the micro
+path already released.
+
 ## Change Checklist
 
 - If a pin is used for wake, verify RTC GPIO support and update `PIN_BITMASK`.
