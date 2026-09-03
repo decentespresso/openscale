@@ -15,6 +15,7 @@ on:
       - "tools/*ota*.cpp"
       - "keys/ota/**"
       - "ota_public_key_header.py"
+      - "custom_ota_public_key_header.py"
       - "platformio.ini"
       - "requirements-platformio.txt"
       - "tools/*ota*.py"
@@ -37,7 +38,9 @@ jobs:
           python tools/test_release_workflow_contract.py
           python tools/test_ota_rollback_contract.py
           python tools/test_ota_public_key_header.py
+          python tools/test_custom_ota_public_key_header.py
           python tools/test_decent_ota_target_contract.py
+          python tools/test_custom_build_ota_contract.py
 
   public-key-header-platforms:
     strategy:
@@ -53,4 +56,5 @@ jobs:
           python-version: "3.11"
       - run: |
           python tools/test_ota_public_key_header.py
+          python tools/test_custom_ota_public_key_header.py
           python ota_public_key_header.py

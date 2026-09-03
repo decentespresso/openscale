@@ -16,6 +16,7 @@ Do not reconstruct the active settings layout from the old address declarations 
 | NVS `wifi` | `src/wifi_setup.cpp` | WiFi SSID and password, plus the `mdns_name` device name (default `hds`). |
 | NVS `ota_fs` | `include/pull_ota.h` | Pending staged LittleFS metadata. |
 | NVS `ota_verify` | `include/ota_rollback.h` | OTA boot-verification attempt count. |
+| NVS `ota_custom` | `include/custom_build_ota.h` | Random device ID and device authentication secret. |
 | LittleFS | `include/webserver.h`, OTA code | On-device web application files. |
 | Browser `localStorage` | Files under `plugins/default-web-apps/assets/` | Per-browser application data; unrelated to device NVS. |
 

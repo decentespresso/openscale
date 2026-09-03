@@ -15,6 +15,7 @@ import urllib.request
 import zipfile
 
 import configure_custom_build as customBuild
+import generate_custom_ota_manifest as customOta
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,11 +25,18 @@ BUILD_FILES = (
     customBuild.FIRMWARE_ARCHIVE,
     "build-manifest.json",
     "dependencies.txt",
+    "firmware.bin",
+    "littlefs.bin",
+    "ota-manifest.json",
+    "ota-manifest.sig",
 )
 PROGRAM_BINARIES = tuple(
     name for name in customBuild.PUBLIC_BINARIES if name != "littlefs.bin"
 )
 MAX_REMOTE_MANIFEST_BYTES = 1024 * 1024
+CUSTOM_OTA_PUBLIC_KEY_NAMES = tuple(
+    f"hds_custom_ota_manifest_public_key_{index}.pem" for index in range(1, 3)
+)
 
 
 def runCommand(command, cwd, capture=False, environment=None):
@@ -140,7 +148,10 @@ def prepareBuildCheckout(
     builderTools = workspace / "builder-tools"
     builderTools.mkdir()
     shutil.copy2(builderRoot / "tools" / "configure_custom_build.py", builderTools)
+    shutil.copy2(builderRoot / "tools" / "write_custom_ota_public_key_header.py", builderTools)
     shutil.copy2(builderRoot / "git_rev_macro.py", builderTools)
+    for name in CUSTOM_OTA_PUBLIC_KEY_NAMES:
+        shutil.copy2(builderRoot / "keys" / "ota" / name, builderTools)
     compilerScript = workspace / "reproducible_build.py"
     compilerScript.write_text(
         "from pathlib import Path\n"
@@ -177,6 +188,13 @@ def prepareBuildCheckout(
         "pre:.pio.nosync/builder-tools/configure_custom_build.py",
         "custom build configurator",
     )
+    baseScripts = config.get("env:esp32s3", "extra_scripts", fallback="")
+    customKeySource = "pre:custom_ota_public_key_header.py"
+    customKeyTarget = "pre:.pio.nosync/builder-tools/write_custom_ota_public_key_header.py"
+    if customKeySource in baseScripts:
+        config.set("env:esp32s3", "extra_scripts", baseScripts.replace(customKeySource, customKeyTarget))
+    else:
+        scripts += "\n" + customKeyTarget
     buildFlags = config.get("env:esp32s3", "build_flags", fallback="")
     config.set(
         "env:esp32s3",
@@ -191,8 +209,7 @@ def prepareBuildCheckout(
     config.set(
         section,
         "extra_scripts",
-        scripts
-        + "\npre:.pio.nosync/reproducible_build.py"
+        scripts + "\npre:.pio.nosync/reproducible_build.py"
         + "\npost:.pio.nosync/reproducible_filesystem.py",
     )
     with configPath.open("w", encoding="utf-8") as configFile:
@@ -260,6 +277,14 @@ def completeCacheEntry(entryDir, expectedHash, expectedInput):
     return (
         manifest.get("archive") == customBuild.fileMetadata(entryDir / customBuild.FIRMWARE_ARCHIVE)
         and manifest.get("dependencies") == customBuild.fileMetadata(entryDir / "dependencies.txt")
+        and manifest.get("custom_ota") == {
+            "manifest": customBuild.fileMetadata(entryDir / "ota-manifest.json"),
+            "signature": customBuild.fileMetadata(entryDir / "ota-manifest.sig"),
+        }
+        and all(
+            manifest["binaries"][name] == customBuild.fileMetadata(entryDir / name)
+            for name in ("firmware.bin", "littlefs.bin")
+        )
     )
 
 
@@ -388,11 +413,20 @@ def buildCustomFirmware(
         platformioEnvironment = customBuild.platformioEnvironment(configuration)
         prepareBuildCheckout(checkoutRoot, platformioEnvironment=platformioEnvironment)
         sourceEpoch = sourceDateEpoch(checkoutRoot)
+        trustedTools = checkoutRoot / ".pio.nosync" / "builder-tools"
         environment = {
-            **os.environ,
+            **{
+                key: value for key, value in os.environ.items()
+                if key != "HDS_CUSTOM_OTA_SIGNING_KEY_PEM"
+            },
             "HDS_CUSTOM_BUILD_CATALOG_ROOT": str(ROOT),
             "HDS_CUSTOM_BUILD_CONFIG": str(configPath),
             "HDS_FIRMWARE_VERSION": identity["firmware_version"],
+            "HDS_CUSTOM_BUILD_COMBINATION_HASH": combinationHash,
+            **{
+                f"HDS_CUSTOM_OTA_PUBLIC_KEY_{index}_FILE": str(trustedTools / name)
+                for index, name in enumerate(CUSTOM_OTA_PUBLIC_KEY_NAMES, 1)
+            },
             "SOURCE_DATE_EPOCH": sourceEpoch,
         }
         buildDir = checkoutRoot / ".pio.nosync" / "build" / platformioEnvironment
@@ -415,6 +449,15 @@ def buildCustomFirmware(
             commitSha,
             checkoutRoot,
             identity,
+        )
+        customOta.writeArtifacts(
+            buildDir,
+            buildDir / "build-manifest.json",
+            os.environ.get(
+                "HDS_CUSTOM_OTA_BASE_URL",
+                "https://openscale-custom-builds.odevstudio.workers.dev",
+            ),
+            os.environ.get("HDS_CUSTOM_OTA_SIGNING_KEY_PEM", ""),
         )
         requireBuildFiles(buildDir)
         publishArtifacts(buildDir, outputDir)

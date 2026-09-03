@@ -157,6 +157,14 @@ def main():
         builderTools = catalogRoot / "tools"
         builderTools.mkdir()
         shutil.copy2(customBuild.SCRIPT_ROOT / "tools" / "configure_custom_build.py", builderTools)
+        shutil.copy2(
+            customBuild.SCRIPT_ROOT / "tools" / "write_custom_ota_public_key_header.py",
+            builderTools,
+        )
+        builderKeys = catalogRoot / "keys" / "ota"
+        builderKeys.mkdir(parents=True)
+        for name in customRunner.CUSTOM_OTA_PUBLIC_KEY_NAMES:
+            shutil.copy2(customBuild.SCRIPT_ROOT / "keys" / "ota" / name, builderKeys)
         shutil.copy2(customBuild.SCRIPT_ROOT / "git_rev_macro.py", catalogRoot)
         writePlugin(catalogRoot, "asset-only")
         writePlugin(catalogRoot, "dependency")
@@ -178,9 +186,15 @@ def main():
         assert stableFirmware["custom_version"] == "1.2.3-custom"
         assert previewFirmware["custom_version"] == "3.1.14-preview.1-custom"
         assert stableFirmware["partition_schema"]["path"] == "partitions/test.csv"
+        previewFeatures = {
+            featureId: (macro, dependencies, ("v3.1.14-preview.1",))
+            for featureId, (macro, dependencies, _) in customBuild.FEATURES.items()
+        }
         with patch.object(customBuild, "ROOT", catalogRoot), patch.object(
             customBuild, "FIRMWARE_REFS", ("v3.1.14-preview.1",)
-        ), patch.object(customRunner, "ROOT", sourceRoot):
+        ), patch.object(customBuild, "FEATURES", previewFeatures), patch.object(
+            customRunner, "ROOT", sourceRoot
+        ):
             configuration = customBuild.resolveConfiguration(configPath)
             assert [plugin["id"] for plugin in configuration["plugins"]] == [
                 "asset-only", "dependency", "patch-a", "patch-b",
@@ -255,6 +269,11 @@ def main():
             assert (trustedTools / "git_rev_macro.py").read_bytes() == (
                 catalogRoot / "git_rev_macro.py"
             ).read_bytes()
+            assert (trustedTools / "write_custom_ota_public_key_header.py").read_bytes() == (
+                catalogRoot / "tools" / "write_custom_ota_public_key_header.py"
+            ).read_bytes()
+            for name in customRunner.CUSTOM_OTA_PUBLIC_KEY_NAMES:
+                assert (trustedTools / name).read_bytes() == (builderKeys / name).read_bytes()
             incompatibleCheckout = root / "incompatible-checkout"
             customRunner.cloneSource(sourceRoot, sourceCommit, incompatibleCheckout)
             incompatiblePlatformio = incompatibleCheckout / "platformio.ini"
@@ -312,6 +331,7 @@ def main():
             assert first["base_source"] == sourceCommit
             assert first["builder_source"] == sourceCommit
             assert first["firmware_version"] == "3.1.14-preview.1-custom"
+            assert first["combination_input"]["custom_ota_signing_key_generation"] == 1
             assert first["combination_hash"] == customBuild.combinationHash(first["combination_input"])
             assert first["partition_schema"]["path"] == "partitions/test.csv"
             assert list(first["binaries"]) == sorted(customBuild.PUBLIC_BINARIES)
@@ -327,6 +347,42 @@ def main():
             assetPackage = next(item for item in first["packages"] if item["id"] == "asset-only")
             assert assetPackage["assets"][0]["target"] == "plugins/asset/index.html"
             (buildDir / "build-manifest.json").write_bytes(firstManifest.read_bytes())
+            signingKey = root / "custom-ota.pem"
+            publicKey = root / "custom-ota-public.pem"
+            subprocess.run([
+                "openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048",
+                "-out", str(signingKey),
+            ], check=True, capture_output=True)
+            subprocess.run([
+                "openssl", "pkey", "-in", str(signingKey), "-pubout", "-out", str(publicKey),
+            ], check=True, capture_output=True)
+            wrongSigningKey = root / "wrong-custom-ota.pem"
+            subprocess.run([
+                "openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048",
+                "-out", str(wrongSigningKey),
+            ], check=True, capture_output=True)
+            publicKeyFiles = (publicKey, builderKeys / customRunner.CUSTOM_OTA_PUBLIC_KEY_NAMES[1])
+            assertRejected(lambda: customRunner.customOta.writeArtifacts(
+                buildDir,
+                buildDir / "build-manifest.json",
+                "https://builds.example.test",
+                wrongSigningKey.read_text(encoding="utf-8"),
+                publicKeyFiles,
+            ))
+            assert not (buildDir / "ota-manifest.json").exists()
+            assert not (buildDir / "ota-manifest.sig").exists()
+            customRunner.customOta.writeArtifacts(
+                buildDir,
+                buildDir / "build-manifest.json",
+                "https://builds.example.test",
+                signingKey.read_text(encoding="utf-8"),
+                publicKeyFiles,
+            )
+            subprocess.run([
+                "openssl", "dgst", "-sha256", "-verify", str(publicKey),
+                "-signature", str(buildDir / "ota-manifest.sig"),
+                str(buildDir / "ota-manifest.json"),
+            ], check=True, capture_output=True)
             customRunner.requireBuildFiles(buildDir)
             combinationHash = first["combination_hash"]
             combinationInput = first["combination_input"]

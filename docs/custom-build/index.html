@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#0d6b4f">
   <title>HDS Custom Build</title>
-  <link rel="stylesheet" href="styles.css?v=8">
+  <link rel="stylesheet" href="styles.css?v=14">
 </head>
 <body>
   <header class="topbar">
@@ -34,7 +34,7 @@
         <p class="eyebrow">Build configurator</p>
         <h2 id="page-heading">Compose a firmware build.</h2>
       </div>
-      <p class="intro-copy">Choose a firmware version and the capabilities that belong in the resulting USB-installable build.</p>
+      <p class="intro-copy">Choose a firmware version, build it once, then download it or assign it to your scales.</p>
     </section>
 
     <div class="layout">
@@ -49,7 +49,24 @@
               <span class="count-pill">Step 1</span>
             </div>
             <label class="field-label" for="firmware-ref">Firmware version</label>
-            <div class="select-wrap"><select id="firmware-ref"></select></div>
+            <div class="firmware-row">
+              <div class="select-wrap"><select id="firmware-ref"></select></div>
+              <button id="reset" class="ghost-bordered-button" type="button">Reset defaults</button>
+            </div>
+            <fieldset class="install-method">
+              <legend class="field-label">Install method</legend>
+              <div class="install-options">
+                <label class="install-option">
+                  <input type="radio" name="install-method" value="wifi">
+                  <span><strong>WiFi from scale</strong><small>Assign and install from the scale</small></span>
+                </label>
+                <label class="install-option">
+                  <input type="radio" name="install-method" value="usb">
+                  <span><strong>Download ZIP / USB</strong><small>Flash manually with HDS Updater</small></span>
+                </label>
+              </div>
+              <p>Scale install includes WiFi and Pull OTA automatically.</p>
+            </fieldset>
           </div>
         </section>
 
@@ -106,7 +123,6 @@
             <div id="downloads" class="downloads" aria-label="Build downloads"></div>
             <div class="actions">
               <button id="request-build" class="primary-button" type="button" disabled>Request build</button>
-              <button id="reset" class="ghost-button" type="button">Reset defaults</button>
             </div>
           </div>
         </section>
@@ -119,6 +135,58 @@
         </div>
       </aside>
     </div>
+
+    <section id="fleet-panel" class="panel fleet-panel" aria-labelledby="fleet-heading" hidden>
+      <div class="fleet-head">
+        <div>
+          <h3 id="fleet-heading">My scales</h3>
+          <p>Add scales using the temporary codes shown on their OLED. Adding the first scale creates a fleet.</p>
+        </div>
+        <button id="fleet-settings-toggle" class="icon-button" type="button" title="Fleet settings" aria-label="Fleet settings" aria-expanded="false" aria-controls="fleet-settings">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+
+      <div id="fleet-settings" class="fleet-settings" hidden>
+        <form id="use-fleet" class="existing-fleet-form">
+          <label class="field-label" for="existing-fleet-key">Use existing fleet</label>
+          <div class="inline-form">
+            <input id="existing-fleet-key" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX">
+            <button class="ghost-bordered-button" type="submit">Open fleet</button>
+          </div>
+        </form>
+        <div id="fleet-recovery" class="recovery-row" hidden>
+          <div class="recovery-key">
+            <label class="field-label" for="fleet-recovery-key">Fleet recovery key</label>
+            <input id="fleet-recovery-key" type="text" readonly>
+          </div>
+          <div class="icon-actions">
+            <button id="copy-fleet-key" class="icon-button" type="button" title="Copy fleet recovery key" aria-label="Copy fleet recovery key">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+            <button id="forget-fleet" class="ghost-button" type="button">Forget in this tab</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="fleet-onboarding" class="fleet-onboarding">
+        <button id="start-fleet" class="primary-button" type="button">Add first scale</button>
+      </div>
+
+      <div id="fleet-console" hidden>
+
+        <form id="pair-scale" class="pair-scale-form">
+          <label class="field-label" for="pair-code">Pairing code</label>
+          <div class="inline-form">
+            <input id="pair-code" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="13" placeholder="A3F921-482193">
+            <button class="primary-button" type="submit">Add scale</button>
+          </div>
+        </form>
+
+        <p id="fleet-status" class="fleet-status" role="status" aria-live="polite"></p>
+        <ul id="fleet-scales" class="scale-list"></ul>
+      </div>
+    </section>
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite">
@@ -126,6 +194,17 @@
     <span id="toast-message">Command copied</span>
   </div>
 
-  <script type="module" src="app.js?v=13"></script>
+  <dialog id="forget-fleet-dialog" class="confirm-dialog" aria-labelledby="forget-fleet-heading" aria-describedby="forget-fleet-description">
+    <form method="dialog">
+      <h3 id="forget-fleet-heading">Forget fleet in this tab?</h3>
+      <p id="forget-fleet-description">Linked scales will not be deleted. You will need the recovery key to open this fleet again.</p>
+      <div class="dialog-actions">
+        <button class="ghost-bordered-button" type="submit" value="cancel" autofocus>Cancel</button>
+        <button class="danger-button" type="submit" value="confirm">Forget fleet</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="app.js?v=18"></script>
 </body>
 </html>

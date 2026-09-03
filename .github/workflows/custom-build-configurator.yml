@@ -18,6 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@v7
         with:
@@ -27,4 +28,5 @@ jobs:
           python tools/test_plugin_catalog.py
           python tools/test_custom_build_execution.py
           node --check docs/custom-build/app.js
+          node --check docs/custom-build/fleet.js
           node --test cloudflare/custom-build-worker/test/configurator.test.mjs

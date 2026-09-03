@@ -56,9 +56,9 @@ def main():
     assert "#if HDS_CUSTOM_BUILD" in patch
     assert "#ifdef HDS_CUSTOM_BUILD" not in patch
     assert manifest["patches"] == {
-        "v3.1.14-preview.1": "patches/main.patch",
+        "main": "patches/main.patch",
     }
-    assert workerConfig["vars"]["ALLOWED_FIRMWARE_REFS"] == "v3.1.14-preview.1"
+    assert workerConfig["vars"]["ALLOWED_FIRMWARE_REFS"] == "main"
     assert workerConfig["vars"]["BUILDER_REF"] == "main"
     assert changedPlugins.changedPluginIds([
         "plugins/pressensor/plugin.json",
@@ -68,7 +68,7 @@ def main():
     assert changedPlugins.changedPluginMatrix([
         "plugins/pressensor/patches/main.patch"
     ]) == [
-        {"plugin": "pressensor", "firmware_ref": "v3.1.14-preview.1"},
+        {"plugin": "pressensor", "firmware_ref": "main"},
     ]
     assert changedPlugins.changedPluginMatrix([
         "plugins/default-web-apps/assets/index.html"
@@ -93,7 +93,7 @@ def main():
     assert compileCustom.lstrip().startswith("if: github.event_name == 'pull_request'")
     assert '"features": []' in compileCustom
     assert '"plugins": []' in compileCustom
-    assert '"firmware_ref": "v3.1.14-preview.1"' in compileCustom
+    assert '"firmware_ref": "main"' in compileCustom
     assert "--config .pio.nosync/pr-ci.json" in compileCustom
     assert '--source-commit "${{ github.sha }}"' in compileCustom
     with tempfile.TemporaryDirectory() as directory:
@@ -102,9 +102,12 @@ def main():
             check=True,
         )
         subprocess.run(
-            ["git", "checkout", "--quiet", "--detach", manifest["firmware_refs"][0]],
+            ["git", "fetch", "--quiet", "origin", "refs/remotes/origin/main"],
             cwd=directory,
             check=True,
+        )
+        subprocess.run(
+            ["git", "switch", "--quiet", "--detach", "FETCH_HEAD"], cwd=directory, check=True
         )
         subprocess.run(
             ["git", "apply", "--check", "--whitespace=error", str(patchPath)],

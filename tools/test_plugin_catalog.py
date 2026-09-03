@@ -237,7 +237,9 @@ def main():
     assert pageCatalog["catalog_revision"] == serviceCatalog["catalog_revision"]
     assert len(pageCatalog["catalog_revision"]) == 64
     assert generatedCatalog["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
-    assert customBuild.FIRMWARE_REFS == ("v3.1.14-preview.1",)
+    assert customBuild.FIRMWARE_REFS == ("main",)
+    assert pageCatalog["custom_ota_signing_key_generation"] == 1
+    assert serviceCatalog["custom_ota_signing_key_generation"] == 1
     assert all(
         feature["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
         for feature in generatedCatalog["features"]
@@ -251,8 +253,9 @@ def main():
     pageRoot = customBuild.ROOT / "docs" / "custom-build"
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
-    assert 'type="module" src="app.js?v=13"' in indexPage
-    assert 'href="styles.css?v=8"' in indexPage
+    fleetScript = (pageRoot / "fleet.js").read_text(encoding="utf-8")
+    assert 'type="module" src="app.js?v=18"' in indexPage
+    assert 'href="styles.css?v=14"' in indexPage
     assert 'id="request-build"' in indexPage
     assert "catalog-data" not in indexPage
     assert 'fetch("catalog.json"' in appScript
@@ -266,7 +269,14 @@ def main():
     assert "firmwareRefLabel(ref)" in appScript
     assert "firmwareRefLabel(selected.firmware_ref)" in appScript
     assert 'selection.mjs?v=5' in appScript
+    assert 'fleet.js?v=5' in appScript
+    assert 'fleetPanel.hidden = installMethod !== "wifi"' in appScript
+    assert "sessionStorage.setItem(storageKey" in fleetScript
+    assert "localStorage.setItem(storageKey" not in fleetScript
+    assert "removeStoredKey(localStorage, legacyStorageKey)" in fleetScript
     assert "manifest_url" not in appScript
+    energyMenu = next(feature for feature in generatedCatalog["features"] if feature["id"] == "energy-menu")
+    assert energyMenu["name"] == "Energy Saving Beta"
     grinderFeature = next(feature for feature in generatedCatalog["features"] if feature["id"] == "grinder")
     grindByWeight = next(plugin for plugin in generatedCatalog["plugins"] if plugin["id"] == "grind-by-weight")
     pressensor = next(plugin for plugin in generatedCatalog["plugins"] if plugin["id"] == "pressensor")
@@ -279,7 +289,7 @@ def main():
     assert grindByWeight["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
     assert pressensor["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
     assert set(serviceCatalog["plugins"]["pressensor"]["patches"]) == set(customBuild.FIRMWARE_REFS)
-    assert serviceCatalog["firmware"]["v3.1.14-preview.1"]["custom_version"] == (
+    assert serviceCatalog["firmware"]["main"]["custom_version"] == (
         "3.1.14-preview.1-custom"
     )
     assert grindByWeight["recommends"] == {

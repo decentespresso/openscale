@@ -51,7 +51,8 @@ def main():
     assert_contains(PULL_OTA_HEADER, "HDS_OTA_MANIFEST_PUBLIC_KEY_2_PEM")
     assert_contains(PULL_OTA_HEADER, "HDS_OTA_MANIFEST_PUBLIC_KEY_3_PEM")
     assert_contains(PULL_OTA_HEADER, "pullOtaPublicKeysConfigured")
-    assert_contains(PULL_OTA_HEADER, "for (const char *key : publicKeys)")
+    assert_contains(PULL_OTA_HEADER, "for (size_t keyIndex = 0; keyIndex < publicKeyCount; keyIndex++)")
+    assert_contains(PULL_OTA_HEADER, "pullOtaVerifyManifestSignatureWithKeys")
     assert_contains(PULL_OTA_HEADER, "pullOtaFetchSignedManifest")
     assert_contains(PULL_OTA_HEADER, "pullOtaManifestUrlAllowed")
     assert_contains(PULL_OTA_HEADER, "pullOtaVerifyManifestSignature")
@@ -104,7 +105,8 @@ def main():
     assert_contains(PULL_OTA_HEADER, "wifi_init();")
     assert_contains(PULL_OTA_HEADER, "pullOtaStorePendingLittleFs")
     assert_contains(PULL_OTA_HEADER, "pullOtaLoadPendingLittleFs")
-    assert_contains(PULL_OTA_HEADER, "loaded.version != pullOtaCurrentVersion()")
+    assert_contains(PULL_OTA_HEADER, "pullOtaCustomLittleFsUrlAllowed")
+    assert_contains(PULL_OTA_HEADER, "pullOtaIdentityMatches(loaded.version, loaded.combinationHash)")
     assert_contains(PULL_OTA_HEADER, "pullOtaResumePendingLittleFs")
     assert_contains(PULL_OTA_HEADER, "pullOtaClearPendingLittleFs")
     assert_contains(PULL_OTA_HEADER, 'preferences.begin("ota_fs"')
@@ -137,6 +139,15 @@ def main():
     assert_not_contains(PULL_OTA_HEADER, "setInsecure")
     assert_not_contains(PULL_OTA_HEADER, "if (list.count == 1)")
     pull_ota = PULL_OTA_HEADER.read_text(encoding="utf-8")
+    pending_load = function_body(pull_ota, "pullOtaLoadPendingLittleFs")
+    assert "loaded.asset.url, loaded.combinationHash" in pending_load
+    assert "loaded.rollbackAsset.url, loaded.rollbackCombinationHash" in pending_load
+    assert "pullOtaIdentityMatches(loaded.version, loaded.combinationHash)" in pending_load
+    assert "loaded.rollbackVersion, loaded.rollbackCombinationHash" in pending_load
+    custom_url_check = function_body(pull_ota, "pullOtaCustomLittleFsUrlAllowed")
+    assert 'String(HDS_CUSTOM_BUILD_SERVICE_URL) + "/v1/"' in custom_url_check
+    assert 'combinationHash + "/littlefs.bin"' in custom_url_check
+    assert "pullOtaShaLooksValid(combinationHash)" in custom_url_check
     assert "b_ota = false;" not in function_body(pull_ota, "pullOtaFail")
     assert "b_ota = false;" not in function_body(pull_ota, "pullOtaInstall")
     update_task = function_body(pull_ota, "pullOtaUpdateTask")

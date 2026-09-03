@@ -57,7 +57,16 @@ class Storage {
     this.values.delete(key);
   }
 
-  async setAlarm() {
+  async list({prefix}) {
+    return new Map([...this.values].filter(([key]) => key.startsWith(prefix)));
+  }
+
+  async setAlarm(value) {
+    this.alarm = value;
+  }
+
+  async deleteAlarm() {
+    this.alarm = null;
   }
 
   async transaction(action) {
@@ -131,6 +140,7 @@ test("publishes immutable cache entries and deduplicates public builds", async (
   });
   const serviceCatalog = {
     schema: 2,
+    custom_ota_signing_key_generation: 1,
     catalog_revision: "a".repeat(64),
     firmware_refs: ["main", "v1.2.3", "v3.1.14-preview.1"],
     platformio_environment: "esp32s3-custom",
@@ -242,7 +252,7 @@ test("publishes immutable cache entries and deduplicates public builds", async (
       assert.equal(request.inputs.builder_commit, commit);
       assert.equal(request.inputs.source_commit, commit);
       if (dispatches === 1) {
-        assert.equal(request.inputs.combination_hash, "280d0fb981fa56f7753846b33b91a5b053145d41360551f8c27c0b38e7ee955c");
+        assert.equal(request.inputs.combination_hash, "8c6df20ccb1b9855f19dce3868b9310ecb26238cccf48557843bd428ebbc1f63");
         assert.equal(request.inputs.features, ",");
         assert.equal(request.inputs.plugins, ",");
       }
@@ -257,7 +267,7 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     assert.equal(missing.status, 200);
     const missingStatus = await missing.json();
     const hash = missingStatus.combination_hash;
-    assert.equal(hash, "280d0fb981fa56f7753846b33b91a5b053145d41360551f8c27c0b38e7ee955c");
+    assert.equal(hash, "8c6df20ccb1b9855f19dce3868b9310ecb26238cccf48557843bd428ebbc1f63");
     assert.equal(missingStatus.state, "missing");
 
     const energyMenu = await api(env, "/api/v1/status", "POST", {
@@ -265,7 +275,7 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     });
     assert.equal(
       (await energyMenu.json()).combination_hash,
-      "35a0475ceda855f8ffcfa6c1c4896dd8e9cefce7f4458886f72c93acb69d4afe",
+      "4ac4a6589c1362b75e2f3c9b9abc50a395ae88926be7adaf56152409976f0023",
     );
 
     const stable = await api(env, "/api/v1/status", "POST", {
@@ -280,13 +290,13 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     assert.equal(preview.status, 200);
     assert.equal(
       (await preview.json()).combination_hash,
-      "3511fd3c41154ebd0bce69466612ef13d79347675e15cd3aea058e2a8f727b86",
+      "29cabc732c6ab83b66e11e330e966951602aa8963feeb6ba0057e5a714af9ae7",
     );
 
     const sortedAssets = await api(env, "/api/v1/status", "POST", {
       firmware_ref: "main", features: [], plugins: ["asset-sort"],
     });
-    assert.equal((await sortedAssets.json()).combination_hash, "b4cb18df073d1db707c1e1bd7a0ce723af1bb04071cc09d93ef410a8b543d708");
+    assert.equal((await sortedAssets.json()).combination_hash, "0c49e75c970b46a4ae1d79eb4d70e8d45369cec119aeb86d27bdfa9773c6ecb7");
 
     const dependencyRoots = await api(env, "/api/v1/status", "POST", {
       firmware_ref: "main", features: [], plugins: ["bravo", "charlie"],
@@ -341,6 +351,13 @@ test("publishes immutable cache entries and deduplicates public builds", async (
       firmware_ref: "v1.2.3", features: ["stable-only"], plugins: [],
     })).status, 200);
 
+    servedCatalog = {...serviceCatalog, custom_ota_signing_key_generation: 2};
+    const rotatedKey = await api(env, "/api/v1/status", "POST", selection);
+    assert.notEqual((await rotatedKey.json()).combination_hash, hash);
+    servedCatalog = {...serviceCatalog, custom_ota_signing_key_generation: 0};
+    assert.equal((await api(env, "/api/v1/status", "POST", selection)).status, 503);
+    servedCatalog = serviceCatalog;
+
     const {catalog_revision, ...legacyCatalog} = serviceCatalog;
     servedCatalog = {
       ...legacyCatalog,
@@ -376,10 +393,14 @@ test("publishes immutable cache entries and deduplicates public builds", async (
     const payloads = {
       "HDS_FW_custom.zip": "archive",
       "dependencies.txt": "dependencies",
+      "firmware.bin": binaryPayloads["firmware.bin"],
+      "littlefs.bin": binaryPayloads["littlefs.bin"],
+      "ota-manifest.json": "ota manifest",
+      "ota-manifest.sig": "ota signature",
     };
     assert.equal((await put(env, hash, "HDS_FW_custom.zip", payloads["HDS_FW_custom.zip"], "wrong-token-with-at-least-32-chars")).status, 401);
-    assert.equal((await put(env, hash, "firmware.bin", binaryPayloads["firmware.bin"])).status, 404);
-    assert.equal((await put(env, hash, "HDS_FW_custom.zip", new Uint8Array(4 * 1024 * 1024 + 1))).status, 413);
+    assert.equal((await put(env, hash, "bootloader.bin", binaryPayloads["bootloader.bin"])).status, 404);
+    assert.equal((await put(env, hash, "HDS_FW_custom.zip", new Uint8Array(12 * 1024 * 1024 + 1))).status, 413);
     for (const [filename, payload] of Object.entries(payloads)) {
       assert.equal((await put(env, hash, filename, payload)).status, 201);
     }
@@ -400,6 +421,16 @@ test("publishes immutable cache entries and deduplicates public builds", async (
       dependencies: {
         bytes: encoder.encode(payloads["dependencies.txt"]).byteLength,
         sha256: await sha256(payloads["dependencies.txt"]),
+      },
+      custom_ota: {
+        manifest: {
+          bytes: encoder.encode(payloads["ota-manifest.json"]).byteLength,
+          sha256: await sha256(payloads["ota-manifest.json"]),
+        },
+        signature: {
+          bytes: encoder.encode(payloads["ota-manifest.sig"]).byteLength,
+          sha256: await sha256(payloads["ota-manifest.sig"]),
+        },
       },
     };
     assert.equal((await put(env, hash, "build-manifest.json", JSON.stringify(completeManifest))).status, 201);
