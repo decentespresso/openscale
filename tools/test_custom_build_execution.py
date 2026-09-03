@@ -356,11 +356,27 @@ def main():
             subprocess.run([
                 "openssl", "pkey", "-in", str(signingKey), "-pubout", "-out", str(publicKey),
             ], check=True, capture_output=True)
+            wrongSigningKey = root / "wrong-custom-ota.pem"
+            subprocess.run([
+                "openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048",
+                "-out", str(wrongSigningKey),
+            ], check=True, capture_output=True)
+            publicKeyFiles = (publicKey, builderKeys / customRunner.CUSTOM_OTA_PUBLIC_KEY_NAMES[1])
+            assertRejected(lambda: customRunner.customOta.writeArtifacts(
+                buildDir,
+                buildDir / "build-manifest.json",
+                "https://builds.example.test",
+                wrongSigningKey.read_text(encoding="utf-8"),
+                publicKeyFiles,
+            ))
+            assert not (buildDir / "ota-manifest.json").exists()
+            assert not (buildDir / "ota-manifest.sig").exists()
             customRunner.customOta.writeArtifacts(
                 buildDir,
                 buildDir / "build-manifest.json",
                 "https://builds.example.test",
                 signingKey.read_text(encoding="utf-8"),
+                publicKeyFiles,
             )
             subprocess.run([
                 "openssl", "dgst", "-sha256", "-verify", str(publicKey),

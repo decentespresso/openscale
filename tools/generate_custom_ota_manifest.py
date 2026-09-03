@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
 import argparse
+import hashlib
 import json
 import os
+import subprocess
 import tempfile
 import urllib.parse
 from pathlib import Path
 
 import configure_custom_build as customBuild
 import generate_release_manifest as releaseManifest
+import write_custom_ota_public_key_header as customOtaPublicKey
+
+
+CUSTOM_OTA_PUBLIC_KEY_FILES = tuple(
+    customBuild.SCRIPT_ROOT / "keys" / "ota" / f"hds_custom_ota_manifest_public_key_{index}.pem"
+    for index in range(1, 3)
+)
 
 
 def requireBaseUrl(value):
@@ -51,17 +60,49 @@ def customManifest(buildDir, build, baseUrl):
     }
 
 
-def writeArtifacts(buildDir, buildManifestPath, baseUrl, signingKey):
+def publicKeyFingerprint(path, privateKey=False):
+    command = [customOtaPublicKey.opensslPath(), "pkey"]
+    if not privateKey:
+        command.append("-pubin")
+    result = subprocess.run(
+        [*command, "-in", str(path), "-pubout", "-outform", "DER"],
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise ValueError(
+            "invalid custom OTA signing key" if privateKey else "invalid custom OTA public key"
+        )
+    return hashlib.sha256(result.stdout).digest()
+
+
+def requireTrustedSigningKey(signingKeyPath, publicKeyFiles):
+    signingFingerprint = publicKeyFingerprint(signingKeyPath, privateKey=True)
+    trustedFingerprints = tuple(publicKeyFingerprint(path) for path in publicKeyFiles)
+    if signingFingerprint not in trustedFingerprints:
+        raise ValueError(
+            "HDS_CUSTOM_OTA_SIGNING_KEY_PEM does not match the custom OTA public keyring"
+        )
+
+
+def writeArtifacts(
+    buildDir,
+    buildManifestPath,
+    baseUrl,
+    signingKey,
+    publicKeyFiles=CUSTOM_OTA_PUBLIC_KEY_FILES,
+):
     if not signingKey:
         raise ValueError("HDS_CUSTOM_OTA_SIGNING_KEY_PEM is required")
     build = json.loads(buildManifestPath.read_text(encoding="utf-8"))
     manifestPath = buildDir / "ota-manifest.json"
     signaturePath = buildDir / "ota-manifest.sig"
-    releaseManifest.write_manifest(customManifest(buildDir, build, baseUrl), manifestPath)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
         handle.write(signingKey)
         signingKeyPath = Path(handle.name)
     try:
+        requireTrustedSigningKey(signingKeyPath, publicKeyFiles)
+        releaseManifest.write_manifest(customManifest(buildDir, build, baseUrl), manifestPath)
         releaseManifest.sign_manifest(manifestPath, signaturePath, signingKeyPath)
     finally:
         signingKeyPath.unlink(missing_ok=True)
