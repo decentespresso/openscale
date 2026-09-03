@@ -184,6 +184,8 @@ jobs:
       - name: Create test custom OTA key
         run: |
           openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$RUNNER_TEMP/custom-ota.pem" 2>/dev/null
+          openssl pkey -in "$RUNNER_TEMP/custom-ota.pem" -pubout \
+            -out keys/ota/hds_custom_ota_manifest_public_key_1.pem
           {
             echo 'HDS_CUSTOM_OTA_SIGNING_KEY_PEM<<CUSTOM_OTA_KEY'
             cat "$RUNNER_TEMP/custom-ota.pem"
