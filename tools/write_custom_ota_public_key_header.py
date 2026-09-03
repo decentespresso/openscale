@@ -24,7 +24,7 @@ def opensslPath():
     raise SystemExit("OpenSSL is required; set OPENSSL to its executable path")
 
 
-def publicKey(signingKey):
+def publicKeyFromPrivate(signingKey):
     if not signingKey:
         return ""
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
@@ -44,8 +44,27 @@ def publicKey(signingKey):
     return result.stdout.strip() + "\n"
 
 
+def publicKeyFromFile(path):
+    if not path:
+        return ""
+    publicPath = Path(path)
+    if not publicPath.is_file():
+        raise SystemExit(f"missing HDS_CUSTOM_OTA_PUBLIC_KEY_FILE: {publicPath}")
+    result = subprocess.run(
+        [opensslPath(), "pkey", "-pubin", "-in", str(publicPath), "-pubout"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0 or "BEGIN PUBLIC KEY" not in result.stdout:
+        raise SystemExit("invalid HDS_CUSTOM_OTA_PUBLIC_KEY_FILE")
+    return result.stdout.strip() + "\n"
+
+
 def main():
-    public = publicKey(os.environ.get("HDS_CUSTOM_OTA_SIGNING_KEY_PEM", ""))
+    public = publicKeyFromFile(os.environ.get("HDS_CUSTOM_OTA_PUBLIC_KEY_FILE", ""))
+    if not public:
+        public = publicKeyFromPrivate(os.environ.get("HDS_CUSTOM_OTA_SIGNING_KEY_PEM", ""))
     combinationHash = os.environ.get("HDS_CUSTOM_BUILD_COMBINATION_HASH", "")
     if combinationHash and (len(combinationHash) != 64 or any(
         character not in "0123456789abcdef" for character in combinationHash

@@ -14,8 +14,9 @@ The Worker rejects any `GITHUB_REPOSITORY` value other than
 Custom OTA manifests use a signing key that is separate from the official release keys. Store
 the private key only as the `HDS_CUSTOM_OTA_SIGNING_KEY_PEM` GitHub Actions secret. The release
 workflow derives and embeds its public key in official firmware; the custom-build workflow embeds
-the same public key and signs each immutable custom OTA manifest. Never reuse an official release
-signing key for custom builds.
+the same public key and signs each immutable custom OTA manifest. Firmware compilation receives
+only a derived public-key file; the private key is passed only to the manifest-signing process.
+Never reuse an official release signing key for custom builds.
 
 The Worker stores SHA-256 hashes of fleet and device secrets, never their raw values. Treat a fleet
 recovery key as a bearer credential. A scale's `device_secret` stays in the `ota_custom` NVS

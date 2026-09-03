@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {test} from "node:test";
 
 import worker, {BuildCoordinator} from "../src/worker.mjs";
+import {pairCreationsGlobal, pairCreationsPerClient} from "../src/fleet.mjs";
 
 const origin = "https://decentespresso.github.io";
 const deviceId = "1".repeat(32);
@@ -46,7 +47,16 @@ class Storage {
     this.values.delete(key);
   }
 
-  async setAlarm() {
+  async list({prefix}) {
+    return new Map([...this.values].filter(([key]) => key.startsWith(prefix)));
+  }
+
+  async setAlarm(value) {
+    this.alarm = value;
+  }
+
+  async deleteAlarm() {
+    this.alarm = null;
   }
 
   async transaction(action) {
@@ -67,19 +77,23 @@ function environment() {
     idFromName: name => name,
     get: () => ({fetch: (input, options) => coordinator.fetch(new Request(input, options))}),
   };
-  return {env, storage};
+  return {coordinator, env, storage};
 }
 
-function request(env, path, {method = "GET", body, authorization, device = false, browser = false} = {}) {
+function request(env, path, {
+  method = "GET", body, authorization, device = false, browser = false,
+  selectedDeviceId = deviceId, ip = "192.0.2.10", clientKey,
+} = {}) {
   return worker.fetch(new Request(`https://example.test${path}`, {
     method,
     body: body === undefined ? undefined : JSON.stringify(body),
     headers: {
       ...(browser ? {Origin: origin} : {}),
       ...(authorization ? {Authorization: `Bearer ${authorization}`} : {}),
-      ...(device ? {"X-OpenScale-Device-ID": deviceId} : {}),
+      ...(device ? {"X-OpenScale-Device-ID": selectedDeviceId} : {}),
+      ...(clientKey ? {"X-OpenScale-Client-Key": clientKey} : {}),
       ...(body === undefined ? {} : {"Content-Type": "application/json"}),
-      "CF-Connecting-IP": "192.0.2.10",
+      "CF-Connecting-IP": ip,
     },
   }), env);
 }
@@ -197,4 +211,112 @@ test("rejects unready assignments and invalid device credentials", async () => {
     device: true,
   });
   assert.equal(assignment.status, 401);
+});
+
+test("rate limits new pair records by edge-derived client and globally", async () => {
+  const {env, storage} = environment();
+  for (let index = 0; index < pairCreationsPerClient; index++) {
+    const response = await request(env, "/api/v1/device/pair", {
+      method: "POST",
+      body: {pair_code: `A10000-${String(index).padStart(6, "0")}`},
+      authorization: String(index + 1).padStart(64, "0"),
+      device: true,
+      selectedDeviceId: (index + 1).toString(16).padStart(32, "0"),
+      clientKey: String(index).padStart(64, "0"),
+    });
+    assert.equal(response.status, 200);
+  }
+  const limited = await request(env, "/api/v1/device/pair", {
+    method: "POST",
+    body: {pair_code: "A10000-999999"},
+    authorization: "f".repeat(64),
+    device: true,
+    selectedDeviceId: "f".repeat(32),
+    clientKey: "f".repeat(64),
+  });
+  assert.equal(limited.status, 429);
+  assert.equal((await limited.json()).error, "pairing_creation_rate_limited");
+  assert.ok(Number(limited.headers.get("Retry-After")) > 0);
+
+  await storage.put("pair-rates", {
+    global: pairCreationsGlobal,
+    clients: {},
+    expires_at: Date.now() + 60_000,
+  });
+  const globallyLimited = await request(env, "/api/v1/device/pair", {
+    method: "POST",
+    body: {pair_code: "B20000-000001"},
+    authorization: "e".repeat(64),
+    device: true,
+    selectedDeviceId: "e".repeat(32),
+    ip: "198.51.100.20",
+  });
+  assert.equal(globallyLimited.status, 429);
+  assert.equal((await globallyLimited.json()).error, "pairing_creation_rate_limited");
+});
+
+test("alarm removes expired unclaimed devices and preserves linked devices", async () => {
+  const {coordinator, env, storage} = environment();
+  const pairCode = "C30000-000001";
+  assert.equal((await request(env, "/api/v1/device/pair", {
+    method: "POST",
+    body: {pair_code: pairCode},
+    authorization: deviceSecret,
+    device: true,
+  })).status, 200);
+  assert.ok(storage.alarm > Date.now());
+  await storage.put(`pair:${pairCode}`, {device_id: deviceId, expires_at: Date.now() - 1});
+  await coordinator.alarm();
+  assert.equal(await storage.get(`pair:${pairCode}`), undefined);
+  assert.equal(await storage.get(`device:${deviceId}`), undefined);
+
+  const linkedDeviceId = "d".repeat(32);
+  const linkedPairCode = "D40000-000001";
+  assert.equal((await request(env, "/api/v1/device/pair", {
+    method: "POST",
+    body: {pair_code: linkedPairCode},
+    authorization: "d".repeat(64),
+    device: true,
+    selectedDeviceId: linkedDeviceId,
+  })).status, 200);
+  assert.equal((await request(env, "/api/v1/fleet/claim", {
+    method: "POST",
+    body: {pair_code: linkedPairCode},
+    authorization: fleetSecret,
+    browser: true,
+  })).status, 200);
+  await storage.put(`device:${linkedDeviceId}`, {
+    ...await storage.get(`device:${linkedDeviceId}`),
+    pair_code: linkedPairCode,
+    pair_created_at: Date.now() - 60_000,
+  });
+  await storage.put(`pair:${linkedPairCode}`, {device_id: linkedDeviceId, expires_at: Date.now() - 1});
+  await coordinator.alarm();
+  const linkedDevice = await storage.get(`device:${linkedDeviceId}`);
+  assert.ok(linkedDevice.fleet_id);
+  assert.equal(linkedDevice.pair_code, null);
+  assert.equal(linkedDevice.pair_created_at, null);
+  assert.deepEqual((await storage.get(`fleet:${linkedDevice.fleet_id}`)).devices, [linkedDeviceId]);
+});
+
+test("claim rate limiting remains intact", async () => {
+  const {env} = environment();
+  for (let index = 0; index < 10; index++) {
+    const response = await request(env, "/api/v1/fleet/claim", {
+      method: "POST",
+      body: {pair_code: `E50000-${String(index).padStart(6, "0")}`},
+      authorization: fleetSecret,
+      browser: true,
+    });
+    assert.equal(response.status, 404);
+  }
+  const limited = await request(env, "/api/v1/fleet/claim", {
+    method: "POST",
+    body: {pair_code: "E50000-999999"},
+    authorization: fleetSecret,
+    browser: true,
+  });
+  assert.equal(limited.status, 429);
+  assert.equal((await limited.json()).error, "pairing_rate_limited");
+  assert.ok(Number(limited.headers.get("Retry-After")) > 0);
 });

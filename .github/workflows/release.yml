@@ -76,9 +76,13 @@ jobs:
         run: |
           test -n "$HDS_CUSTOM_OTA_SIGNING_KEY_PEM"
           python tools/write_ota_public_key_header.py
-          python tools/write_custom_ota_public_key_header.py
+          mkdir -p .pio.nosync/release
+          printf '%s' "$HDS_CUSTOM_OTA_SIGNING_KEY_PEM" |
+            openssl pkey -pubout -out .pio.nosync/release/custom-ota-public-key.pem
 
       - name: Build PlatformIO Project
+        env:
+          HDS_CUSTOM_OTA_PUBLIC_KEY_FILE: .pio.nosync/release/custom-ota-public-key.pem
         run: |
           set -euo pipefail
           pio run -e esp32s3 || exit 1

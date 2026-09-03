@@ -6,12 +6,16 @@ const pairLifetimeMs = 12 * 60 * 60 * 1000;
 const pairRefreshMs = 30 * 1000;
 const claimWindowMs = 60 * 1000;
 const claimsPerWindow = 10;
+const pairCreationWindowMs = 60 * 60 * 1000;
+export const pairCreationsPerClient = 10;
+export const pairCreationsGlobal = 500;
 
 export class FleetError extends Error {
-  constructor(status, code) {
+  constructor(status, code, retryAfter = null) {
     super(code);
     this.status = status;
     this.code = code;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -79,48 +83,77 @@ async function deviceCredentials(request) {
   return {deviceId, secretHash: await sha256(secret)};
 }
 
-async function authenticatedDevice(request, storage, allowCreate = false, serialHint = "") {
+async function authenticatedDevice(request, storage) {
   const credentials = await deviceCredentials(request);
   const key = `device:${credentials.deviceId}`;
-  let device = await storage.get(key);
-  if (!device && allowCreate) {
-    device = {
-      secret_hash: credentials.secretHash,
-      serial_hint: serialHint,
-      name: `Scale ${serialHint}`,
-      fleet_id: null,
-      desired_combination: null,
-    };
-    await storage.put(key, device);
-  }
+  const device = await storage.get(key);
   if (!device || !sameHash(device.secret_hash, credentials.secretHash)) {
     throw new FleetError(401, "invalid_device_credentials");
   }
   return {deviceId: credentials.deviceId, device, key};
 }
 
+function retryAfter(expiresAt, now) {
+  return Math.max(1, Math.ceil((expiresAt - now) / 1000));
+}
+
+async function enforcePairCreationRate(request, storage, now) {
+  const clientKey = request.headers.get("X-OpenScale-Client-Key") || "";
+  if (!hashPattern.test(clientKey)) throw new FleetError(503, "rate_limit_unavailable");
+  const stored = await storage.get("pair-rates");
+  const rates = !stored || stored.expires_at <= now
+    ? {global: 0, clients: {}, expires_at: now + pairCreationWindowMs}
+    : stored;
+  const clientCount = rates.clients[clientKey] || 0;
+  if (clientCount >= pairCreationsPerClient || rates.global >= pairCreationsGlobal) {
+    throw new FleetError(429, "pairing_creation_rate_limited", retryAfter(rates.expires_at, now));
+  }
+  await storage.put("pair-rates", {
+    global: rates.global + 1,
+    clients: {...rates.clients, [clientKey]: clientCount + 1},
+    expires_at: rates.expires_at,
+  });
+}
+
 async function pairDevice(request, storage) {
   const body = requireObject(await readJson(request), ["pair_code"]);
   const pairCode = normalizedPairCode(body.pair_code);
   const serialHint = pairCode.slice(0, 6);
+  const credentials = await deviceCredentials(request);
   return storage.transaction(async transaction => {
-    const authenticated = await authenticatedDevice(request, transaction, true, serialHint);
-    if (authenticated.device.serial_hint !== serialHint) throw new FleetError(400, "serial_hint_mismatch");
     const now = Date.now();
-    if (authenticated.device.pair_created_at && now - authenticated.device.pair_created_at < pairRefreshMs) {
-      throw new FleetError(429, "pairing_too_fast");
+    const deviceKey = `device:${credentials.deviceId}`;
+    const storedDevice = await transaction.get(deviceKey);
+    if (storedDevice && !sameHash(storedDevice.secret_hash, credentials.secretHash)) {
+      throw new FleetError(401, "invalid_device_credentials");
+    }
+    if (!storedDevice) await enforcePairCreationRate(request, transaction, now);
+    const device = storedDevice || {
+      secret_hash: credentials.secretHash,
+      serial_hint: serialHint,
+      name: `Scale ${serialHint}`,
+      fleet_id: null,
+      desired_combination: null,
+    };
+    if (device.serial_hint !== serialHint) throw new FleetError(400, "serial_hint_mismatch");
+    if (device.pair_created_at && now - device.pair_created_at < pairRefreshMs) {
+      throw new FleetError(
+        429,
+        "pairing_too_fast",
+        retryAfter(device.pair_created_at + pairRefreshMs, now),
+      );
     }
     const pairKey = `pair:${pairCode}`;
     const existing = await transaction.get(pairKey);
-    if (existing && existing.device_id !== authenticated.deviceId && existing.expires_at > now) {
+    if (existing && existing.device_id !== credentials.deviceId && existing.expires_at > now) {
       throw new FleetError(409, "pair_code_collision");
     }
-    if (authenticated.device.pair_code) await transaction.delete(`pair:${authenticated.device.pair_code}`);
+    if (device.pair_code) await transaction.delete(`pair:${device.pair_code}`);
     const expiresAt = now + pairLifetimeMs;
     await transaction.put({
-      [pairKey]: {device_id: authenticated.deviceId, expires_at: expiresAt},
-      [authenticated.key]: {
-        ...authenticated.device,
+      [pairKey]: {device_id: credentials.deviceId, expires_at: expiresAt},
+      [deviceKey]: {
+        ...device,
         pair_code: pairCode,
         pair_created_at: now,
       },
@@ -138,8 +171,51 @@ async function enforceClaimRate(request, storage) {
   const rate = !stored || stored.expires_at <= now
     ? {count: 0, expires_at: now + claimWindowMs}
     : stored;
-  if (rate.count >= claimsPerWindow) throw new FleetError(429, "pairing_rate_limited");
+  if (rate.count >= claimsPerWindow) {
+    throw new FleetError(429, "pairing_rate_limited", retryAfter(rate.expires_at, now));
+  }
   await storage.put(key, {...rate, count: rate.count + 1});
+}
+
+async function expirePair(storage, pairKey, pair) {
+  const deviceKey = `device:${pair.device_id}`;
+  const device = await storage.get(deviceKey);
+  if (device?.pair_code === pairKey.slice(5)) {
+    if (device.fleet_id) {
+      await storage.put(deviceKey, {...device, pair_code: null, pair_created_at: null});
+    } else {
+      await storage.delete(deviceKey);
+    }
+  }
+  await storage.delete(pairKey);
+}
+
+export async function fleetExpirations(storage) {
+  const [pairs, claims, pairRates] = await Promise.all([
+    storage.list({prefix: "pair:"}),
+    storage.list({prefix: "claim-rate:"}),
+    storage.get("pair-rates"),
+  ]);
+  return [
+    ...[...pairs.values()].map(pair => pair.expires_at),
+    ...[...claims.values()].map(rate => rate.expires_at),
+    pairRates?.expires_at,
+  ].filter(Number.isSafeInteger);
+}
+
+export async function cleanupFleetExpirations(storage, now = Date.now()) {
+  await storage.transaction(async transaction => {
+    const pairs = await transaction.list({prefix: "pair:"});
+    for (const [key, pair] of pairs) {
+      if (pair.expires_at <= now) await expirePair(transaction, key, pair);
+    }
+    const claims = await transaction.list({prefix: "claim-rate:"});
+    for (const [key, rate] of claims) {
+      if (rate.expires_at <= now) await transaction.delete(key);
+    }
+    const pairRates = await transaction.get("pair-rates");
+    if (pairRates?.expires_at <= now) await transaction.delete("pair-rates");
+  });
 }
 
 function fleetDevices(fleet) {
@@ -155,7 +231,6 @@ async function claimDevice(request, storage) {
     const pairKey = `pair:${pairCode}`;
     const pair = await transaction.get(pairKey);
     if (!pair || pair.expires_at <= Date.now()) {
-      if (pair) await transaction.delete(pairKey);
       throw new FleetError(404, "pair_code_not_found");
     }
     const deviceKey = `device:${pair.device_id}`;

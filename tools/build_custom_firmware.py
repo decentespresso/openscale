@@ -16,6 +16,7 @@ import zipfile
 
 import configure_custom_build as customBuild
 import generate_custom_ota_manifest as customOta
+import write_custom_ota_public_key_header as customOtaPublicKey
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -408,12 +409,23 @@ def buildCustomFirmware(
         platformioEnvironment = customBuild.platformioEnvironment(configuration)
         prepareBuildCheckout(checkoutRoot, platformioEnvironment=platformioEnvironment)
         sourceEpoch = sourceDateEpoch(checkoutRoot)
+        publicKeyPath = checkoutRoot / ".pio.nosync" / "custom-ota-public-key.pem"
+        publicKeyPath.write_text(
+            customOtaPublicKey.publicKeyFromPrivate(
+                os.environ.get("HDS_CUSTOM_OTA_SIGNING_KEY_PEM", "")
+            ),
+            encoding="utf-8",
+        )
         environment = {
-            **os.environ,
+            **{
+                key: value for key, value in os.environ.items()
+                if key != "HDS_CUSTOM_OTA_SIGNING_KEY_PEM"
+            },
             "HDS_CUSTOM_BUILD_CATALOG_ROOT": str(ROOT),
             "HDS_CUSTOM_BUILD_CONFIG": str(configPath),
             "HDS_FIRMWARE_VERSION": identity["firmware_version"],
             "HDS_CUSTOM_BUILD_COMBINATION_HASH": combinationHash,
+            "HDS_CUSTOM_OTA_PUBLIC_KEY_FILE": str(publicKeyPath),
             "SOURCE_DATE_EPOCH": sourceEpoch,
         }
         buildDir = checkoutRoot / ".pio.nosync" / "build" / platformioEnvironment

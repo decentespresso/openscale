@@ -30,7 +30,7 @@ def main():
     require("include/menu.h", '"Custom Build", customBuildMenu')
     require("src/hds.ino", '#include "custom_build_ota.h"')
     require(".github/workflows/custom-build.yml", "HDS_CUSTOM_OTA_SIGNING_KEY_PEM")
-    require(".github/workflows/release.yml", "python tools/write_custom_ota_public_key_header.py")
+    require(".github/workflows/release.yml", "HDS_CUSTOM_OTA_PUBLIC_KEY_FILE")
     print("custom build OTA contract tests passed")
 
 

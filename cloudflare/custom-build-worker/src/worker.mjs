@@ -568,7 +568,8 @@ async function fleetApi(request, env) {
   const response = await fleetCoordinatorResponse(
     request,
     env,
-    url.pathname === "/api/v1/fleet/claim" ? await clientKey(request, env) : null,
+    ["/api/v1/device/pair", "/api/v1/fleet/claim"].includes(url.pathname)
+      ? await clientKey(request, env) : null,
   );
   const result = await response.json();
   if (!response.ok) {

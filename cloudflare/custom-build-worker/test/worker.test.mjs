@@ -57,7 +57,16 @@ class Storage {
     this.values.delete(key);
   }
 
-  async setAlarm() {
+  async list({prefix}) {
+    return new Map([...this.values].filter(([key]) => key.startsWith(prefix)));
+  }
+
+  async setAlarm(value) {
+    this.alarm = value;
+  }
+
+  async deleteAlarm() {
+    this.alarm = null;
   }
 
   async transaction(action) {

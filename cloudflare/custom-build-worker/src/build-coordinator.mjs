@@ -1,4 +1,4 @@
-import {FleetError, handleFleetRequest} from "./fleet.mjs";
+import {cleanupFleetExpirations, FleetError, fleetExpirations, handleFleetRequest} from "./fleet.mjs";
 
 const hashPattern = /^[0-9a-f]{64}$/;
 const trustedRepository = "decentespresso/openscale";
@@ -102,15 +102,18 @@ export class BuildCoordinator {
   }
 
   async scheduleAlarm() {
-    const [pending, rates] = await Promise.all([
+    const [pending, rates, fleet] = await Promise.all([
       this.state.storage.get("pending"),
       this.state.storage.get("rates"),
+      fleetExpirations(this.state.storage),
     ]);
     const expirations = [
       ...Object.values(pending || {}).map(item => item.lease_expires_at),
       ...(rates?.expires_at ? [rates.expires_at] : []),
+      ...fleet,
     ].filter(value => Number.isSafeInteger(value));
     if (expirations.length) await this.state.storage.setAlarm(Math.min(...expirations));
+    else await this.state.storage.deleteAlarm();
   }
 
   async updateAttempt(hash, update) {
@@ -148,12 +151,22 @@ export class BuildCoordinator {
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/device/") || url.pathname.startsWith("/fleet/")) {
+      let response;
       try {
-        return Response.json(await handleFleetRequest(request, this.state.storage));
+        const result = await handleFleetRequest(request, this.state.storage);
+        response = Response.json(result);
       } catch (error) {
         const failure = error instanceof FleetError ? error : new FleetError(500, "internal_error");
-        return Response.json({error: failure.code}, {status: failure.status});
+        response = Response.json(
+          {error: failure.code},
+          {
+            status: failure.status,
+            headers: failure.retryAfter ? {"Retry-After": String(failure.retryAfter)} : {},
+          },
+        );
       }
+      if (["/device/pair", "/fleet/claim"].includes(url.pathname)) await this.scheduleAlarm();
+      return response;
     }
     const parts = url.pathname.split("/");
     const hash = parts.length === 3 && hashPattern.test(parts[2]) ? parts[2] : null;
@@ -289,6 +302,7 @@ export class BuildCoordinator {
     await this.state.storage.put("pending", remaining);
     const rates = await this.state.storage.get("rates");
     if (rates?.expires_at <= now) await this.state.storage.delete("rates");
+    await cleanupFleetExpirations(this.state.storage, now);
     await this.scheduleAlarm();
   }
 }
