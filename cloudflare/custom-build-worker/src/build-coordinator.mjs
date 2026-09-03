@@ -153,7 +153,7 @@ export class BuildCoordinator {
     if (url.pathname.startsWith("/device/") || url.pathname.startsWith("/fleet/")) {
       let response;
       try {
-        const result = await handleFleetRequest(request, this.state.storage);
+        const result = await handleFleetRequest(request, this.state.storage, this.env);
         response = Response.json(result);
       } catch (error) {
         const failure = error instanceof FleetError ? error : new FleetError(500, "internal_error");

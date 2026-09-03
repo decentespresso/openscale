@@ -35,7 +35,6 @@ struct CustomBuildAssignment {
   bool linked = false;
   String state = "";
   String combinationHash = "";
-  String name = "";
 };
 
 void customBuildRandomHex(char *output, size_t byteCount) {
@@ -56,6 +55,19 @@ bool customBuildHexValueValid(const String &value, size_t length) {
           (character >= 'a' && character <= 'f'))) return false;
   }
   return true;
+}
+
+void customBuildHashPrefix(const String &hash, char output[9]) {
+  if (!customBuildHexValueValid(hash, 64)) {
+    output[0] = '\0';
+    return;
+  }
+  for (size_t index = 0; index < 8; index++) {
+    const char character = hash.charAt(index);
+    output[index] = character >= 'a' && character <= 'f'
+        ? character - 'a' + 'A' : character;
+  }
+  output[8] = '\0';
 }
 
 bool customBuildLoadCredentials(String &deviceId, String &deviceSecret) {
@@ -128,19 +140,25 @@ bool customBuildRequest(
   return read;
 }
 
-bool customBuildReadAssignment(CustomBuildAssignment &assignment) {
+bool customBuildCheckIn(
+    const String &installedCombination,
+    CustomBuildAssignment &assignment) {
+  JsonDocument request;
+  request["installed_combination"] = installedCombination.length() > 0
+      ? installedCombination.c_str() : nullptr;
+  request["firmware_version"] = pullOtaCurrentVersion();
+  String requestBody;
+  serializeJson(request, requestBody);
   String body;
-  if (!customBuildRequest("/api/v1/device/assignment", "GET", "", body)) return false;
+  if (!customBuildRequest("/api/v1/device/check-in", "POST", requestBody, body)) return false;
   JsonDocument document;
   if (deserializeJson(document, body)) return false;
   JsonObject root = document.as<JsonObject>();
   const char *state = root["state"] | "";
   const char *combinationHash = root["desired_combination"] | "";
-  const char *name = root["name"] | "";
   assignment.linked = root["linked"] | false;
   assignment.state = state;
   assignment.combinationHash = combinationHash;
-  assignment.name = name;
   if (assignment.combinationHash.length() > 0 &&
       !customBuildHexValueValid(assignment.combinationHash, 64)) return false;
   return true;
@@ -287,9 +305,14 @@ bool customBuildShowRelink(const char *line1, const char *line2) {
   return customBuildPairScale(false);
 }
 
-bool customBuildConfirmInstall(const PullOtaManifest &manifest, bool &relink) {
+bool customBuildConfirmInstall(
+    const PullOtaManifest &manifest,
+    const String &combinationHash,
+    bool &relink) {
+  char hashPrefix[9];
+  customBuildHashPrefix(combinationHash, hashPrefix);
   pullOtaWaitForRelease(1000);
-  pullOtaDraw("Custom Build", manifest.version.c_str(), "Sq install O relink");
+  pullOtaDraw(manifest.version.c_str(), hashPrefix, "Sq install O relink");
   const unsigned long startedAt = millis();
   unsigned long squareHeldSince = 0;
   unsigned long circleHeldSince = 0;
@@ -320,8 +343,9 @@ void customBuildRun() {
     pullOtaFail("Network failed");
     return;
   }
+  const String installedCombination = pullOtaCurrentCombinationHash();
   CustomBuildAssignment assignment;
-  if (!customBuildReadAssignment(assignment)) {
+  if (!customBuildCheckIn(installedCombination, assignment)) {
     pullOtaFail("Service failed");
     return;
   }
@@ -333,8 +357,10 @@ void customBuildRun() {
     customBuildShowRelink("Custom Build", "No build assigned");
     return;
   }
-  if (assignment.combinationHash == HDS_CUSTOM_BUILD_COMBINATION_HASH) {
-    customBuildShowRelink("Installed", pullOtaCurrentVersion().c_str());
+  if (assignment.combinationHash == installedCombination) {
+    char hashPrefix[9];
+    customBuildHashPrefix(installedCombination, hashPrefix);
+    customBuildShowRelink("Already installed", hashPrefix);
     return;
   }
   if (assignment.state == "queued" || assignment.state == "building") {
@@ -352,11 +378,11 @@ void customBuildRun() {
     return;
   }
   bool relink = false;
-  if (!customBuildConfirmInstall(manifest, relink)) {
+  if (!customBuildConfirmInstall(manifest, assignment.combinationHash, relink)) {
     if (relink) customBuildPairScale(false);
     return;
   }
-  const String rollbackCombinationHash = pullOtaCurrentCombinationHash();
+  const String rollbackCombinationHash = installedCombination;
   const bool rollbackFound = rollbackCombinationHash.length() > 0
       ? customBuildFetchManifest(rollbackCombinationHash, rollbackManifest)
       : pullOtaFetchCurrentReleaseManifest(rollbackManifest);

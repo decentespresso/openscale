@@ -88,7 +88,7 @@ function cors(request, env) {
     ? {
         "Access-Control-Allow-Origin": allowedOrigin,
         "Access-Control-Allow-Headers": "Authorization, Content-Type",
-        "Access-Control-Allow-Methods": "GET, HEAD, PATCH, POST, OPTIONS",
+        "Access-Control-Allow-Methods": "DELETE, GET, HEAD, PATCH, POST, OPTIONS",
         "Access-Control-Max-Age": "86400",
         Vary: "Origin",
       }
@@ -576,17 +576,14 @@ async function fleetApi(request, env) {
     return json(request, env, result, response.status, response.headers.get("Retry-After")
       ? {"Retry-After": response.headers.get("Retry-After")} : {});
   }
-  if (url.pathname !== "/api/v1/device/assignment" || !result.desired_combination) {
+  if (!["/api/v1/device/assignment", "/api/v1/device/check-in"].includes(url.pathname) ||
+      !result.desired_combination) {
     return json(request, env, result);
   }
   const status = await publicStatus(env, result.desired_combination);
-  const baseUrl = env.PUBLIC_BASE_URL || "https://openscale-custom-builds.odevstudio.workers.dev";
   return json(request, env, {
     ...result,
-    ...status,
-    ...(status.state === "ready" ? {
-      manifest_url: `${baseUrl}/v1/${result.desired_combination}/ota-manifest.json`,
-    } : {}),
+    state: status.state,
   });
 }
 

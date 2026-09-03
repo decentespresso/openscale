@@ -7,6 +7,7 @@
   <meta name="theme-color" content="#0d6b4f">
   <title>HDS Custom Build</title>
   <link rel="stylesheet" href="styles.css?v=14">
+  <link rel="stylesheet" href="fleet.css?v=3">
 </head>
 <body>
   <header class="topbar">
@@ -174,7 +175,6 @@
       </div>
 
       <div id="fleet-console" hidden>
-
         <form id="pair-scale" class="pair-scale-form">
           <label class="field-label" for="pair-code">Pairing code</label>
           <div class="inline-form">
@@ -183,8 +183,53 @@
           </div>
         </form>
 
-        <p id="fleet-status" class="fleet-status" role="status" aria-live="polite"></p>
-        <ul id="fleet-scales" class="scale-list"></ul>
+        <section class="fleet-section" aria-labelledby="fleet-builds-heading">
+          <div class="fleet-section-head">
+            <div>
+              <h4 id="fleet-builds-heading">Fleet builds</h4>
+              <p id="fleet-build-status" class="fleet-status" role="status" aria-live="polite"></p>
+            </div>
+            <button id="add-fleet-build" class="primary-button" type="button" disabled>Add current build</button>
+          </div>
+          <div class="fleet-build-labels" aria-hidden="true">
+            <span>Label</span><span>Firmware and options</span><span>Combination</span><span>Availability</span><span></span>
+          </div>
+          <ul id="fleet-builds" class="fleet-build-list"></ul>
+        </section>
+
+        <section class="fleet-section fleet-scales-section" aria-labelledby="fleet-scales-heading">
+          <div class="fleet-section-head">
+            <div>
+              <h4 id="fleet-scales-heading">Scales</h4>
+              <p id="fleet-status" class="fleet-status" role="status" aria-live="polite"></p>
+            </div>
+          </div>
+          <div class="deployment-toolbar">
+            <label for="fleet-build-select">Build</label>
+            <div class="select-wrap"><select id="fleet-build-select" disabled></select></div>
+            <label class="select-all-control"><input id="select-all-scales" type="checkbox"> All scales</label>
+            <span id="selected-scale-count" class="selection-count">0 selected</span>
+            <button id="assign-selected" class="primary-button" type="button" disabled>Assign to selected</button>
+            <button id="assign-all" class="ghost-bordered-button" type="button" disabled>Assign to all</button>
+            <button id="clear-selected" class="ghost-button" type="button" disabled>Clear assignment</button>
+          </div>
+          <div class="fleet-table-wrap">
+            <table class="fleet-table">
+              <thead>
+                <tr>
+                  <th><span class="sr-only">Select</span></th>
+                  <th>Scale</th>
+                  <th>Installed</th>
+                  <th>Desired</th>
+                  <th>Deployment</th>
+                  <th>Last seen</th>
+                  <th><span class="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody id="fleet-scale-rows"></tbody>
+            </table>
+          </div>
+        </section>
       </div>
     </section>
   </main>
@@ -205,6 +250,17 @@
     </form>
   </dialog>
 
-  <script type="module" src="app.js?v=18"></script>
+  <dialog id="fleet-confirm-dialog" class="confirm-dialog" aria-labelledby="fleet-confirm-heading" aria-describedby="fleet-confirm-description">
+    <form method="dialog">
+      <h3 id="fleet-confirm-heading">Confirm fleet change</h3>
+      <p id="fleet-confirm-description"></p>
+      <div class="dialog-actions">
+        <button class="ghost-bordered-button" type="submit" value="cancel" autofocus>Cancel</button>
+        <button id="fleet-confirm-action" class="danger-button" type="submit" value="confirm">Confirm</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="app.js?v=20"></script>
 </body>
 </html>
