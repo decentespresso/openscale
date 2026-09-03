@@ -161,6 +161,10 @@ def main():
             customBuild.SCRIPT_ROOT / "tools" / "write_custom_ota_public_key_header.py",
             builderTools,
         )
+        builderKeys = catalogRoot / "keys" / "ota"
+        builderKeys.mkdir(parents=True)
+        for name in customRunner.CUSTOM_OTA_PUBLIC_KEY_NAMES:
+            shutil.copy2(customBuild.SCRIPT_ROOT / "keys" / "ota" / name, builderKeys)
         shutil.copy2(customBuild.SCRIPT_ROOT / "git_rev_macro.py", catalogRoot)
         writePlugin(catalogRoot, "asset-only")
         writePlugin(catalogRoot, "dependency")
@@ -268,6 +272,8 @@ def main():
             assert (trustedTools / "write_custom_ota_public_key_header.py").read_bytes() == (
                 catalogRoot / "tools" / "write_custom_ota_public_key_header.py"
             ).read_bytes()
+            for name in customRunner.CUSTOM_OTA_PUBLIC_KEY_NAMES:
+                assert (trustedTools / name).read_bytes() == (builderKeys / name).read_bytes()
             incompatibleCheckout = root / "incompatible-checkout"
             customRunner.cloneSource(sourceRoot, sourceCommit, incompatibleCheckout)
             incompatiblePlatformio = incompatibleCheckout / "platformio.ini"

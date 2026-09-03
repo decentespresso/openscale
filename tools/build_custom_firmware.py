@@ -16,7 +16,6 @@ import zipfile
 
 import configure_custom_build as customBuild
 import generate_custom_ota_manifest as customOta
-import write_custom_ota_public_key_header as customOtaPublicKey
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +34,9 @@ PROGRAM_BINARIES = tuple(
     name for name in customBuild.PUBLIC_BINARIES if name != "littlefs.bin"
 )
 MAX_REMOTE_MANIFEST_BYTES = 1024 * 1024
+CUSTOM_OTA_PUBLIC_KEY_NAMES = tuple(
+    f"hds_custom_ota_manifest_public_key_{index}.pem" for index in range(1, 3)
+)
 
 
 def runCommand(command, cwd, capture=False, environment=None):
@@ -148,6 +150,8 @@ def prepareBuildCheckout(
     shutil.copy2(builderRoot / "tools" / "configure_custom_build.py", builderTools)
     shutil.copy2(builderRoot / "tools" / "write_custom_ota_public_key_header.py", builderTools)
     shutil.copy2(builderRoot / "git_rev_macro.py", builderTools)
+    for name in CUSTOM_OTA_PUBLIC_KEY_NAMES:
+        shutil.copy2(builderRoot / "keys" / "ota" / name, builderTools)
     compilerScript = workspace / "reproducible_build.py"
     compilerScript.write_text(
         "from pathlib import Path\n"
@@ -409,13 +413,7 @@ def buildCustomFirmware(
         platformioEnvironment = customBuild.platformioEnvironment(configuration)
         prepareBuildCheckout(checkoutRoot, platformioEnvironment=platformioEnvironment)
         sourceEpoch = sourceDateEpoch(checkoutRoot)
-        publicKeyPath = checkoutRoot / ".pio.nosync" / "custom-ota-public-key.pem"
-        publicKeyPath.write_text(
-            customOtaPublicKey.publicKeyFromPrivate(
-                os.environ.get("HDS_CUSTOM_OTA_SIGNING_KEY_PEM", "")
-            ),
-            encoding="utf-8",
-        )
+        trustedTools = checkoutRoot / ".pio.nosync" / "builder-tools"
         environment = {
             **{
                 key: value for key, value in os.environ.items()
@@ -425,7 +423,10 @@ def buildCustomFirmware(
             "HDS_CUSTOM_BUILD_CONFIG": str(configPath),
             "HDS_FIRMWARE_VERSION": identity["firmware_version"],
             "HDS_CUSTOM_BUILD_COMBINATION_HASH": combinationHash,
-            "HDS_CUSTOM_OTA_PUBLIC_KEY_FILE": str(publicKeyPath),
+            **{
+                f"HDS_CUSTOM_OTA_PUBLIC_KEY_{index}_FILE": str(trustedTools / name)
+                for index, name in enumerate(CUSTOM_OTA_PUBLIC_KEY_NAMES, 1)
+            },
             "SOURCE_DATE_EPOCH": sourceEpoch,
         }
         buildDir = checkoutRoot / ".pio.nosync" / "build" / platformioEnvironment

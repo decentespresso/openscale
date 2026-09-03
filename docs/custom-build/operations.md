@@ -11,11 +11,11 @@ The Worker rejects any `GITHUB_REPOSITORY` value other than
 `decentespresso/openscale`. Installation tokens are additionally requested for only the
 `openscale` repository and only the Actions write permission.
 
-Custom OTA manifests use a signing key that is separate from the official release keys. Store
-the private key only as the `HDS_CUSTOM_OTA_SIGNING_KEY_PEM` GitHub Actions secret. The release
-workflow derives and embeds its public key in official firmware; the custom-build workflow embeds
-the same public key and signs each immutable custom OTA manifest. Firmware compilation receives
-only a derived public-key file; the private key is passed only to the manifest-signing process.
+Custom OTA manifests use two key slots that are separate from the official release keys. Commit
+both public keys under `keys/ota/`. Store the active Key 1 private key only as the
+`HDS_CUSTOM_OTA_SIGNING_KEY_PEM` GitHub Actions secret and keep both private keys in an encrypted
+offline backup. Release and custom firmware embed both public keys. Firmware compilation receives
+only public-key files; the active private key is passed only to the manifest-signing process.
 Never reuse an official release signing key for custom builds.
 
 The Worker stores SHA-256 hashes of fleet and device secrets, never their raw values. Treat a fleet
@@ -28,8 +28,8 @@ making recovery keys persistent again.
 
 ## Deployment Order
 
-1. Create the custom OTA RSA private key and save it as the
-   `HDS_CUSTOM_OTA_SIGNING_KEY_PEM` repository secret.
+1. Create two custom OTA RSA key pairs, commit both public keys, save the Key 1 private key as the
+   `HDS_CUSTOM_OTA_SIGNING_KEY_PEM` repository secret, and secure both private keys offline.
 2. Deploy the Worker before publishing firmware with the Custom Build menu.
 3. Merge the firmware, workflow, catalogs, and configurator together.
 4. Publish an official release that embeds the custom OTA public key.
@@ -82,11 +82,12 @@ If the upload token may be exposed, rotate `UPLOAD_TOKEN` and
 `CUSTOM_BUILD_UPLOAD_TOKEN`. If the GitHub App key may be exposed, revoke the key, create a
 new one, and update the Worker secret before re-enabling builds.
 
-If the custom OTA signing key is compromised, disable scale installation, rotate the repository
-secret, increment `CUSTOM_OTA_SIGNING_KEY_GENERATION`, publish official firmware containing the
-replacement public key, and only then resume custom OTA builds. The generation change invalidates
-cached combinations signed with the old key. A lost but uncompromised key must remain trusted until
-existing firmware has migrated to its replacement.
+If the active custom OTA signing key is compromised, disable scale installation, replace the
+repository secret with the reserved Key 2 private key, increment
+`CUSTOM_OTA_SIGNING_KEY_GENERATION`, and only then resume custom OTA builds. The generation change
+invalidates cached combinations signed with Key 1. Publish official firmware with a new reserve
+public key before retiring a compromised public key. A lost but uncompromised key must remain
+trusted until existing firmware has migrated to its replacement.
 
 ## Public Failure Codes
 

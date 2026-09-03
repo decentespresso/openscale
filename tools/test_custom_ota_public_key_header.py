@@ -35,18 +35,21 @@ def canonicalPublicKey(path):
 def main():
     with tempfile.TemporaryDirectory() as temporaryDirectory:
         root = Path(temporaryDirectory)
-        privateKey = root / "private.pem"
-        publicKey = root / "public.pem"
-        subprocess.run(
-            [opensslPath(), "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out", str(privateKey)],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            [opensslPath(), "pkey", "-in", str(privateKey), "-pubout", "-out", str(publicKey)],
-            check=True,
-            capture_output=True,
-        )
+        publicKeys = []
+        for index in range(1, 3):
+            privateKey = root / f"private-{index}.pem"
+            publicKey = root / f"public-{index}.pem"
+            subprocess.run(
+                [opensslPath(), "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048", "-out", str(privateKey)],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [opensslPath(), "pkey", "-in", str(privateKey), "-pubout", "-out", str(publicKey)],
+                check=True,
+                capture_output=True,
+            )
+            publicKeys.append(publicKey)
 
         class PlatformIoEnvironment:
             def IsCleanTarget(self):
@@ -59,7 +62,10 @@ def main():
         try:
             os.chdir(root)
             environment = {
-                "HDS_CUSTOM_OTA_PUBLIC_KEY_FILE": str(publicKey),
+                **{
+                    f"HDS_CUSTOM_OTA_PUBLIC_KEY_{index}_FILE": str(publicKey)
+                    for index, publicKey in enumerate(publicKeys, 1)
+                },
                 "PATH": os.environ.get("PATH", ""),
                 **({"OPENSSL": os.environ["OPENSSL"]} if os.environ.get("OPENSSL") else {}),
             }
@@ -72,16 +78,19 @@ def main():
             os.chdir(previousDirectory)
 
         header = (root / ".pio.nosync/generated/include/custom_ota_public_key.h").read_text(encoding="utf-8")
-        match = re.search(r"#define HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_PEM (.+)", header)
-        if not match:
-            raise AssertionError("custom OTA public key macro was not generated")
-        embedded = json.loads(match.group(1))
-        if not embedded:
-            raise AssertionError("custom OTA public key is empty after the PlatformIO pre-build")
-        embeddedPath = root / "embedded.pem"
-        embeddedPath.write_text(embedded, encoding="utf-8")
-        if canonicalPublicKey(embeddedPath) != canonicalPublicKey(publicKey):
-            raise AssertionError("PlatformIO pre-build embedded the wrong custom OTA public key")
+        for index, publicKey in enumerate(publicKeys, 1):
+            match = re.search(
+                rf"#define HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_{index}_PEM (.+)", header
+            )
+            if not match:
+                raise AssertionError(f"custom OTA public key {index} macro was not generated")
+            embedded = json.loads(match.group(1))
+            if not embedded:
+                raise AssertionError(f"custom OTA public key {index} is empty after the PlatformIO pre-build")
+            embeddedPath = root / f"embedded-{index}.pem"
+            embeddedPath.write_text(embedded, encoding="utf-8")
+            if canonicalPublicKey(embeddedPath) != canonicalPublicKey(publicKey):
+                raise AssertionError(f"PlatformIO pre-build embedded the wrong custom OTA public key {index}")
 
     print("custom OTA public key header tests passed")
 

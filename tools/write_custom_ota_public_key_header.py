@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
+import hashlib
 import json
 import os
 import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 
 
 OUTPUT = Path(".pio.nosync") / "generated" / "include" / "custom_ota_public_key.h"
+KEY_FILES = tuple(
+    Path("keys") / "ota" / f"hds_custom_ota_manifest_public_key_{index}.pem"
+    for index in range(1, 3)
+)
 
 
 def opensslPath():
@@ -24,56 +28,44 @@ def opensslPath():
     raise SystemExit("OpenSSL is required; set OPENSSL to its executable path")
 
 
-def publicKeyFromPrivate(signingKey):
-    if not signingKey:
-        return ""
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
-        handle.write(signingKey)
-        privatePath = Path(handle.name)
-    try:
-        result = subprocess.run(
-            [opensslPath(), "pkey", "-in", str(privatePath), "-pubout"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    finally:
-        privatePath.unlink(missing_ok=True)
-    if result.returncode != 0 or "BEGIN PUBLIC KEY" not in result.stdout:
-        raise SystemExit("invalid HDS_CUSTOM_OTA_SIGNING_KEY_PEM")
-    return result.stdout.strip() + "\n"
-
-
-def publicKeyFromFile(path):
-    if not path:
-        return ""
-    publicPath = Path(path)
+def publicKey(publicPath):
     if not publicPath.is_file():
-        raise SystemExit(f"missing HDS_CUSTOM_OTA_PUBLIC_KEY_FILE: {publicPath}")
+        raise SystemExit(f"missing custom OTA public key file: {publicPath}")
     result = subprocess.run(
-        [opensslPath(), "pkey", "-pubin", "-in", str(publicPath), "-pubout"],
+        [opensslPath(), "pkey", "-pubin", "-in", str(publicPath), "-pubout", "-outform", "DER"],
         check=False,
         capture_output=True,
-        text=True,
     )
-    if result.returncode != 0 or "BEGIN PUBLIC KEY" not in result.stdout:
-        raise SystemExit("invalid HDS_CUSTOM_OTA_PUBLIC_KEY_FILE")
-    return result.stdout.strip() + "\n"
+    if result.returncode != 0:
+        raise SystemExit(f"invalid custom OTA public key file: {publicPath}")
+    return publicPath.read_text(encoding="utf-8").strip() + "\n", hashlib.sha256(result.stdout).digest()
+
+
+def publicKeys():
+    paths = tuple(
+        Path(os.environ.get(f"HDS_CUSTOM_OTA_PUBLIC_KEY_{index}_FILE", default))
+        for index, default in enumerate(KEY_FILES, 1)
+    )
+    keys = tuple(publicKey(path) for path in paths)
+    if len({fingerprint for _, fingerprint in keys}) != len(keys):
+        raise SystemExit("custom OTA public keys must be distinct")
+    return tuple(pem for pem, _ in keys)
 
 
 def main():
-    public = publicKeyFromFile(os.environ.get("HDS_CUSTOM_OTA_PUBLIC_KEY_FILE", ""))
-    if not public:
-        public = publicKeyFromPrivate(os.environ.get("HDS_CUSTOM_OTA_SIGNING_KEY_PEM", ""))
+    keys = publicKeys()
     combinationHash = os.environ.get("HDS_CUSTOM_BUILD_COMBINATION_HASH", "")
     if combinationHash and (len(combinationHash) != 64 or any(
         character not in "0123456789abcdef" for character in combinationHash
     )):
         raise SystemExit("invalid HDS_CUSTOM_BUILD_COMBINATION_HASH")
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    defines = "".join(
+        f"#define HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_{index}_PEM {json.dumps(public)}\n"
+        for index, public in enumerate(keys, 1)
+    )
     OUTPUT.write_text(
-        "#pragma once\n"
-        "#define HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_PEM " + json.dumps(public) + "\n"
+        "#pragma once\n" + defines +
         "#define HDS_CUSTOM_BUILD_COMBINATION_HASH " + json.dumps(combinationHash) + "\n",
         encoding="utf-8",
     )

@@ -10,8 +10,12 @@
 #include "custom_ota_public_key.h"
 #endif
 
-#ifndef HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_PEM
-#define HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_PEM ""
+#ifndef HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_1_PEM
+#define HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_1_PEM ""
+#endif
+
+#ifndef HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_2_PEM
+#define HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_2_PEM ""
 #endif
 
 #ifndef HDS_CUSTOM_BUILD_COMBINATION_HASH
@@ -251,7 +255,8 @@ bool customBuildFetchManifestSignature(
 bool customBuildFetchManifest(
     const String &combinationHash,
     PullOtaManifest &manifest) {
-  if (strlen(HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_PEM) == 0) return false;
+  if (strlen(HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_1_PEM) == 0 ||
+      strlen(HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_2_PEM) == 0) return false;
   String manifestUrl;
   String body;
   if (!customBuildManifestUrl(combinationHash, manifestUrl) ||
@@ -259,8 +264,12 @@ bool customBuildFetchManifest(
   uint8_t signature[HDS_OTA_MANIFEST_SIGNATURE_MAX_BYTES];
   size_t signatureLength = 0;
   if (!customBuildFetchManifestSignature(manifestUrl, signature, signatureLength)) return false;
-  const char *const keys[] = {HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_PEM};
-  if (!pullOtaVerifyManifestSignatureWithKeys(body, signature, signatureLength, keys, 1)) return false;
+  const char *const keys[] = {
+      HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_1_PEM,
+      HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_2_PEM,
+  };
+  if (!pullOtaVerifyManifestSignatureWithKeys(
+          body, signature, signatureLength, keys, sizeof(keys) / sizeof(keys[0]))) return false;
   JsonDocument document;
   if (deserializeJson(document, body)) return false;
   JsonObject root = document.as<JsonObject>();

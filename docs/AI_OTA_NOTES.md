@@ -15,7 +15,8 @@ AI-documentation audit, read `docs/AI_RELEASE_NOTES.md`.
 - Keep signing with Key 1 until firmware containing all three public keys has rolled out.
 - Firmware predating the three-key migration cannot recover with Key 2 or Key 3 if the Key 1 private key is lost.
 - Keep a lost private key's public key in firmware unless the key was compromised.
-- Custom OTA uses a separate signing key supplied as `HDS_CUSTOM_OTA_SIGNING_KEY_PEM`.
+- Custom OTA trusts two separate public-key slots. Key 1 signs through
+  `HDS_CUSTOM_OTA_SIGNING_KEY_PEM`; Key 2 is the offline rotation reserve.
 - Custom OTA assignments contain only a canonical combination hash, never an asset URL.
 
 ## Release Assets
@@ -29,7 +30,7 @@ Release builds publish WiFi OTA assets at the GitHub Release root:
 
 The release workflow creates draft releases, uploads binary assets first, uploads `manifest.sig` and `manifest.json` last, then publishes the release.
 
-Official releases also derive and embed the custom OTA public key. Custom builds publish
+Official releases and custom builds embed both committed custom OTA public keys. Custom builds publish
 `firmware.bin`, `littlefs.bin`, `ota-manifest.sig`, and `ota-manifest.json` under the immutable
 R2 combination-hash prefix. The custom manifest is accepted only when its separate signature,
 combination hash, fixed Worker asset prefix, hardware compatibility, sizes, and SHA-256 hashes all
