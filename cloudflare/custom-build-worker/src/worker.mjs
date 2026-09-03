@@ -557,14 +557,6 @@ async function fleetCoordinatorResponse(request, env, client = null) {
 
 async function fleetApi(request, env) {
   const url = new URL(request.url);
-  if (request.method === "PATCH") {
-    const update = await readJson(request.clone(), 1024);
-    const hash = update?.desired_combination;
-    if (hash !== undefined && hash !== null &&
-        (!hashPattern.test(hash) || !(await env.BUILDS.head(`v1/${hash}/build-manifest.json`)))) {
-      throw new ApiError(409, "build_not_ready");
-    }
-  }
   const response = await fleetCoordinatorResponse(
     request,
     env,

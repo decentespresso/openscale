@@ -468,29 +468,13 @@ async function removeBuild(request, storage, combinationHash) {
 
 async function updateScale(request, storage, deviceId) {
   const ownerFleetId = await fleetId(request);
-  const body = await readJson(request);
-  const keys = body && typeof body === "object" && !Array.isArray(body) ? Object.keys(body).sort() : [];
-  if (!keys.length || keys.some(key => !["desired_combination", "name"].includes(key))) {
-    throw new FleetError(400, "invalid_request");
-  }
+  const body = requireObject(await readJson(request), ["name"]);
+  const name = normalizedName(body.name);
   return storage.transaction(async transaction => {
     const deviceKey = `device:${deviceId}`;
     const device = await transaction.get(deviceKey);
     if (!device || device.fleet_id !== ownerFleetId) throw new FleetError(404, "device_not_found");
-    const desiredCombination = body.desired_combination === undefined
-      ? device.desired_combination
-      : body.desired_combination;
-    if (desiredCombination !== null && !hashPattern.test(desiredCombination || "")) {
-      throw new FleetError(400, "invalid_combination_hash");
-    }
-    const desiredChanged = body.desired_combination !== undefined &&
-      desiredCombination !== device.desired_combination;
-    const updated = {
-      ...device,
-      name: body.name === undefined ? device.name : normalizedName(body.name),
-      desired_combination: desiredCombination,
-      desired_updated_at: desiredChanged ? new Date().toISOString() : device.desired_updated_at,
-    };
+    const updated = {...device, name};
     await transaction.put(deviceKey, updated);
     return {
       device_id: deviceId,

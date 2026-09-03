@@ -28,7 +28,7 @@ export function deploymentState(scale, buildStates, now = Date.now()) {
     return !Number.isFinite(lastSeen) || !Number.isFinite(assigned) || lastSeen < assigned
       ? "Update assigned" : "Install pending";
   }
-  return scale.installed_combination ? "No update assigned" : "Unknown";
+  return Number.isFinite(lastSeen) || scale.installed_combination ? "No update assigned" : "Unknown";
 }
 
 export function lastSeenLabel(value, now = Date.now()) {

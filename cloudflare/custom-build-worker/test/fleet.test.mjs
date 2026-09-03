@@ -187,15 +187,21 @@ test("pairs, assigns, authenticates, and physically relinks a scale", async () =
   const scales = await request(env, "/api/v1/fleet/scales", {authorization: fleetSecret, browser: true});
   assert.deepEqual((await scales.json()).scales.map(scale => scale.serial_hint), ["A3F921"]);
 
-  await env.BUILDS.put(`v1/${combinationHash}/build-manifest.json`);
+  await readyBuild(env, combinationHash);
   const update = await request(env, `/api/v1/fleet/scales/${deviceId}`, {
     method: "PATCH",
-    body: {name: "Bar Left", desired_combination: combinationHash},
+    body: {name: "Bar Left"},
     authorization: fleetSecret,
     browser: true,
   });
   assert.equal(update.status, 200);
   assert.equal((await update.json()).name, "Bar Left");
+  assert.equal((await request(env, "/api/v1/fleet/assignments", {
+    method: "POST",
+    body: {combination_hash: combinationHash, device_ids: [deviceId]},
+    authorization: fleetSecret,
+    browser: true,
+  })).status, 200);
 
   const assignment = await request(env, "/api/v1/device/assignment", {
     authorization: deviceSecret,
@@ -259,9 +265,9 @@ test("device check-in reports authoritative installed state without changing des
     pairCode: "A3F921-100001",
   });
   assert.equal((await storage.get(`device:${deviceId}`)).last_seen_at, null);
-  assert.equal((await request(env, `/api/v1/fleet/scales/${deviceId}`, {
-    method: "PATCH",
-    body: {desired_combination: combinationHash},
+  assert.equal((await request(env, "/api/v1/fleet/assignments", {
+    method: "POST",
+    body: {combination_hash: combinationHash, device_ids: [deviceId]},
     authorization: fleetSecret,
     browser: true,
   })).status, 200);
@@ -282,9 +288,9 @@ test("device check-in reports authoritative installed state without changing des
   assert.equal(installed.firmware_version, "3.1.14-custom");
   assert.ok(Number.isFinite(Date.parse(installed.last_seen_at)));
 
-  await request(env, `/api/v1/fleet/scales/${deviceId}`, {
-    method: "PATCH",
-    body: {desired_combination: nextHash},
+  await request(env, "/api/v1/fleet/assignments", {
+    method: "POST",
+    body: {combination_hash: nextHash, device_ids: [deviceId]},
     authorization: fleetSecret,
     browser: true,
   });
@@ -395,9 +401,9 @@ test("fleet build library stores references without owning artifacts", async () 
     authorization: deviceSecret,
     device: true,
   });
-  await request(env, `/api/v1/fleet/scales/${deviceId}`, {
-    method: "PATCH",
-    body: {desired_combination: combinationHash},
+  await request(env, "/api/v1/fleet/assignments", {
+    method: "POST",
+    body: {combination_hash: combinationHash, device_ids: [deviceId]},
     authorization: fleetSecret,
     browser: true,
   });
@@ -406,9 +412,9 @@ test("fleet build library stores references without owning artifacts", async () 
     authorization: fleetSecret,
     browser: true,
   })).status, 409);
-  await request(env, `/api/v1/fleet/scales/${deviceId}`, {
-    method: "PATCH",
-    body: {desired_combination: null},
+  await request(env, "/api/v1/fleet/assignments", {
+    method: "POST",
+    body: {combination_hash: null, device_ids: [deviceId]},
     authorization: fleetSecret,
     browser: true,
   });
@@ -585,16 +591,32 @@ test("legacy fleet records remain readable with unknown installed state", async 
   });
 });
 
-test("rejects unready assignments and invalid device credentials", async () => {
-  const {env} = environment();
-  const missing = await request(env, `/api/v1/fleet/scales/${deviceId}`, {
+test("rejects malformed legacy assignments and invalid device credentials", async () => {
+  const {env, storage} = environment();
+  await linkScale(env, {
+    selectedDeviceId: deviceId,
+    authorization: deviceSecret,
+    pairCode: "A3F921-100006",
+  });
+  await env.BUILDS.put(`v1/${combinationHash}/build-manifest.json`, "{}");
+  const legacy = await request(env, `/api/v1/fleet/scales/${deviceId}`, {
     method: "PATCH",
     body: {desired_combination: combinationHash},
     authorization: fleetSecret,
     browser: true,
   });
-  assert.equal(missing.status, 409);
-  assert.equal((await missing.json()).error, "build_not_ready");
+  assert.equal(legacy.status, 400);
+  assert.equal((await legacy.json()).error, "invalid_request");
+  assert.equal((await storage.get(`device:${deviceId}`)).desired_combination, null);
+  const malformed = await request(env, "/api/v1/fleet/assignments", {
+    method: "POST",
+    body: {combination_hash: combinationHash, device_ids: [deviceId]},
+    authorization: fleetSecret,
+    browser: true,
+  });
+  assert.equal(malformed.status, 409);
+  assert.equal((await malformed.json()).error, "build_not_ready");
+  assert.equal((await storage.get(`device:${deviceId}`)).desired_combination, null);
   const assignment = await request(env, "/api/v1/device/assignment", {
     authorization: "4".repeat(64),
     device: true,

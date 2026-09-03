@@ -173,6 +173,16 @@ test("formats fleet build identity and deployment state", () => {
     installed_combination: null,
     last_seen_at: "2026-08-01T00:00:00.000Z",
   }, {[hash]: "ready"}, now), "Offline");
+  assert.equal(deploymentState({
+    desired_combination: null,
+    installed_combination: null,
+    last_seen_at: fresh,
+  }, {}, now), "No update assigned");
+  assert.equal(deploymentState({
+    desired_combination: null,
+    installed_combination: null,
+    last_seen_at: null,
+  }, {}, now), "Unknown");
   assert.equal(lastSeenLabel(fresh, now), "1h ago");
 });
 
