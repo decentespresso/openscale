@@ -8,9 +8,37 @@ import {
   resolveSelection,
   selectionQuery,
 } from "./selection.mjs?v=5";
-import {initFleet} from "./fleet.js?v=5";
+import {initFleet} from "./fleet.js?v=6";
 
 (async () => {
+  const themeStorageKey = "hds-custom-build-theme-v1";
+  const themeRoot = document.documentElement;
+  const themeToggle = document.querySelector("#theme-toggle");
+  const systemTheme = matchMedia("(prefers-color-scheme: dark)");
+  const applyTheme = preference => {
+    const dark = preference === "dark" || preference === "system" && systemTheme.matches;
+    themeRoot.dataset.themePreference = preference;
+    themeRoot.dataset.theme = dark ? "dark" : "light";
+    const current = preference === "system" ? "System" : dark ? "Dark" : "Light";
+    const label = `${current} theme; switch to ${dark ? "light" : "dark"} theme`;
+    themeToggle.setAttribute("aria-pressed", String(dark));
+    themeToggle.setAttribute("aria-label", label);
+    themeToggle.title = label;
+    document.querySelector("#theme-color").content = dark ? "#111413" : "#0d6b4f";
+  };
+  applyTheme(themeRoot.dataset.themePreference || "system");
+  themeToggle.addEventListener("click", () => {
+    const preference = themeRoot.dataset.theme === "dark" ? "light" : "dark";
+    applyTheme(preference);
+    try {
+      localStorage.setItem(themeStorageKey, JSON.stringify({version: 1, preference}));
+    } catch {
+    }
+  });
+  systemTheme.addEventListener("change", () => {
+    if (themeRoot.dataset.themePreference === "system") applyTheme("system");
+  });
+
   const apiBase = "https://openscale-custom-builds.odevstudio.workers.dev";
   const response = await fetch("catalog.json", {cache: "no-store"});
   if (!response.ok) throw new Error(`catalog request failed: ${response.status}`);
@@ -52,7 +80,6 @@ import {initFleet} from "./fleet.js?v=5";
   const hashButton = document.querySelector("#copy-hash");
   const fleetPanel = document.querySelector("#fleet-panel");
   let toastTimer;
-  let updaterTimer;
   let statusTimer;
   let pollTimer;
   let pollRemaining = 0;
@@ -159,6 +186,12 @@ import {initFleet} from "./fleet.js?v=5";
     buildState.textContent = labels[result.state] || result.state[0].toUpperCase() + result.state.slice(1);
     currentCombinationHash = combinationHash;
     currentBuildState = result.state;
+    const updaterLink = document.querySelector("#hds-updater-link");
+    const updaterReady = result.state === "ready" && installMethod === "usb";
+    updaterLink.classList.toggle("is-ready", updaterReady);
+    updaterLink.setAttribute(
+      "aria-label", updaterReady ? "Open HDS Updater for this build" : "Open HDS Updater",
+    );
     document.querySelector("#combination-hash").textContent = combinationHash;
     hashButton.hidden = !combinationHash;
     const retryMessage = result.state === "failed" ?
@@ -173,15 +206,6 @@ import {initFleet} from "./fleet.js?v=5";
         const link = document.createElement("a");
         link.href = href;
         link.textContent = name;
-        if (name.endsWith(".zip")) {
-          link.addEventListener("click", () => {
-            const updaterLink = document.querySelector("#hds-updater-link");
-            clearTimeout(updaterTimer);
-            updaterLink.classList.remove("is-next-step");
-            requestAnimationFrame(() => updaterLink.classList.add("is-next-step"));
-            updaterTimer = setTimeout(() => updaterLink.classList.remove("is-next-step"), 6000);
-          });
-        }
         downloads.append(link);
       });
     }

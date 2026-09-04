@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
+import {readFile} from "node:fs/promises";
 import {test} from "node:test";
+import {runInNewContext} from "node:vm";
 
+import {
+  buildSummary,
+  deploymentState,
+  lastSeenLabel,
+  shortHash,
+} from "../../../docs/custom-build/fleet-state.mjs";
 import {
   catalogRevisionChanged,
   defaultSelection,
@@ -126,4 +134,110 @@ test("detects a new static catalog after a stale reload", async () => {
     {url: "catalog.json", options: {cache: "no-store"}},
     {url: "catalog.json", options: {cache: "no-store"}},
   ]);
+});
+
+
+test("formats fleet build identity and deployment state", () => {
+  const hash = "8c6df20ccb1b9855f19dce3868b9310ecb26238cccf48557843bd428ebbc1f63";
+  const now = Date.parse("2026-09-03T12:00:00.000Z");
+  const fresh = "2026-09-03T11:00:00.000Z";
+  const assigned = "2026-09-03T11:30:00.000Z";
+  assert.equal(shortHash(hash), "8C6DF20CCB1B");
+  assert.equal(buildSummary({
+    features: ["pull-ota", "wifi"],
+    plugins: [{id: "grind-by-weight", version: "1.0.0"}, {id: "pressensor", version: "2.0.0"}],
+  }), "pull-ota, wifi, grind-by-weight 1.0.0 +1");
+  assert.equal(deploymentState({
+    desired_combination: hash,
+    installed_combination: hash,
+    last_seen_at: fresh,
+  }, {[hash]: "ready"}, now), "Up to date");
+  assert.equal(deploymentState({
+    desired_combination: hash,
+    installed_combination: null,
+    desired_updated_at: assigned,
+    last_seen_at: fresh,
+  }, {[hash]: "ready"}, now), "Update assigned");
+  assert.equal(deploymentState({
+    desired_combination: hash,
+    installed_combination: null,
+    desired_updated_at: fresh,
+    last_seen_at: assigned,
+  }, {[hash]: "ready"}, now), "Install pending");
+  assert.equal(deploymentState({
+    desired_combination: hash,
+    installed_combination: null,
+    last_seen_at: fresh,
+  }, {[hash]: "building"}, now), "Build preparing");
+  assert.equal(deploymentState({
+    desired_combination: hash,
+    installed_combination: null,
+    last_seen_at: "2026-08-01T00:00:00.000Z",
+  }, {[hash]: "ready"}, now), "Offline");
+  assert.equal(deploymentState({
+    desired_combination: null,
+    installed_combination: null,
+    last_seen_at: fresh,
+  }, {}, now), "No update assigned");
+  assert.equal(deploymentState({
+    desired_combination: null,
+    installed_combination: null,
+    last_seen_at: null,
+  }, {}, now), "Unknown");
+  assert.equal(lastSeenLabel(fresh, now), "1h ago");
+});
+
+
+test("fleet browser consumes the aggregated overview without per-scale status requests", async () => {
+  const source = await readFile(new URL("../../../docs/custom-build/fleet.js", import.meta.url), "utf8");
+  assert.ok(source.includes('/api/v1/fleet/overview'));
+  assert.ok(source.includes('/api/v1/fleet/assignments'));
+  assert.equal(source.includes('/api/v1/status/'), false);
+});
+
+
+test("theme follows the system until a saved preference overrides it", async () => {
+  const html = await readFile(new URL("../../../docs/custom-build/index.html", import.meta.url), "utf8");
+  const bootstrap = html.match(/<script id="theme-bootstrap">([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(bootstrap);
+  const loadTheme = (stored, systemDark) => {
+    const dataset = {};
+    const themeColor = {content: ""};
+    runInNewContext(bootstrap, {
+      document: {
+        documentElement: {dataset},
+        querySelector: () => themeColor,
+      },
+      localStorage: {getItem: () => stored},
+      matchMedia: () => ({matches: systemDark}),
+    });
+    return {dataset, themeColor: themeColor.content};
+  };
+  assert.deepEqual(loadTheme(null, false), {
+    dataset: {themePreference: "system", theme: "light"},
+    themeColor: "#0d6b4f",
+  });
+  assert.deepEqual(loadTheme(null, true), {
+    dataset: {themePreference: "system", theme: "dark"},
+    themeColor: "#111413",
+  });
+  assert.deepEqual(loadTheme(JSON.stringify({version: 1, preference: "dark"}), false), {
+    dataset: {themePreference: "dark", theme: "dark"},
+    themeColor: "#111413",
+  });
+  assert.deepEqual(loadTheme("not json", true), {
+    dataset: {themePreference: "system", theme: "dark"},
+    themeColor: "#111413",
+  });
+  const app = await readFile(new URL("../../../docs/custom-build/app.js", import.meta.url), "utf8");
+  assert.ok(app.includes("localStorage.setItem(themeStorageKey"));
+  assert.ok(app.includes('systemTheme.addEventListener("change"'));
+});
+
+
+test("USB-ready builds use a persistent updater cue instead of flashing", async () => {
+  const source = await readFile(new URL("../../../docs/custom-build/app.js", import.meta.url), "utf8");
+  assert.ok(source.includes('result.state === "ready" && installMethod === "usb"'));
+  assert.ok(source.includes('classList.toggle("is-ready", updaterReady)'));
+  assert.equal(source.includes("is-next-step"), false);
 });

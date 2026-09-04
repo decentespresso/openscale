@@ -3,10 +3,28 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <meta name="theme-color" content="#0d6b4f">
+  <meta name="color-scheme" content="light dark">
+  <meta id="theme-color" name="theme-color" content="#0d6b4f">
   <title>HDS Custom Build</title>
-  <link rel="stylesheet" href="styles.css?v=14">
+  <script id="theme-bootstrap">
+    (() => {
+      let preference = "system";
+      try {
+        const stored = JSON.parse(localStorage.getItem("hds-custom-build-theme-v1"));
+        if (stored?.version === 1 && ["system", "light", "dark"].includes(stored.preference)) {
+          preference = stored.preference;
+        }
+      } catch {
+      }
+      const dark = preference === "dark" ||
+        (preference === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.dataset.themePreference = preference;
+      document.documentElement.dataset.theme = dark ? "dark" : "light";
+      document.querySelector("#theme-color").content = dark ? "#111413" : "#0d6b4f";
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css?v=15">
+  <link rel="stylesheet" href="fleet.css?v=3">
 </head>
 <body>
   <header class="topbar">
@@ -15,16 +33,38 @@
         <span class="brand-mark" aria-hidden="true"></span>
         <h1 class="brand-name">HDS custom build</h1>
       </div>
-      <nav class="topbar-links" aria-label="Related tools">
-        <a id="hds-updater-link" class="workflow-link" href="https://decentespresso.github.io/hds-updater/" target="_blank" rel="noreferrer" aria-label="Open HDS Updater">
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
-          <span>HDS Updater</span>
-        </a>
-        <a class="workflow-link" href="https://github.com/decentespresso/openscale/actions/workflows/custom-build.yml" target="_blank" rel="noreferrer" aria-label="Open source repository">
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
-          <span>Source repository</span>
-        </a>
-      </nav>
+      <div class="topbar-actions">
+        <nav class="topbar-links" aria-label="Related tools">
+          <a id="hds-updater-link" class="workflow-link" href="https://decentespresso.github.io/hds-updater/" target="_blank" rel="noreferrer" aria-label="Open HDS Updater">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+            <span>HDS Updater</span>
+          </a>
+          <a class="workflow-link" href="https://github.com/decentespresso/openscale/actions/workflows/custom-build.yml" target="_blank" rel="noreferrer" aria-label="Open source repository">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+            <span>Source repository</span>
+          </a>
+        </nav>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle color theme" aria-pressed="false" title="Toggle color theme">
+          <svg aria-hidden="true" viewBox="0 0 68 32">
+            <rect class="theme-toggle-track" x="1" y="1" width="66" height="30" rx="15"/>
+            <g class="theme-toggle-stars">
+              <circle cx="10" cy="9" r="1.2"/>
+              <circle cx="24" cy="7" r="1"/>
+              <circle cx="29" cy="21" r="1.3"/>
+              <path d="M17 18h4M19 16v4"/>
+            </g>
+            <path class="theme-toggle-cloud" d="M43 21h14.5a3.5 3.5 0 0 0 .3-7 6 6 0 0 0-11.5-1.3A4.2 4.2 0 0 0 43 21Z"/>
+            <g class="theme-toggle-knob">
+              <circle class="theme-toggle-thumb" cx="16" cy="16" r="12"/>
+              <g class="theme-toggle-sun">
+                <circle cx="16" cy="16" r="4.5"/>
+                <path d="M16 7.5v2M16 22.5v2M7.5 16h2M22.5 16h2M10 10l1.4 1.4M20.6 20.6 22 22M10 22l1.4-1.4M20.6 11.4 22 10"/>
+              </g>
+              <path class="theme-toggle-moon" d="M20.8 19.8A7 7 0 0 1 12.2 11a6.3 6.3 0 1 0 8.6 8.8Z"/>
+            </g>
+          </svg>
+        </button>
+      </div>
     </div>
   </header>
 
@@ -174,7 +214,6 @@
       </div>
 
       <div id="fleet-console" hidden>
-
         <form id="pair-scale" class="pair-scale-form">
           <label class="field-label" for="pair-code">Pairing code</label>
           <div class="inline-form">
@@ -183,8 +222,53 @@
           </div>
         </form>
 
-        <p id="fleet-status" class="fleet-status" role="status" aria-live="polite"></p>
-        <ul id="fleet-scales" class="scale-list"></ul>
+        <section class="fleet-section" aria-labelledby="fleet-builds-heading">
+          <div class="fleet-section-head">
+            <div>
+              <h4 id="fleet-builds-heading">Fleet builds</h4>
+              <p id="fleet-build-status" class="fleet-status" role="status" aria-live="polite"></p>
+            </div>
+            <button id="add-fleet-build" class="primary-button" type="button" disabled>Add current build</button>
+          </div>
+          <div class="fleet-build-labels" aria-hidden="true">
+            <span>Label</span><span>Firmware and options</span><span>Combination</span><span>Availability</span><span></span>
+          </div>
+          <ul id="fleet-builds" class="fleet-build-list"></ul>
+        </section>
+
+        <section class="fleet-section fleet-scales-section" aria-labelledby="fleet-scales-heading">
+          <div class="fleet-section-head">
+            <div>
+              <h4 id="fleet-scales-heading">Scales</h4>
+              <p id="fleet-status" class="fleet-status" role="status" aria-live="polite"></p>
+            </div>
+          </div>
+          <div class="deployment-toolbar">
+            <label for="fleet-build-select">Build</label>
+            <div class="select-wrap"><select id="fleet-build-select" disabled></select></div>
+            <label class="select-all-control"><input id="select-all-scales" type="checkbox"> All scales</label>
+            <span id="selected-scale-count" class="selection-count">0 selected</span>
+            <button id="assign-selected" class="primary-button" type="button" disabled>Assign to selected</button>
+            <button id="assign-all" class="ghost-bordered-button" type="button" disabled>Assign to all</button>
+            <button id="clear-selected" class="ghost-button" type="button" disabled>Clear assignment</button>
+          </div>
+          <div class="fleet-table-wrap">
+            <table class="fleet-table">
+              <thead>
+                <tr>
+                  <th><span class="sr-only">Select</span></th>
+                  <th>Scale</th>
+                  <th>Installed</th>
+                  <th>Desired</th>
+                  <th>Deployment</th>
+                  <th>Last seen</th>
+                  <th><span class="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody id="fleet-scale-rows"></tbody>
+            </table>
+          </div>
+        </section>
       </div>
     </section>
   </main>
@@ -205,6 +289,17 @@
     </form>
   </dialog>
 
-  <script type="module" src="app.js?v=18"></script>
+  <dialog id="fleet-confirm-dialog" class="confirm-dialog" aria-labelledby="fleet-confirm-heading" aria-describedby="fleet-confirm-description">
+    <form method="dialog">
+      <h3 id="fleet-confirm-heading">Confirm fleet change</h3>
+      <p id="fleet-confirm-description"></p>
+      <div class="dialog-actions">
+        <button class="ghost-bordered-button" type="submit" value="cancel" autofocus>Cancel</button>
+        <button id="fleet-confirm-action" class="danger-button" type="submit" value="confirm">Confirm</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="app.js?v=21"></script>
 </body>
 </html>

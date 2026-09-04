@@ -7,6 +7,8 @@ const pairRefreshMs = 30 * 1000;
 const claimWindowMs = 60 * 1000;
 const claimsPerWindow = 10;
 const pairCreationWindowMs = 60 * 60 * 1000;
+const maxFleetBuilds = 100;
+const storageBatchSize = 128;
 export const pairCreationsPerClient = 10;
 export const pairCreationsGlobal = 500;
 
@@ -47,14 +49,14 @@ function requireObject(value, keys) {
   return value;
 }
 
-async function readJson(request) {
+async function readJson(request, maxBytes = 1024) {
   if (!request.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) {
     throw new FleetError(415, "json_required");
   }
   const declaredLength = Number(request.headers.get("Content-Length") || 0);
-  if (declaredLength > 1024) throw new FleetError(413, "request_too_large");
+  if (declaredLength > maxBytes) throw new FleetError(413, "request_too_large");
   const payload = await request.arrayBuffer();
-  if (!payload.byteLength || payload.byteLength > 1024) throw new FleetError(413, "request_too_large");
+  if (!payload.byteLength || payload.byteLength > maxBytes) throw new FleetError(413, "request_too_large");
   try {
     return JSON.parse(new TextDecoder().decode(payload));
   } catch {
@@ -90,7 +92,7 @@ async function authenticatedDevice(request, storage) {
   if (!device || !sameHash(device.secret_hash, credentials.secretHash)) {
     throw new FleetError(401, "invalid_device_credentials");
   }
-  return {deviceId: credentials.deviceId, device, key};
+  return {deviceId: credentials.deviceId, device, key, secretHash: credentials.secretHash};
 }
 
 function retryAfter(expiresAt, now) {
@@ -134,6 +136,10 @@ async function pairDevice(request, storage) {
       name: `Scale ${serialHint}`,
       fleet_id: null,
       desired_combination: null,
+      desired_updated_at: null,
+      installed_combination: null,
+      firmware_version: null,
+      last_seen_at: null,
     };
     if (device.serial_hint !== serialHint) throw new FleetError(400, "serial_hint_mismatch");
     if (device.pair_created_at && now - device.pair_created_at < pairRefreshMs) {
@@ -222,6 +228,113 @@ function fleetDevices(fleet) {
   return Array.isArray(fleet?.devices) ? fleet.devices.filter(deviceId => deviceIdPattern.test(deviceId)) : [];
 }
 
+function fleetBuilds(fleet) {
+  return Array.isArray(fleet?.builds)
+    ? fleet.builds.filter(build => hashPattern.test(build?.combination_hash || ""))
+    : [];
+}
+
+function normalizedText(value, maxLength, code) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text || text.length > maxLength || /[\u0000-\u001f\u007f]/.test(text)) {
+    throw new FleetError(400, code);
+  }
+  return text;
+}
+
+function normalizedName(value) {
+  return normalizedText(value, 40, "invalid_scale_name");
+}
+
+function normalizedBuildLabel(value) {
+  return normalizedText(value, 40, "invalid_build_label");
+}
+
+function normalizedFirmwareVersion(value) {
+  return normalizedText(value, 64, "invalid_firmware_version");
+}
+
+async function readyBuildReference(env, combinationHash) {
+  if (!hashPattern.test(combinationHash || "")) {
+    throw new FleetError(400, "invalid_combination_hash");
+  }
+  const object = await env.BUILDS.get(`v1/${combinationHash}/build-manifest.json`);
+  if (!object) throw new FleetError(409, "build_not_ready");
+  let manifest;
+  try {
+    manifest = await object.json();
+  } catch {
+    throw new FleetError(409, "build_not_ready");
+  }
+  if (manifest?.custom_build !== true || manifest.combination_hash !== combinationHash ||
+      typeof manifest.firmware_version !== "string" || !manifest.firmware_version ||
+      manifest.firmware_version.length > 64) {
+    throw new FleetError(409, "build_not_ready");
+  }
+  const features = Array.isArray(manifest.features)
+    ? manifest.features.filter(value => typeof value === "string" && value.length <= 64)
+    : [];
+  const plugins = Array.isArray(manifest.plugins) ? manifest.plugins
+    .filter(value => value && typeof value.id === "string" && value.id.length <= 64)
+    .map(value => ({
+      id: value.id,
+      version: typeof value.version === "string" && value.version.length <= 32 ? value.version : "",
+    })) : [];
+  return {
+    combination_hash: combinationHash,
+    firmware_version: manifest.firmware_version,
+    features,
+    plugins,
+  };
+}
+
+async function buildStates(hashes, storage, env) {
+  const uniqueHashes = [...new Set(hashes.filter(hash => hashPattern.test(hash || "")))];
+  return Object.fromEntries(await Promise.all(uniqueHashes.map(async hash => {
+    if (await env.BUILDS.head(`v1/${hash}/build-manifest.json`)) return [hash, "ready"];
+    const record = await storage.get(`build:${hash}`);
+    return [hash, ["queued", "building", "failed"].includes(record?.state) ? record.state : "missing"];
+  })));
+}
+
+function scaleRecord(deviceId, device) {
+  return {
+    device_id: deviceId,
+    serial_hint: device.serial_hint,
+    name: device.name,
+    desired_combination: hashPattern.test(device.desired_combination || "")
+      ? device.desired_combination : null,
+    desired_updated_at: typeof device.desired_updated_at === "string"
+      ? device.desired_updated_at : null,
+    installed_combination: hashPattern.test(device.installed_combination || "")
+      ? device.installed_combination : null,
+    firmware_version: typeof device.firmware_version === "string" ? device.firmware_version : null,
+    last_seen_at: typeof device.last_seen_at === "string" ? device.last_seen_at : null,
+  };
+}
+
+async function fleetScaleRecords(ownerFleetId, fleet, storage) {
+  return (await Promise.all(fleetDevices(fleet).map(async deviceId => {
+    const device = await storage.get(`device:${deviceId}`);
+    return device && device.fleet_id === ownerFleetId ? scaleRecord(deviceId, device) : null;
+  }))).filter(Boolean).sort((left, right) => left.name.localeCompare(right.name));
+}
+
+async function fleetSnapshot(ownerFleetId, storage, env) {
+  const fleet = await storage.get(`fleet:${ownerFleetId}`);
+  const scales = await fleetScaleRecords(ownerFleetId, fleet, storage);
+  const builds = fleetBuilds(fleet);
+  const states = await buildStates([
+    ...builds.map(build => build.combination_hash),
+    ...scales.map(scale => scale.desired_combination),
+  ], storage, env);
+  return {
+    builds: builds.map(build => ({...build, state: states[build.combination_hash]})),
+    scales,
+    build_states: states,
+  };
+}
+
 async function claimDevice(request, storage) {
   await enforceClaimRate(request, storage);
   const body = requireObject(await readJson(request), ["pair_code"]);
@@ -247,67 +360,121 @@ async function claimDevice(request, storage) {
     const transferred = oldFleetKey && oldFleetKey !== newFleetKey;
     const updatedDevice = {
       ...device,
-      ...(transferred ? {desired_combination: null, name: `Scale ${device.serial_hint}`} : {}),
+      ...(transferred ? {
+        desired_combination: null,
+        desired_updated_at: null,
+        name: `Scale ${device.serial_hint}`,
+      } : {}),
       fleet_id: ownerFleetId,
       pair_code: null,
       pair_created_at: null,
     };
     const updates = {
       [deviceKey]: updatedDevice,
-      [newFleetKey]: {devices: newDevices},
+      [newFleetKey]: {...newFleet, devices: newDevices},
     };
-    if (oldFleetKey && oldFleetKey !== newFleetKey) updates[oldFleetKey] = {devices: oldDevices};
+    if (oldFleetKey && oldFleetKey !== newFleetKey) {
+      updates[oldFleetKey] = {...oldFleet, devices: oldDevices};
+    }
     await transaction.put(updates);
     await transaction.delete(pairKey);
     return {device_id: pair.device_id, serial_hint: device.serial_hint, name: updatedDevice.name};
   });
 }
 
-async function listScales(request, storage) {
+async function listScales(request, storage, env) {
   const ownerFleetId = await fleetId(request);
   const fleet = await storage.get(`fleet:${ownerFleetId}`);
-  const devices = await Promise.all(fleetDevices(fleet).map(async deviceId => {
-    const device = await storage.get(`device:${deviceId}`);
-    return device && device.fleet_id === ownerFleetId ? {
-      device_id: deviceId,
-      serial_hint: device.serial_hint,
-      name: device.name,
-      desired_combination: device.desired_combination,
-    } : null;
-  }));
-  return {scales: devices.filter(Boolean).sort((left, right) => left.name.localeCompare(right.name))};
+  const scales = await fleetScaleRecords(ownerFleetId, fleet, storage);
+  const states = await buildStates(scales.map(scale => scale.desired_combination), storage, env);
+  return {scales, build_states: states};
 }
 
-function normalizedName(value) {
-  const name = typeof value === "string" ? value.trim() : "";
-  if (!name || name.length > 40 || /[\u0000-\u001f\u007f]/.test(name)) {
-    throw new FleetError(400, "invalid_scale_name");
-  }
-  return name;
+async function fleetOverview(request, storage, env) {
+  return fleetSnapshot(await fleetId(request), storage, env);
+}
+
+async function listBuilds(request, storage, env) {
+  const ownerFleetId = await fleetId(request);
+  const fleet = await storage.get(`fleet:${ownerFleetId}`);
+  const builds = fleetBuilds(fleet);
+  const states = await buildStates(builds.map(build => build.combination_hash), storage, env);
+  return {builds: builds.map(build => ({...build, state: states[build.combination_hash]}))};
+}
+
+async function addBuild(request, storage, env) {
+  const ownerFleetId = await fleetId(request);
+  const body = requireObject(await readJson(request), ["combination_hash"]);
+  const key = `fleet:${ownerFleetId}`;
+  if (!(await storage.get(key))) throw new FleetError(404, "fleet_not_found");
+  const reference = await readyBuildReference(env, body.combination_hash);
+  return storage.transaction(async transaction => {
+    const fleet = await transaction.get(key);
+    const builds = fleetBuilds(fleet);
+    const existing = builds.find(build => build.combination_hash === reference.combination_hash);
+    if (existing) return {...existing, state: "ready"};
+    if (builds.length >= maxFleetBuilds) throw new FleetError(409, "build_library_full");
+    const added = {
+      ...reference,
+      label: `Build ${reference.combination_hash.slice(0, 12).toUpperCase()}`,
+      added_at: new Date().toISOString(),
+    };
+    await transaction.put(key, {...fleet, devices: fleetDevices(fleet), builds: [...builds, added]});
+    return {...added, state: "ready"};
+  });
+}
+
+async function renameBuild(request, storage, combinationHash) {
+  const ownerFleetId = await fleetId(request);
+  const body = requireObject(await readJson(request), ["label"]);
+  const label = normalizedBuildLabel(body.label);
+  return storage.transaction(async transaction => {
+    const key = `fleet:${ownerFleetId}`;
+    const fleet = await transaction.get(key);
+    const builds = fleetBuilds(fleet);
+    const selected = builds.find(build => build.combination_hash === combinationHash);
+    if (!selected) throw new FleetError(404, "build_not_found");
+    const updated = {...selected, label};
+    await transaction.put(key, {
+      ...fleet,
+      builds: builds.map(build => build.combination_hash === combinationHash ? updated : build),
+    });
+    return updated;
+  });
+}
+
+async function removeBuild(request, storage, combinationHash) {
+  const ownerFleetId = await fleetId(request);
+  return storage.transaction(async transaction => {
+    const key = `fleet:${ownerFleetId}`;
+    const fleet = await transaction.get(key);
+    const builds = fleetBuilds(fleet);
+    if (!builds.some(build => build.combination_hash === combinationHash)) {
+      throw new FleetError(404, "build_not_found");
+    }
+    const devices = await Promise.all(fleetDevices(fleet).map(deviceId =>
+      transaction.get(`device:${deviceId}`)));
+    if (devices.some(device => device?.fleet_id === ownerFleetId &&
+        device.desired_combination === combinationHash)) {
+      throw new FleetError(409, "build_assigned");
+    }
+    await transaction.put(key, {
+      ...fleet,
+      builds: builds.filter(build => build.combination_hash !== combinationHash),
+    });
+    return {removed_combination: combinationHash};
+  });
 }
 
 async function updateScale(request, storage, deviceId) {
   const ownerFleetId = await fleetId(request);
-  const body = await readJson(request);
-  const keys = body && typeof body === "object" && !Array.isArray(body) ? Object.keys(body).sort() : [];
-  if (!keys.length || keys.some(key => !["desired_combination", "name"].includes(key))) {
-    throw new FleetError(400, "invalid_request");
-  }
+  const body = requireObject(await readJson(request), ["name"]);
+  const name = normalizedName(body.name);
   return storage.transaction(async transaction => {
     const deviceKey = `device:${deviceId}`;
     const device = await transaction.get(deviceKey);
     if (!device || device.fleet_id !== ownerFleetId) throw new FleetError(404, "device_not_found");
-    const desiredCombination = body.desired_combination === undefined
-      ? device.desired_combination
-      : body.desired_combination;
-    if (desiredCombination !== null && !hashPattern.test(desiredCombination || "")) {
-      throw new FleetError(400, "invalid_combination_hash");
-    }
-    const updated = {
-      ...device,
-      name: body.name === undefined ? device.name : normalizedName(body.name),
-      desired_combination: desiredCombination,
-    };
+    const updated = {...device, name};
     await transaction.put(deviceKey, updated);
     return {
       device_id: deviceId,
@@ -318,32 +485,124 @@ async function updateScale(request, storage, deviceId) {
   });
 }
 
-async function deviceAssignment(request, storage) {
-  const authenticated = await authenticatedDevice(request, storage);
+async function updateAssignments(request, storage, env) {
+  const ownerFleetId = await fleetId(request);
+  const rawBody = await readJson(request, 64 * 1024);
+  const allScales = rawBody?.all === true;
+  const body = requireObject(
+    rawBody,
+    allScales ? ["all", "combination_hash"] : ["combination_hash", "device_ids"],
+  );
+  const combinationHash = body.combination_hash;
+  if (combinationHash !== null) await readyBuildReference(env, combinationHash);
+  let requestedDeviceIds = null;
+  if (!allScales) {
+    if (!Array.isArray(body.device_ids) || !body.device_ids.length ||
+        body.device_ids.some(deviceId => !deviceIdPattern.test(deviceId || ""))) {
+      throw new FleetError(400, body.device_ids?.length ? "invalid_device_id" : "empty_target_set");
+    }
+    requestedDeviceIds = [...new Set(body.device_ids)];
+  }
+  return storage.transaction(async transaction => {
+    const fleet = await transaction.get(`fleet:${ownerFleetId}`);
+    const deviceIds = allScales ? fleetDevices(fleet) : requestedDeviceIds;
+    if (!deviceIds.length) throw new FleetError(400, "empty_target_set");
+    const devices = await Promise.all(deviceIds.map(deviceId =>
+      transaction.get(`device:${deviceId}`)));
+    if (devices.some(device => !device)) throw new FleetError(404, "device_not_found");
+    if (devices.some(device => device.fleet_id !== ownerFleetId)) {
+      throw new FleetError(403, "cross_fleet_device");
+    }
+    const now = new Date().toISOString();
+    const updates = Object.fromEntries(deviceIds.map((deviceId, index) => {
+      const device = devices[index];
+      return [`device:${deviceId}`, {
+        ...device,
+        desired_combination: combinationHash,
+        desired_updated_at: device.desired_combination === combinationHash
+          ? device.desired_updated_at : now,
+      }];
+    }));
+    const entries = Object.entries(updates);
+    for (let index = 0; index < entries.length; index += storageBatchSize) {
+      await transaction.put(Object.fromEntries(entries.slice(index, index + storageBatchSize)));
+    }
+    return {combination_hash: combinationHash, device_ids: deviceIds, updated: deviceIds.length};
+  });
+}
+
+function deviceAssignmentPayload(device) {
   return {
-    linked: Boolean(authenticated.device.fleet_id),
-    name: authenticated.device.name,
-    serial_hint: authenticated.device.serial_hint,
-    desired_combination: authenticated.device.desired_combination,
+    linked: Boolean(device.fleet_id),
+    desired_combination: hashPattern.test(device.desired_combination || "")
+      ? device.desired_combination : null,
   };
 }
 
+async function deviceAssignment(request, storage) {
+  const authenticated = await authenticatedDevice(request, storage);
+  return deviceAssignmentPayload(authenticated.device);
+}
+
+async function deviceCheckIn(request, storage) {
+  const body = requireObject(
+    await readJson(request),
+    ["firmware_version", "installed_combination"],
+  );
+  if (body.installed_combination !== null &&
+      !hashPattern.test(body.installed_combination || "")) {
+    throw new FleetError(400, "invalid_combination_hash");
+  }
+  const firmwareVersion = normalizedFirmwareVersion(body.firmware_version);
+  const authenticated = await authenticatedDevice(request, storage);
+  return storage.transaction(async transaction => {
+    const device = await transaction.get(authenticated.key);
+    if (!device || !sameHash(device.secret_hash, authenticated.secretHash)) {
+      throw new FleetError(401, "invalid_device_credentials");
+    }
+    const updated = {
+      ...device,
+      installed_combination: body.installed_combination,
+      firmware_version: firmwareVersion,
+      last_seen_at: new Date().toISOString(),
+    };
+    await transaction.put(authenticated.key, updated);
+    return deviceAssignmentPayload(updated);
+  });
+}
+
 export function isDeviceApi(pathname) {
-  return pathname === "/api/v1/device/pair" || pathname === "/api/v1/device/assignment";
+  return pathname === "/api/v1/device/pair" || pathname === "/api/v1/device/assignment" ||
+    pathname === "/api/v1/device/check-in";
 }
 
 export function isFleetApi(pathname) {
-  return pathname === "/api/v1/fleet/claim" || pathname === "/api/v1/fleet/scales" ||
-    /^\/api\/v1\/fleet\/scales\/[0-9a-f]{32}$/.test(pathname);
+  return [
+    "/api/v1/fleet/claim",
+    "/api/v1/fleet/scales",
+    "/api/v1/fleet/overview",
+    "/api/v1/fleet/builds",
+    "/api/v1/fleet/assignments",
+  ].includes(pathname) || /^\/api\/v1\/fleet\/(scales\/[0-9a-f]{32}|builds\/[0-9a-f]{64})$/.test(pathname);
 }
 
-export async function handleFleetRequest(request, storage) {
+export async function handleFleetRequest(request, storage, env) {
   const url = new URL(request.url);
   if (url.pathname === "/device/pair" && request.method === "POST") return pairDevice(request, storage);
   if (url.pathname === "/device/assignment" && request.method === "GET") return deviceAssignment(request, storage);
+  if (url.pathname === "/device/check-in" && request.method === "POST") return deviceCheckIn(request, storage);
   if (url.pathname === "/fleet/claim" && request.method === "POST") return claimDevice(request, storage);
-  if (url.pathname === "/fleet/scales" && request.method === "GET") return listScales(request, storage);
-  const match = url.pathname.match(/^\/fleet\/scales\/([0-9a-f]{32})$/);
-  if (match && request.method === "PATCH") return updateScale(request, storage, match[1]);
+  if (url.pathname === "/fleet/scales" && request.method === "GET") return listScales(request, storage, env);
+  if (url.pathname === "/fleet/overview" && request.method === "GET") return fleetOverview(request, storage, env);
+  if (url.pathname === "/fleet/builds" && request.method === "GET") return listBuilds(request, storage, env);
+  if (url.pathname === "/fleet/builds" && request.method === "POST") return addBuild(request, storage, env);
+  if (url.pathname === "/fleet/assignments" && request.method === "POST") {
+    return updateAssignments(request, storage, env);
+  }
+  const scaleMatch = url.pathname.match(/^\/fleet\/scales\/([0-9a-f]{32})$/);
+  if (scaleMatch && request.method === "PATCH") return updateScale(request, storage, scaleMatch[1]);
+  const buildMatch = url.pathname.match(/^\/fleet\/builds\/([0-9a-f]{64})$/);
+  if (buildMatch && request.method === "PATCH") return renameBuild(request, storage, buildMatch[1]);
+  if (buildMatch && request.method === "DELETE") return removeBuild(request, storage, buildMatch[1]);
   throw new FleetError(404, "not_found");
 }

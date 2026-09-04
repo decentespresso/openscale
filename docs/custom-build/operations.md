@@ -26,6 +26,74 @@ The browser keeps the fleet recovery key only in tab-scoped session storage. It 
 persistent copy when the configurator next opens. Move the configurator to a dedicated origin before
 making recovery keys persistent again.
 
+## Fleet Data Model
+
+The Durable Object stores fleet records under the SHA-256 hash of the recovery key. A fleet record
+contains device IDs and immutable build references. Each build reference contains the full
+`combination_hash`, a user-editable label, firmware version, feature and plugin identifiers, and the
+time it was added. The binaries remain in R2 under `v1/<combination-hash>/`; adding or removing a
+fleet reference never copies or deletes those objects.
+
+Device records distinguish these fields:
+
+- `desired_combination` is the full custom build hash fleet management wants the scale to install.
+- `installed_combination` is the full custom build hash reported by the authenticated scale.
+- `firmware_version` is the version reported by the authenticated scale.
+- `last_seen_at` is updated only by an authenticated device check-in.
+- `desired_updated_at` records the most recent assignment change for deployment status.
+
+Assignment does not imply installation. The scale's compile-time
+`HDS_CUSTOM_BUILD_COMBINATION_HASH` is authoritative for the firmware currently executing. Custom
+firmware reports that value; official firmware reports `installed_combination: null`. Existing
+records without the newer fields remain valid and appear as unknown until they check in.
+
+Full 64-character lowercase hashes are used for API identity, storage, assignment, and verification.
+The 12-character browser prefix and 8-character OLED prefix are uppercase display aids only.
+
+## Fleet API
+
+All fleet routes require the fleet recovery key. All device routes require the device ID and device
+secret established during physical pairing.
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/v1/device/check-in` | Report installed hash and firmware version, then receive the current assignment. |
+| `GET` | `/api/v1/fleet/overview` | Return scales, saved builds, and one canonical state per unique combination hash. |
+| `GET` | `/api/v1/fleet/builds` | List saved build references. |
+| `POST` | `/api/v1/fleet/builds` | Add one ready custom build by full combination hash. |
+| `PATCH` | `/api/v1/fleet/builds/<hash>` | Rename a saved build reference. |
+| `DELETE` | `/api/v1/fleet/builds/<hash>` | Remove an unassigned build reference. |
+| `POST` | `/api/v1/fleet/assignments` | Assign or clear a build for selected scales or every scale. |
+
+The check-in body is bounded to the two fields below. Its response stays limited to linking,
+assignment, and canonical build state; it does not include fleet lists, descriptions, or asset URLs.
+
+```json
+{
+  "installed_combination": null,
+  "firmware_version": "3.1.14"
+}
+```
+
+Selected bulk assignment uses `device_ids`; all-scale assignment uses `"all": true`. A null
+`combination_hash` deliberately clears the assignment. Target IDs are deduplicated, every target is
+validated before the transaction writes, and cross-fleet or missing targets fail the whole request.
+
+Removing a saved build that is still desired by any scale returns `409 build_assigned`. Clear or
+replace those assignments first. Removal leaves R2 artifacts and every scale's
+`installed_combination` untouched.
+
+## Scale Resource Contract
+
+The scale performs one check-in only when the Custom Build menu is opened. It retains one desired
+hash and the compile-time installed hash only for the lifetime of that operation. It does not fetch
+the build library, cache fleet data, keep deployment history, add a polling loop, or add NVS fields.
+
+After validating the full desired hash, firmware compares it with the normalized compile-time hash.
+An exact match returns before manifest, signature, firmware, LittleFS, OTA-state, or reboot work. The
+OLED shows `Already installed` and the 8-character hash prefix. The OTA task stack remains 24,576
+bytes.
+
 ## Deployment Order
 
 1. Create two custom OTA RSA key pairs, commit both public keys, save the Key 1 private key as the

@@ -19,6 +19,22 @@ AI-documentation audit, read `docs/AI_RELEASE_NOTES.md`.
   `HDS_CUSTOM_OTA_SIGNING_KEY_PEM`; Key 2 is the offline rotation reserve.
 - Custom OTA assignments contain only a canonical combination hash, never an asset URL.
 
+## Custom Fleet OTA
+
+Opening the Custom Build menu performs one authenticated device check-in. Custom firmware reports
+the normalized compile-time `HDS_CUSTOM_BUILD_COMBINATION_HASH`; official firmware reports null.
+The response contains only linking state, one desired combination, and its canonical build state.
+
+Validate the full desired hash before comparing it with the local compile-time hash. An exact match
+must return before custom manifest or signature retrieval, asset download, pending LittleFS state,
+or reboot scheduling. The Worker copy of `installed_combination` is telemetry and must never drive
+this decision.
+
+Fleet build references, scale lists, bulk assignment, and deployment history stay in the
+Worker/browser. Firmware must not fetch a fleet build list, add fleet-sized collections, persist a
+short hash, add background check-ins, or increase `HDS_OTA_TASK_STACK_BYTES` without measurement.
+OLED identity uses an uppercase 8-character prefix for display only.
+
 ## Release Assets
 
 Release builds publish WiFi OTA assets at the GitHub Release root:
@@ -145,5 +161,7 @@ python tools/test_ota_rollback_contract.py
 python tools/test_ota_public_key_header.py
 python tools/test_ota_reboot_routing_contract.py
 python tools/test_custom_build_ota_contract.py
+node --test cloudflare/custom-build-worker/test/fleet.test.mjs
+node --test cloudflare/custom-build-worker/test/configurator.test.mjs
 pio run -e esp32s3
 ```
