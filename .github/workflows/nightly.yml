@@ -17,6 +17,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: Create prospective release tag
+        run: |
+          if ! git show-ref --verify --quiet refs/tags/v3.1.14; then
+            git tag v3.1.14 "${{ github.sha }}"
+          fi
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
