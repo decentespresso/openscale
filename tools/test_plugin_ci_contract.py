@@ -61,8 +61,9 @@ def main():
     assert "#ifdef HDS_CUSTOM_BUILD" not in patch
     assert manifest["patches"] == {
         "v3.1.14": "patches/main.patch",
+        "main": "patches/main.patch",
     }
-    assert workerConfig["vars"]["ALLOWED_FIRMWARE_REFS"] == "v3.1.14"
+    assert workerConfig["vars"]["ALLOWED_FIRMWARE_REFS"] == "main,v3.1.14"
     assert workerConfig["vars"]["BUILDER_REF"] == "main"
     assert changedPlugins.changedPluginIds([
         "plugins/pressensor/plugin.json",
@@ -72,6 +73,7 @@ def main():
     assert changedPlugins.changedPluginMatrix([
         "plugins/pressensor/patches/main.patch"
     ]) == [
+        {"plugin": "pressensor", "firmware_ref": "main"},
         {"plugin": "pressensor", "firmware_ref": "v3.1.14"},
     ]
     assert changedPlugins.changedPluginMatrix([
@@ -101,7 +103,7 @@ def main():
     assert "--config .pio.nosync/pr-ci.json" in compileCustom
     assert 'git tag v3.1.14 "${{ github.sha }}"' in verifyPlugins
     assert 'git tag v3.1.14 "${{ github.sha }}"' in compileCustom
-    assert "--source-commit" not in compileCustom
+    assert "--source-commit \"$(git rev-parse --verify --end-of-options 'refs/tags/v3.1.14^{commit}')\"" in compileCustom
     with tempfile.TemporaryDirectory() as directory:
         subprocess.run(
             ["git", "clone", "--quiet", "--no-checkout", str(ROOT), directory],

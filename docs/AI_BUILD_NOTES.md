@@ -49,7 +49,7 @@ Do not add an environment merely because it exists. Changes limited to ADS1232 b
 
 ## Enabling a Stable Custom Base
 
-In the release-preparation pull request, set `FIRMWARE_REFS` and the Worker's `ALLOWED_FIRMWARE_REFS` to the prospective `vX.Y.Z` tag, add that ref and a tested patch mapping to each compatible plugin manifest, and regenerate both custom-build catalogs. When the tag does not exist, pull-request jobs may create a temporary local tag at the candidate commit to verify source resolution and compile the stable custom build. Do not create or push the real tag before the pre-tag gate passes. After the catalog commit reaches the trusted builder branch and the real tag exists, deploy the Worker. The configurator displays `vX.Y.Z` as `X.Y.Z (stable)`, and the resulting firmware reports `X.Y.Z-custom`.
+In the release-preparation pull request, add the prospective `vX.Y.Z` tag to `FIRMWARE_REFS`, compatible plugin manifests, and the Worker's `ALLOWED_FIRMWARE_REFS` without removing `main` or making the tag the default. Regenerate both custom-build catalogs. When the tag does not exist, pull-request jobs may create a temporary local tag at the candidate commit and must pass its resolved commit explicitly when compiling the stable custom build. Do not create or push the real tag before the pre-tag gate passes. After the catalog commit reaches the trusted builder branch and the real tag exists, deploy the overlapping Worker configuration, then switch the configurator and build defaults to `vX.Y.Z` in a follow-up commit. Remove `main` only after the stable path is live. The configurator displays `vX.Y.Z` as `X.Y.Z (stable)`, and the resulting firmware reports `X.Y.Z-custom`.
 
 ## Focused Checks
 

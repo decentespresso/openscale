@@ -21,7 +21,7 @@ on:
       firmware_ref:
         description: Firmware ref
         required: true
-        default: v3.1.14
+        default: main
       features:
         description: Comma-separated feature IDs
         required: false
@@ -210,6 +210,7 @@ jobs:
         run: >-
           python tools/build_custom_firmware.py
           --config .pio.nosync/pr-ci.json
+          --source-commit "$(git rev-parse --verify --end-of-options 'refs/tags/v3.1.14^{commit}')"
 
   build:
     if: github.event_name == 'workflow_dispatch'

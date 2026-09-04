@@ -1,13 +1,21 @@
 {
   "schema": 2,
   "custom_ota_signing_key_generation": 1,
-  "catalog_revision": "634319685037b484388c4a4820f9dac19eb99926dfc4278664fd17c404b3e87c",
+  "catalog_revision": "6cc29f6843a071e97e9a816ed7d36e33abc4e5d340b396788f7d7c04dfe5677d",
   "firmware_refs": [
-    "v3.1.14"
+    "v3.1.14",
+    "main"
   ],
   "platformio_environment": "esp32s3-custom",
   "firmware": {
     "v3.1.14": {
+      "custom_version": "3.1.14-custom",
+      "partition_schema": {
+        "path": "partitions/default_8MB.csv",
+        "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"
+      }
+    },
+    "main": {
       "custom_version": "3.1.14-custom",
       "partition_schema": {
         "path": "partitions/default_8MB.csv",
@@ -19,7 +27,8 @@
     "wifi": {
       "requires": [],
       "firmware_refs": [
-        "v3.1.14"
+        "v3.1.14",
+        "main"
       ]
     },
     "mdns": {
@@ -27,7 +36,8 @@
         "wifi"
       ],
       "firmware_refs": [
-        "v3.1.14"
+        "v3.1.14",
+        "main"
       ]
     },
     "webserver": {
@@ -35,7 +45,8 @@
         "wifi"
       ],
       "firmware_refs": [
-        "v3.1.14"
+        "v3.1.14",
+        "main"
       ]
     },
     "websocket": {
@@ -44,13 +55,15 @@
         "webserver"
       ],
       "firmware_refs": [
-        "v3.1.14"
+        "v3.1.14",
+        "main"
       ]
     },
     "littlefs": {
       "requires": [],
       "firmware_refs": [
-        "v3.1.14"
+        "v3.1.14",
+        "main"
       ]
     },
     "elegant-ota": {
@@ -59,7 +72,8 @@
         "webserver"
       ],
       "firmware_refs": [
-        "v3.1.14"
+        "v3.1.14",
+        "main"
       ]
     },
     "pull-ota": {
@@ -67,7 +81,8 @@
         "wifi"
       ],
       "firmware_refs": [
-        "v3.1.14"
+        "v3.1.14",
+        "main"
       ]
     },
     "grinder": {
@@ -76,13 +91,15 @@
         "mdns"
       ],
       "firmware_refs": [
-        "v3.1.14"
+        "v3.1.14",
+        "main"
       ]
     },
     "energy-menu": {
       "requires": [],
       "firmware_refs": [
-        "v3.1.14"
+        "v3.1.14",
+        "main"
       ]
     }
   },
@@ -90,7 +107,8 @@
     "default-web-apps": {
       "version": "1.0.0",
       "firmware_refs": [
-        "v3.1.14"
+        "v3.1.14",
+        "main"
       ],
       "requires": [
         "littlefs",
@@ -210,7 +228,8 @@
     "grind-by-weight": {
       "version": "1.0.0",
       "firmware_refs": [
-        "v3.1.14"
+        "v3.1.14",
+        "main"
       ],
       "requires": [
         "grinder"
@@ -234,7 +253,8 @@
     "pressensor": {
       "version": "1.0.0",
       "firmware_refs": [
-        "v3.1.14"
+        "v3.1.14",
+        "main"
       ],
       "requires": [],
       "depends_on": [],
@@ -247,6 +267,9 @@
         "plugins": []
       },
       "patches": {
+        "main": {
+          "sha256": "e873624cbdae73d844d6c77dcf4d03001e35c4406fbee3ae0b3cf8c5d6b0db6c"
+        },
         "v3.1.14": {
           "sha256": "e873624cbdae73d844d6c77dcf4d03001e35c4406fbee3ae0b3cf8c5d6b0db6c"
         }

@@ -18,7 +18,7 @@ DEFAULT_FIRMWARE_VERSION_PATTERN = re.compile(
     r'^\s*#define\s+HDS_FIRMWARE_VERSION\s+"([0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9]+(?:[.-][a-z0-9]+)*)?)"\s*$',
     re.MULTILINE,
 )
-FIRMWARE_REFS = ("v3.1.14",)
+FIRMWARE_REFS = ("v3.1.14", "main")
 FEATURES = {
     "wifi": ("HDS_FEATURE_WIFI", (), FIRMWARE_REFS),
     "mdns": ("HDS_FEATURE_MDNS", ("wifi",), FIRMWARE_REFS),

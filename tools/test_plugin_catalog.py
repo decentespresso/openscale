@@ -237,7 +237,7 @@ def main():
     assert pageCatalog["catalog_revision"] == serviceCatalog["catalog_revision"]
     assert len(pageCatalog["catalog_revision"]) == 64
     assert generatedCatalog["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
-    assert customBuild.FIRMWARE_REFS == ("v3.1.14",)
+    assert customBuild.FIRMWARE_REFS == ("v3.1.14", "main")
     assert pageCatalog["custom_ota_signing_key_generation"] == 1
     assert serviceCatalog["custom_ota_signing_key_generation"] == 1
     assert all(

@@ -65,12 +65,13 @@ test("labels stable, preview, and development firmware refs", () => {
 });
 
 
-test("ships 3.1.14 as the production custom-build source", async () => {
+test("ships 3.1.14 compatibility while main remains the cutover default", async () => {
   const shipped = JSON.parse(await readFile(
     new URL("../../../docs/custom-build/catalog.json", import.meta.url), "utf8",
   ));
-  assert.deepEqual(shipped.firmware_refs, ["v3.1.14"]);
-  assert.equal(firmwareRefLabel(defaultSelection(shipped).firmware_ref), "3.1.14 (stable)");
+  assert.deepEqual(shipped.firmware_refs, ["v3.1.14", "main"]);
+  assert.equal(firmwareRefLabel(defaultSelection(shipped).firmware_ref), "main (development)");
+  assert.equal(firmwareRefLabel(shipped.firmware_refs[0]), "3.1.14 (stable)");
 });
 
 
