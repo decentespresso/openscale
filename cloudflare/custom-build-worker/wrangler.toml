@@ -5,7 +5,7 @@ workers_dev = true
 
 [vars]
 ALLOWED_ORIGIN = "https://decentespresso.github.io"
-ALLOWED_FIRMWARE_REFS = "main"
+ALLOWED_FIRMWARE_REFS = "main,v3.1.14"
 BUILDER_REF = "main"
 GITHUB_REPOSITORY = "decentespresso/openscale"
 GITHUB_WORKFLOW = "custom-build.yml"

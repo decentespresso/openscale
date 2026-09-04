@@ -49,7 +49,7 @@ Do not add an environment merely because it exists. Changes limited to ADS1232 b
 
 ## Enabling a Stable Custom Base
 
-After a release tag exists, verify that it contains the compatible `esp32s3-custom` hooks, prepend its `vX.Y.Z` ref to `FIRMWARE_REFS` so it becomes the default selection, add that ref and a tested patch mapping to each compatible plugin manifest, regenerate both custom-build catalogs, and add the ref to the Worker's `ALLOWED_FIRMWARE_REFS`. Deploy the Worker only after the catalog commit reaches the trusted builder branch. The configurator displays `vX.Y.Z` as `X.Y.Z (stable)`, and the resulting firmware reports `X.Y.Z-custom`.
+In the release-preparation pull request, add the prospective `vX.Y.Z` tag to `FIRMWARE_REFS`, compatible plugin manifests, and the Worker's `ALLOWED_FIRMWARE_REFS` without removing `main` or making the tag the default. Regenerate both custom-build catalogs. When the tag does not exist, pull-request jobs may create a temporary local tag at the candidate commit and must pass its resolved commit explicitly when compiling the stable custom build. Do not create or push the real tag before the pre-tag gate passes. After the catalog commit reaches the trusted builder branch and the real tag exists, deploy the overlapping Worker configuration, then switch the configurator and build defaults to `vX.Y.Z` in a follow-up commit. After the stable path is live and before publishing the release, remove `main` from the catalog and Worker allow-list so development builds cannot consume production build quota. The configurator displays `vX.Y.Z` as `X.Y.Z (stable)`, and the resulting firmware reports `X.Y.Z-custom`.
 
 ## Focused Checks
 

@@ -4,7 +4,6 @@
 #include <stdint.h>
 
 enum class EnergyFeature : uint8_t {
-  SerialQuiet,
   OledRedraw,
   OledIdle,
   LightSleep,

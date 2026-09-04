@@ -1,14 +1,22 @@
 {
   "schema": 2,
   "custom_ota_signing_key_generation": 1,
-  "catalog_revision": "1b37055e22faf7a1c2d2d461ab7ca8c26521a16780e3b56676d46abd55bc6145",
+  "catalog_revision": "6cc29f6843a071e97e9a816ed7d36e33abc4e5d340b396788f7d7c04dfe5677d",
   "firmware_refs": [
+    "v3.1.14",
     "main"
   ],
   "platformio_environment": "esp32s3-custom",
   "firmware": {
+    "v3.1.14": {
+      "custom_version": "3.1.14-custom",
+      "partition_schema": {
+        "path": "partitions/default_8MB.csv",
+        "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"
+      }
+    },
     "main": {
-      "custom_version": "3.1.14-preview.1-custom",
+      "custom_version": "3.1.14-custom",
       "partition_schema": {
         "path": "partitions/default_8MB.csv",
         "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"
@@ -19,6 +27,7 @@
     "wifi": {
       "requires": [],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ]
     },
@@ -27,6 +36,7 @@
         "wifi"
       ],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ]
     },
@@ -35,6 +45,7 @@
         "wifi"
       ],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ]
     },
@@ -44,12 +55,14 @@
         "webserver"
       ],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ]
     },
     "littlefs": {
       "requires": [],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ]
     },
@@ -59,6 +72,7 @@
         "webserver"
       ],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ]
     },
@@ -67,6 +81,7 @@
         "wifi"
       ],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ]
     },
@@ -76,12 +91,14 @@
         "mdns"
       ],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ]
     },
     "energy-menu": {
       "requires": [],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ]
     }
@@ -90,6 +107,7 @@
     "default-web-apps": {
       "version": "1.0.0",
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ],
       "requires": [
@@ -210,6 +228,7 @@
     "grind-by-weight": {
       "version": "1.0.0",
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ],
       "requires": [
@@ -234,6 +253,7 @@
     "pressensor": {
       "version": "1.0.0",
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ],
       "requires": [],
@@ -248,6 +268,9 @@
       },
       "patches": {
         "main": {
+          "sha256": "e873624cbdae73d844d6c77dcf4d03001e35c4406fbee3ae0b3cf8c5d6b0db6c"
+        },
+        "v3.1.14": {
           "sha256": "e873624cbdae73d844d6c77dcf4d03001e35c4406fbee3ae0b3cf8c5d6b0db6c"
         }
       },

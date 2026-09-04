@@ -1,26 +1,22 @@
 #ifndef ENERGY_MENU_H
 #define ENERGY_MENU_H
 
-void toggleEnergySerialQuiet();
 void toggleEnergyOledRedraw();
 void toggleEnergyOledIdle();
 void toggleEnergyLightSleep();
 void toggleEnergyUsbSleepTest();
 
-char menuEnergySerialQuietLabel[] = "Serial Quiet o";
 char menuEnergyOledRedrawLabel[] = "OLED Redraw o";
 char menuEnergyOledIdleLabel[] = "OLED Idle o";
 char menuEnergyLightSleepLabel[] = "Light Sleep o";
 char menuEnergyUsbSleepTestLabel[] = "USB Sleep Test o";
 
-const Menu menuEnergySerialQuiet = { menuEnergySerialQuietLabel, toggleEnergySerialQuiet, NULL, &menuPower };
 const Menu menuEnergyOledRedraw = { menuEnergyOledRedrawLabel, toggleEnergyOledRedraw, NULL, &menuPower };
 const Menu menuEnergyOledIdle = { menuEnergyOledIdleLabel, toggleEnergyOledIdle, NULL, &menuPower };
 const Menu menuEnergyLightSleep = { menuEnergyLightSleepLabel, toggleEnergyLightSleep, NULL, &menuPower };
 const Menu menuEnergyUsbSleepTest = { menuEnergyUsbSleepTestLabel, toggleEnergyUsbSleepTest, NULL, &menuPower };
 
 char *energyFeatureRows[] = {
-  menuEnergySerialQuietLabel,
   menuEnergyOledRedrawLabel,
   menuEnergyOledIdleLabel,
   menuEnergyLightSleepLabel,
@@ -62,7 +58,6 @@ inline void toggleEnergyFeature(EnergyFeature feature, const char *label) {
   showEnergyAction(label, enabled, stored);
 }
 
-void toggleEnergySerialQuiet() { toggleEnergyFeature(EnergyFeature::SerialQuiet, "Serial Quiet"); }
 void toggleEnergyOledRedraw() { toggleEnergyFeature(EnergyFeature::OledRedraw, "OLED Redraw"); }
 void toggleEnergyOledIdle() { toggleEnergyFeature(EnergyFeature::OledIdle, "OLED Idle"); }
 void toggleEnergyLightSleep() {

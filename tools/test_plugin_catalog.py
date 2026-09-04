@@ -237,7 +237,7 @@ def main():
     assert pageCatalog["catalog_revision"] == serviceCatalog["catalog_revision"]
     assert len(pageCatalog["catalog_revision"]) == 64
     assert generatedCatalog["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
-    assert customBuild.FIRMWARE_REFS == ("main",)
+    assert customBuild.FIRMWARE_REFS == ("v3.1.14", "main")
     assert pageCatalog["custom_ota_signing_key_generation"] == 1
     assert serviceCatalog["custom_ota_signing_key_generation"] == 1
     assert all(
@@ -290,8 +290,8 @@ def main():
     assert grindByWeight["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
     assert pressensor["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
     assert set(serviceCatalog["plugins"]["pressensor"]["patches"]) == set(customBuild.FIRMWARE_REFS)
-    assert serviceCatalog["firmware"]["main"]["custom_version"] == (
-        "3.1.14-preview.1-custom"
+    assert serviceCatalog["firmware"]["v3.1.14"]["custom_version"] == (
+        "3.1.14-custom"
     )
     assert grindByWeight["recommends"] == {
         "features": ["pull-ota"],
@@ -299,8 +299,8 @@ def main():
     }
     assert customBuild.customFirmwareVersion("v3.1.14", "") == "3.1.14-custom"
     assert customBuild.customFirmwareVersion(
-        "main", '#define HDS_FIRMWARE_VERSION "3.1.14-preview.1"'
-    ) == "3.1.14-preview.1-custom"
+        "main", '#define HDS_FIRMWARE_VERSION "3.1.14"'
+    ) == "3.1.14-custom"
     assert customBuild.customFirmwareVersion(
         "v3.1.14-preview.1", '#define HDS_FIRMWARE_VERSION "3.1.14-preview.1"'
     ) == "3.1.14-preview.1-custom"

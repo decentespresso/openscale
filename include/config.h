@@ -19,7 +19,7 @@
 #define SHOWBATTERY
 
 #ifndef HDS_FIRMWARE_VERSION
-#define HDS_FIRMWARE_VERSION "3.1.14-preview.1"
+#define HDS_FIRMWARE_VERSION "3.1.14"
 #endif
 #define LINE1 (char*)"FW: " HDS_FIRMWARE_VERSION
 #define LINE2 (char*)"Built-date "

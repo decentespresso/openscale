@@ -20,6 +20,17 @@ To build and flash the scale from your computer, make sure you have the `pio` co
 After this, one can simply use `$pio run -t upload` and platformio will build and flash the firmware to the connected Esp32s3 chip.
 
 
+# New in 3.1.14
+
+## Custom firmware
+
+The [custom build configurator](https://decentespresso.github.io/openscale/custom-build/) builds approved feature and plugin combinations from the stable 3.1.14 source. Builds can be downloaded for USB installation or assigned to linked scales for signed WiFi installation and fleet status tracking.
+
+## Scale-top tap controls
+
+Optional scale-top gestures can tare with a double tap and start or stop the timer with a triple tap. Both are disabled by default and can be enabled independently under `Setup > Scale`.
+
+
 # New Features in 3.0.0
 
 ## Wifi mode

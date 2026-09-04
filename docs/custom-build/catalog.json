@@ -1,7 +1,8 @@
 {
-  "catalog_revision": "1b37055e22faf7a1c2d2d461ab7ca8c26521a16780e3b56676d46abd55bc6145",
+  "catalog_revision": "6cc29f6843a071e97e9a816ed7d36e33abc4e5d340b396788f7d7c04dfe5677d",
   "custom_ota_signing_key_generation": 1,
   "firmware_refs": [
+    "v3.1.14",
     "main"
   ],
   "features": [
@@ -12,6 +13,7 @@
       "tooltip": "Provides WiFi and a minimal setup server for network and device-name configuration.",
       "requires": [],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ],
       "default": true
@@ -25,6 +27,7 @@
         "wifi"
       ],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ],
       "default": true
@@ -38,6 +41,7 @@
         "wifi"
       ],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ],
       "default": true
@@ -52,6 +56,7 @@
         "webserver"
       ],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ],
       "default": true
@@ -63,6 +68,7 @@
       "tooltip": "Adds runtime assets such as HTML, configuration, or plugin resources to LittleFS.",
       "requires": [],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ],
       "default": true
@@ -77,6 +83,7 @@
         "webserver"
       ],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ],
       "default": true
@@ -90,6 +97,7 @@
         "wifi"
       ],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ],
       "default": true
@@ -104,6 +112,7 @@
         "mdns"
       ],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ],
       "hidden": true
@@ -115,6 +124,7 @@
       "tooltip": "Adds the Energy Saving menu and its persistent feature toggles.",
       "requires": [],
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ]
     }
@@ -127,6 +137,7 @@
       "tooltip": "Adds the dashboard, Weigh Save, Dosing Assistant, and Quality Control Assistant. LittleFS, WebSocket, the web server, and WiFi are included automatically.",
       "version": "1.0.0",
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ],
       "requires": [
@@ -149,6 +160,7 @@
       "tooltip": "Enables the built-in grind-by-weight integration. Its recommended setup also selects Wifi Pull OTA and the default web apps.",
       "version": "1.0.0",
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ],
       "requires": [
@@ -175,6 +187,7 @@
       "tooltip": "Connects to a selected Pressensor over BLE and adds pressure-aware shot timing without requiring WiFi or runtime LittleFS.",
       "version": "1.0.0",
       "firmware_refs": [
+        "v3.1.14",
         "main"
       ],
       "requires": [],

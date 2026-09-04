@@ -203,8 +203,8 @@ const Menu menuQuickBoot = { menuQuickBootLabel, toggleQuickBoot, NULL, &menuPow
 #endif
 const Menu *const powerMenu[] = { &menuPowerBack, &menuAutoSleep, &menuQuickBoot,
 #if HDS_ENABLE_ENERGY_MENU
-                                  &menuEnergySerialQuiet, &menuEnergyOledRedraw,
-                                  &menuEnergyOledIdle, &menuEnergyLightSleep,
+                                  &menuEnergyOledRedraw, &menuEnergyOledIdle,
+                                  &menuEnergyLightSleep,
                                   &menuEnergyUsbSleepTest,
 #endif
 };

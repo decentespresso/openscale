@@ -2329,13 +2329,7 @@ void loop() {
             const bool websocketDue = b_wifiEnabled &&
               weightTickCount % max(1UL, weightWebsocketNotifyInterval / WEIGHT_BASE_INTERVAL_MS) == 0;
 #endif
-            if (textDue
-#if HDS_ENABLE_ENERGY_MENU
-                && !energyPolicy.featureEnabled(EnergyFeature::SerialQuiet)
-#endif
-            ) {
-              sendUsbTextWeight();
-            }
+            if (textDue) sendUsbTextWeight();
             if (bleDue) sendBleWeight();
             if (usbDue) sendUsbWeight();
 #if HDS_FEATURE_WEBSOCKET

@@ -24,6 +24,10 @@ def main():
     manifest = json.loads(read("plugins/pressensor/plugin.json"))
     workerConfig = tomllib.loads(read("cloudflare/custom-build-worker/wrangler.toml"))
 
+    pythonContracts = firmwareWorkflow.split("\n  ai-documentation:\n", 1)[1].split(
+        "\n  native-tests:\n", 1
+    )[0]
+    assert 'git tag v3.1.14 "${{ github.sha }}"' in pythonContracts
     stockBuild = firmwareWorkflow.split("\n  build:\n", 1)[1].split("\n  energy-build:\n", 1)[0]
     energyBuild = firmwareWorkflow.split("\n  energy-build:\n", 1)[1]
     assert firmwareWorkflow.count("pio run -e esp32s3\n") == 1
@@ -56,9 +60,10 @@ def main():
     assert "#if HDS_CUSTOM_BUILD" in patch
     assert "#ifdef HDS_CUSTOM_BUILD" not in patch
     assert manifest["patches"] == {
+        "v3.1.14": "patches/main.patch",
         "main": "patches/main.patch",
     }
-    assert workerConfig["vars"]["ALLOWED_FIRMWARE_REFS"] == "main"
+    assert workerConfig["vars"]["ALLOWED_FIRMWARE_REFS"] == "main,v3.1.14"
     assert workerConfig["vars"]["BUILDER_REF"] == "main"
     assert changedPlugins.changedPluginIds([
         "plugins/pressensor/plugin.json",
@@ -69,6 +74,7 @@ def main():
         "plugins/pressensor/patches/main.patch"
     ]) == [
         {"plugin": "pressensor", "firmware_ref": "main"},
+        {"plugin": "pressensor", "firmware_ref": "v3.1.14"},
     ]
     assert changedPlugins.changedPluginMatrix([
         "plugins/default-web-apps/assets/index.html"
@@ -93,9 +99,11 @@ def main():
     assert compileCustom.lstrip().startswith("if: github.event_name == 'pull_request'")
     assert '"features": []' in compileCustom
     assert '"plugins": []' in compileCustom
-    assert '"firmware_ref": "main"' in compileCustom
+    assert '"firmware_ref": "v3.1.14"' in compileCustom
     assert "--config .pio.nosync/pr-ci.json" in compileCustom
-    assert '--source-commit "${{ github.sha }}"' in compileCustom
+    assert 'git tag v3.1.14 "${{ github.sha }}"' in verifyPlugins
+    assert 'git tag v3.1.14 "${{ github.sha }}"' in compileCustom
+    assert "--source-commit \"$(git rev-parse --verify --end-of-options 'refs/tags/v3.1.14^{commit}')\"" in compileCustom
     with tempfile.TemporaryDirectory() as directory:
         subprocess.run(
             ["git", "clone", "--quiet", "--no-checkout", str(ROOT), directory],

@@ -7,7 +7,7 @@ void tearDown() {}
 void testFeaturesDefaultOff() {
   EnergyPolicy policy;
   TEST_ASSERT_EQUAL_UINT32(0, policy.settings.features);
-  TEST_ASSERT_EQUAL_UINT8(5, static_cast<uint8_t>(EnergyFeature::Count));
+  TEST_ASSERT_EQUAL_UINT8(4, static_cast<uint8_t>(EnergyFeature::Count));
 }
 
 void testUsbSleepPolicyCombinations() {
