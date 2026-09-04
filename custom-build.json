@@ -1,5 +1,5 @@
 {
-  "firmware_ref": "main",
+  "firmware_ref": "v3.1.14",
   "features": [
     "pull-ota"
   ],

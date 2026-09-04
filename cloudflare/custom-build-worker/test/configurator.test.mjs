@@ -65,6 +65,15 @@ test("labels stable, preview, and development firmware refs", () => {
 });
 
 
+test("ships 3.1.14 as the production custom-build source", async () => {
+  const shipped = JSON.parse(await readFile(
+    new URL("../../../docs/custom-build/catalog.json", import.meta.url), "utf8",
+  ));
+  assert.deepEqual(shipped.firmware_refs, ["v3.1.14"]);
+  assert.equal(firmwareRefLabel(defaultSelection(shipped).firmware_ref), "3.1.14 (stable)");
+});
+
+
 test("blocks new direct and transitive conflicts without blocking removal", () => {
   const current = {firmware_ref: "main", features: [], plugins: ["blocker"]};
   assert.equal(optionReason(catalog, current, "plugin", "blocker"), "");

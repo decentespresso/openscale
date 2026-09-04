@@ -5,7 +5,7 @@
   "description": "Stop a supported grinder automatically at the target dose.",
   "tooltip": "Enables the built-in grind-by-weight integration. Its recommended setup also selects Wifi Pull OTA and the default web apps.",
   "version": "1.0.0",
-  "firmware_refs": ["main"],
+  "firmware_refs": ["v3.1.14"],
   "requires": ["grinder"],
   "depends_on": [],
   "conflicts": ["pressensor"],

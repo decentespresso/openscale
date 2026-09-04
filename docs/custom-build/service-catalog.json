@@ -1,14 +1,14 @@
 {
   "schema": 2,
   "custom_ota_signing_key_generation": 1,
-  "catalog_revision": "1b37055e22faf7a1c2d2d461ab7ca8c26521a16780e3b56676d46abd55bc6145",
+  "catalog_revision": "634319685037b484388c4a4820f9dac19eb99926dfc4278664fd17c404b3e87c",
   "firmware_refs": [
-    "main"
+    "v3.1.14"
   ],
   "platformio_environment": "esp32s3-custom",
   "firmware": {
-    "main": {
-      "custom_version": "3.1.14-preview.1-custom",
+    "v3.1.14": {
+      "custom_version": "3.1.14-custom",
       "partition_schema": {
         "path": "partitions/default_8MB.csv",
         "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"
@@ -19,7 +19,7 @@
     "wifi": {
       "requires": [],
       "firmware_refs": [
-        "main"
+        "v3.1.14"
       ]
     },
     "mdns": {
@@ -27,7 +27,7 @@
         "wifi"
       ],
       "firmware_refs": [
-        "main"
+        "v3.1.14"
       ]
     },
     "webserver": {
@@ -35,7 +35,7 @@
         "wifi"
       ],
       "firmware_refs": [
-        "main"
+        "v3.1.14"
       ]
     },
     "websocket": {
@@ -44,13 +44,13 @@
         "webserver"
       ],
       "firmware_refs": [
-        "main"
+        "v3.1.14"
       ]
     },
     "littlefs": {
       "requires": [],
       "firmware_refs": [
-        "main"
+        "v3.1.14"
       ]
     },
     "elegant-ota": {
@@ -59,7 +59,7 @@
         "webserver"
       ],
       "firmware_refs": [
-        "main"
+        "v3.1.14"
       ]
     },
     "pull-ota": {
@@ -67,7 +67,7 @@
         "wifi"
       ],
       "firmware_refs": [
-        "main"
+        "v3.1.14"
       ]
     },
     "grinder": {
@@ -76,13 +76,13 @@
         "mdns"
       ],
       "firmware_refs": [
-        "main"
+        "v3.1.14"
       ]
     },
     "energy-menu": {
       "requires": [],
       "firmware_refs": [
-        "main"
+        "v3.1.14"
       ]
     }
   },
@@ -90,7 +90,7 @@
     "default-web-apps": {
       "version": "1.0.0",
       "firmware_refs": [
-        "main"
+        "v3.1.14"
       ],
       "requires": [
         "littlefs",
@@ -210,7 +210,7 @@
     "grind-by-weight": {
       "version": "1.0.0",
       "firmware_refs": [
-        "main"
+        "v3.1.14"
       ],
       "requires": [
         "grinder"
@@ -234,7 +234,7 @@
     "pressensor": {
       "version": "1.0.0",
       "firmware_refs": [
-        "main"
+        "v3.1.14"
       ],
       "requires": [],
       "depends_on": [],
@@ -247,7 +247,7 @@
         "plugins": []
       },
       "patches": {
-        "main": {
+        "v3.1.14": {
           "sha256": "e873624cbdae73d844d6c77dcf4d03001e35c4406fbee3ae0b3cf8c5d6b0db6c"
         }
       },

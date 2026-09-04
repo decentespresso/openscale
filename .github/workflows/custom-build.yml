@@ -21,7 +21,7 @@ on:
       firmware_ref:
         description: Firmware ref
         required: true
-        default: main
+        default: v3.1.14
       features:
         description: Comma-separated feature IDs
         required: false
@@ -71,6 +71,11 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Create prospective release tag
+        run: |
+          if ! git show-ref --verify --quiet refs/tags/v3.1.14; then
+            git tag v3.1.14 "${{ github.sha }}"
+          fi
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
@@ -107,6 +112,11 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Create prospective release tag
+        run: |
+          if ! git show-ref --verify --quiet refs/tags/v3.1.14; then
+            git tag v3.1.14 "${{ github.sha }}"
+          fi
       - uses: actions/cache@v6
         with:
           path: |
@@ -149,7 +159,7 @@ jobs:
 
   compile_custom:
     if: github.event_name == 'pull_request'
-    name: custom firmware (minimal)
+    name: custom firmware (3.1.14 minimal)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -157,6 +167,11 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Create prospective release tag
+        run: |
+          if ! git show-ref --verify --quiet refs/tags/v3.1.14; then
+            git tag v3.1.14 "${{ github.sha }}"
+          fi
       - uses: actions/cache@v6
         with:
           path: |
@@ -176,7 +191,7 @@ jobs:
           path = Path(".pio.nosync/pr-ci.json")
           path.parent.mkdir(parents=True, exist_ok=True)
           path.write_text(json.dumps({
-              "firmware_ref": "main",
+              "firmware_ref": "v3.1.14",
               "features": [],
               "plugins": [],
           }) + "\n", encoding="utf-8")
@@ -195,7 +210,6 @@ jobs:
         run: >-
           python tools/build_custom_firmware.py
           --config .pio.nosync/pr-ci.json
-          --source-commit "${{ github.sha }}"
 
   build:
     if: github.event_name == 'workflow_dispatch'

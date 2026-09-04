@@ -108,7 +108,7 @@ def main():
     )
     if result.returncode != 0 or '-DHDS_FIRMWARE_VERSION="9.8.7"' not in result.stdout:
         raise AssertionError("build metadata did not emit the firmware version macro")
-    environment["HDS_FIRMWARE_VERSION"] = "3.1.14-preview.1-custom"
+    environment["HDS_FIRMWARE_VERSION"] = "3.1.14-custom"
     result = subprocess.run(
         [sys.executable, str(BUILD_METADATA)],
         cwd=ROOT,
@@ -116,8 +116,8 @@ def main():
         capture_output=True,
         text=True,
     )
-    if result.returncode != 0 or '-DHDS_FIRMWARE_VERSION="3.1.14-preview.1-custom"' not in result.stdout:
-        raise AssertionError("build metadata did not accept the dotted preview suffix")
+    if result.returncode != 0 or '-DHDS_FIRMWARE_VERSION="3.1.14-custom"' not in result.stdout:
+        raise AssertionError("build metadata did not accept the custom suffix")
     for invalidVersion in (
         "v9.8.7", "9.8.7-Preview.1", "9.8.7-preview..1", "9.8.7-preview/1",
         "9.8.7-.preview", "9.8.7-preview.",

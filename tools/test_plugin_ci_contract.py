@@ -56,9 +56,9 @@ def main():
     assert "#if HDS_CUSTOM_BUILD" in patch
     assert "#ifdef HDS_CUSTOM_BUILD" not in patch
     assert manifest["patches"] == {
-        "main": "patches/main.patch",
+        "v3.1.14": "patches/main.patch",
     }
-    assert workerConfig["vars"]["ALLOWED_FIRMWARE_REFS"] == "main"
+    assert workerConfig["vars"]["ALLOWED_FIRMWARE_REFS"] == "v3.1.14"
     assert workerConfig["vars"]["BUILDER_REF"] == "main"
     assert changedPlugins.changedPluginIds([
         "plugins/pressensor/plugin.json",
@@ -68,7 +68,7 @@ def main():
     assert changedPlugins.changedPluginMatrix([
         "plugins/pressensor/patches/main.patch"
     ]) == [
-        {"plugin": "pressensor", "firmware_ref": "main"},
+        {"plugin": "pressensor", "firmware_ref": "v3.1.14"},
     ]
     assert changedPlugins.changedPluginMatrix([
         "plugins/default-web-apps/assets/index.html"
@@ -93,9 +93,11 @@ def main():
     assert compileCustom.lstrip().startswith("if: github.event_name == 'pull_request'")
     assert '"features": []' in compileCustom
     assert '"plugins": []' in compileCustom
-    assert '"firmware_ref": "main"' in compileCustom
+    assert '"firmware_ref": "v3.1.14"' in compileCustom
     assert "--config .pio.nosync/pr-ci.json" in compileCustom
-    assert '--source-commit "${{ github.sha }}"' in compileCustom
+    assert 'git tag v3.1.14 "${{ github.sha }}"' in verifyPlugins
+    assert 'git tag v3.1.14 "${{ github.sha }}"' in compileCustom
+    assert "--source-commit" not in compileCustom
     with tempfile.TemporaryDirectory() as directory:
         subprocess.run(
             ["git", "clone", "--quiet", "--no-checkout", str(ROOT), directory],
