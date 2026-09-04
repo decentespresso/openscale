@@ -382,11 +382,7 @@ void evaluateAutoOff(double seconds, bool showCountdown) {
   const unsigned long now = millis();
   if (!powerCadence.autoOff.shouldRun(now, 1000)) return;
   const double timeLeft = seconds - (now - t_power_off) / 1000;
-  if (showCountdown
-#if HDS_ENABLE_ENERGY_MENU
-      && !energyPolicy.featureEnabled(EnergyFeature::SerialQuiet)
-#endif
-  ) {
+  if (showCountdown) {
     Serial.print(timeLeft);
     Serial.println(" seconds to power off");
   }

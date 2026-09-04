@@ -11,6 +11,7 @@ STORAGE = (ROOT / "include" / "storage.h").read_text(encoding="utf-8")
 POWER = (ROOT / "include" / "energy_power_management.h").read_text(encoding="utf-8")
 SHUTDOWN = (ROOT / "include" / "power.h").read_text(encoding="utf-8")
 FIRMWARE = (ROOT / "src" / "hds.ino").read_text(encoding="utf-8")
+WIFI_SETUP = (ROOT / "src" / "wifi_setup.cpp").read_text(encoding="utf-8")
 HDS_FEATURES = (ROOT / "include" / "hds_features.h").read_text(encoding="utf-8")
 PLATFORMIO = (ROOT / "platformio.ini").read_text(encoding="utf-8")
 SDKCONFIG = (ROOT / "sdkconfig.energy-menu.defaults").read_text(encoding="utf-8")
@@ -56,13 +57,12 @@ class EnergyLightSleepContractTests(unittest.TestCase):
 
     def test_feature_count_and_menu_order(self):
         self.assertEqual(
-            ["SerialQuiet", "OledRedraw", "OledIdle", "LightSleep", "UsbSleepTest"],
+            ["OledRedraw", "OledIdle", "LightSleep", "UsbSleepTest"],
             re.findall(r"^  (\w+),$", POLICY, re.MULTILINE),
         )
         self.assertEqual(
             [
-                "Serial Quiet o", "OLED Redraw o", "OLED Idle o", "Light Sleep o",
-                "USB Sleep Test o",
+                "OLED Redraw o", "OLED Idle o", "Light Sleep o", "USB Sleep Test o",
             ],
             re.findall(r'char menuEnergy\w+Label\[\] = "([^"]+)";', MENU),
         )
@@ -70,15 +70,18 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertNotIn("ACC Rail Off", MENU)
         self.assertNotIn("Power Cadence", MENU)
         self.assertNotIn("OLED Static", MENU)
+        self.assertNotIn("SerialQuiet", POLICY + FIRMWARE + SHUTDOWN + WIFI_SETUP)
+        self.assertNotIn("Serial Quiet", MENU)
         self.assertIn("static_cast<size_t>(EnergyFeature::Count)", MENU)
 
     def test_storage_migration_preserves_retained_features(self):
-        self.assertIn("ENERGY_SCHEMA_VERSION = 8", STORAGE)
+        self.assertIn("ENERGY_SCHEMA_VERSION = 9", STORAGE)
         self.assertIn('"e_light_sleep"', STORAGE)
         self.assertIn('"e_usb_sleep"', STORAGE)
         self.assertIn("KEY_ENERGY_MOTION_POLL", STORAGE)
         self.assertIn("KEY_ENERGY_ACC_RAIL_OFF", STORAGE)
         migration = body(STORAGE, "inline bool energyLoadSettings")
+        self.assertIn("storageRemoveIfPresent(KEY_ENERGY_SERIAL_QUIET)", migration)
         self.assertIn("storageRemoveIfPresent(KEY_ENERGY_MOTION_POLL)", migration)
         self.assertIn("storageRemoveIfPresent(KEY_ENERGY_ACC_RAIL_OFF)", migration)
         self.assertIn("storageRemoveIfPresent(KEY_ENERGY_POWER_CADENCE)", migration)
@@ -379,7 +382,6 @@ class EnergyLightSleepContractTests(unittest.TestCase):
             (FIRMWARE, "waitForEnergyMainLoopWork();"),
             (FIRMWARE, "ulTaskNotifyTake(pdTRUE, waitTicks);"),
             (PARAMETER, "EnergyIdleState energyIdle"),
-            (SHUTDOWN, "energyPolicy.featureEnabled("),
             (SHUTDOWN, "esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);"),
             (BLE, "remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);"),
             (WEBSOCKET, "wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);"),

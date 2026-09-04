@@ -60,7 +60,7 @@ def main():
         r"#if HDS_ENABLE_GRINDER\s+&menuGrinder,\s+#endif", menu
     )
     assert re.search(
-        r"#if HDS_ENABLE_ENERGY_MENU\s+&menuEnergySerialQuiet", menu
+        r"#if HDS_ENABLE_ENERGY_MENU\s+&menuEnergyOledRedraw", menu
     )
     assert "void backMenu()" in menu
     assert "navigateMenu(-1);" in sketch
