@@ -52,6 +52,30 @@ def main():
     current_hash = function_body(pull_ota, "String pullOtaCurrentCombinationHash()")
     assert "HDS_CUSTOM_BUILD_COMBINATION_HASH" in current_hash
     run = function_body(header, "void customBuildRun()")
+    credentials = function_body(header, "bool customBuildLoadCredentials(")
+    assert 'preferences.getBool("pair_init", false)' in credentials
+    assert credentials.index('putBool("pair_init", false) == 1') < credentials.index('putString("device_id"')
+    fresh = function_body(run, "if (!pairInitialized)")
+    assert "customBuildPairScale(true);" in fresh
+    assert "return;" in fresh
+    assert run.index("if (!pairInitialized)") < run.index("pullOtaEnsureWifi()")
+    assert run.index("if (!pairInitialized)") < run.index("customBuildCheckIn(")
+    registration = function_body(header, "bool customBuildRegisterPairCode(")
+    assert registration.index("customBuildRequest(") < registration.index("deserializeJson(")
+    assert registration.index('!= pairCode) return false;') < registration.index('putBool("pair_init", true) == 1')
+    assert 'return stored;' in registration
+    pairing = function_body(header, "bool customBuildPairScale(")
+    assert pairing.index("customBuildRegisterPairCode(pairCode)") < pairing.index('pullOtaDraw("Pair code"')
+    assert 'pullOtaDraw("Custom Build", "Pair scale?", "Hold square")' in pairing
+    rejected = function_body(run, "if (assignment.identityRejected)")
+    assert 'customBuildShowRelink("Custom Build", "Device rejected");' in rejected
+    assert "return;" in rejected
+    assert run.index("if (assignment.identityRejected)") < run.index("if (!assignment.linked)")
+    unlinked = function_body(run, "if (!assignment.linked)")
+    assert "customBuildPairScale(true);" in unlinked
+    assert "return;" in unlinked
+    failure = function_body(run, "if (!customBuildCheckIn(")
+    assert 'pullOtaFail("Service failed");' in failure
     installed = run.index("const String installedCombination = pullOtaCurrentCombinationHash()")
     check_in = run.index("customBuildCheckIn(installedCombination, assignment)")
     no_op = run.index("if (assignment.combinationHash == installedCombination)")
@@ -71,6 +95,18 @@ def main():
     ):
         assert forbidden not in no_op_body
     check_in_body = function_body(header, "bool customBuildCheckIn(")
+    assert "body, &status)" in check_in_body
+    assert "assignment.identityRejected = status == HTTP_CODE_UNAUTHORIZED;" in check_in_body
+    assert "return assignment.identityRejected;" in check_in_body
+    assert 'assignment.linked = root["linked"] | false;' in check_in_body
+    assert check_in_body.rstrip().endswith("return true;")
+    request = function_body(header, "bool customBuildRequest(")
+    assert request.index("*responseStatus = 0") < request.index("customBuildLoadCredentials(")
+    assert request.index("*responseStatus = status") < request.index("if (status != HTTP_CODE_OK)")
+    assert "return false;" in function_body(request, "if (status != HTTP_CODE_OK)")
+    for line in header.splitlines():
+        if "pullOtaDraw(" in line or "printf" in line:
+            assert "deviceSecret" not in line and "device_secret" not in line
     assert check_in_body.index("deserializeJson") < check_in_body.index("customBuildHexValueValid")
     assert "std::vector" not in header
     assert "static const uint32_t HDS_OTA_TASK_STACK_BYTES" not in header

@@ -33,6 +33,7 @@ static const size_t HDS_CUSTOM_BUILD_RESPONSE_MAX_BYTES = 2048;
 
 struct CustomBuildAssignment {
   bool linked = false;
+  bool identityRejected = false;
   String state = "";
   String combinationHash = "";
 };
@@ -70,7 +71,7 @@ void customBuildHashPrefix(const String &hash, char output[9]) {
   output[8] = '\0';
 }
 
-bool customBuildLoadCredentials(String &deviceId, String &deviceSecret) {
+bool customBuildLoadCredentials(String &deviceId, String &deviceSecret, bool *pairInitialized = nullptr) {
   Preferences preferences;
   if (!preferences.begin(HDS_CUSTOM_BUILD_NVS_NAMESPACE, false)) return false;
   deviceId = preferences.getString("device_id", "");
@@ -80,7 +81,8 @@ bool customBuildLoadCredentials(String &deviceId, String &deviceSecret) {
     char newDeviceSecret[65];
     customBuildRandomHex(newDeviceId, 16);
     customBuildRandomHex(newDeviceSecret, 32);
-    const bool stored = preferences.putString("device_id", newDeviceId) == 32 &&
+    const bool stored = preferences.putBool("pair_init", false) == 1 &&
+                        preferences.putString("device_id", newDeviceId) == 32 &&
                         preferences.putString("device_secret", newDeviceSecret) == 64;
     if (!stored) {
       preferences.remove("device_id");
@@ -91,6 +93,7 @@ bool customBuildLoadCredentials(String &deviceId, String &deviceSecret) {
     deviceId = newDeviceId;
     deviceSecret = newDeviceSecret;
   }
+  if (pairInitialized != nullptr) *pairInitialized = preferences.getBool("pair_init", false);
   preferences.end();
   return true;
 }
@@ -114,7 +117,9 @@ bool customBuildRequest(
     const char *path,
     const char *method,
     const String &requestBody,
-    String &responseBody) {
+    String &responseBody,
+    int *responseStatus = nullptr) {
+  if (responseStatus != nullptr) *responseStatus = 0;
   String deviceId;
   String deviceSecret;
   if (!customBuildLoadCredentials(deviceId, deviceSecret)) return false;
@@ -131,6 +136,7 @@ bool customBuildRequest(
   } else {
     status = http.GET();
   }
+  if (responseStatus != nullptr) *responseStatus = status;
   if (status != HTTP_CODE_OK) {
     http.end();
     return false;
@@ -150,7 +156,11 @@ bool customBuildCheckIn(
   String requestBody;
   serializeJson(request, requestBody);
   String body;
-  if (!customBuildRequest("/api/v1/device/check-in", "POST", requestBody, body)) return false;
+  int status = 0;
+  if (!customBuildRequest("/api/v1/device/check-in", "POST", requestBody, body, &status)) {
+    assignment.identityRejected = status == HTTP_CODE_UNAUTHORIZED;
+    return assignment.identityRejected;
+  }
   JsonDocument document;
   if (deserializeJson(document, body)) return false;
   JsonObject root = document.as<JsonObject>();
@@ -173,7 +183,12 @@ bool customBuildRegisterPairCode(const char *pairCode) {
   if (!customBuildRequest("/api/v1/device/pair", "POST", requestBody, responseBody)) return false;
   JsonDocument response;
   if (deserializeJson(response, responseBody)) return false;
-  return String(response["pair_code"] | "") == pairCode;
+  if (String(response["pair_code"] | "") != pairCode) return false;
+  Preferences preferences;
+  if (!preferences.begin(HDS_CUSTOM_BUILD_NVS_NAMESPACE, false)) return false;
+  const bool stored = preferences.putBool("pair_init", true) == 1;
+  preferences.end();
+  return stored;
 }
 
 bool customBuildWaitForHold(uint8_t pin, unsigned long timeoutMs) {
@@ -338,6 +353,17 @@ bool customBuildConfirmInstall(
 }
 
 void customBuildRun() {
+  String deviceId;
+  String deviceSecret;
+  bool pairInitialized = false;
+  if (!customBuildLoadCredentials(deviceId, deviceSecret, &pairInitialized)) {
+    pullOtaFail("Storage failed");
+    return;
+  }
+  if (!pairInitialized) {
+    customBuildPairScale(true);
+    return;
+  }
   pullOtaDraw("Custom Build", "Checking");
   if (!pullOtaEnsureWifi() || !pullOtaClockReady()) {
     pullOtaFail("Network failed");
@@ -347,6 +373,10 @@ void customBuildRun() {
   CustomBuildAssignment assignment;
   if (!customBuildCheckIn(installedCombination, assignment)) {
     pullOtaFail("Service failed");
+    return;
+  }
+  if (assignment.identityRejected) {
+    customBuildShowRelink("Custom Build", "Device rejected");
     return;
   }
   if (!assignment.linked) {
