@@ -14,11 +14,27 @@ static bool tapTripleArmed = false;
 static unsigned long tapActionAtMs = 0;
 static bool tapDetectionGated = true;
 
+static inline void runTapLocalAction(bool tripleTap) {
+  if (tripleTap) {
+    scaleTimer();
+    return;
+  }
+
+  b_weight_quick_zero = true;
+  t_quickZeroStart = millis();
+  t_tareByButton = millis();
+  b_tareByButton = true;
+}
+
 void tapDetectTick() {
   const unsigned long now = millis();
   const float weight = f_current_raw_value;
-  if ((!b_tapTareEnabled && !b_tapTimerEnabled) || b_bootTare ||
-      b_bootFreshTarePending || stopWatch.isRunning()
+  const bool timerRunning = stopWatch.isRunning();
+  const bool noTapActionAvailable =
+      (!b_tapTareEnabled && !b_tapTimerEnabled) ||
+      (timerRunning && !b_tapTimerEnabled);
+
+  if (noTapActionAvailable || b_bootTare || b_bootFreshTarePending
 #if HDS_ENABLE_GRINDER
       || grinderRuntime.state == GRINDER_STATE_GRINDING
       || grinderRuntime.state == GRINDER_STATE_STOPPING
@@ -37,10 +53,14 @@ void tapDetectTick() {
   }
 
   const TapEvent event = tapDetector.tick(now, weight);
-  if ((event == TapEvent::Double && b_tapTareEnabled) ||
-      (event == TapEvent::Triple && b_tapTimerEnabled)) {
+  const bool doubleTapAction =
+      event == TapEvent::Double && b_tapTareEnabled && !timerRunning;
+  const bool tripleTapAction =
+      event == TapEvent::Triple && b_tapTimerEnabled;
+
+  if (doubleTapAction || tripleTapAction) {
     tapActionArmed = true;
-    tapTripleArmed = event == TapEvent::Triple;
+    tapTripleArmed = tripleTapAction;
     tapActionAtMs = now;
     Serial.println(tapTripleArmed ? "[TAP] triple tap -> timer" :
                                    "[TAP] double tap -> tare");
@@ -49,7 +69,7 @@ void tapDetectTick() {
   if (tapActionArmed && now - tapActionAtMs >= TAP_ACTION_DELAY_MS) {
     tapActionArmed = false;
     power_off(-1);
-    runRecognizedButtonAction(tapTripleArmed ? BUTTON_SQUARE : BUTTON_CIRCLE);
+    runTapLocalAction(tapTripleArmed);
 #ifdef BUZZER
     buzzer.beep(1, BUZZER_DURATION);
 #endif

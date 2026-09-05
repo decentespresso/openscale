@@ -29,6 +29,7 @@ def main() -> None:
     tap = (ROOT / "include" / "tap_detection.h").read_text(encoding="utf-8")
     shared = function_body(finger, "runRecognizedButtonAction")
     recognized = function_body(finger, "isFingerPress")
+    local_tap = function_body(tap, "runTapLocalAction")
     detector = function_body(tap, "tapDetectTick")
 
     assert "TAP_ACTION_DELAY_MS = 100" in tap
@@ -38,12 +39,19 @@ def main() -> None:
     assert "sendBleButton(buttonNumber, 1);" in shared
     assert "runRecognizedButtonAction(button);" in recognized
     assert "now - t_menuExitTime <= 1000" in detector
-    assert "stopWatch.isRunning()" in detector
+    assert "scaleTimer();" in local_tap
+    assert "b_weight_quick_zero = true;" in local_tap
+    assert "b_tareByButton = true;" in local_tap
+    assert "const bool timerRunning = stopWatch.isRunning();" in detector
+    assert "(timerRunning && !b_tapTimerEnabled)" in detector
+    assert "event == TapEvent::Double && b_tapTareEnabled && !timerRunning" in detector
+    assert "event == TapEvent::Triple && b_tapTimerEnabled" in detector
     assert "grinderRuntime.state == GRINDER_STATE_GRINDING" in detector
     assert "grinderRuntime.state == GRINDER_STATE_STOPPING" in detector
     assert "tapDetector.reset(now, weight);" in detector
     assert "power_off(-1);" in detector
-    assert "runRecognizedButtonAction(tapTripleArmed ? BUTTON_SQUARE : BUTTON_CIRCLE);" in detector
+    assert "runTapLocalAction(tapTripleArmed);" in detector
+    assert "runRecognizedButtonAction" not in tap
 
 
 if __name__ == "__main__":

@@ -24,19 +24,21 @@ class TapDetector {
     previousWeight = weight;
     rising = false;
     risingFromSteady = false;
-    lastPeakMs = now;
+    tapStartedMs = now;
+    lastReleaseMs = now;
     sequenceCount = 0;
     needsRelease = false;
     sequenceLocked = false;
   }
 
   TapEvent tick(unsigned long now, float weight) {
-    if (sequenceCount == 0 && !needsRelease && !sequenceLocked) {
-      updateSteadyState(now, weight);
+    if ((rising || needsRelease) && now - tapStartedMs > maxTapDurationMs) {
+      reset(now, weight);
+      return TapEvent::None;
     }
 
     if (sequenceLocked) {
-      if (now - lastPeakMs <= doubleWindowMs) {
+      if (now - lastReleaseMs <= interTapWindowMs) {
         previousWeight = weight;
         rising = false;
         return TapEvent::None;
@@ -49,13 +51,17 @@ class TapDetector {
 
     if (needsRelease && fabsf(weight - baseline) <= releaseRangeG) {
       needsRelease = false;
+      lastReleaseMs = now;
       if (sequenceCount == 3) event = completeTriple();
     }
 
     if (weight > previousWeight + peakSlopeG &&
         !needsRelease && (sequenceCount > 0 || steady)) {
-      rising = true;
-      risingFromSteady = steady;
+      if (!rising) {
+        tapStartedMs = now;
+        risingFromSteady = steady;
+        rising = true;
+      }
     } else if (weight < previousWeight - peakSlopeG && rising) {
       rising = false;
       if (previousWeight - baseline > peakHeightG) {
@@ -63,18 +69,23 @@ class TapDetector {
       }
     }
 
+    if (sequenceCount == 0 && !needsRelease && !sequenceLocked && !rising) {
+      updateSteadyState(now, weight);
+    }
+
     previousWeight = weight;
     return event;
   }
 
  private:
-  static constexpr float peakHeightG = 20.0f;
+  static constexpr float peakHeightG = 10.0f;
   static constexpr float peakSlopeG = 2.0f;
   static constexpr float releaseRangeG = 2.0f;
   static constexpr unsigned long sampleIntervalMs = 100;
   static constexpr uint8_t steadySampleCount = 5;
   static constexpr float steadyRangeG = 0.5f;
-  static constexpr unsigned long doubleWindowMs = 400;
+  static constexpr unsigned long interTapWindowMs = 400;
+  static constexpr unsigned long maxTapDurationMs = 600;
 
   float history[steadySampleCount];
   uint8_t historyIndex;
@@ -85,7 +96,8 @@ class TapDetector {
   float previousWeight;
   bool rising;
   bool risingFromSteady;
-  unsigned long lastPeakMs;
+  unsigned long tapStartedMs;
+  unsigned long lastReleaseMs;
   uint8_t sequenceCount;
   bool needsRelease;
   bool sequenceLocked;
@@ -116,7 +128,8 @@ class TapDetector {
   }
 
   TapEvent expireSequence(unsigned long now) {
-    if (sequenceCount == 0 || now - lastPeakMs < doubleWindowMs) {
+    if (sequenceCount == 0 || rising || needsRelease ||
+        now - lastReleaseMs < interTapWindowMs) {
       return TapEvent::None;
     }
     const TapEvent event = sequenceCount == 2 && !needsRelease ?
@@ -130,12 +143,10 @@ class TapDetector {
     if (sequenceCount == 0) {
       if (!startedFromSteady) return TapEvent::None;
       sequenceCount = 1;
-    } else if (now - lastPeakMs < doubleWindowMs) {
-      ++sequenceCount;
     } else {
-      sequenceCount = startedFromSteady ? 1 : 0;
+      ++sequenceCount;
     }
-    lastPeakMs = now;
+    if (!needsRelease) lastReleaseMs = now;
 
     if (sequenceCount == 3) {
       return needsRelease ? TapEvent::None : completeTriple();

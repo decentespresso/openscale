@@ -1,6 +1,8 @@
+import hashlib
 import importlib.util
 import re
 import runpy
+import ssl
 import subprocess
 import tempfile
 import unittest
@@ -35,7 +37,11 @@ class OtaPublicKeyHeaderTest(unittest.TestCase):
             PULL_OTA_HEADER.read_text(encoding="utf-8"),
             re.DOTALL,
         )
-        self.assertEqual(len(certificates), 2)
+        self.assertEqual(len(certificates), 3)
+        self.assertIn(
+            "349dfa4058c5e263123b398ae795573c4e1313c83fe68f93556cd5e8031b3c7d",
+            {hashlib.sha256(ssl.PEM_cert_to_DER_cert(cert)).hexdigest() for cert in certificates},
+        )
         for certificate in certificates:
             subprocess.run(
                 [load_module().openssl_path(), "x509", "-noout"],
