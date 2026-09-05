@@ -80,6 +80,11 @@ def check_endpoint(webserver_source):
 
 
 def check_mini_config_server(mini_server, hds_source):
+    start = mini_server.index("static bool wifiConfigStartServer()")
+    guard = mini_server.index("if (!WiFi.STA.started() && !WiFi.AP.started())", start)
+    socket = mini_server.index("socket(AF_INET, SOCK_STREAM, IPPROTO_IP)", start)
+    assert start < guard < socket
+    assert "return false;" in mini_server[guard:socket]
     if "HDS_FEATURE_WIFI && !HDS_FEATURE_WEBSERVER" not in mini_server:
         raise AssertionError("mini setup server must only compile for WiFi without Webserver")
     for snippet in (

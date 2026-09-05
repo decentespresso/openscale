@@ -354,6 +354,9 @@ static bool wifiConfigConsumeByte(char value) {
 }
 
 static bool wifiConfigStartServer() {
+  if (!WiFi.STA.started() && !WiFi.AP.started()) {
+    return false;
+  }
   const int serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
   if (serverSocket < 0) {
     return false;
