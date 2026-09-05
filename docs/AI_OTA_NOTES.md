@@ -25,6 +25,13 @@ Opening the Custom Build menu performs one authenticated device check-in. Custom
 the normalized compile-time `HDS_CUSTOM_BUILD_COMBINATION_HASH`; official firmware reports null.
 The response contains only linking state, one desired combination, and its canonical build state.
 
+Fresh devices start pairing from Custom Build. Once a pair code has been registered
+(`ota_custom/pair_init`), Connections exposes a separate Relink entry. Relink requires
+an explicit held-button confirmation and uses the same paused OTA task as Custom Build.
+Custom Build status screens dismiss with Square and never start relinking. Circle
+cancels the installation prompt instead of relinking. Menu visibility reads the existing
+NVS marker on Connections entry or navigation, not on each display frame.
+
 Validate the full desired hash before comparing it with the local compile-time hash. An exact match
 must return before custom manifest or signature retrieval, asset download, pending LittleFS state,
 or reboot scheduling. The Worker copy of `installed_combination` is telemetry and must never drive

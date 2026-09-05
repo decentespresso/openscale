@@ -78,6 +78,8 @@ void drawButton();
 void wifiUpdate();
 void wifiUpdate(const PullOtaTargetVersion &target);
 void customBuildMenu();
+void customBuildRelinkMenu();
+bool customBuildRelinkAvailable();
 #endif
 void showStatus();
 void showAbout();
@@ -160,6 +162,7 @@ const Menu menuWiFiStatusOption = { "WiFi Status", showWifiStatus, NULL, &menuCo
 #if HDS_FEATURE_PULL_OTA
 const Menu menuWiFiPullUpdateOption = { "WiFi Update", wifiUpdate, NULL, &menuConnections };
 const Menu menuCustomBuildOption = { "Custom Build", customBuildMenu, NULL, &menuConnections };
+const Menu menuCustomRelinkOption = { "Relink", customBuildRelinkMenu, NULL, &menuConnections };
 #endif
 const Menu menuWiFiResetOption = { "Reset WiFi", resetWifi, NULL, &menuConnections };
 #endif
@@ -180,7 +183,18 @@ const Menu *const connectionsMenu[] = {
 #endif
   &menuWiFiResetOption,
 #endif
+#if HDS_FEATURE_WIFI && HDS_FEATURE_PULL_OTA
+  &menuCustomRelinkOption,
+#endif
 };
+
+int connectionsMenuSize() {
+#if HDS_FEATURE_WIFI && HDS_FEATURE_PULL_OTA
+  return getMenuSize(connectionsMenu) - (customBuildRelinkAvailable() ? 0 : 1);
+#else
+  return getMenuSize(connectionsMenu);
+#endif
+}
 
 const Menu menuDisplayBack = { "Back", NULL, NULL, &menuDisplay };
 const Menu menuFlipScreen = { menuFlipScreenLabel, toggleFlipScreen, NULL, &menuDisplay };
@@ -1590,6 +1604,7 @@ void refreshMenuRows() {
 
 void navigateMenu(int direction) {
   recordEnergyActivity();
+  if (currentMenu == connectionsMenu) currentMenuSize = connectionsMenuSize();
   currentIndex = (currentIndex + direction + currentMenuSize) % currentMenuSize;
   currentSelection = currentMenu[currentIndex];
   invalidateMenuFrame();
@@ -1630,7 +1645,7 @@ void selectMenu() {
       currentMenuSize = getMenuSize(scaleMenu);
     } else if (currentSelection == &menuConnections) {
       currentMenu = connectionsMenu;
-      currentMenuSize = getMenuSize(connectionsMenu);
+      currentMenuSize = connectionsMenuSize();
     } else if (currentSelection == &menuDisplay) {
       currentMenu = displayMenu;
       currentMenuSize = getMenuSize(displayMenu);

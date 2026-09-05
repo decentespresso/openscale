@@ -673,32 +673,6 @@
 
     .service-heading span { font-size: .78rem; font-weight: 720; }
 
-    .hash-button {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 16px;
-      align-items: center;
-      gap: 8px;
-      width: 100%;
-      padding: 7px 8px;
-      border: 1px solid var(--line);
-      border-radius: 7px;
-      color: var(--faint);
-      background: var(--surface-soft);
-      text-align: left;
-      cursor: pointer;
-    }
-
-    .hash-button[hidden] { display: none; }
-    .hash-button:hover, .hash-button:focus-visible { border-color: var(--green-line); outline: 0; }
-    .hash-button:focus-visible { box-shadow: 0 0 0 3px rgba(13, 121, 85, .14); }
-
-    .hash-button code {
-      min-width: 0;
-      overflow-wrap: anywhere;
-      font: 600 .62rem/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    }
-
-    .hash-button svg { width: 16px; height: 16px; }
 
     .status-message {
       min-height: 42px;
@@ -1235,8 +1209,7 @@
       background: var(--green-soft-strong);
     }
 
-    html[data-theme="dark"] .recommend-button:focus-visible,
-    html[data-theme="dark"] .hash-button:focus-visible { box-shadow: 0 0 0 3px var(--focus-green); }
+    html[data-theme="dark"] .recommend-button:focus-visible { box-shadow: 0 0 0 3px var(--focus-green); }
     html[data-theme="dark"] .info-button { color: #8a9690; }
 
     html[data-theme="dark"] .tooltip {

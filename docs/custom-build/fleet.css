@@ -26,7 +26,7 @@
 .fleet-build-labels,
 .fleet-build-row {
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) minmax(190px, 1.35fr) 142px 92px auto;
+  grid-template-columns: minmax(150px, 1fr) minmax(190px, 1.35fr) 92px 150px;
   align-items: center;
   gap: 14px;
 }
@@ -92,27 +92,16 @@
   line-height: 1.35;
 }
 
-.fleet-hash {
-  min-width: 0;
-  padding: 7px 8px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  color: var(--code);
-  background: var(--surface-soft);
+.fleet-build-version summary {
+  margin-top: 6px;
+  color: var(--green-dark);
+  font-size: .72rem;
   cursor: pointer;
-  text-overflow: ellipsis;
 }
 
-.fleet-hash code {
-  font: 650 .67rem/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
-.fleet-hash:hover,
-.fleet-hash:focus-visible {
-  border-color: var(--green-line);
-  background: var(--green-soft);
-  outline: 0;
+.fleet-build-version summary:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
 }
 
 .deployment-state {
@@ -281,7 +270,7 @@
 }
 
 .scale-build strong,
-.scale-build code {
+.scale-build span {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -293,10 +282,10 @@
   font-size: .72rem;
 }
 
-.scale-build code {
+.scale-build span {
   margin-top: 4px;
   color: var(--faint);
-  font: 650 .65rem/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .68rem;
 }
 
 .last-seen {
@@ -312,7 +301,6 @@
     grid-template-columns: minmax(150px, 1fr) minmax(180px, 1fr) auto;
   }
 
-  .fleet-hash,
   .deployment-state { grid-row: 2; }
 
   .fleet-row-actions { grid-column: 3; grid-row: 1 / span 2; }
@@ -341,7 +329,6 @@
 
   .fleet-build-name,
   .fleet-build-version { grid-column: 1 / -1; }
-  .fleet-hash,
   .deployment-state { grid-row: auto; }
   .fleet-row-actions { grid-column: 1 / -1; grid-row: auto; justify-content: stretch; }
   .fleet-row-actions button { flex: 1; }
