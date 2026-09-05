@@ -254,15 +254,16 @@ def main():
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
     fleetScript = (pageRoot / "fleet.js").read_text(encoding="utf-8")
-    assert 'type="module" src="app.js?v=21"' in indexPage
-    assert 'href="styles.css?v=15"' in indexPage
-    assert 'href="fleet.css?v=3"' in indexPage
+    assert 'type="module" src="app.js?v=22"' in indexPage
+    assert 'href="styles.css?v=16"' in indexPage
+    assert 'href="fleet.css?v=4"' in indexPage
     assert 'id="request-build"' in indexPage
     assert "catalog-data" not in indexPage
     assert 'fetch("catalog.json"' in appScript
     assert "openscale-custom-builds.odevstudio.workers.dev" in appScript
     assert "catalog.features.filter(item => !item.hidden)" in appScript
-    assert "Usually ready in about 5 minutes" in appScript
+    assert "buildEstimate(result, currentSelection)" in appScript
+    assert 'build-estimate.mjs?v=1' in appScript
     assert "error.status === 429" in appScript
     assert "weekly build limit" in appScript.lower()
     assert "daily build limit" not in appScript.lower()
@@ -270,7 +271,7 @@ def main():
     assert "firmwareRefLabel(ref)" in appScript
     assert "firmwareRefLabel(selected.firmware_ref)" in appScript
     assert 'selection.mjs?v=5' in appScript
-    assert 'fleet.js?v=6' in appScript
+    assert 'fleet.js?v=7' in appScript
     assert 'fleetPanel.hidden = installMethod !== "wifi"' in appScript
     assert "sessionStorage.setItem(storageKey" in fleetScript
     assert "localStorage.setItem(storageKey" not in fleetScript
