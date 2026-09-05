@@ -98,6 +98,14 @@ bool customBuildLoadCredentials(String &deviceId, String &deviceSecret, bool *pa
   return true;
 }
 
+bool customBuildRelinkAvailable() {
+  Preferences preferences;
+  if (!preferences.begin(HDS_CUSTOM_BUILD_NVS_NAMESPACE, true)) return false;
+  const bool initialized = preferences.getBool("pair_init", false);
+  preferences.end();
+  return initialized;
+}
+
 void customBuildSerialHint(char output[7]) {
   const uint64_t mac = ESP.getEfuseMac();
   snprintf(output, 7, "%06lX", (unsigned long)(mac & 0xFFFFFFUL));
@@ -191,10 +199,14 @@ bool customBuildRegisterPairCode(const char *pairCode) {
   return stored;
 }
 
-bool customBuildWaitForHold(uint8_t pin, unsigned long timeoutMs) {
+bool customBuildWaitForHold(uint8_t pin, unsigned long timeoutMs, int cancelPin = -1) {
   const unsigned long startedAt = millis();
   unsigned long heldSince = 0;
   while (millis() - startedAt < timeoutMs) {
+    if (cancelPin >= 0 && digitalRead(cancelPin) == LOW) {
+      pullOtaWaitForRelease(1000);
+      return false;
+    }
     if (digitalRead(pin) == LOW) {
       if (heldSince == 0) heldSince = millis();
       if (millis() - heldSince >= HDS_CUSTOM_BUILD_HOLD_MS) return true;
@@ -313,24 +325,26 @@ bool customBuildFetchManifest(
   return pullOtaParseManifestObject(root, manifest, assetPrefix.c_str(), false);
 }
 
-bool customBuildShowRelink(const char *line1, const char *line2) {
-  pullOtaWaitForRelease(1000);
-  pullOtaDraw(line1, line2, "Hold O relink");
-  if (!customBuildWaitForHold(BUTTON_CIRCLE, HDS_CUSTOM_BUILD_SCREEN_TIMEOUT_MS)) return true;
-  return customBuildPairScale(false);
+bool customBuildConfirmRelink() {
+  if (!pullOtaWaitForRelease(3000)) return false;
+  pullOtaDraw("Relink scale?", "", "Sq back Hold O");
+  return customBuildWaitForHold(BUTTON_CIRCLE, HDS_CUSTOM_BUILD_SCREEN_TIMEOUT_MS, BUTTON_SQUARE);
+}
+
+void customBuildShowStatus(const char *line1, const char *line2) {
+  pullOtaDraw(line1, line2, "Sq back");
+  customBuildWaitForDismiss(HDS_CUSTOM_BUILD_SCREEN_TIMEOUT_MS);
 }
 
 bool customBuildConfirmInstall(
     const PullOtaManifest &manifest,
-    const String &combinationHash,
-    bool &relink) {
+    const String &combinationHash) {
   char hashPrefix[9];
   customBuildHashPrefix(combinationHash, hashPrefix);
   pullOtaWaitForRelease(1000);
-  pullOtaDraw(manifest.version.c_str(), hashPrefix, "Sq install O relink");
+  pullOtaDraw(manifest.version.c_str(), hashPrefix, "Hold Sq O back");
   const unsigned long startedAt = millis();
   unsigned long squareHeldSince = 0;
-  unsigned long circleHeldSince = 0;
   while (millis() - startedAt < HDS_OTA_CONFIRM_TIMEOUT_MS) {
     if (digitalRead(BUTTON_SQUARE) == LOW) {
       if (squareHeldSince == 0) squareHeldSince = millis();
@@ -339,13 +353,8 @@ bool customBuildConfirmInstall(
       squareHeldSince = 0;
     }
     if (digitalRead(BUTTON_CIRCLE) == LOW) {
-      if (circleHeldSince == 0) circleHeldSince = millis();
-      if (millis() - circleHeldSince >= HDS_CUSTOM_BUILD_HOLD_MS) {
-        relink = true;
-        return false;
-      }
-    } else {
-      circleHeldSince = 0;
+      pullOtaWaitForRelease(1000);
+      return false;
     }
     delay(20);
   }
@@ -376,29 +385,29 @@ void customBuildRun() {
     return;
   }
   if (assignment.identityRejected) {
-    customBuildShowRelink("Custom Build", "Device rejected");
+    customBuildShowStatus("Custom Build", "Device rejected");
     return;
   }
   if (!assignment.linked) {
-    customBuildPairScale(true);
+    customBuildShowStatus("Custom Build", "Not linked");
     return;
   }
   if (assignment.combinationHash.length() == 0) {
-    customBuildShowRelink("Custom Build", "No build assigned");
+    customBuildShowStatus("Custom Build", "No build assigned");
     return;
   }
   if (assignment.combinationHash == installedCombination) {
     char hashPrefix[9];
     customBuildHashPrefix(installedCombination, hashPrefix);
-    customBuildShowRelink("Already installed", hashPrefix);
+    customBuildShowStatus("Already installed", hashPrefix);
     return;
   }
   if (assignment.state == "queued" || assignment.state == "building") {
-    customBuildShowRelink("Custom Build", "Build preparing");
+    customBuildShowStatus("Custom Build", "Build preparing");
     return;
   }
   if (assignment.state != "ready") {
-    customBuildShowRelink("Custom Build", "Build unavailable");
+    customBuildShowStatus("Custom Build", "Build unavailable");
     return;
   }
   PullOtaManifest manifest;
@@ -407,11 +416,7 @@ void customBuildRun() {
     pullOtaFail("Signature failed");
     return;
   }
-  bool relink = false;
-  if (!customBuildConfirmInstall(manifest, assignment.combinationHash, relink)) {
-    if (relink) customBuildPairScale(false);
-    return;
-  }
+  if (!customBuildConfirmInstall(manifest, assignment.combinationHash)) return;
   const String rollbackCombinationHash = installedCombination;
   const bool rollbackFound = rollbackCombinationHash.length() > 0
       ? customBuildFetchManifest(rollbackCombinationHash, rollbackManifest)
@@ -428,14 +433,20 @@ void customBuildRun() {
 }
 
 void customBuildTask(void *args) {
-  (void)args;
   const unsigned long pauseStartedAt = millis();
   while (!otaRuntimeIsPaused() &&
          millis() - pauseStartedAt < OTA_RUNTIME_PAUSE_TIMEOUT_MS) {
     delay(1);
   }
-  if (otaRuntimeIsPaused()) customBuildRun();
-  else pullOtaFail("OTA runtime pause failed");
+  if (otaRuntimeIsPaused()) {
+    if (args != nullptr) {
+      if (customBuildConfirmRelink()) customBuildPairScale(false);
+    } else {
+      customBuildRun();
+    }
+  } else {
+    pullOtaFail("OTA runtime pause failed");
+  }
   portENTER_CRITICAL(&wsPendingMux);
   const bool restartPending = (wsPendingMask & WSP_OTA_RESET) != 0;
   portEXIT_CRITICAL(&wsPendingMux);
@@ -446,7 +457,7 @@ void customBuildTask(void *args) {
   vTaskDelete(NULL);
 }
 
-void customBuildMenu() {
+void customBuildStart(bool relink) {
   if (b_pullOtaRunning || b_ota) return;
   setOtaRuntimePaused(false);
   b_pullOtaRunning = true;
@@ -455,7 +466,7 @@ void customBuildMenu() {
       customBuildTask,
       "Custom OTA",
       HDS_OTA_TASK_STACK_BYTES,
-      NULL,
+      reinterpret_cast<void *>(static_cast<uintptr_t>(relink)),
       1,
       NULL);
   if (started != pdPASS) {
@@ -463,6 +474,14 @@ void customBuildMenu() {
     b_ota = false;
     pullOtaFail("OTA task failed");
   }
+}
+
+void customBuildMenu() {
+  customBuildStart(false);
+}
+
+void customBuildRelinkMenu() {
+  customBuildStart(true);
 }
 
 #endif

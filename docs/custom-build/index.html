@@ -23,8 +23,8 @@
       document.querySelector("#theme-color").content = dark ? "#111413" : "#0d6b4f";
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=15">
-  <link rel="stylesheet" href="fleet.css?v=3">
+  <link rel="stylesheet" href="styles.css?v=16">
+  <link rel="stylesheet" href="fleet.css?v=4">
 </head>
 <body>
   <header class="topbar">
@@ -153,10 +153,6 @@
           <div class="service-section">
             <div class="service-heading">
               <span>Build status</span>
-              <button id="copy-hash" class="hash-button" type="button" title="Copy combination hash" hidden>
-                <code id="combination-hash"></code>
-                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              </button>
             </div>
             <p id="status-message" class="status-message" role="status" aria-live="polite">Checking the build cache.</p>
             <p id="pull-ota-warning" class="pull-ota-warning" hidden>Wifi Pull OTA installs official releases and replaces this custom build.</p>
@@ -231,7 +227,7 @@
             <button id="add-fleet-build" class="primary-button" type="button" disabled>Add current build</button>
           </div>
           <div class="fleet-build-labels" aria-hidden="true">
-            <span>Label</span><span>Firmware and options</span><span>Combination</span><span>Availability</span><span></span>
+            <span>Label</span><span>Firmware and options</span><span>Availability</span><span></span>
           </div>
           <ul id="fleet-builds" class="fleet-build-list"></ul>
         </section>
@@ -300,6 +296,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="app.js?v=21"></script>
+  <script type="module" src="app.js?v=22"></script>
 </body>
 </html>

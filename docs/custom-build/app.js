@@ -8,7 +8,8 @@ import {
   resolveSelection,
   selectionQuery,
 } from "./selection.mjs?v=5";
-import {initFleet} from "./fleet.js?v=6";
+import {initFleet} from "./fleet.js?v=7";
+import {buildEstimate} from "./build-estimate.mjs?v=1";
 
 (async () => {
   const themeStorageKey = "hds-custom-build-theme-v1";
@@ -77,7 +78,6 @@ import {initFleet} from "./fleet.js?v=6";
   const featureById = new Map(catalog.features.map(item => [item.id, item]));
   const pluginById = new Map(catalog.plugins.map(item => [item.id, item]));
   const buildButton = document.querySelector("#request-build");
-  const hashButton = document.querySelector("#copy-hash");
   const fleetPanel = document.querySelector("#fleet-panel");
   let toastTimer;
   let statusTimer;
@@ -153,14 +153,6 @@ import {initFleet} from "./fleet.js?v=6";
     toastTimer = setTimeout(() => toast.classList.remove("is-visible"), 2200);
   };
 
-  const buildEstimate = result => {
-    if (result.state === "queued") return "Usually ready in about 5 minutes.";
-    if (result.state !== "building" || !result.updated_at) return "";
-    const elapsedMinutes = Math.max(0, (Date.now() - Date.parse(result.updated_at)) / 60000);
-    const remaining = Math.ceil(5 - elapsedMinutes);
-    return remaining > 0 ? `Usually ready in about ${remaining} minute${remaining === 1 ? "" : "s"}.` : "Finishing up.";
-  };
-
   const setStatus = (result, generation = selectionGeneration) => {
     if (generation !== selectionGeneration) return;
     const buildState = document.querySelector("#build-state");
@@ -172,7 +164,7 @@ import {initFleet} from "./fleet.js?v=6";
     };
     const messages = {
       missing: "This combination has not been built yet.",
-      queued: "The build is waiting for an available runner.",
+      queued: "",
       building: "The firmware and filesystem images are being built.",
       ready: "The build archive is ready to download.",
       failed: failureMessages[result.failure_code] || "The build did not complete.",
@@ -192,12 +184,10 @@ import {initFleet} from "./fleet.js?v=6";
     updaterLink.setAttribute(
       "aria-label", updaterReady ? "Open HDS Updater for this build" : "Open HDS Updater",
     );
-    document.querySelector("#combination-hash").textContent = combinationHash;
-    hashButton.hidden = !combinationHash;
     const retryMessage = result.state === "failed" ?
       (result.retryable ? " One retry is available." : " No retries remain.") : "";
     document.querySelector("#status-message").textContent =
-      [messages[result.state] || messages.unavailable, retryMessage, buildEstimate(result)].filter(Boolean).join(" ");
+      [messages[result.state] ?? messages.unavailable, retryMessage, buildEstimate(result, currentSelection)].filter(Boolean).join(" ");
     buildButton.disabled = result.state !== "missing" && !(result.state === "failed" && result.retryable);
     const downloads = document.querySelector("#downloads");
     downloads.replaceChildren();
@@ -476,15 +466,6 @@ import {initFleet} from "./fleet.js?v=6";
         setStatus({state: "unavailable"}, generation);
         showToast("Build request rejected");
       }
-    }
-  });
-  hashButton.addEventListener("click", async () => {
-    if (!currentCombinationHash) return;
-    try {
-      await navigator.clipboard.writeText(currentCombinationHash);
-      showToast("Combination hash copied");
-    } catch {
-      showToast("Combination hash could not be copied");
     }
   });
   document.querySelector("#reset").addEventListener("click", () => {

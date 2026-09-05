@@ -48,7 +48,8 @@ firmware reports that value; official firmware reports `installed_combination: n
 records without the newer fields remain valid and appear as unknown until they check in.
 
 Full 64-character lowercase hashes are used for API identity, storage, assignment, and verification.
-The 12-character browser prefix and 8-character OLED prefix are uppercase display aids only.
+The browser uses build labels; hashes remain internal identifiers. The 8-character OLED prefix
+is an uppercase display aid only. Firmware options in saved builds can be expanded in full.
 
 ## Fleet API
 

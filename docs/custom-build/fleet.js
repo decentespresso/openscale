@@ -1,4 +1,4 @@
-import {buildSummary, deploymentState, lastSeenLabel, shortHash} from "./fleet-state.mjs?v=1";
+import {buildLabel, buildSummary, deploymentState, lastSeenLabel} from "./fleet-state.mjs?v=2";
 
 const storageKey = "hds-custom-build-fleet-v2";
 const legacyStorageKey = "hds-custom-build-fleet-v1";
@@ -130,13 +130,9 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
     confirmDialog.showModal();
   });
 
-  const copyHash = async hash => {
-    try {
-      await navigator.clipboard.writeText(hash);
-      showToast("Combination hash copied");
-    } catch {
-      showToast("Combination hash could not be copied");
-    }
+  const labelForBuild = hash => {
+    const index = builds.findIndex(build => build.combination_hash === hash);
+    return index < 0 ? "Custom build" : buildLabel(builds[index], index);
   };
 
   const showApiError = error => {
@@ -155,7 +151,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
     const readyBuilds = builds.filter(build => build.state === "ready");
     const previousHash = buildSelect.value;
     buildSelect.replaceChildren(...readyBuilds.map(build =>
-      new Option(`${build.label} · ${shortHash(build.combination_hash)}`, build.combination_hash)));
+      new Option(labelForBuild(build.combination_hash), build.combination_hash)));
     if (readyBuilds.some(build => build.combination_hash === previousHash)) {
       buildSelect.value = previousHash;
     }
@@ -210,21 +206,18 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
       row.className = "fleet-build-row";
       row.innerHTML = `
         <div class="fleet-build-name"><input class="build-label" maxlength="40" aria-label="Build label"></div>
-        <div class="fleet-build-version"><strong></strong><span></span></div>
-        <button class="fleet-hash" type="button" title="Copy full combination hash"><code></code></button>
+        <div class="fleet-build-version"><strong></strong><details><summary>Options</summary><span></span></details></div>
         <span class="deployment-state"></span>
         <div class="fleet-row-actions">
           <button class="ghost-bordered-button save-build" type="button">Save</button>
           <button class="ghost-button remove-build" type="button">Remove</button>
         </div>`;
-      row.querySelector(".build-label").value = build.label;
+      row.querySelector(".build-label").value = labelForBuild(build.combination_hash);
       row.querySelector(".fleet-build-version strong").textContent = build.firmware_version;
       row.querySelector(".fleet-build-version span").textContent = buildSummary(build);
-      row.querySelector("code").textContent = shortHash(build.combination_hash);
       const state = row.querySelector(".deployment-state");
       state.textContent = build.state === "ready" ? "Ready" : "Unavailable";
       state.dataset.state = build.state;
-      row.querySelector(".fleet-hash").addEventListener("click", () => copyHash(build.combination_hash));
       row.querySelector(".save-build").addEventListener("click", async () => {
         try {
           await api(`/api/v1/fleet/builds/${build.combination_hash}`, {
@@ -238,7 +231,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
         }
       });
       row.querySelector(".remove-build").addEventListener("click", async () => {
-        if (!(await confirm("Remove saved build?", `${build.label} will remain available to existing installations.`, "Remove"))) return;
+        if (!(await confirm("Remove saved build?", `${labelForBuild(build.combination_hash)} will remain available to existing installations.`, "Remove"))) return;
         try {
           await api(`/api/v1/fleet/builds/${build.combination_hash}`, {method: "DELETE"});
           showToast("Build removed from fleet");
@@ -258,8 +251,8 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
       row.innerHTML = `
         <td class="scale-select"><input type="checkbox"></td>
         <td class="scale-identity"><input class="scale-name" maxlength="40"><span class="scale-hint"></span></td>
-        <td class="scale-build" data-label="Installed"><strong></strong><code></code></td>
-        <td class="scale-build desired-build" data-label="Desired"><strong></strong><code></code></td>
+        <td class="scale-build" data-label="Installed"><strong></strong><span></span></td>
+        <td class="scale-build desired-build" data-label="Desired"><strong></strong></td>
         <td data-label="Deployment"><span class="deployment-state"></span></td>
         <td class="last-seen" data-label="Last seen"></td>
         <td><button class="ghost-bordered-button save-scale" type="button">Save</button></td>`;
@@ -277,13 +270,11 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
       row.querySelector(".scale-hint").textContent = scale.serial_hint;
       const installed = row.querySelector(".scale-build");
       installed.querySelector("strong").textContent = scale.firmware_version || "Unknown";
-      installed.querySelector("code").textContent = shortHash(scale.installed_combination) ||
-        (scale.last_seen_at ? "Official" : "Unknown");
+      installed.querySelector("span").textContent = scale.installed_combination
+        ? labelForBuild(scale.installed_combination) : (scale.last_seen_at ? "Official" : "Unknown");
       const desired = row.querySelector(".desired-build");
-      const desiredBuild = builds.find(build => build.combination_hash === scale.desired_combination);
-      desired.querySelector("strong").textContent = desiredBuild?.label ||
-        (scale.desired_combination ? "Custom build" : "None");
-      desired.querySelector("code").textContent = shortHash(scale.desired_combination);
+      desired.querySelector("strong").textContent = scale.desired_combination
+        ? labelForBuild(scale.desired_combination) : "None";
       const state = row.querySelector(".deployment-state");
       state.textContent = deploymentState(scale, buildStates);
       state.dataset.state = state.textContent.toLowerCase().replaceAll(" ", "-");

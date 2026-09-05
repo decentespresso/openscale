@@ -4,6 +4,9 @@ const offlineAfterMs = 7 * 24 * 60 * 60 * 1000;
 export const shortHash = (value, length = 12) =>
   hashPattern.test(value || "") ? value.slice(0, length).toUpperCase() : "";
 
+export const buildLabel = (build, index) => /^Build [0-9A-F]{12}$/i.test(build.label || "")
+  ? `Build ${index + 1}` : build.label;
+
 export function buildSummary(build) {
   const features = Array.isArray(build?.features) ? build.features : [];
   const plugins = Array.isArray(build?.plugins)
@@ -11,8 +14,7 @@ export function buildSummary(build) {
     : [];
   const entries = [...features, ...plugins];
   if (!entries.length) return "Base firmware";
-  const visible = entries.slice(0, 3).join(", ");
-  return entries.length > 3 ? `${visible} +${entries.length - 3}` : visible;
+  return entries.join(", ");
 }
 
 export function deploymentState(scale, buildStates, now = Date.now()) {

@@ -4,11 +4,13 @@ import {test} from "node:test";
 import {runInNewContext} from "node:vm";
 
 import {
+  buildLabel,
   buildSummary,
   deploymentState,
   lastSeenLabel,
   shortHash,
 } from "../../../docs/custom-build/fleet-state.mjs";
+import {buildEstimate, buildTimeRange} from "../../../docs/custom-build/build-estimate.mjs";
 import {
   catalogRevisionChanged,
   defaultSelection,
@@ -156,7 +158,7 @@ test("formats fleet build identity and deployment state", () => {
   assert.equal(buildSummary({
     features: ["pull-ota", "wifi"],
     plugins: [{id: "grind-by-weight", version: "1.0.0"}, {id: "pressensor", version: "2.0.0"}],
-  }), "pull-ota, wifi, grind-by-weight 1.0.0 +1");
+  }), "pull-ota, wifi, grind-by-weight 1.0.0, pressensor 2.0.0");
   assert.equal(deploymentState({
     desired_combination: hash,
     installed_combination: hash,
@@ -203,6 +205,38 @@ test("fleet browser consumes the aggregated overview without per-scale status re
   assert.ok(source.includes('/api/v1/fleet/overview'));
   assert.ok(source.includes('/api/v1/fleet/assignments'));
   assert.equal(source.includes('/api/v1/status/'), false);
+});
+
+test("build labels hide generated hashes without replacing user labels", () => {
+  assert.equal(buildLabel({label: "Build 462465C2997F"}, 0), "Build 1");
+  assert.equal(buildLabel({label: "Kitchen scale"}, 1), "Kitchen scale");
+});
+
+test("build estimates follow selected features and handle timestamps and boundaries", () => {
+  const energy = {features: ["energy-menu"], plugins: ["default-web-apps"]};
+  assert.deepEqual(buildTimeRange(energy), [10, 12]);
+  assert.deepEqual(buildTimeRange({plugins: ["default-web-apps"]}), [6, 9]);
+  assert.deepEqual(buildTimeRange(), [5, 7]);
+  assert.match(buildEstimate({state: "queued"}, energy), /Once started.*10-12 minutes/);
+  const started = Date.parse("2026-09-05T12:00:00Z");
+  const result = {state: "building", updated_at: new Date(started).toISOString()};
+  assert.match(buildEstimate(result, energy, started - 60000), /^0 min elapsed/);
+  assert.match(buildEstimate(result, energy, started + 9.9 * 60000), /^9 min elapsed.*10-12/);
+  for (const minutes of [10, 12]) {
+    assert.match(buildEstimate(result, energy, started + minutes * 60000), /Expected to finish soon/);
+  }
+  assert.match(buildEstimate(result, energy, started + 13 * 60000), /Taking longer than usual/);
+  assert.equal(buildEstimate({...result, updated_at: "invalid"}, energy), "");
+  assert.equal(buildEstimate({state: "building"}, energy), "");
+  assert.equal(buildEstimate({state: "ready"}, energy), "");
+});
+
+test("fleet options expand without copy-hash controls", async () => {
+  const source = await readFile(new URL("../../../docs/custom-build/fleet.js", import.meta.url), "utf8");
+  const html = await readFile(new URL("../../../docs/custom-build/index.html", import.meta.url), "utf8");
+  assert.ok(source.includes("<details><summary>Options</summary>"));
+  assert.equal(source.includes("copyHash"), false);
+  assert.equal(html.includes("copy-hash"), false);
 });
 
 

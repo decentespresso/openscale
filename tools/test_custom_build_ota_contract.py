@@ -37,7 +37,32 @@ def main():
     require("include/custom_build_ota.h", 'customBuildRequest("/api/v1/device/check-in", "POST"')
     require("include/custom_build_ota.h", 'request["installed_combination"]')
     require("include/custom_build_ota.h", 'request["firmware_version"]')
-    require("include/custom_build_ota.h", 'customBuildShowRelink("Already installed", hashPrefix)')
+    require("include/custom_build_ota.h", 'customBuildShowStatus("Already installed", hashPrefix)')
+    hold = function_body(header, "bool customBuildWaitForHold(")
+    cancel = function_body(hold, "if (cancelPin >= 0")
+    assert "digitalRead(cancelPin) == LOW" in hold
+    assert "pullOtaWaitForRelease(1000);" in cancel
+    assert "return false;" in cancel
+    assert hold.index("cancelPin >= 0") < hold.index("digitalRead(pin)")
+    status = function_body(header, "void customBuildShowStatus(")
+    wait = "customBuildWaitForHold(BUTTON_CIRCLE, HDS_CUSTOM_BUILD_SCREEN_TIMEOUT_MS, BUTTON_SQUARE)"
+    assert 'pullOtaDraw(line1, line2, "Sq back")' in status
+    assert "customBuildWaitForDismiss(HDS_CUSTOM_BUILD_SCREEN_TIMEOUT_MS)" in status
+    assert "customBuildPairScale" not in status
+    assert "Relink" not in status
+    confirmation = function_body(header, "bool customBuildConfirmRelink()")
+    assert "if (!pullOtaWaitForRelease(3000)) return false;" in confirmation
+    assert confirmation.index("pullOtaWaitForRelease(3000)") < confirmation.index('pullOtaDraw("Relink scale?"')
+    assert confirmation.index('pullOtaDraw("Relink scale?"') < confirmation.index(wait)
+    assert "if (customBuildConfirmRelink()) customBuildPairScale(false);" in header
+    availability = function_body(header, "bool customBuildRelinkAvailable()")
+    assert "preferences.begin(HDS_CUSTOM_BUILD_NVS_NAMESPACE, true)" in availability
+    assert 'preferences.getBool("pair_init", false)' in availability
+    assert "putBool" not in availability
+    assert "customBuildStart(true);" in function_body(header, "void customBuildRelinkMenu()")
+    assert "customBuildStart(false);" in function_body(header, "void customBuildMenu()")
+    install_prompt = function_body(header, "bool customBuildConfirmInstall(")
+    assert "relink" not in install_prompt.lower()
     require("include/custom_build_ota.h", 'pullOtaDraw(manifest.version.c_str(), hashPrefix')
     require("include/custom_build_ota.h", "assignment.combinationHash,")
     require("include/custom_build_ota.h", "rollbackCombinationHash);")
@@ -68,11 +93,11 @@ def main():
     assert pairing.index("customBuildRegisterPairCode(pairCode)") < pairing.index('pullOtaDraw("Pair code"')
     assert 'pullOtaDraw("Custom Build", "Pair scale?", "Hold square")' in pairing
     rejected = function_body(run, "if (assignment.identityRejected)")
-    assert 'customBuildShowRelink("Custom Build", "Device rejected");' in rejected
+    assert 'customBuildShowStatus("Custom Build", "Device rejected");' in rejected
     assert "return;" in rejected
     assert run.index("if (assignment.identityRejected)") < run.index("if (!assignment.linked)")
     unlinked = function_body(run, "if (!assignment.linked)")
-    assert "customBuildPairScale(true);" in unlinked
+    assert 'customBuildShowStatus("Custom Build", "Not linked");' in unlinked
     assert "return;" in unlinked
     failure = function_body(run, "if (!customBuildCheckIn(")
     assert 'pullOtaFail("Service failed");' in failure
@@ -112,7 +137,10 @@ def main():
     assert "static const uint32_t HDS_OTA_TASK_STACK_BYTES" not in header
     assert '"/api/v1/fleet/' not in header
     assert "fleet_secret" not in header
-    require("include/menu.h", '"Custom Build", customBuildMenu')
+    menu = require("include/menu.h", '"Custom Build", customBuildMenu')
+    assert '"Relink", customBuildRelinkMenu' in menu
+    assert "getMenuSize(connectionsMenu) - (customBuildRelinkAvailable() ? 0 : 1)" in menu
+    assert menu.count("currentMenuSize = connectionsMenuSize();") == 2
     require("src/hds.ino", '#include "custom_build_ota.h"')
     require(".github/workflows/custom-build.yml", "HDS_CUSTOM_OTA_SIGNING_KEY_PEM")
     release = require(".github/workflows/release.yml", "python tools/write_custom_ota_public_key_header.py")
