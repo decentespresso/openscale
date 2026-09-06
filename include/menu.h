@@ -144,7 +144,7 @@ char menuTimeOnTopLabel[] = "Top: Weight";
 char menuAutoSleepLabel[] = "Auto Sleep o";
 char menuQuickBootLabel[] = "Quick Boot o";
 #ifdef ADS1232ADC
-char menuWakeOnWeightLabel[20] = "Wake: Off";
+char menuWakeOnWeightLabel[24] = "WakeOnWeight o";
 #endif
 #if HDS_FEATURE_WIFI
 char menuWifiLabel[] = "WiFi o";
@@ -539,12 +539,12 @@ void toggleQuickBoot() {
 
 #ifdef ADS1232ADC
 void updateWakeOnWeightLabel() {
-  static const char *const labels[] = { "Off", "2s", "3s", "4s" };
+  static const char *const labels[] = { "o", "2", "3", "4" };
   const uint8_t index = (i_wow_interval > 0 && i_wow_interval < WOW_INTERVAL_COUNT)
                             ? i_wow_interval
                             : 0;
-  snprintf(menuWakeOnWeightLabel, sizeof(menuWakeOnWeightLabel), "Wake: %s",
-           labels[index]);
+  snprintf(menuWakeOnWeightLabel, sizeof(menuWakeOnWeightLabel),
+           "WakeOnWeight %s", labels[index]);
 }
 
 void cycleWakeOnWeight() {
@@ -552,8 +552,9 @@ void cycleWakeOnWeight() {
   const bool stored = storagePutInt(KEY_WOW_INTERVAL, next);
   if (stored) i_wow_interval = next;
   updateWakeOnWeightLabel();
-  actionMessage = stored ? "Wake on" : "Save Failed";
-  actionMessage2 = stored ? String(menuWakeOnWeightLabel + 6) : "Wake on Weight";
+  static const char *const valueText[] = { "Off", "2s", "3s", "4s" };
+  actionMessage = stored ? "WakeOnWeight" : "Save Failed";
+  actionMessage2 = stored ? valueText[next] : "WakeOnWeight";
   menuActionMessageChanged();
   t_actionMessageDelay = 1000;
 }

@@ -135,12 +135,12 @@ class WakeOnWeightContractTests(unittest.TestCase):
         self.assertIn("updateWakeOnWeightLabel()", cycle)
 
     def test_menu_label_uses_cycle_pattern(self):
-        self.assertIn("char menuWakeOnWeightLabel[20] = \"Wake: Off\"", MENU)
+        self.assertIn("char menuWakeOnWeightLabel[24] = \"WakeOnWeight o\"", MENU)
         labels = body(MENU, "void updateWakeOnWeightLabel()")
-        self.assertIn("\"Off\"", labels)
-        self.assertIn("\"2s\"", labels)
-        self.assertIn("\"3s\"", labels)
-        self.assertIn("\"4s\"", labels)
+        self.assertIn("\"o\"", labels)
+        self.assertIn("\"2\"", labels)
+        self.assertIn("\"3\"", labels)
+        self.assertIn("\"4\"", labels)
 
     def test_refresh_menu_rows_updates_label(self):
         refresh = body(MENU, "void refreshMenuRows()")
