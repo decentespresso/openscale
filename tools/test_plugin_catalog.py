@@ -271,10 +271,12 @@ def main():
     assert "firmwareRefLabel(ref)" in appScript
     assert "firmwareRefLabel(selected.firmware_ref)" in appScript
     assert 'selection.mjs?v=5' in appScript
-    assert 'fleet.js?v=7' in appScript
+    assert 'fleet.js?v=8' in appScript
     assert 'fleetPanel.hidden = installMethod !== "wifi"' in appScript
-    assert "sessionStorage.setItem(storageKey" in fleetScript
-    assert "localStorage.setItem(storageKey" not in fleetScript
+    assert "sessionStorage.setItem(storageKey" not in fleetScript
+    assert "localStorage.setItem(storageKey" in fleetScript
+    assert "readStoredKey(sessionStorage, storageKey, 2)" in fleetScript
+    assert "removeStoredKey(localStorage, storageKey)" in fleetScript
     assert "removeStoredKey(localStorage, legacyStorageKey)" in fleetScript
     assert "manifest_url" not in appScript
     energyMenu = next(feature for feature in generatedCatalog["features"] if feature["id"] == "energy-menu")

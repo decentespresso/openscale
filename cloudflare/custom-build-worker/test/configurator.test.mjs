@@ -207,6 +207,31 @@ test("fleet browser consumes the aggregated overview without per-scale status re
   assert.equal(source.includes('/api/v1/status/'), false);
 });
 
+test("fleet access survives new sessions and migrates only after successful persistence", async () => {
+  const source = await readFile(new URL("../../../docs/custom-build/fleet.js", import.meta.url), "utf8");
+  const helpers = source.slice(source.indexOf("const storageKey"), source.indexOf("export function initFleet"));
+  const storage = () => {
+    const data = new Map();
+    return {getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key)};
+  };
+  const localStorage = storage();
+  const sessionStorage = storage();
+  const key = "A".repeat(32);
+  const storageKey = "hds-custom-build-fleet-v2";
+  sessionStorage.setItem(storageKey, JSON.stringify({version: 2, key}));
+  const load = (local, session) => runInNewContext(`${helpers}\nloadStoredKey()`, {localStorage: local, sessionStorage: session});
+  assert.equal(load({...localStorage, setItem: () => {throw new Error("blocked");}}, sessionStorage), key);
+  assert.notEqual(sessionStorage.getItem(storageKey), null);
+  assert.equal(load(localStorage, sessionStorage), key);
+  assert.equal(sessionStorage.getItem(storageKey), null);
+  assert.equal(load(localStorage, storage()), key);
+  localStorage.setItem(storageKey, "invalid json");
+  assert.equal(load(localStorage, storage()), "");
+  localStorage.setItem("hds-custom-build-fleet-v1", JSON.stringify({version: 1, key}));
+  assert.equal(load(localStorage, storage()), key);
+  assert.equal(localStorage.getItem("hds-custom-build-fleet-v1"), null);
+});
+
 test("build labels hide generated hashes without replacing user labels", () => {
   assert.equal(buildLabel({label: "Build 462465C2997F"}, 0), "Build 1");
   assert.equal(buildLabel({label: "Kitchen scale"}, 1), "Kitchen scale");
