@@ -254,7 +254,7 @@ def main():
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
     fleetScript = (pageRoot / "fleet.js").read_text(encoding="utf-8")
-    assert 'type="module" src="app.js?v=22"' in indexPage
+    assert 'type="module" src="app.js?v=23"' in indexPage
     assert 'href="styles.css?v=16"' in indexPage
     assert 'href="fleet.css?v=4"' in indexPage
     assert 'id="request-build"' in indexPage
