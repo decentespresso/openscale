@@ -300,6 +300,15 @@ export class BuildCoordinator {
         failure_code: "dispatch_failed",
         attempt_id: reservation.record.attempt_id,
       });
+      if (error instanceof BudgetError && failed) {
+        await this.state.storage.transaction(async transaction => {
+          const key = `build:${hash}`;
+          const current = await transaction.get(key);
+          if (current?.attempt_id !== failed.attempt_id || current.state !== "failed") return;
+          await transaction.put(key, {state: "missing", combination_hash: hash,
+            attempts: Math.max(0, failed.attempts - 1), updated_at: failed.updated_at});
+        });
+      }
       return Response.json(error instanceof BudgetError ? {error: error.code} : failed || {error: "dispatch_failed"}, {status: 503});
     }
   }
