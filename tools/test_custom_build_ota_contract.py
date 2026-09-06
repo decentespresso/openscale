@@ -31,7 +31,7 @@ def main():
     require("include/custom_build_ota.h", "pullOtaVerifyManifestSignatureWithKeys")
     require("include/custom_build_ota.h", "HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_1_PEM")
     require("include/custom_build_ota.h", "HDS_CUSTOM_OTA_MANIFEST_PUBLIC_KEY_2_PEM")
-    require("include/custom_build_ota.h", 'pullOtaDraw("Pair code", pairCode, "Valid 12 hours")')
+    require("include/custom_build_ota.h", 'pullOtaDraw("Pair code", pairCode, "O back  Sq back")')
     require("include/custom_build_ota.h", 'String(HDS_CUSTOM_BUILD_SERVICE_URL) + "/v1/" + combinationHash')
     require("include/custom_build_ota.h", "customBuildFetchManifest(rollbackCombinationHash, rollbackManifest)")
     require("include/custom_build_ota.h", 'customBuildRequest("/api/v1/device/check-in", "POST"')
@@ -46,11 +46,12 @@ def main():
     assert hold.index("cancelPin >= 0") < hold.index("digitalRead(pin)")
     status = function_body(header, "void customBuildShowStatus(")
     wait = "customBuildWaitForHold(BUTTON_CIRCLE, HDS_CUSTOM_BUILD_SCREEN_TIMEOUT_MS, BUTTON_SQUARE)"
-    assert 'pullOtaDraw(line1, line2, "Sq back")' in status
+    assert 'pullOtaDraw(line1, line2, "O back  Sq back")' in status
     assert "customBuildWaitForDismiss(HDS_CUSTOM_BUILD_SCREEN_TIMEOUT_MS)" in status
     assert "customBuildPairScale" not in status
     assert "Relink" not in status
     confirmation = function_body(header, "bool customBuildConfirmRelink()")
+    assert '"Hold O  Sq back"' in confirmation
     assert "if (!pullOtaWaitForRelease(3000)) return false;" in confirmation
     assert confirmation.index("pullOtaWaitForRelease(3000)") < confirmation.index('pullOtaDraw("Relink scale?"')
     assert confirmation.index('pullOtaDraw("Relink scale?"') < confirmation.index(wait)
@@ -62,6 +63,7 @@ def main():
     assert "customBuildStart(true);" in function_body(header, "void customBuildRelinkMenu()")
     assert "customBuildStart(false);" in function_body(header, "void customBuildMenu()")
     install_prompt = function_body(header, "bool customBuildConfirmInstall(")
+    assert '"O back  Hold Sq"' in install_prompt
     assert "relink" not in install_prompt.lower()
     require("include/custom_build_ota.h", 'pullOtaDraw(manifest.version.c_str(), hashPrefix')
     require("include/custom_build_ota.h", "assignment.combinationHash,")
@@ -90,6 +92,11 @@ def main():
     assert registration.index('!= pairCode) return false;') < registration.index('putBool("pair_init", true) == 1')
     assert 'return stored;' in registration
     pairing = function_body(header, "bool customBuildPairScale(")
+    assert "customBuildWaitForDismiss(0);" in pairing
+    assert "HDS_CUSTOM_BUILD_SCREEN_TIMEOUT_MS" not in pairing
+    dismiss = function_body(header, "void customBuildWaitForDismiss(")
+    assert "timeoutMs == 0 || millis() - startedAt < timeoutMs" in dismiss
+    assert "while (!pullOtaWaitForRelease(1000)) delay(20);" in dismiss
     assert pairing.index("customBuildRegisterPairCode(pairCode)") < pairing.index('pullOtaDraw("Pair code"')
     assert 'pullOtaDraw("Custom Build", "Pair scale?", "Hold square")' in pairing
     rejected = function_body(run, "if (assignment.identityRejected)")

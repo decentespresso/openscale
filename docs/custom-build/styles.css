@@ -315,13 +315,41 @@
       content: "";
       position: absolute;
       right: 17px;
-      top: 18px;
+      top: 50%;
       width: 8px;
       height: 8px;
       border-right: 1.5px solid var(--ink);
       border-bottom: 1.5px solid var(--ink);
-      transform: rotate(45deg);
+      transform: translateY(-70%) rotate(45deg);
       pointer-events: none;
+    }
+
+    @supports (appearance: base-select) {
+      select, select::picker(select) { appearance: base-select; }
+      select { display: inline-flex; align-items: center; }
+      select::picker-icon { display: none; }
+      select::picker(select) {
+        color: var(--ink);
+        background: var(--surface);
+        border: 1px solid var(--line-strong);
+        border-radius: 8px;
+        padding: 4px;
+      }
+      select option {
+        padding: 10px 12px;
+        border-radius: 4px;
+        color: var(--ink);
+        background: var(--surface);
+      }
+      html[data-theme] select option:checked,
+      html[data-theme] select option:hover,
+      html[data-theme] select option:focus {
+        color: var(--ink);
+        background: var(--surface-soft);
+        outline: 1px solid var(--green);
+        outline-offset: -1px;
+      }
+      select option::checkmark { color: var(--green); }
     }
 
     .options-grid {

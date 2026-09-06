@@ -219,9 +219,9 @@ bool customBuildWaitForHold(uint8_t pin, unsigned long timeoutMs, int cancelPin 
 }
 
 void customBuildWaitForDismiss(unsigned long timeoutMs) {
-  pullOtaWaitForRelease(1000);
+  while (!pullOtaWaitForRelease(1000)) delay(20);
   const unsigned long startedAt = millis();
-  while (millis() - startedAt < timeoutMs) {
+  while (timeoutMs == 0 || millis() - startedAt < timeoutMs) {
     if (digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW) {
       pullOtaWaitForRelease(1000);
       return;
@@ -247,8 +247,8 @@ bool customBuildPairScale(bool requireConfirmation) {
   customBuildSerialHint(serialHint);
   snprintf(pairCode, sizeof(pairCode), "%s-%06lu", serialHint, (unsigned long)customBuildPairPin());
   if (!customBuildRegisterPairCode(pairCode)) return pullOtaFail("Pairing failed");
-  pullOtaDraw("Pair code", pairCode, "Valid 12 hours");
-  customBuildWaitForDismiss(HDS_CUSTOM_BUILD_SCREEN_TIMEOUT_MS);
+  pullOtaDraw("Pair code", pairCode, "O back  Sq back");
+  customBuildWaitForDismiss(0);
   return true;
 }
 
@@ -327,12 +327,12 @@ bool customBuildFetchManifest(
 
 bool customBuildConfirmRelink() {
   if (!pullOtaWaitForRelease(3000)) return false;
-  pullOtaDraw("Relink scale?", "", "Sq back Hold O");
+  pullOtaDraw("Relink scale?", "", "Hold O  Sq back");
   return customBuildWaitForHold(BUTTON_CIRCLE, HDS_CUSTOM_BUILD_SCREEN_TIMEOUT_MS, BUTTON_SQUARE);
 }
 
 void customBuildShowStatus(const char *line1, const char *line2) {
-  pullOtaDraw(line1, line2, "Sq back");
+  pullOtaDraw(line1, line2, "O back  Sq back");
   customBuildWaitForDismiss(HDS_CUSTOM_BUILD_SCREEN_TIMEOUT_MS);
 }
 
@@ -342,7 +342,7 @@ bool customBuildConfirmInstall(
   char hashPrefix[9];
   customBuildHashPrefix(combinationHash, hashPrefix);
   pullOtaWaitForRelease(1000);
-  pullOtaDraw(manifest.version.c_str(), hashPrefix, "Hold Sq O back");
+  pullOtaDraw(manifest.version.c_str(), hashPrefix, "O back  Hold Sq");
   const unsigned long startedAt = millis();
   unsigned long squareHeldSince = 0;
   while (millis() - startedAt < HDS_OTA_CONFIRM_TIMEOUT_MS) {

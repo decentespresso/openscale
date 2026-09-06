@@ -264,6 +264,17 @@ test("fleet options expand without copy-hash controls", async () => {
   assert.equal(html.includes("copy-hash"), false);
 });
 
+test("fleet names save on change without separate save actions", async () => {
+  const source = await readFile(new URL("../../../docs/custom-build/fleet.js", import.meta.url), "utf8");
+  assert.equal(source.includes("save-build"), false);
+  assert.equal(source.includes("save-scale"), false);
+  for (const field of ["label", "name"]) {
+    assert.ok(source.includes(`${field}.addEventListener("change", async () =>`));
+    assert.ok(source.includes(`if (event.key === "Enter") ${field}.blur()`));
+    assert.ok(source.includes(`${field}.value = previous;`));
+  }
+});
+
 
 test("theme follows the system until a saved preference overrides it", async () => {
   const html = await readFile(new URL("../../../docs/custom-build/index.html", import.meta.url), "utf8");
