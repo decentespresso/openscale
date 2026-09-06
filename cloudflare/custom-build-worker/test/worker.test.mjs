@@ -556,6 +556,26 @@ test("publishes immutable cache entries and deduplicates public builds", async (
 });
 
 
+test("production budget guards cover public downloads and authenticated uploads", async () => {
+  const env = {BUILDS: new Bucket(), UPLOAD_TOKEN: token, FREE_TIER_GUARDS: "true"};
+  env.COORDINATOR = new CoordinatorNamespace(env);
+  const storage = env.COORDINATOR.coordinator.state.storage;
+  await storage.put("budget:inventory", {complete: true, bytes: 0});
+  const hash = "c".repeat(64);
+  assert.equal((await put(env, hash, "firmware.bin", "firmware")).status, 201);
+  await env.BUILDS.put(`v1/${hash}/build-manifest.json`, encoder.encode("{}"), {});
+  const response = await worker.fetch(new Request(`https://example.test/v1/${hash}/firmware.bin`), env);
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "firmware");
+  assert.equal((await storage.get(`retention:${hash}`)).pinned, true);
+  const budget = await storage.get("budget:operations");
+  assert.equal(budget.writes, 1);
+  await storage.put("budget:operations", {...budget, daily: 10000});
+  const refused = await worker.fetch(new Request(`https://example.test/v1/${hash}/firmware.bin`), env);
+  assert.equal(refused.status, 503);
+  assert.equal((await refused.json()).error, "free_tier_operation_budget");
+});
+
 test("expires stale build attempts", async () => {
   const storage = new Storage();
   const coordinator = new BuildCoordinator({storage}, {});
@@ -578,4 +598,19 @@ test("expires stale build attempts", async () => {
   assert.equal(record.failure_code, "build_timeout");
   assert.equal(Object.hasOwn(record, "lease_expires_at"), false);
   assert.deepEqual(await storage.get("pending"), {});
+});
+
+test("inventory and storage budget failures do not consume build attempts", async () => {
+  const storage = new Storage();
+  const coordinator = new BuildCoordinator({storage}, {FREE_TIER_GUARDS: "true"});
+  const hash = "d".repeat(64);
+  for (let index = 0; index < 3; index += 1) {
+    const response = await coordinator.fetch(new Request(`https://coordinator/build/${hash}`, {
+      method: "POST", body: JSON.stringify({configuration: {firmware_ref: "main"}, clientKey: "test"}),
+    }));
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error, "storage_inventory_pending");
+    assert.equal((await storage.get(`build:${hash}`)).state, "missing");
+    assert.equal((await storage.get(`build:${hash}`)).attempts, 0);
+  }
 });

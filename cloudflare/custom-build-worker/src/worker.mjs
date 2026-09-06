@@ -1,5 +1,6 @@
 import {isDeviceApi, isFleetApi} from "./fleet.mjs";
 import {BuildCoordinator, maxAttempts} from "./build-coordinator.mjs";
+import {guardedBucket} from "./build-retention.mjs";
 
 export {BuildCoordinator};
 
@@ -580,8 +581,20 @@ async function fleetApi(request, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async scheduled(controller, env, context) {
+    if (env.FREE_TIER_GUARDS !== "true") return;
+    context.waitUntil(coordinator(env).fetch("https://coordinator/maintenance", {method: "POST"}).then(response => {
+      if (!response.ok) throw new Error("retention_failed");
+    }));
+  },
+  async fetch(request, originalEnv) {
     const url = new URL(request.url);
+    const env = originalEnv.FREE_TIER_GUARDS === "true" ? {...originalEnv, BUILDS: guardedBucket(originalEnv.BUILDS, async options => {
+      const response = await coordinator(originalEnv).fetch("https://coordinator/budget", {
+        method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(options),
+      });
+      if (!response.ok) throw new ApiError(503, (await response.json()).error || "budget_unavailable");
+    })} : originalEnv;
     try {
       if (request.method === "OPTIONS") {
         const headers = cors(request, env);

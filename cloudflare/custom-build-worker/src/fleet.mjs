@@ -1,3 +1,5 @@
+import {reserveBudget} from "./build-retention.mjs";
+
 const deviceIdPattern = /^[0-9a-f]{32}$/;
 const hashPattern = /^[0-9a-f]{64}$/;
 const pairCodePattern = /^[0-9A-F]{6}-[0-9]{6}$/;
@@ -544,7 +546,7 @@ async function deviceAssignment(request, storage) {
   return deviceAssignmentPayload(authenticated.device);
 }
 
-async function deviceCheckIn(request, storage) {
+async function deviceCheckIn(request, storage, env) {
   const body = requireObject(
     await readJson(request),
     ["firmware_version", "installed_combination"],
@@ -555,6 +557,9 @@ async function deviceCheckIn(request, storage) {
   }
   const firmwareVersion = normalizedFirmwareVersion(body.firmware_version);
   const authenticated = await authenticatedDevice(request, storage);
+  if (env.FREE_TIER_GUARDS === "true" && body.installed_combination) {
+    await reserveBudget(storage, {hash: body.installed_combination, pin: true});
+  }
   return storage.transaction(async transaction => {
     const device = await transaction.get(authenticated.key);
     if (!device || !sameHash(device.secret_hash, authenticated.secretHash)) {
@@ -590,7 +595,7 @@ export async function handleFleetRequest(request, storage, env) {
   const url = new URL(request.url);
   if (url.pathname === "/device/pair" && request.method === "POST") return pairDevice(request, storage);
   if (url.pathname === "/device/assignment" && request.method === "GET") return deviceAssignment(request, storage);
-  if (url.pathname === "/device/check-in" && request.method === "POST") return deviceCheckIn(request, storage);
+  if (url.pathname === "/device/check-in" && request.method === "POST") return deviceCheckIn(request, storage, env);
   if (url.pathname === "/fleet/claim" && request.method === "POST") return claimDevice(request, storage);
   if (url.pathname === "/fleet/scales" && request.method === "GET") return listScales(request, storage, env);
   if (url.pathname === "/fleet/overview" && request.method === "GET") return fleetOverview(request, storage, env);
