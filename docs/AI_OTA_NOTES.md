@@ -44,6 +44,39 @@ OLED identity uses an uppercase 8-character prefix for display only.
 
 ## Release Assets
 
+### Custom Build Retention
+
+The Worker uses one hourly Cron Trigger for bounded R2 inventory and retention work.
+`FREE_TIER_GUARDS=true` enables a serialized R2 operation budget in the existing SQLite
+Durable Object: 10,000 budgeted operations per UTC day, 100,000 writes/list operations
+and 250,000 reads per calendar month. Reservations and protection updates also consume
+this conservative operation allowance. Failures stop before the R2 operation.
+The service reserves 12 MiB per new build before dispatch, caps total inventory plus
+reservations at 4,000,000,000 bytes, and rejects cumulative partial uploads above 12 MiB.
+Reservations are not refunded on build failure or smaller retries.
+
+Inventory processes at most 100 objects per invocation and blocks new reservations
+until complete. Existing objects are permanently protected. Retention examines at
+most 10 records per invocation. Only reserved main builds at least 30 days old,
+never served or referenced, and not queued/building are candidates. Reads of build
+artifacts, Fleet references/assignments, and installed-hash check-ins permanently
+protect their identities, including potential rollback assets and USB downloads.
+This deliberately retains more than the currently installed build: firmware does
+not report its complete rollback-slot history. Stable and unknown refs are never
+automatically removed.
+
+`RETENTION_DRY_RUN=true` is the deployment default: candidates are logged, not deleted.
+Live mode requires an explicit change to false after reviewing the inventory/report.
+Deletion first expires the identity transactionally, blocking racing reads/uploads,
+then removes its seven objects and releases the reservation once. Failed deletions
+are retried. Expired identities must not be rebuilt in place.
+
+These are service-local safeguards, not an account-wide billing lock. Other Workers,
+direct R2 clients, earlier usage and administrative operations are outside these counters.
+Recheck Cloudflare account usage before enabling guards on another account or adding
+other workloads. Workers and SQLite Durable Objects also retain their platform free
+limits; no paid plan or R2 Infrequent Access transition is enabled by this feature.
+
 Release builds publish WiFi OTA assets at the GitHub Release root:
 
 - `firmware.bin`

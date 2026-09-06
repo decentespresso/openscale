@@ -164,6 +164,7 @@ import {buildEstimate} from "./build-estimate.mjs?v=1";
     };
     const messages = {
       missing: "This combination has not been built yet.",
+      expired: "This development build has expired. Select the current main revision for a new build.",
       queued: "",
       building: "The firmware and filesystem images are being built.",
       ready: "The build archive is ready to download.",

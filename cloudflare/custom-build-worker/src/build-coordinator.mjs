@@ -1,4 +1,5 @@
 import {cleanupFleetExpirations, FleetError, fleetExpirations, handleFleetRequest} from "./fleet.mjs";
+import {BudgetError, guardedBucket, reserveBudget, reserveBuild, retentionBatch} from "./build-retention.mjs";
 
 const hashPattern = /^[0-9a-f]{64}$/;
 const trustedRepository = "decentespresso/openscale";
@@ -150,13 +151,33 @@ export class BuildCoordinator {
 
   async fetch(request) {
     const url = new URL(request.url);
+    if (this.env.FREE_TIER_GUARDS === "true" && url.pathname === "/budget" && request.method === "POST") {
+      try {
+        await reserveBudget(this.state.storage, await request.json());
+        return new Response(null, {status: 204});
+      } catch (error) {
+        return Response.json({error: error instanceof BudgetError ? error.code : "budget_unavailable"}, {status: 503});
+      }
+    }
+    if (this.env.FREE_TIER_GUARDS === "true" && url.pathname === "/maintenance" && request.method === "POST") {
+      const report = await this.state.blockConcurrencyWhile(() => retentionBatch(
+        this.state.storage, this.env.BUILDS, Date.now(), this.env.RETENTION_DRY_RUN !== "false",
+      ));
+      console.log(JSON.stringify({event: "build-retention", ...report}));
+      return Response.json(report);
+    }
     if (url.pathname.startsWith("/device/") || url.pathname.startsWith("/fleet/")) {
       let response;
       try {
-        const result = await handleFleetRequest(request, this.state.storage, this.env);
+        const env = this.env.FREE_TIER_GUARDS === "true" ? {...this.env,
+          BUILDS: guardedBucket(this.env.BUILDS, options => reserveBudget(this.state.storage, options)),
+        } : this.env;
+        const result = await handleFleetRequest(request, this.state.storage, env);
         response = Response.json(result);
       } catch (error) {
-        const failure = error instanceof FleetError ? error : new FleetError(500, "internal_error");
+        const failure = error instanceof FleetError ? error : new FleetError(
+          error instanceof BudgetError ? 503 : 500, error instanceof BudgetError ? error.code : "internal_error",
+        );
         response = Response.json(
           {error: failure.code},
           {
@@ -217,6 +238,7 @@ export class BuildCoordinator {
       if (effectiveCurrent && ["queued", "building"].includes(effectiveCurrent.state)) {
         return {record: effectiveCurrent};
       }
+      if (effectiveCurrent?.state === "expired") return {record: effectiveCurrent, terminal: true};
       if (effectiveCurrent?.state === "failed" && effectiveCurrent.attempts >= maxAttempts) {
         return {record: effectiveCurrent, terminal: true};
       }
@@ -267,15 +289,18 @@ export class BuildCoordinator {
     if (!reservation.dispatch) return Response.json(reservation.record);
     await this.scheduleAlarm();
     try {
+      if (this.env.FREE_TIER_GUARDS === "true") {
+        await reserveBuild(this.state.storage, hash, build.configuration.firmware_ref);
+      }
       await dispatchBuild(this.env, {...build, attemptId: reservation.record.attempt_id});
       return Response.json(reservation.record, {status: 202});
-    } catch {
+    } catch (error) {
       const failed = await this.updateAttempt(hash, {
         state: "failed",
         failure_code: "dispatch_failed",
         attempt_id: reservation.record.attempt_id,
       });
-      return Response.json(failed || {error: "dispatch_failed"}, {status: 503});
+      return Response.json(error instanceof BudgetError ? {error: error.code} : failed || {error: "dispatch_failed"}, {status: 503});
     }
   }
 
