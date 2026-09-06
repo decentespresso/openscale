@@ -88,6 +88,7 @@ jobs:
           node --test cloudflare/custom-build-worker/test/configurator.test.mjs
           node --test cloudflare/custom-build-worker/test/worker.test.mjs
           node --test cloudflare/custom-build-worker/test/fleet.test.mjs
+          node --test cloudflare/custom-build-worker/test/retention.test.mjs
           node --check docs/custom-build/fleet.js
       - name: Detect changed patch plugins
         id: plugins
@@ -277,6 +278,7 @@ jobs:
           node --test cloudflare/custom-build-worker/test/configurator.test.mjs
           node --test cloudflare/custom-build-worker/test/worker.test.mjs
           node --test cloudflare/custom-build-worker/test/fleet.test.mjs
+          node --test cloudflare/custom-build-worker/test/retention.test.mjs
           node --check docs/custom-build/fleet.js
       - name: Mark custom build as running
         if: >-

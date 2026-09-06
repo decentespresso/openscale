@@ -599,3 +599,18 @@ test("expires stale build attempts", async () => {
   assert.equal(Object.hasOwn(record, "lease_expires_at"), false);
   assert.deepEqual(await storage.get("pending"), {});
 });
+
+test("inventory and storage budget failures do not consume build attempts", async () => {
+  const storage = new Storage();
+  const coordinator = new BuildCoordinator({storage}, {FREE_TIER_GUARDS: "true"});
+  const hash = "d".repeat(64);
+  for (let index = 0; index < 3; index += 1) {
+    const response = await coordinator.fetch(new Request(`https://coordinator/build/${hash}`, {
+      method: "POST", body: JSON.stringify({configuration: {firmware_ref: "main"}, clientKey: "test"}),
+    }));
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error, "storage_inventory_pending");
+    assert.equal((await storage.get(`build:${hash}`)).state, "missing");
+    assert.equal((await storage.get(`build:${hash}`)).attempts, 0);
+  }
+});
