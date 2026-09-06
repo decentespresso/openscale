@@ -214,25 +214,41 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
         <div class="fleet-build-version"><strong></strong><details><summary>Options</summary><span></span></details></div>
         <span class="deployment-state"></span>
         <div class="fleet-row-actions">
-          <button class="ghost-bordered-button save-build" type="button">Save</button>
           <button class="ghost-button remove-build" type="button">Remove</button>
         </div>`;
-      row.querySelector(".build-label").value = labelForBuild(build.combination_hash);
+      const label = row.querySelector(".build-label");
+      label.value = labelForBuild(build.combination_hash);
+      label.addEventListener("keydown", event => { if (event.key === "Enter") label.blur(); });
       row.querySelector(".fleet-build-version strong").textContent = build.firmware_version;
       row.querySelector(".fleet-build-version span").textContent = buildSummary(build);
       const state = row.querySelector(".deployment-state");
       state.textContent = build.state === "ready" ? "Ready" : "Unavailable";
       state.dataset.state = build.state;
-      row.querySelector(".save-build").addEventListener("click", async () => {
+      label.addEventListener("change", async () => {
+        const previous = labelForBuild(build.combination_hash);
+        const next = label.value.trim();
+        if (!next || next === previous) { label.value = previous; return; }
+        label.disabled = true;
         try {
           await api(`/api/v1/fleet/builds/${build.combination_hash}`, {
             method: "PATCH",
-            body: JSON.stringify({label: row.querySelector(".build-label").value.trim()}),
+            body: JSON.stringify({label: next}),
+          });
+          if (!row.isConnected) return;
+          builds = builds.map(item => item.combination_hash === build.combination_hash ? {...item, label: next} : item);
+          label.value = next;
+          renderControls();
+          scales.forEach((scale, index) => {
+            const scaleRow = scaleRows.children[index];
+            if (scale.installed_combination === build.combination_hash) scaleRow.querySelector(".scale-build span").textContent = next;
+            if (scale.desired_combination === build.combination_hash) scaleRow.querySelector(".desired-build strong").textContent = next;
           });
           showToast("Build label saved");
-          await loadFleet();
         } catch (error) {
+          label.value = previous;
           showApiError(error);
+        } finally {
+          label.disabled = false;
         }
       });
       row.querySelector(".remove-build").addEventListener("click", async () => {
@@ -259,8 +275,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
         <td class="scale-build" data-label="Installed"><strong></strong><span></span></td>
         <td class="scale-build desired-build" data-label="Desired"><strong></strong></td>
         <td data-label="Deployment"><span class="deployment-state"></span></td>
-        <td class="last-seen" data-label="Last seen"></td>
-        <td><button class="ghost-bordered-button save-scale" type="button">Save</button></td>`;
+        <td class="last-seen" data-label="Last seen"></td>`;
       const checkbox = row.querySelector('[type="checkbox"]');
       checkbox.checked = selectedDeviceIds.has(scale.device_id);
       checkbox.setAttribute("aria-label", `Select ${scale.name}`);
@@ -271,7 +286,9 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
         renderControls();
       });
       const name = row.querySelector(".scale-name");
+      name.setAttribute("aria-label", "Scale name");
       name.value = scale.name;
+      name.addEventListener("keydown", event => { if (event.key === "Enter") name.blur(); });
       row.querySelector(".scale-hint").textContent = scale.serial_hint;
       const installed = row.querySelector(".scale-build");
       installed.querySelector("strong").textContent = scale.firmware_version || "Unknown";
@@ -284,16 +301,26 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
       state.textContent = deploymentState(scale, buildStates);
       state.dataset.state = state.textContent.toLowerCase().replaceAll(" ", "-");
       row.querySelector(".last-seen").textContent = lastSeenLabel(scale.last_seen_at);
-      row.querySelector(".save-scale").addEventListener("click", async () => {
+      name.addEventListener("change", async () => {
+        const previous = scales.find(item => item.device_id === scale.device_id)?.name || scale.name;
+        const next = name.value.trim();
+        if (!next || next === previous) { name.value = previous; return; }
+        name.disabled = true;
         try {
           await api(`/api/v1/fleet/scales/${scale.device_id}`, {
             method: "PATCH",
-            body: JSON.stringify({name: name.value.trim()}),
+            body: JSON.stringify({name: next}),
           });
+          if (!row.isConnected) return;
+          scales = scales.map(item => item.device_id === scale.device_id ? {...item, name: next} : item);
+          name.value = next;
+          checkbox.setAttribute("aria-label", `Select ${next}`);
           showToast("Scale name saved");
-          await loadFleet();
         } catch (error) {
+          name.value = previous;
           showApiError(error);
+        } finally {
+          name.disabled = false;
         }
       });
       return row;

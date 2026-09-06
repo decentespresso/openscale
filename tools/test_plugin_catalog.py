@@ -254,9 +254,9 @@ def main():
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
     fleetScript = (pageRoot / "fleet.js").read_text(encoding="utf-8")
-    assert 'type="module" src="app.js?v=24"' in indexPage
-    assert 'href="styles.css?v=16"' in indexPage
-    assert 'href="fleet.css?v=4"' in indexPage
+    assert 'type="module" src="app.js?v=25"' in indexPage
+    assert 'href="styles.css?v=17"' in indexPage
+    assert 'href="fleet.css?v=5"' in indexPage
     assert 'id="request-build"' in indexPage
     assert "catalog-data" not in indexPage
     assert 'fetch("catalog.json"' in appScript
@@ -271,7 +271,7 @@ def main():
     assert "firmwareRefLabel(ref)" in appScript
     assert "firmwareRefLabel(selected.firmware_ref)" in appScript
     assert 'selection.mjs?v=5' in appScript
-    assert 'fleet.js?v=8' in appScript
+    assert 'fleet.js?v=9' in appScript
     assert 'fleetPanel.hidden = installMethod !== "wifi"' in appScript
     assert "sessionStorage.setItem(storageKey" not in fleetScript
     assert "localStorage.setItem(storageKey" in fleetScript
