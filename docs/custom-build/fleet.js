@@ -44,17 +44,22 @@ const removeStoredKey = (storage, key) => {
 
 const saveKey = key => {
   try {
-    sessionStorage.setItem(storageKey, JSON.stringify({version: 2, key}));
+    localStorage.setItem(storageKey, JSON.stringify({version: 2, key}));
+    return true;
   } catch {
+    return false;
   }
 };
 
 const loadStoredKey = () => {
-  const current = readStoredKey(sessionStorage, storageKey, 2);
+  const current = readStoredKey(localStorage, storageKey, 2);
   if (current) return current;
-  const legacy = readStoredKey(localStorage, legacyStorageKey, 1);
-  removeStoredKey(localStorage, legacyStorageKey);
-  if (legacy) saveKey(legacy);
+  const legacy = readStoredKey(sessionStorage, storageKey, 2)
+    || readStoredKey(localStorage, legacyStorageKey, 1);
+  if (legacy && saveKey(legacy)) {
+    removeStoredKey(sessionStorage, storageKey);
+    removeStoredKey(localStorage, legacyStorageKey);
+  }
   return legacy;
 };
 
@@ -322,7 +327,10 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
       showToast("Enter a valid fleet recovery key");
       return false;
     }
-    saveKey(fleetKey);
+    if (!saveKey(fleetKey)) {
+      showToast("Fleet access could not be saved. Allow browser storage and try again.");
+      return false;
+    }
     setMode(true);
     setSettingsOpen(false);
     loadFleet();
@@ -350,6 +358,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   forgetDialog.addEventListener("close", () => {
     if (forgetDialog.returnValue !== "confirm") return;
     removeStoredKey(sessionStorage, storageKey);
+    removeStoredKey(localStorage, storageKey);
     removeStoredKey(localStorage, legacyStorageKey);
     fleetKey = "";
     generation += 1;
