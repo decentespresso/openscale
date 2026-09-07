@@ -51,7 +51,7 @@ def main():
     assert "compile-matrix:" not in customWorkflow
     dispatchBuild = customWorkflow.split("\n  build:\n", 1)[1]
     assert dispatchBuild.lstrip().startswith("if: github.event_name == 'workflow_dispatch'")
-    assert "if: inputs.firmware_ref == 'main'" in dispatchBuild
+    assert "if: inputs.firmware_ref == 'main' || inputs.firmware_ref == 'v3.1.14-preview.3'" in dispatchBuild
     assert 'git tag v3.1.14 "${{ github.sha }}"' in dispatchBuild
 
     assert "dependency-build:" not in otaWorkflow
