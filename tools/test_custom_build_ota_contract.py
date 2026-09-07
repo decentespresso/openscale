@@ -78,7 +78,12 @@ def main():
     assert "HDS_OTA_TASK_STACK_BYTES = 24576" in pull_ota
     current_hash = function_body(pull_ota, "String pullOtaCurrentCombinationHash()")
     assert "HDS_CUSTOM_BUILD_COMBINATION_HASH" in current_hash
-    run = function_body(header, "void customBuildRun()")
+    run = function_body(header, "void customBuildRun(bool interactive = true)")
+    assert "if (interactive) customBuildPairScale(true);" in run
+    assert 'else customBuildShowStatus("Custom Build", "Pair scale first");' in run
+    assert "if (interactive && !customBuildConfirmInstall(manifest, assignment.combinationHash)) return;" in run
+    assert run.index("customBuildFetchManifest(assignment.combinationHash, manifest)") < run.index("if (interactive &&")
+    assert "customBuildRun(args == nullptr);" in header
     credentials = function_body(header, "bool customBuildLoadCredentials(")
     assert 'preferences.getBool("pair_init", false)' in credentials
     assert credentials.index('putBool("pair_init", false) == 1') < credentials.index('putString("device_id"')
@@ -145,6 +150,13 @@ def main():
     assert '"/api/v1/fleet/' not in header
     assert "fleet_secret" not in header
     menu = require("include/menu.h", '"Custom Build", customBuildMenu')
+    assert "if (pullOtaTargetIsAssignedCustomBuild(target))" in menu
+    assert "customBuildStart(false, false);" in menu
+    about = function_body(menu, "void showAbout() {")
+    assert "#ifdef HDS_CUSTOM_BUILD_COMBINATION_HASH" in about
+    assert "installedCombination.substring(0, 8)" in about
+    assert "hashPrefix.toUpperCase();" in about
+    assert 'String("Build: ") + hashPrefix' in about
     assert '"Relink", customBuildRelinkMenu' in menu
     assert "getMenuSize(connectionsMenu) - (customBuildRelinkAvailable() ? 0 : 1)" in menu
     assert menu.count("currentMenuSize = connectionsMenuSize();") == 2

@@ -35,6 +35,10 @@ inline bool pullOtaTargetByteIsBiased(uint8_t value) {
   return (value & HDS_OTA_TARGET_BYTE_BIAS) != 0;
 }
 
+inline bool pullOtaTargetIsAssignedCustomBuild(const PullOtaTargetVersion &target) {
+  return target.present && target.major == 0 && target.minor == 0 && target.patch == 0;
+}
+
 inline bool pullOtaTargetBytesAreBiased(const uint8_t *bytes, size_t count) {
   if (bytes == nullptr) {
     return false;

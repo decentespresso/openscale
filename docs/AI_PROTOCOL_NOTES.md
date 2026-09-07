@@ -55,11 +55,24 @@ Every byte of a started payload must stay biased. An unbiased byte resynchronize
 
 The bias is what lets one request form serve every scale. `processUsbRxBuffer()` enters the binary resolver only when the buffer's first byte is `0x03`, so firmware predating the payload frames `03 1B` as two bytes, starts its picker, and then discards the trailing bytes through the text path. A client never has to know the scale's firmware version or negotiate a capability.
 
-The client supplies a version number and nothing else. Every asset URL, size, and hash used for an install comes from the scale's own signature-verified catalog fetch. See `docs/AI_OTA_NOTES.md`.
+The reserved target `0.0.0`, encoded as `03 1B 80 80 80`, requests an unattended
+installation of the currently assigned Custom Build instead of an official release.
+It uses the same BLE and USB queue and five-byte framing. No individual version bit
+is repurposed. A missing pairing or assignment never starts an installation or pairing.
+An already installed combination never downloads again. Older firmware does not
+support this target: it either rejects the unsupported version or opens its legacy picker.
+
+The client supplies no asset URLs. Official assets come from the signature-verified
+catalog; custom assets come from the authenticated assignment and verified custom
+manifest, with the same mandatory LittleFS and rollback checks. See `docs/AI_OTA_NOTES.md`.
 
 The `/snapshot` WebSocket carries the same request as a `wifi_update` control command, accepted bare, as `wifi_update <version>`, and as `{"command":"wifi_update","action":"<version>"}`. The version is dotted `major.minor.patch` with an optional leading `v`. The command is compiled out when `HDS_FEATURE_PULL_OTA` is disabled and then answers `unknown_command`. A JSON `action` that is present but not a string answers `invalid_action`: an omitted action means the bare form, so a boolean, number, or object must not silently collapse into it.
 
 ADS debug responses are separate fixed formats: the debug packet is 41 bytes and the reset response is 5 bytes. Keep their Python helpers, decoder, and firmware builders aligned.
+
+Because WebSocket OTA uses the same target dispatcher, `wifi_update 0.0.0` also
+requests the assigned Custom Build. Ordinary release versions and the bare picker
+command retain their existing behavior.
 
 ## Runtime Effects
 

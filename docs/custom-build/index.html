@@ -24,7 +24,7 @@
     })();
   </script>
   <link rel="stylesheet" href="styles.css?v=17">
-  <link rel="stylesheet" href="fleet.css?v=5">
+  <link rel="stylesheet" href="fleet.css?v=6">
 </head>
 <body>
   <header class="topbar">
@@ -242,10 +242,9 @@
           <div class="deployment-toolbar">
             <label for="fleet-build-select">Build</label>
             <div class="select-wrap"><select id="fleet-build-select" disabled></select></div>
-            <label class="select-all-control"><input id="select-all-scales" type="checkbox"> All scales</label>
+            <label class="select-all-control"><input id="select-all-scales" type="checkbox"> Select all</label>
             <span id="selected-scale-count" class="selection-count">0 selected</span>
             <button id="assign-selected" class="primary-button" type="button" disabled>Assign to selected</button>
-            <button id="assign-all" class="ghost-bordered-button" type="button" disabled>Assign to all</button>
             <button id="clear-selected" class="ghost-button" type="button" disabled>Clear assignment</button>
           </div>
           <div class="fleet-table-wrap">
@@ -295,6 +294,6 @@
     </form>
   </dialog>
 
-  <script type="module" src="app.js?v=25"></script>
+  <script type="module" src="app.js?v=26"></script>
 </body>
 </html>

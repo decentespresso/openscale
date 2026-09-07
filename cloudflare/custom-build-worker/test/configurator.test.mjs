@@ -264,6 +264,16 @@ test("fleet options expand without copy-hash controls", async () => {
   assert.equal(html.includes("copy-hash"), false);
 });
 
+test("fleet build identity stays separate from editable names", async () => {
+  const source = await readFile(new URL("../../../docs/custom-build/fleet.js", import.meta.url), "utf8");
+  assert.ok(source.includes('`${labelForBuild(hash)} · ${shortHash(hash, 8)}`'));
+  assert.ok(source.includes('new Option(identityForBuild(build.combination_hash)'));
+  assert.ok(source.includes('label.value = labelForBuild(build.combination_hash)'));
+  assert.ok(source.includes('row.querySelector(".build-hash").textContent = shortHash(build.combination_hash, 8)'));
+  assert.ok(source.includes('identityForBuild(scale.installed_combination)'));
+  assert.ok(source.includes('identityForBuild(scale.desired_combination)'));
+});
+
 test("fleet names save on change without separate save actions", async () => {
   const source = await readFile(new URL("../../../docs/custom-build/fleet.js", import.meta.url), "utf8");
   assert.equal(source.includes("save-build"), false);
@@ -273,6 +283,15 @@ test("fleet names save on change without separate save actions", async () => {
     assert.ok(source.includes(`if (event.key === "Enter") ${field}.blur()`));
     assert.ok(source.includes(`${field}.value = previous;`));
   }
+});
+
+test("fleet assignment uses only the explicit scale selection", async () => {
+  const source = await readFile(new URL("../../../docs/custom-build/fleet.js", import.meta.url), "utf8");
+  const html = await readFile(new URL("../../../docs/custom-build/index.html", import.meta.url), "utf8");
+  assert.equal(source.includes("assignAll"), false);
+  assert.equal(html.includes('id="assign-all"'), false);
+  assert.ok(html.includes('type="checkbox"> Select all'));
+  assert.ok(source.includes("{device_ids: [...selectedDeviceIds]}"));
 });
 
 
