@@ -493,7 +493,7 @@ def main():
     assert "catalogRevisionChanged(fetch, catalog.catalog_revision)" in configurator
     assert "await checkStatus(selection, generation)" in configurator
     assert "navigator.clipboard.writeText(currentCombinationHash)" not in configurator
-    assert 'getReadyHash: () => currentBuildState === "ready" ? currentCombinationHash : ""' in configurator
+    assert 'getReadyHash: () => installMethod === "wifi" && currentBuildState === "ready" ? currentCombinationHash : ""' in configurator
     assert "expectedHash" not in configurator
     configuratorWorkflow = (
         customBuild.SCRIPT_ROOT / ".github" / "workflows" / "custom-build-configurator.yml"
