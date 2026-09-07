@@ -18,41 +18,28 @@ const float WOW_TRIGGER_GRAMS = 50.0f;
 const unsigned long WOW_READ_TIMEOUT_MS = 900;
 const unsigned long WOW_RAIL_SETTLE_MS = 100;
 const int32_t WOW_MIN_THRESHOLD_RAW = 500;
-const uint32_t WOW_RTC_MAGIC = 0x574F5731;
+const uint32_t WOW_RTC_MAGIC = 0x574F5732;
+const uint16_t WOW_MAX_TICKS = 900;
+const uint8_t WOW_MAX_FAILURES = 5;
 const uint8_t WOW_INTERVAL_COUNT = 4;
 const uint64_t wowIntervalUs[WOW_INTERVAL_COUNT] = { 0, 2000000, 3000000, 4000000 };
 
-struct WowRtcState {
-  uint32_t magic;
-  uint8_t armed;
-  int32_t baselineRaw;
-  int32_t thresholdRaw;
-  uint32_t intervalUs;
-  uint32_t tickCount;
-  int32_t lastSampleRaw;
-  int32_t lastDeltaRaw;
-};
-RTC_DATA_ATTR WowRtcState wowRtc;
-
 void wowCaptureBaselineForSleep() {
   wowRtc.armed = 0;
-  if (i_wow_interval <= 0 || i_lowBatteryCount > 0) return;
+  if (i_wow_interval <= 0 || i_wow_interval >= WOW_INTERVAL_COUNT || i_lowBatteryCount > 0) return;
+  if (isfinite(f_batteryVoltage) && f_batteryVoltage > 0 && f_batteryVoltage < lowBatteryThreshold) return;
   if (f_calibration_value == CALIBRATION_VALUE_DEFAULT) return;
+  if (!isValidCalibrationValue(f_calibration_value)) return;
+  const float threshold = WOW_TRIGGER_GRAMS * fabsf(f_calibration_value);
   if (scale.getDebugInfo().validSamples <= 0) return;
   wowRtc.magic = WOW_RTC_MAGIC;
   wowRtc.armed = 1;
+  wowRtc.tickCount = 0;
+  wowRtc.consecutiveFailures = 0;
   wowRtc.baselineRaw = scale.getDebugInfo().smoothedValue;
-  wowRtc.thresholdRaw =
-      max((int32_t)(WOW_TRIGGER_GRAMS * fabsf(f_calibration_value) + 0.5f),
-          WOW_MIN_THRESHOLD_RAW);
-  const uint8_t index =
-      (i_wow_interval > 0 && i_wow_interval < WOW_INTERVAL_COUNT)
-          ? i_wow_interval
-          : 0;
-  wowRtc.intervalUs = wowIntervalUs[index];
+  wowRtc.thresholdRaw = max((int32_t)(threshold + 0.5f), WOW_MIN_THRESHOLD_RAW);
+  wowRtc.intervalUs = wowIntervalUs[i_wow_interval];
 }
-
-static bool wowTimerArmedThisBoot = false;
 
 void wowArmSleepTimer() {
   if (wowRtc.armed && wowRtc.intervalUs > 0) {
@@ -64,13 +51,32 @@ void wowArmSleepTimer() {
   }
 }
 
-static bool wowReadOneSample(ADS1232_ADC &adc, int32_t &rawSample,
-                             bool &outOfRange, unsigned long &elapsedMs) {
+static bool wowPhysicalWakeRequested() {
+  const int pin = rtc_gpio_get_level((gpio_num_t)BUTTON_SQUARE) == LOW ? BUTTON_SQUARE
+                  : rtc_gpio_get_level((gpio_num_t)BUTTON_CIRCLE) == LOW ? BUTTON_CIRCLE
+                  : rtc_gpio_get_level((gpio_num_t)BATTERY_CHARGING) == LOW ? BATTERY_CHARGING
+                  : -1;
+  if (pin < 0) return false;
+  GPIO_power_on_with = pin;
+  wowButtonWake = pin != BATTERY_CHARGING;
+  return true;
+}
+
+static bool wowWaitForRail() {
+  const unsigned long startedAt = millis();
+  while (millis() - startedAt < WOW_RAIL_SETTLE_MS) {
+    if (wowPhysicalWakeRequested()) return false;
+    delay(2);
+  }
+  return !wowPhysicalWakeRequested();
+}
+
+static bool wowReadOneSample(ADS1232_ADC &adc, int32_t &rawSample, bool &outOfRange) {
   const unsigned long startedAt = millis();
   while (millis() - startedAt < WOW_READ_TIMEOUT_MS) {
+    if (wowPhysicalWakeRequested()) return false;
     if (digitalRead(SCALE_DOUT) == LOW) {
       if (adc.update()) {
-        elapsedMs = millis() - startedAt;
         rawSample = adc.getDebugInfo().rawValue;
         outOfRange = adc.getDebugInfo().dataOutOfRange;
         return true;
@@ -78,7 +84,6 @@ static bool wowReadOneSample(ADS1232_ADC &adc, int32_t &rawSample,
     }
     delay(2);
   }
-  elapsedMs = millis() - startedAt;
   return false;
 }
 
@@ -94,11 +99,23 @@ static void wowLatchMicroPins() {
   gpio_deep_sleep_hold_en();
 }
 
+static void wowSetCpuFrequencyMhz(unsigned long frequencyMhz) {
+#ifdef CONFIG_PM_ENABLE
+  (void)frequencyMhz;
+#else
+  setCpuFrequencyMhz(frequencyMhz);
+#endif
+}
+
 void wowMicroWakeOrContinue() {
   if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER) return;
   if (wowRtc.magic != WOW_RTC_MAGIC || !wowRtc.armed) return;
+  if (wowPhysicalWakeRequested()) {
+    wowRtc.armed = 0;
+    return;
+  }
   const unsigned long bootFreqMhz = getCpuFrequencyMhz();
-  setCpuFrequencyMhz(20);
+  wowSetCpuFrequencyMhz(20);
   gpio_hold_dis((gpio_num_t)SCALE_SCLK);
   gpio_hold_dis((gpio_num_t)SCALE_PDWN);
   gpio_hold_dis((gpio_num_t)SCALE_DOUT);
@@ -107,43 +124,55 @@ void wowMicroWakeOrContinue() {
 
   pinMode(PWR_CTRL, OUTPUT);
   digitalWrite(PWR_CTRL, HIGH);
-  delay(WOW_RAIL_SETTLE_MS);
+  if (!wowWaitForRail()) {
+    wowRtc.armed = 0;
+    wowSetCpuFrequencyMhz(bootFreqMhz);
+    return;
+  }
 
   ADS1232_ADC wowAdc(SCALE_DOUT, SCALE_SCLK, SCALE_PDWN, SCALE_A0);
   wowAdc.begin();
   bool outOfRange = false;
-  unsigned long elapsedMs = 0;
   int32_t rawSample = 0;
   const bool gotSample =
-      wowReadOneSample(wowAdc, rawSample, outOfRange, elapsedMs);
+      wowReadOneSample(wowAdc, rawSample, outOfRange);
   wowAdc.powerDown();
+  wowAdc.end();
+
+  if (GPIO_power_on_with >= 0 || wowPhysicalWakeRequested()) {
+    wowRtc.armed = 0;
+    wowSetCpuFrequencyMhz(bootFreqMhz);
+    return;
+  }
 
   if (gotSample && !outOfRange) {
-    const int32_t delta = rawSample > wowRtc.baselineRaw
-                              ? rawSample - wowRtc.baselineRaw
-                              : wowRtc.baselineRaw - rawSample;
-    wowRtc.lastSampleRaw = rawSample;
-    wowRtc.lastDeltaRaw = delta;
+    wowRtc.consecutiveFailures = 0;
+    const int64_t delta = rawSample > wowRtc.baselineRaw
+                              ? (int64_t)rawSample - wowRtc.baselineRaw
+                              : (int64_t)wowRtc.baselineRaw - rawSample;
     if (delta > wowRtc.thresholdRaw) {
       wowRtc.armed = 0;
-      Serial.printf("[wow] weight detected: delta=%ld > thresh=%ld, full boot\n",
-                    (long)delta, (long)wowRtc.thresholdRaw);
-      setCpuFrequencyMhz(bootFreqMhz);
+      wowSetCpuFrequencyMhz(bootFreqMhz);
       return;
     }
-    Serial.printf("[wow] tick=%lu raw=%ld delta=%ld thresh=%ld\n",
-                  (unsigned long)wowRtc.tickCount, (long)rawSample,
-                  (long)delta, (long)wowRtc.thresholdRaw);
   } else {
-    Serial.printf("[wow] tick=%lu no reliable sample, retrying next tick\n",
-                  (unsigned long)wowRtc.tickCount);
+    wowRtc.consecutiveFailures++;
+  }
+
+  wowRtc.tickCount++;
+  if (wowRtc.consecutiveFailures >= WOW_MAX_FAILURES || wowRtc.tickCount >= WOW_MAX_TICKS) {
+    wowRtc.armed = 0;
   }
 
   configureWakePinsForDeepSleep();
   esp_sleep_enable_ext1_wakeup_io(PIN_BITMASK, ESP_EXT1_WAKEUP_ANY_LOW);
+  if (wowPhysicalWakeRequested()) {
+    wowRtc.armed = 0;
+    wowSetCpuFrequencyMhz(bootFreqMhz);
+    return;
+  }
   wowLatchMicroPins();
-  esp_sleep_enable_timer_wakeup(wowRtc.intervalUs);
-  wowRtc.tickCount++;
+  if (wowRtc.armed) esp_sleep_enable_timer_wakeup(wowRtc.intervalUs);
   esp_deep_sleep_start();
 }
 

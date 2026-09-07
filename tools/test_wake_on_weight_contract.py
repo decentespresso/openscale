@@ -10,7 +10,7 @@ MENU = (ROOT / "include" / "menu.h").read_text(encoding="utf-8")
 PARAMETER = (ROOT / "include" / "parameter.h").read_text(encoding="utf-8")
 FIRMWARE = (ROOT / "src" / "hds.ino").read_text(encoding="utf-8")
 DOCS = (ROOT / "docs" / "wake-on-weight.md").read_text(encoding="utf-8")
-WOW_ADS = WOW[:WOW.index("#else")]
+WOW_ADS = WOW[:WOW.index("#else  // !ADS1232ADC")]
 
 
 def body(source, signature):
@@ -29,7 +29,7 @@ def body(source, signature):
 
 class WakeOnWeightContractTests(unittest.TestCase):
     def test_feature_header_exists_with_rtc_state(self):
-        self.assertIn("RTC_DATA_ATTR", WOW)
+        self.assertIn("RTC_DATA_ATTR WowRtcState wowRtc", PARAMETER)
         self.assertIn("WOW_RTC_MAGIC", WOW)
         self.assertIn("WOW_TRIGGER_GRAMS", WOW)
         self.assertIn("WOW_INTERVAL_COUNT", WOW)
@@ -46,9 +46,12 @@ class WakeOnWeightContractTests(unittest.TestCase):
         self.assertIn("esp_deep_sleep_start", WOW)
 
     def test_micro_wake_downclocks_to_minimum_clock(self):
-        self.assertIn("setCpuFrequencyMhz(20)", WOW)
+        self.assertIn("wowSetCpuFrequencyMhz(20)", WOW)
         self.assertNotIn("setCpuFrequencyMhz(80)", WOW)
         self.assertNotIn("setCpuFrequencyMhz(240)", WOW)
+        clock = body(WOW_ADS, "static void wowSetCpuFrequencyMhz(")
+        self.assertIn("#ifdef CONFIG_PM_ENABLE", clock)
+        self.assertNotIn("setCpuFrequencyMhz(", clock[:clock.index("#else")])
 
     def test_micro_wake_never_touches_nvs_or_battery(self):
         self.assertNotIn("storageGet", WOW)
@@ -62,8 +65,8 @@ class WakeOnWeightContractTests(unittest.TestCase):
     def test_no_marketing_language(self):
         self.assertNotIn("premium", WOW.lower())
 
-    def test_rtc_attribute_lives_only_in_wow_header(self):
-        for name, text in (("power.h", POWER), ("parameter.h", PARAMETER),
+    def test_rtc_attribute_lives_only_in_parameter_header(self):
+        for name, text in (("power.h", POWER), ("wake_on_weight.h", WOW),
                            ("menu.h", MENU), ("hds.ino", FIRMWARE),
                            ("storage.h", STORAGE)):
             self.assertNotIn("RTC_DATA_ATTR", text, name)
@@ -97,7 +100,7 @@ class WakeOnWeightContractTests(unittest.TestCase):
     def test_micro_wakeup_gates(self):
         micro = body(WOW_ADS, "void wowMicroWakeOrContinue()")
         self.assertIn("getCpuFrequencyMhz()", micro)
-        self.assertIn("setCpuFrequencyMhz(bootFreqMhz)", micro)
+        self.assertIn("wowSetCpuFrequencyMhz(bootFreqMhz)", micro)
         self.assertIn("ESP_SLEEP_WAKEUP_TIMER", micro)
         self.assertIn("WOW_RTC_MAGIC", micro)
         self.assertIn("gpio_hold_dis", micro)
@@ -109,6 +112,8 @@ class WakeOnWeightContractTests(unittest.TestCase):
         self.assertIn("esp_sleep_enable_timer_wakeup(wowRtc.intervalUs)", micro)
 
     def test_boot_interceptor_slots_in_setup(self):
+        setup = body(FIRMWARE, "void setup()")
+        self.assertLess(setup.index("wowMicroWakeOrContinue();"), setup.index("Serial.begin"))
         self.assertLess(FIRMWARE.index("wowMicroWakeOrContinue();"),
                         FIRMWARE.index("storageInit()"))
         self.assertLess(FIRMWARE.index("wowMicroWakeOrContinue();"),
@@ -163,6 +168,29 @@ class WakeOnWeightContractTests(unittest.TestCase):
         self.assertIn("3 s", DOCS)
         self.assertIn("4 s", DOCS)
         self.assertIn("defaults to off", DOCS)
+
+    def test_button_polling_and_latched_boot(self):
+        for signature in ("static bool wowWaitForRail()", "static bool wowReadOneSample("):
+            self.assertIn("wowPhysicalWakeRequested()", body(WOW_ADS, signature))
+        micro = body(WOW_ADS, "void wowMicroWakeOrContinue()")
+        self.assertGreaterEqual(micro.count("wowPhysicalWakeRequested()"), 3)
+        self.assertIn("rtc_gpio_get_level", WOW)
+        self.assertIn("if (wowButtonWake) break;", body(FIRMWARE, "void setup()"))
+        self.assertNotIn("Serial.", WOW)
+
+    def test_adc_cleanup_precedes_decision(self):
+        micro = body(WOW_ADS, "void wowMicroWakeOrContinue()")
+        self.assertLess(micro.index("wowAdc.powerDown()"), micro.index("wowAdc.end()"))
+        self.assertLess(micro.index("wowAdc.end()"), micro.index("if (gotSample"))
+
+    def test_session_fallbacks_and_sleep_interval(self):
+        self.assertIn("WOW_MAX_TICKS = 900", WOW)
+        self.assertIn("WOW_MAX_FAILURES = 5", WOW)
+        self.assertIn("wowRtc.consecutiveFailures = 0", WOW)
+        self.assertIn("if (wowRtc.armed) esp_sleep_enable_timer_wakeup", WOW)
+        self.assertIn('"Sleep 2s", "Sleep 3s", "Sleep 4s"', MENU)
+        self.assertIn("sleep intervals", DOCS)
+        self.assertIn("900-tick", DOCS)
 
 
 if __name__ == "__main__":

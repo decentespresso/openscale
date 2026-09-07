@@ -769,13 +769,13 @@ void beforeDeepSleepFlush() {
 #endif
 
 void setup() {
+  wowMicroWakeOrContinue();
 #if HDS_ENABLE_ENERGY_MENU
   energyIdle.mainTask = xTaskGetCurrentTaskHandle();
 #endif
   Serial.begin(115200);
   while (!Serial)
     ;
-  wowMicroWakeOrContinue();
   {
     esp_reset_reason_t r = esp_reset_reason();
     g_resetReasonCode = (uint8_t)r;
@@ -850,6 +850,9 @@ void setup() {
     b_ble_enabled = true;
   }
   while (true && GPIO_power_on_with > 0) {
+#ifdef ADS1232ADC
+    if (wowButtonWake) break;
+#endif
     if (i_buttonBootDelay == 0){
       Serial.println("Quick boot. Powering on...");
       break;

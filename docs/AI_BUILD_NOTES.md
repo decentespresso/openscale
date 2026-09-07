@@ -47,6 +47,23 @@ Do not add an environment merely because it exists. Changes limited to ADS1232 b
 - `check_platform_freshness.py` compares the explicit pioarduino pin with the latest stable release as an advisory pre-build check. It never fails offline builds; set `HDS_SKIP_PLATFORM_CHECK=1` only when the check should be skipped deliberately.
 - `.gitattributes` enforces LF line endings repo-wide.
 
+### Windows Energy-Menu Builds
+
+The PM-capable energy-menu environments compile ESP-IDF libraries. Use a
+short physical worktree path, such as `D:\w180`, with its ignored local
+`.pio-core` directory. Set `PLATFORMIO_BUILD_DIR` to `D:\w180\build` for
+that build. Long paths can exceed Windows command-line limits during
+linker-script generation. A `subst` alias is not sufficient: CMake resolves
+the physical path while other build steps keep the alias, which can break
+generated certificate source paths. Do not change the firmware or dependency
+pins to work around these path errors.
+
+Keep normal and custom-SDK builds in separate core directories. The custom
+builder rewrites the installed framework; switching variants in one core
+can leave mismatched headers and libraries. For example, use `.pio-core` for
+the energy-menu build and `build\normal-core` for the normal build, setting
+`PLATFORMIO_CORE_DIR` per invocation. Both directories are ignored.
+
 ## Enabling a Stable Custom Base
 
 In the release-preparation pull request, add the prospective `vX.Y.Z` tag to `FIRMWARE_REFS`, compatible plugin manifests, and the Worker's `ALLOWED_FIRMWARE_REFS` without removing `main` or making the tag the default. Regenerate both custom-build catalogs. When the tag does not exist, pull-request jobs may create a temporary local tag at the candidate commit and must pass its resolved commit explicitly when compiling the stable custom build. Do not create or push the real tag before the pre-tag gate passes. After the catalog commit reaches the trusted builder branch and the real tag exists, deploy the overlapping Worker configuration, then switch the configurator and build defaults to `vX.Y.Z` in a follow-up commit. After the stable path is live and before publishing the release, remove `main` from the catalog and Worker allow-list so development builds cannot consume production build quota. The configurator displays `vX.Y.Z` as `X.Y.Z (stable)`, and the resulting firmware reports `X.Y.Z-custom`.

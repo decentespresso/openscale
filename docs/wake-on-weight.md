@@ -1,147 +1,155 @@
 # Wake-on-Weight
 
-Optional feature: after a normal button/auto-off deep sleep, the scale wakes
-itself on an RTC timer, briefly powers the load-cell rail, reads one raw
-ADS1232 conversion, and either goes straight back to sleep (nothing placed)
-or continues into a full normal boot (weight placed).
+Wake-on-Weight (WoW) defaults to off. When enabled, normal shutdown captures
+the current weight, then RTC timer wakes briefly power the primary ADS1232
+and compare one conversion against that baseline. A change greater than the
+50 g threshold (with a 500-raw-count minimum) continues into normal boot,
+including boot tare. Removing weight can
+also trigger a boot. No separate firmware or energy-menu build is required.
 
-Runtime-gated: always compiled, off by default, no platformio environment or
-custom-build flag. Requires the ADS1232 load-cell path (`ADS1232ADC`).
+## Setting and Timing
 
-## Setting
+The Power menu row is `WakeOnWeight o / 2 / 3 / 4`. The confirmation says
+`Off / Sleep 2s / Sleep 3s / Sleep 4s`. These are **sleep intervals**, not
+detection periods. The NVS key `wow_interval` stores indices 0 through 3;
+all default and migration paths use 0. The selected interval is snapshotted
+at shutdown. Changing it does not change a sleep session already underway.
 
-Power menu row `Wake: Off / 2s / 3s / 4s` (cycling entry, same pattern as
-`Drift:`), NVS key `wow_interval` (int) under the `hds` namespace. Stored via
-`storageEnsureInt(KEY_WOW_INTERVAL, 0)` in all three storage paths so legacy
-EEPROM migration keeps `storageHasAllSettings()` satisfied. The stored value
-defaults to off (index 0) — the ECO behavior (~100 µA deep sleep, physical
-button wake only).
+The timer starts when entering deep sleep, after the micro-wake work.
+The detection period is sleep interval plus micro-wake duration. The PR's
+V8.1 measurement was approximately 850 ms per micro-wake, including about
+300 ms ROM/Arduino startup, 100 ms rail settling, and the first 10 SPS ADC
+conversion. Firmware polling has a separate 900 ms timeout after settling.
+The revised path runs before Serial initialization and does not log per tick;
+its exact duration must be remeasured on hardware.
 
-Changing the menu does not re-arm a sleep already in progress: the interval
-is snapshotted into RTC memory at each sleep entry, so a running tick cycle
-keeps its old cadence until the next qualifying sleep.
-
-## Tick cadence
-
-Measured on V8.1, one tick costs ~850 ms end to end: ≈300 ms ROM/Arduino
-boot at 240 MHz before the tick code runs, ~100 ms rail settle, ~400 ms
-until the first ADS1232 conversion at 10 SPS, then the re-latch and
-re-sleep. Duty cycles by setting:
-
-| Setting | Duty | Notes |
+| Sleep interval | Estimated detection period | Active duty |
 | --- | --- | --- |
-| Off | — | ECO mode, no ticks |
-| 2 s | ~43% | barely leaves time asleep; battery-heavy |
-| 3 s | ~28% | usable compromise |
-| 4 s | ~21% | recommended default |
+| 2 s | 2.85 s | 29.8% |
+| 3 s | 3.85 s | 22.1% |
+| 4 s | 4.85 s | 17.5% |
 
-The tick downclocks to the lowest supported CPU frequency, 20 MHz
-(`setCpuFrequencyMhz(20)`, S3 minimum below the 240/160/80 PLL tiers), for
-the ADC wait and restores the frequency the chip booted at (`bootFreqMhz`)
-if weight is detected, so a detected full boot behaves like any other full
-boot.
+Duty is `0.85 / (sleep seconds + 0.85)`, not `0.85 / sleep seconds`.
+ADC failures lengthen the active portion. Sampling is intermittent: a load
+placed and removed between samples can be missed.
 
-## What wakes the device
+## Button and Charging Wake
 
-Deep sleep still wakes on EXT1 (buttons + charging pin) exactly as before.
-The RTC timer is a second wake source that coexists with EXT1: a button press
-during a tick's sleep still EXT1-wakes into a full boot.
+Normal deep sleep keeps the existing EXT1 any-low button and charging wake
+sources. During a WoW micro-wake, the same RTC input pins are checked on
+entry, every 2 ms during rail settling and ADC polling, after ADC cleanup,
+and immediately before the final pin-latch/sleep sequence. A detected press
+aborts the micro-wake and continues into normal boot without waiting for ADC
+readiness. Square has priority over circle, and both have priority over
+charging, matching the normal multi-pin wake mapping.
 
-## Arming (`wowCaptureBaselineForSleep` in `include/wake_on_weight.h`)
+A button accepted during a micro-wake is remembered through setup, so release
+during later initialization cannot send it back to sleep. Only this accepted
+WoW button wake bypasses the subsequent button-hold gate. Ordinary EXT1 boots
+retain their existing quick-boot/500 ms hold behavior. Circle/square BLE
+selection and charging-only boot behavior remain unchanged. Weight-only boot
+leaves `GPIO_power_on_with` at -1 as before.
 
-Called from `esp32_sleep()` in `include/power.h` just before
-`scale.powerDown()`. Arms only when all of:
+Polling is not an edge latch: pulses shorter than the polling/scheduler gap,
+or entirely within ROM/Arduino startup before setup, are not guaranteed.
+The roughly 500 ms normal power-button press is longer than the measured
+startup window. After the final check there are no intentional waits before
+sleep; a normal press starting there remains low for EXT1. Test these
+boundaries on hardware; host checks cannot establish electrical timing.
 
-- `i_wow_interval > 0` (setting not Off)
-- `i_lowBatteryCount == 0` (low battery disables the feature)
-- `f_calibration_value != CALIBRATION_VALUE_DEFAULT` (scale is calibrated;
-  signed calibration factors are supported via `fabsf`)
-- `scale.getDebugInfo().validSamples > 0` (a live reading exists; setup-time
-  sleeps and gyro accidental-touch boots never arm)
+## Session Protection
 
-When armed it stores in `RTC_DATA_ATTR` (first use in this repo, survives
-deep sleep without wearing NVS):
+Arming requires a valid interval, calibration, and an existing live sample.
+An observed low-battery count or a known voltage below 3.2 V prevents arming.
+Non-finite or overflowing calibration thresholds also prevent arming.
 
-- `baselineRaw` = current `smoothedValue` (raw counts; the tare offset is
-  common mode and cancels in the delta)
-- `thresholdRaw` = `max(50 g × |calibration factor|, 500 counts)` floor
-- `intervalUs` from the menu setting (snapshot)
-- `magic` + `armed` markers
+Battery protection during sleep uses a **900-tick maximum per session**,
+not recurring voltage measurements. At the measured 850 ms active duration,
+this is about 43, 58, or 73 minutes for 2, 3, or 4 s sleep intervals. It is a
+tick bound, not a precise wall-clock deadline; slow startup and ADC timeouts
+extend elapsed time. After the limit, WoW is disabled for that sleep session
+and the device stays in ordinary deep sleep until a physical/charging wake.
+A later qualifying shutdown starts a new session. The saved menu setting
+does not change. This deliberately does not provide all-night WoW standby.
 
-The timer is enabled by `wowArmSleepTimer()` after the baseline capture —
-**after** the energy-menu block's `esp_sleep_disable_wakeup_source` — and
-only when armed; the disable is gated on "enabled earlier in this boot" so
-ordinary sleeps never trip the ESP-IDF "Incorrect wakeup source" error.
+Five consecutive ADC timeouts or unusable conversions also disable WoW for
+the current session. One reliable conversion resets the failure count.
+Both fallback paths preserve EXT1 and leave the timer unarmed in the fresh
+deep-sleep boot. They do not run the normal shutdown path or recapture a
+baseline. A button/charging request takes priority over fallback.
 
-## Micro-wakeup (`wowMicroWakeOrContinue`)
+No micro-wake initializes I2C, ADS1115, OLED, radio, storage, or battery ADC.
+No NVS reads or writes occur. V8.1's `BATTERY_PIN` is only a placeholder;
+using `analogRead(BATTERY_PIN)` would not measure its battery. The session
+cap bounds extra WoW consumption but is not a voltage cutoff or a substitute
+for cell protection. A cell already near empty can still discharge below
+the normal cutoff during that bounded session.
 
-First call in `setup()` (before reset-reason handling, NVS init, or any
-peripheral init; the tick path never touches NVS or the battery). Only acts
-when the wake cause is `ESP_SLEEP_WAKEUP_TIMER` and the `magic`/`armed`
-markers are valid — every other boot falls straight through.
+## Resources and GPIOs
 
-Per tick, in order:
+RTC state is an explicit 20-byte structure in `include/parameter.h`: magic,
+armed flag, consecutive failure count, tick count, baseline, threshold, and
+sleep interval. Arming resets both counters; the layout has a new magic.
+Transient setup flags are not retained. No cross-task state is introduced.
 
-1. Log tick count + boot frequency, then run at 20 MHz.
-2. Release `gpio_hold` on `SCALE_SCLK`, `SCALE_PDWN`, `SCALE_DOUT`,
-   `PWR_CTRL` only (per-pin first, then `gpio_deep_sleep_hold_dis()`);
-   OLED/I2C/secondary-scale/`ACC_PWR_CTRL` rails stay off and held.
-3. `PWR_CTRL` HIGH, settle 100 ms, then a local `ADS1232_ADC` object (fresh
-   after the full reset; `begin()` performs the PDWN reset pulse).
-4. Poll for the first DRDY at 10 SPS with a 900 ms timeout (measured on
-   hardware: first conversion arrives ~400 ms after rail power; the original
-   250 ms window never caught it).
-5. `powerDown()` the ADC.
+The micro-wake releases only primary `SCLK`, `PDWN`, `DOUT`, and `PWR_CTRL`
+holds. In builds without ESP-IDF power management, it runs at 20 MHz during
+polling and restores the boot CPU frequency on continuation into setup.
+PM-enabled builds, including the energy-menu build, leave frequency control
+to ESP-IDF. Changing the hardware clock directly would bypass its frequency
+and tick bookkeeping. Other per-pin holds stay in place.
+Before re-sleep it holds the primary clock and PDWN low, DOUT as input,
+and the main rail low, exactly as the normal sleep path does.
 
-Decision:
+The temporary ADS1232 uses polling mode only. Every constructed instance
+gets `powerDown()` followed by `end()` before either boot continuation or
+deep sleep. The pinned driver's `end()` deletes its synchronization resources
+without changing pin modes; no driver or dependency update is needed.
 
-- No sample within the timeout, or `dataOutOfRange` → back to sleep, retry
-  next tick (no false boots on ADC faults).
-- `|raw − baseline| <= threshold` → re-latch the four pins
-  (`PWR_CTRL` LOW + hold), re-assert EXT1 wake pins + the snapshotted
-  interval timer, `tickCount++`, `esp_deep_sleep_start()`.
-- `|raw − baseline| > threshold` → clear `armed`, restore the boot frequency,
-  log, and **return into the normal `setup()` flow** (OLED, BLE, boot tare).
-  `GPIO_power_on_with` stays -1 so BLE enables and the button-hold check is
-  skipped, as for a timer wake today. The normal boot tare then zeros
-  whatever was placed — same semantics as putting a cup on before pressing
-  the button.
+## Hardware Scope
 
-Measured idle behavior on the bench (empty scale, 4 s ticks): consecutive
-tick samples drift ~70-90 raw counts (~7-9 g equivalent at a ~1000 counts/g
-calibration) — thermal drift, comfortably under the 50 g threshold.
+Only **ESP32-S3 V8.1** has the PR's bench validation. Compilation remains
+under `ADS1232ADC`; that macro alone is not a hardware validation claim.
 
-## Behavior notes
+- V8.0 and V7.5 share the primary ADC pins 11/12/13, rail pin 3, and RTC
+  wake pins 1/2/10 with V8.1. Their pin maps support the same micro path,
+  but their electrical settling/current behavior has not been validated.
+- V7.4 uses primary pins 8/9/18 and wake pins 1/2/6, also compatible with
+  S3 digital holds and RTC inputs. Its secondary GPIO35 can conflict with
+  some PSRAM modules, an existing board/sleep constraint.
+- V7.3 and V7.2 have legacy missing secondary-scale/accessory macros in the
+  surrounding normal sleep implementation. V6/V5 lack the required power
+  and charging definitions. These legacy configurations cannot be certified
+  by enabling `ADS1232ADC`; no unrelated board repair is included here.
 
-- Charging: arming is allowed (plugging in still EXT1-wakes into a full
-  boot; a manual shutdown while charging may tick).
-- Low battery: never arms once `i_lowBatteryCount > 0`; the micro path never
-  reads the battery.
-- Uncalibrated scale: setting can be changed but nothing arms until the
-  scale is calibrated.
-- Each tick prints a short `[wow]` line on Serial before energy quieting
-  exists.
+GPIO3 is a strapping pin. Existing board pull/load assumptions are unchanged.
+Primary ADC pins need digital hold support, not RTC wake capability; only
+the buttons and charging inputs need RTC capability. Older compatible
+revisions are not unnecessarily disabled, but require board-level testing.
 
-## Power budget
+## Power Estimate
 
-Per tick ≈ 850 ms active at 20 MHz (below the PLL tiers the draw is
-dominated by the load-cell/ADC rail; measure on hardware) against the
-deep-sleep ~100 µA baseline (700 mAh cell). Rough estimates assuming
-~6 mA active:
+With the illustrative assumptions of 6 mA average **across the entire active
+window** and 0.1 mA asleep, `Iavg = duty * 6 + (1 - duty) * 0.1`:
 
-| Setting | Duty | Avg current | Standby |
-| --- | --- | --- | --- |
-| 2 s | ~43% | ~2.6 mA | ~11 days |
-| 3 s | ~28% | ~1.8 mA | ~16 days |
-| 4 s | ~21% | ~1.3 mA | ~22 days |
+| Sleep interval | Estimated average while WoW cycles |
+| --- | --- |
+| 2 s | 1.86 mA |
+| 3 s | 1.40 mA |
+| 4 s | 1.13 mA |
 
-Measure with a real ammeter or the USB Sleep Test before trusting these;
-they are estimates pending hardware confirmation.
+The startup part runs at the boot clock, not 20 MHz. PM-enabled builds also
+use their configured frequency policy during polling. The 6 mA assumption is
+not a measured whole-cycle current and may underestimate consumption.
+Continuous multi-day standby projections are inappropriate because of the
+900-tick cap. After fallback only ordinary deep-sleep consumption remains.
+Measure complete cycles with an ammeter, including startup and failed reads.
 
-## Related code
+## Verification
 
-- `include/wake_on_weight.h` — micro-wake, baseline capture, timer arming
-- `include/power.h` — `esp32_sleep()` arming hooks
-- `include/menu.h` — Power menu cycling row
-- `include/storage.h`, `include/parameter.h` — NVS key + globals
-- `tools/test_wake_on_weight_contract.py` — read-only source contract
+Run `python tools/test_wake_on_weight_contract.py` and
+`python tools/test_wake_on_weight_runtime.py`, then build `esp32s3` and
+`esp32s3-energy-menu`. Hardware follow-up should sweep normal button presses
+across startup, rail settling, ADC wait, and sleep handoff; check both buttons,
+charging insertion, ADC disconnect/recovery, session expiry, boot tare,
+resource cleanup, and whole-cycle current. WoW-off sleep must remain unchanged.

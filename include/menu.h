@@ -552,7 +552,7 @@ void cycleWakeOnWeight() {
   const bool stored = storagePutInt(KEY_WOW_INTERVAL, next);
   if (stored) i_wow_interval = next;
   updateWakeOnWeightLabel();
-  static const char *const valueText[] = { "Off", "2s", "3s", "4s" };
+  static const char *const valueText[] = { "Off", "Sleep 2s", "Sleep 3s", "Sleep 4s" };
   actionMessage = stored ? "WakeOnWeight" : "Save Failed";
   actionMessage2 = stored ? valueText[next] : "WakeOnWeight";
   menuActionMessageChanged();
