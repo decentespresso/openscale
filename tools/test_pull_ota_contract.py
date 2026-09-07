@@ -100,7 +100,7 @@ def main():
     assert_before(
         PULL_OTA_HEADER,
         "rollbackFound = pullOtaFindCurrentRelease(catalog, rollbackManifest)",
-        "!rollbackFound && !pullOtaFetchCurrentReleaseManifest(rollbackManifest)",
+        "if (!rollbackFound) rollbackFound = pullOtaFetchCurrentReleaseManifest(rollbackManifest)",
     )
     assert_contains(PULL_OTA_HEADER, "wifi_init();")
     assert_contains(PULL_OTA_HEADER, "pullOtaStorePendingLittleFs")
@@ -180,12 +180,20 @@ def main():
     targeted = run[targeted_start:run.index("if (!pullOtaHasNewerRelease(catalog, selection)) {")]
     if "pullOtaPickRelease" in targeted or "pullOtaConfirmInstall" in targeted:
         raise AssertionError("an unattended install must not open the picker or the confirm prompt")
-    if "pullOtaInstall(manifest, rollbackManifest);" not in targeted:
+    if 'pullOtaInstall(manifest, rollbackManifest, "", rollbackCombinationHash);' not in targeted:
         raise AssertionError("an unattended install must reuse pullOtaInstall")
     if run.index("pullOtaFindCurrentRelease(catalog, rollbackManifest)") > targeted_start:
         raise AssertionError("the rollback manifest must be resolved before an unattended install")
 
     interactive = run[run.index("if (!pullOtaHasNewerRelease(catalog, selection)) {"):]
+    assert "const String rollbackCombinationHash = pullOtaCurrentCombinationHash();" in run
+    custom_start = run.index("if (rollbackCombinationHash.length() > 0) {")
+    custom_branch = run[custom_start:run.index("} else {", custom_start)]
+    assert "customBuildFetchManifest(rollbackCombinationHash, rollbackManifest)" in custom_branch
+    assert "pullOtaFindCurrentRelease" not in custom_branch
+    assert "pullOtaFetchCurrentReleaseManifest" not in custom_branch
+    assert 'pullOtaInstall(manifest, rollbackManifest, "", rollbackCombinationHash);' in interactive
+    assert run.index('pullOtaFail("Rollback missing")') < targeted_start
     if "pullOtaPickRelease(catalog, selection, &selectedCatalogIndex)" not in interactive:
         raise AssertionError("the interactive picker must remain on the no-target path")
     if "pullOtaConfirmInstall(manifest)" not in interactive:

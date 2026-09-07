@@ -45,6 +45,10 @@ About also shows the installed custom combination as `Build: XXXXXXXX`, without
 network access. Official firmware keeps the version, date, and Git revision display.
 The reserved remote OTA target `0.0.0` starts the assigned custom build unattended;
 the menu retains its local install confirmation. Remote requests never initiate pairing.
+When installing an official release from custom firmware, the rollback manifest must
+come from the installed full combination hash and pass custom signature verification.
+Both remote and interactive release installs retain that hash in the LittleFS rollback
+transaction. Official firmware continues to resolve its rollback manifest by version.
 
 ## Release Assets
 
