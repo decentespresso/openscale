@@ -285,6 +285,23 @@ test("fleet names save on change without separate save actions", async () => {
   }
 });
 
+test("ready WiFi builds save next to the build action and navigate without assignment", async () => {
+  const html = await readFile(new URL("../../../docs/custom-build/index.html", import.meta.url), "utf8");
+  const app = await readFile(new URL("../../../docs/custom-build/app.js", import.meta.url), "utf8");
+  const source = await readFile(new URL("../../../docs/custom-build/fleet.js", import.meta.url), "utf8");
+  assert.equal(html.match(/id="add-fleet-build"/g).length, 1);
+  assert.ok(html.indexOf('id="add-fleet-build"') < html.indexOf('id="fleet-panel"'));
+  assert.ok(html.includes('>Saved builds</h4>'));
+  assert.equal(/>[^<]*fleet[^<]*</i.test(html), false);
+  assert.ok(app.includes('installMethod === "wifi" && currentBuildState === "ready"'));
+  const save = source.slice(source.indexOf('addBuild.addEventListener("click"'), source.indexOf('selectAll.addEventListener("change"'));
+  assert.ok(save.includes('buildSelect.value = combinationHash'));
+  assert.ok(save.includes('scrollIntoView'));
+  assert.ok(save.includes('if (await loadFleet() && getReadyHash() === combinationHash) showScales()'));
+  assert.equal(save.includes('/assignments'), false);
+  assert.ok(save.includes('savingBuild = true'));
+});
+
 test("fleet assignment uses only the explicit scale selection", async () => {
   const source = await readFile(new URL("../../../docs/custom-build/fleet.js", import.meta.url), "utf8");
   const html = await readFile(new URL("../../../docs/custom-build/index.html", import.meta.url), "utf8");

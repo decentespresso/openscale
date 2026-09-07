@@ -91,6 +91,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   let builds = [];
   let buildStates = {};
   let selectedDeviceIds = new Set();
+  let savingBuild = false;
 
   const setSettingsOpen = open => {
     settings.hidden = !open;
@@ -145,11 +146,11 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
     const messages = {
       build_assigned: "Clear this build from assigned scales before removing it",
       build_not_ready: "Only ready custom builds can be added or assigned",
-      cross_fleet_device: "One or more scales belong to another fleet",
+      cross_fleet_device: "One or more scales are linked elsewhere",
       device_not_found: "One or more scales are no longer linked",
       empty_target_set: "Select at least one scale",
     };
-    showToast(messages[error.code] || "Fleet change could not be saved");
+    showToast(messages[error.code] || "Change could not be saved");
   };
 
   const renderControls = () => {
@@ -169,13 +170,15 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
     selectAll.indeterminate = selected > 0 && selected < scales.length;
     const readyHash = getReadyHash();
     const alreadyAdded = builds.some(build => build.combination_hash === readyHash);
-    addBuild.disabled = !scales.length || !readyHash || alreadyAdded;
-    addBuild.textContent = alreadyAdded ? "Build added" : "Add current build";
+    addBuild.hidden = !readyHash;
+    addBuild.disabled = !scales.length || !readyHash || savingBuild;
+    addBuild.textContent = savingBuild ? "Saving..." : alreadyAdded ? "My scales" : "Save build";
+    addBuild.title = !scales.length ? "Link a scale first" : "";
   };
 
   const loadFleet = async () => {
     const currentGeneration = ++generation;
-    fleetStatus.textContent = "Loading fleet";
+    fleetStatus.textContent = "Loading scales";
     buildStatus.textContent = "";
     try {
       const result = await api("/api/v1/fleet/overview");
@@ -191,9 +194,11 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
         ? `${scales.length} scale${scales.length === 1 ? "" : "s"}` : "No scales linked yet";
       buildStatus.textContent = builds.length
         ? `${builds.length} saved build${builds.length === 1 ? "" : "s"}` : "No saved builds";
+      return true;
     } catch {
       if (currentGeneration !== generation) return;
-      fleetStatus.textContent = "Fleet could not be loaded";
+      fleetStatus.textContent = "Scales could not be loaded";
+      return false;
     }
   };
 
@@ -201,7 +206,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
     if (!builds.length) {
       const empty = document.createElement("li");
       empty.className = "fleet-empty-row";
-      empty.textContent = "Add the ready build shown above to use it for deployments.";
+      empty.textContent = "No saved builds";
       buildList.replaceChildren(empty);
       renderControls();
       return;
@@ -256,7 +261,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
         if (!(await confirm("Remove saved build?", `${labelForBuild(build.combination_hash)} will remain available to existing installations.`, "Remove"))) return;
         try {
           await api(`/api/v1/fleet/builds/${build.combination_hash}`, {method: "DELETE"});
-          showToast("Build removed from fleet");
+          showToast("Saved build removed");
           await loadFleet();
         } catch (error) {
           showApiError(error);
@@ -352,11 +357,11 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   const activateKey = key => {
     fleetKey = normalizedFleetKey(key);
     if (!fleetPattern.test(fleetKey)) {
-      showToast("Enter a valid fleet recovery key");
+      showToast("Enter a valid recovery key");
       return false;
     }
     if (!saveKey(fleetKey)) {
-      showToast("Fleet access could not be saved. Allow browser storage and try again.");
+      showToast("Scale access could not be saved. Allow browser storage and try again.");
       return false;
     }
     setMode(true);
@@ -377,9 +382,9 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   document.querySelector("#copy-fleet-key").addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText(formattedFleetKey(fleetKey));
-      showToast("Fleet recovery key copied");
+      showToast("Recovery key copied");
     } catch {
-      showToast("Fleet key could not be copied");
+      showToast("Recovery key could not be copied");
     }
   });
   document.querySelector("#forget-fleet").addEventListener("click", () => forgetDialog.showModal());
@@ -396,6 +401,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
     buildList.replaceChildren();
     scaleRows.replaceChildren();
     setMode(false);
+    renderControls();
   });
   document.querySelector("#pair-scale").addEventListener("submit", async event => {
     event.preventDefault();
@@ -418,16 +424,33 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   });
   addBuild.addEventListener("click", async () => {
     const combinationHash = getReadyHash();
-    if (!combinationHash) return;
+    if (!combinationHash || !scales.length || savingBuild) return;
+    const showScales = () => {
+      buildSelect.value = combinationHash;
+      document.querySelector(".fleet-scales-section").scrollIntoView({
+        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+        block: "start",
+      });
+      buildSelect.focus({preventScroll: true});
+    };
+    if (builds.some(build => build.combination_hash === combinationHash)) {
+      showScales();
+      return;
+    }
+    savingBuild = true;
+    renderControls();
     try {
       await api("/api/v1/fleet/builds", {
         method: "POST",
         body: JSON.stringify({combination_hash: combinationHash}),
       });
-      showToast("Build added to fleet");
-      await loadFleet();
+      showToast("Build saved");
+      if (await loadFleet() && getReadyHash() === combinationHash) showScales();
     } catch (error) {
       showApiError(error);
+    } finally {
+      savingBuild = false;
+      renderControls();
     }
   });
   selectAll.addEventListener("change", () => {
@@ -444,5 +467,6 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   document.addEventListener("openscale-build-status", renderControls);
 
   setMode(Boolean(fleetKey));
+  renderControls();
   if (fleetKey) loadFleet();
 }
