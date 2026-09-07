@@ -168,6 +168,8 @@ struct PullOtaManifest {
   PullOtaAsset littlefs;
 };
 
+bool customBuildFetchManifest(const String &combinationHash, PullOtaManifest &manifest);
+
 struct PullOtaReleaseList {
   PullOtaManifest releases[HDS_OTA_MAX_RELEASE_CHOICES];
   uint8_t count = 0;
@@ -1571,8 +1573,14 @@ void pullOtaRunUpdate(const PullOtaTargetVersion &target) {
     delay(2000);
     return;
   }
-  rollbackFound = pullOtaFindCurrentRelease(catalog, rollbackManifest);
-  if (!rollbackFound && !pullOtaFetchCurrentReleaseManifest(rollbackManifest)) {
+  const String rollbackCombinationHash = pullOtaCurrentCombinationHash();
+  if (rollbackCombinationHash.length() > 0) {
+    rollbackFound = customBuildFetchManifest(rollbackCombinationHash, rollbackManifest);
+  } else {
+    rollbackFound = pullOtaFindCurrentRelease(catalog, rollbackManifest);
+    if (!rollbackFound) rollbackFound = pullOtaFetchCurrentReleaseManifest(rollbackManifest);
+  }
+  if (!rollbackFound) {
     pullOtaFail("Rollback missing");
     return;
   }
@@ -1583,7 +1591,7 @@ void pullOtaRunUpdate(const PullOtaTargetVersion &target) {
       return;
     }
     PullOtaManifest manifest = std::move(catalog.releases[selectedCatalogIndex]);
-    pullOtaInstall(manifest, rollbackManifest);
+    pullOtaInstall(manifest, rollbackManifest, "", rollbackCombinationHash);
     return;
   }
   if (!pullOtaHasNewerRelease(catalog, selection)) {
@@ -1597,7 +1605,7 @@ void pullOtaRunUpdate(const PullOtaTargetVersion &target) {
   if (!pullOtaConfirmInstall(manifest)) {
     return;
   }
-  pullOtaInstall(manifest, rollbackManifest);
+  pullOtaInstall(manifest, rollbackManifest, "", rollbackCombinationHash);
 }
 
 void pullOtaStoreRequestedTarget(const PullOtaTargetVersion &target) {
