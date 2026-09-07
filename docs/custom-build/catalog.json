@@ -1,8 +1,9 @@
 {
-  "catalog_revision": "6cc29f6843a071e97e9a816ed7d36e33abc4e5d340b396788f7d7c04dfe5677d",
+  "catalog_revision": "9c45e0a71081cb3c7cddbd8e579df671dccbb71492b657c48c15fd8fb830d04a",
   "custom_ota_signing_key_generation": 1,
   "firmware_refs": [
     "v3.1.14",
+    "v3.1.14-preview.3",
     "main"
   ],
   "features": [
@@ -14,6 +15,7 @@
       "requires": [],
       "firmware_refs": [
         "v3.1.14",
+        "v3.1.14-preview.3",
         "main"
       ],
       "default": true
@@ -28,6 +30,7 @@
       ],
       "firmware_refs": [
         "v3.1.14",
+        "v3.1.14-preview.3",
         "main"
       ],
       "default": true
@@ -42,6 +45,7 @@
       ],
       "firmware_refs": [
         "v3.1.14",
+        "v3.1.14-preview.3",
         "main"
       ],
       "default": true
@@ -57,6 +61,7 @@
       ],
       "firmware_refs": [
         "v3.1.14",
+        "v3.1.14-preview.3",
         "main"
       ],
       "default": true
@@ -69,6 +74,7 @@
       "requires": [],
       "firmware_refs": [
         "v3.1.14",
+        "v3.1.14-preview.3",
         "main"
       ],
       "default": true
@@ -84,6 +90,7 @@
       ],
       "firmware_refs": [
         "v3.1.14",
+        "v3.1.14-preview.3",
         "main"
       ],
       "default": true
@@ -98,6 +105,7 @@
       ],
       "firmware_refs": [
         "v3.1.14",
+        "v3.1.14-preview.3",
         "main"
       ],
       "default": true
@@ -113,6 +121,7 @@
       ],
       "firmware_refs": [
         "v3.1.14",
+        "v3.1.14-preview.3",
         "main"
       ],
       "hidden": true
@@ -125,6 +134,7 @@
       "requires": [],
       "firmware_refs": [
         "v3.1.14",
+        "v3.1.14-preview.3",
         "main"
       ]
     }
@@ -138,6 +148,7 @@
       "version": "1.0.0",
       "firmware_refs": [
         "v3.1.14",
+        "v3.1.14-preview.3",
         "main"
       ],
       "requires": [
@@ -161,6 +172,7 @@
       "version": "1.0.0",
       "firmware_refs": [
         "v3.1.14",
+        "v3.1.14-preview.3",
         "main"
       ],
       "requires": [
@@ -188,6 +200,7 @@
       "version": "1.0.0",
       "firmware_refs": [
         "v3.1.14",
+        "v3.1.14-preview.3",
         "main"
       ],
       "requires": [],
