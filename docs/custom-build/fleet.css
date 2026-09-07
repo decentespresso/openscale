@@ -1,4 +1,7 @@
+#add-fleet-build[hidden] { display: none; }
+
 .fleet-section {
+  scroll-margin-top: 90px;
   min-width: 0;
   padding: 22px 0;
   border-top: 1px solid var(--line);
