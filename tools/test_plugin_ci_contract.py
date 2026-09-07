@@ -63,9 +63,10 @@ def main():
     assert "#ifdef HDS_CUSTOM_BUILD" not in patch
     assert manifest["patches"] == {
         "v3.1.14": "patches/main.patch",
+        "v3.1.14-preview.3": "patches/main.patch",
         "main": "patches/main.patch",
     }
-    assert workerConfig["vars"]["ALLOWED_FIRMWARE_REFS"] == "main,v3.1.14"
+    assert workerConfig["vars"]["ALLOWED_FIRMWARE_REFS"] == "main,v3.1.14,v3.1.14-preview.3"
     assert workerConfig["vars"]["BUILDER_REF"] == "main"
     assert changedPlugins.changedPluginIds([
         "plugins/pressensor/plugin.json",
@@ -77,6 +78,7 @@ def main():
     ]) == [
         {"plugin": "pressensor", "firmware_ref": "main"},
         {"plugin": "pressensor", "firmware_ref": "v3.1.14"},
+        {"plugin": "pressensor", "firmware_ref": "v3.1.14-preview.3"},
     ]
     assert changedPlugins.changedPluginMatrix([
         "plugins/default-web-apps/assets/index.html"

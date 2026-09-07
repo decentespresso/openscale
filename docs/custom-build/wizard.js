@@ -1,6 +1,6 @@
 const start = document.querySelector("#start-wizard");
 const steps = [
-  ["firmware-heading", "Choose a firmware version and WiFi or USB installation. main contains development changes; a release uses that published version."],
+  ["firmware-heading", "Choose the source version for your custom firmware, then choose WiFi or USB installation. Your build includes the features and plugins you select, not necessarily everything in the official firmware. For everyday use, choose a stable release as the starting point. main is unfinished development code: it may contain untested changes or bugs and is intended for testing only."],
   ["features-heading", "Choose the features you need. Required dependencies are selected automatically and cannot be removed while another selection needs them."],
   ["plugins-heading", "Choose optional approved plugins. Only plugins compatible with your firmware version are available."],
   ["summary-heading", "Review your selection and request the build when ready. Wait for it to finish, then download the ZIP for USB or save the build for your scales."],

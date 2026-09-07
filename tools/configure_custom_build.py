@@ -13,12 +13,12 @@ SCRIPT_ROOT = Path(globals().get("__file__", Path.cwd() / "tools" / "configure_c
 ROOT = Path(os.environ.get("HDS_CUSTOM_BUILD_CATALOG_ROOT", SCRIPT_ROOT)).resolve()
 ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 PATH_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
-STABLE_FIRMWARE_REF_PATTERN = re.compile(r"^v?([0-9]+\.[0-9]+\.[0-9]+)$")
+TAGGED_FIRMWARE_REF_PATTERN = re.compile(r"^v?([0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9]+(?:[.-][a-z0-9]+)*)?)$")
 DEFAULT_FIRMWARE_VERSION_PATTERN = re.compile(
     r'^\s*#define\s+HDS_FIRMWARE_VERSION\s+"([0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9]+(?:[.-][a-z0-9]+)*)?)"\s*$',
     re.MULTILINE,
 )
-FIRMWARE_REFS = ("v3.1.14", "main")
+FIRMWARE_REFS = ("v3.1.14", "v3.1.14-preview.3", "main")
 FEATURES = {
     "wifi": ("HDS_FEATURE_WIFI", (), FIRMWARE_REFS),
     "mdns": ("HDS_FEATURE_MDNS", ("wifi",), FIRMWARE_REFS),
@@ -635,9 +635,9 @@ def firmwareFileBytes(firmwareRef, relativePath, sourceRoot=ROOT):
 
 
 def customFirmwareVersion(firmwareRef, configHeader):
-    stable = STABLE_FIRMWARE_REF_PATTERN.fullmatch(firmwareRef)
-    if stable:
-        return f"{stable.group(1)}-custom"
+    tagged = TAGGED_FIRMWARE_REF_PATTERN.fullmatch(firmwareRef)
+    if tagged:
+        return f"{tagged.group(1)}-custom"
     match = DEFAULT_FIRMWARE_VERSION_PATTERN.search(configHeader)
     if not match:
         raise ValueError("selected firmware has no valid HDS_FIRMWARE_VERSION")
