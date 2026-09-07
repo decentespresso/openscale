@@ -1,4 +1,4 @@
-import {buildLabel, buildSummary, deploymentState, lastSeenLabel} from "./fleet-state.mjs?v=2";
+import {buildLabel, buildSummary, deploymentState, lastSeenLabel, shortHash} from "./fleet-state.mjs?v=2";
 
 const storageKey = "hds-custom-build-fleet-v2";
 const legacyStorageKey = "hds-custom-build-fleet-v1";
@@ -80,7 +80,6 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   const selectedCount = document.querySelector("#selected-scale-count");
   const addBuild = document.querySelector("#add-fleet-build");
   const assignSelected = document.querySelector("#assign-selected");
-  const assignAll = document.querySelector("#assign-all");
   const clearSelected = document.querySelector("#clear-selected");
   const pairInput = document.querySelector("#pair-code");
   const existingInput = document.querySelector("#existing-fleet-key");
@@ -140,6 +139,8 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
     return index < 0 ? "Custom build" : buildLabel(builds[index], index);
   };
 
+  const identityForBuild = hash => `${labelForBuild(hash)} · ${shortHash(hash, 8)}`;
+
   const showApiError = error => {
     const messages = {
       build_assigned: "Clear this build from assigned scales before removing it",
@@ -156,14 +157,13 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
     const readyBuilds = builds.filter(build => build.state === "ready");
     const previousHash = buildSelect.value;
     buildSelect.replaceChildren(...readyBuilds.map(build =>
-      new Option(labelForBuild(build.combination_hash), build.combination_hash)));
+      new Option(identityForBuild(build.combination_hash), build.combination_hash)));
     if (readyBuilds.some(build => build.combination_hash === previousHash)) {
       buildSelect.value = previousHash;
     }
     buildSelect.disabled = !readyBuilds.length;
     selectedCount.textContent = `${selected} selected`;
     assignSelected.disabled = !selected || !readyBuilds.length;
-    assignAll.disabled = !scales.length || !readyBuilds.length;
     clearSelected.disabled = !selected;
     selectAll.checked = Boolean(scales.length) && selected === scales.length;
     selectAll.indeterminate = selected > 0 && selected < scales.length;
@@ -210,7 +210,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
       const row = document.createElement("li");
       row.className = "fleet-build-row";
       row.innerHTML = `
-        <div class="fleet-build-name"><input class="build-label" maxlength="40" aria-label="Build label"></div>
+        <div class="fleet-build-name"><input class="build-label" maxlength="40" aria-label="Build label"><span class="build-hash"></span></div>
         <div class="fleet-build-version"><strong></strong><details><summary>Options</summary><span></span></details></div>
         <span class="deployment-state"></span>
         <div class="fleet-row-actions">
@@ -218,6 +218,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
         </div>`;
       const label = row.querySelector(".build-label");
       label.value = labelForBuild(build.combination_hash);
+      row.querySelector(".build-hash").textContent = shortHash(build.combination_hash, 8);
       label.addEventListener("keydown", event => { if (event.key === "Enter") label.blur(); });
       row.querySelector(".fleet-build-version strong").textContent = build.firmware_version;
       row.querySelector(".fleet-build-version span").textContent = buildSummary(build);
@@ -240,8 +241,8 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
           renderControls();
           scales.forEach((scale, index) => {
             const scaleRow = scaleRows.children[index];
-            if (scale.installed_combination === build.combination_hash) scaleRow.querySelector(".scale-build span").textContent = next;
-            if (scale.desired_combination === build.combination_hash) scaleRow.querySelector(".desired-build strong").textContent = next;
+            if (scale.installed_combination === build.combination_hash) scaleRow.querySelector(".scale-build span").textContent = identityForBuild(build.combination_hash);
+            if (scale.desired_combination === build.combination_hash) scaleRow.querySelector(".desired-build strong").textContent = identityForBuild(build.combination_hash);
           });
           showToast("Build label saved");
         } catch (error) {
@@ -293,10 +294,10 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
       const installed = row.querySelector(".scale-build");
       installed.querySelector("strong").textContent = scale.firmware_version || "Unknown";
       installed.querySelector("span").textContent = scale.installed_combination
-        ? labelForBuild(scale.installed_combination) : (scale.last_seen_at ? "Official" : "Unknown");
+        ? identityForBuild(scale.installed_combination) : (scale.last_seen_at ? "Official" : "Unknown");
       const desired = row.querySelector(".desired-build");
       desired.querySelector("strong").textContent = scale.desired_combination
-        ? labelForBuild(scale.desired_combination) : "None";
+        ? identityForBuild(scale.desired_combination) : "None";
       const state = row.querySelector(".deployment-state");
       state.textContent = deploymentState(scale, buildStates);
       state.dataset.state = state.textContent.toLowerCase().replaceAll(" ", "-");
@@ -437,7 +438,6 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   assignSelected.addEventListener("click", () => assign(
     {device_ids: [...selectedDeviceIds]}, buildSelect.value, "Assign",
   ));
-  assignAll.addEventListener("click", () => assign({all: true}, buildSelect.value, "Assign to"));
   clearSelected.addEventListener("click", () => assign(
     {device_ids: [...selectedDeviceIds]}, null, "Clear assignment for",
   ));

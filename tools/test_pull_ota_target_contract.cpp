@@ -21,6 +21,17 @@ static bool rejects(const char *text) {
 int main() {
   PullOtaTargetVersion absent = pullOtaNoTargetVersion();
   assert(!absent.present);
+  assert(!pullOtaTargetIsAssignedCustomBuild(absent));
+  const uint8_t customRequest[] = {0x03, 0x1B, 0x80, 0x80, 0x80};
+  assert(decentCommandFrameLength(customRequest, sizeof(customRequest), false) == 5);
+  assert(decentCommandFrameLength(customRequest, 3, false) == 0);
+  assert(decentCommandFrameLength(customRequest, 4, false) == 0);
+  const uint8_t customThenCommand[] = {0x03, 0x1B, 0x80, 0x80, 0x80, 0x03, 0x22};
+  assert(decentCommandFrameLength(customThenCommand, sizeof(customThenCommand), false) == 5);
+  assert(decentCommandFrameLength(customThenCommand + 5, 2, false) == 2);
+  assert(pullOtaTargetIsAssignedCustomBuild(pullOtaTargetFromBiasedBytes(customRequest + 2)));
+  assert(!pullOtaTargetIsAssignedCustomBuild(pullOtaMakeTargetVersion(3, 1, 14)));
+  assert(!pullOtaTargetIsAssignedCustomBuild(pullOtaMakeTargetVersion(0, 0, 1)));
 
   char buffer[HDS_OTA_TARGET_VERSION_BUFFER_BYTES];
   assert(!pullOtaFormatTargetVersion(absent, buffer, sizeof(buffer)));

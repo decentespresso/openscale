@@ -41,6 +41,10 @@ Fleet build references, scale lists, bulk assignment, and deployment history sta
 Worker/browser. Firmware must not fetch a fleet build list, add fleet-sized collections, persist a
 short hash, add background check-ins, or increase `HDS_OTA_TASK_STACK_BYTES` without measurement.
 OLED identity uses an uppercase 8-character prefix for display only.
+About also shows the installed custom combination as `Build: XXXXXXXX`, without
+network access. Official firmware keeps the version, date, and Git revision display.
+The reserved remote OTA target `0.0.0` starts the assigned custom build unattended;
+the menu retains its local install confirmation. Remote requests never initiate pairing.
 
 ## Release Assets
 

@@ -74,6 +74,13 @@
   box-shadow: 0 0 0 3px rgba(13, 121, 85, .13);
 }
 
+.build-hash {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font: .72rem/1.4 monospace;
+}
+
 .fleet-build-version strong,
 .fleet-build-version span {
   display: block;
@@ -158,7 +165,7 @@
 
 .deployment-toolbar {
   display: grid;
-  grid-template-columns: auto minmax(180px, 1fr) auto auto auto auto auto;
+  grid-template-columns: auto minmax(180px, 1fr) auto auto auto auto;
   align-items: center;
   gap: 8px;
   margin-bottom: 14px;
@@ -272,9 +279,8 @@
 .scale-build strong,
 .scale-build span {
   display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .scale-build strong {
@@ -381,4 +387,6 @@
     font-size: .65rem;
     font-weight: 720;
   }
+
+  .scale-build span { grid-column: 2; }
 }

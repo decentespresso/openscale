@@ -1421,7 +1421,11 @@ void wifiUpdate(const PullOtaTargetVersion &target) {
 #ifdef BUZZER
   buzzer.off();
 #endif
-  pullOtaUpdate(target);
+  if (pullOtaTargetIsAssignedCustomBuild(target)) {
+    customBuildStart(false, false);
+  } else {
+    pullOtaUpdate(target);
+  }
   leaveMenu();
 }
 
@@ -1433,6 +1437,15 @@ void wifiUpdate() {
 void showAbout() {
   actionMessage = FIRMWARE_VER;
   actionMessage2 = LINE3;
+  String buildIdentity;
+#ifdef HDS_CUSTOM_BUILD_COMBINATION_HASH
+  const String installedCombination = HDS_CUSTOM_BUILD_COMBINATION_HASH;
+  if (installedCombination.length() == 64) {
+    String hashPrefix = installedCombination.substring(0, 8);
+    hashPrefix.toUpperCase();
+    buildIdentity = String("Build: ") + hashPrefix;
+  }
+#endif
   b_showAbout = true;
   u8g2.setFont(FONT_S);
   invalidateEnergyOledFrame();
@@ -1440,8 +1453,11 @@ void showAbout() {
   do {
     u8g2.setFont(FONT_S);
     u8g2.drawStr(AC(actionMessage.c_str()), AM() - 24, actionMessage.c_str());
-    u8g2.drawStr(AC(actionMessage2.c_str()), AM(), actionMessage2.c_str());
-    u8g2.drawStr(AC(GIT_REV), AM()+ 24, GIT_REV);
+    u8g2.drawStr(AC(actionMessage2.c_str()), AM() - (buildIdentity.length() ? 8 : 0), actionMessage2.c_str());
+    u8g2.drawStr(AC(GIT_REV), AM() + (buildIdentity.length() ? 8 : 24), GIT_REV);
+    if (buildIdentity.length()) {
+      u8g2.drawStr(AC(buildIdentity.c_str()), AM() + 24, buildIdentity.c_str());
+    }
   } while (u8g2.nextPage());
 #ifdef BUZZER
   buzzer.off();

@@ -361,7 +361,7 @@ bool customBuildConfirmInstall(
   return false;
 }
 
-void customBuildRun() {
+void customBuildRun(bool interactive = true) {
   String deviceId;
   String deviceSecret;
   bool pairInitialized = false;
@@ -370,7 +370,8 @@ void customBuildRun() {
     return;
   }
   if (!pairInitialized) {
-    customBuildPairScale(true);
+    if (interactive) customBuildPairScale(true);
+    else customBuildShowStatus("Custom Build", "Pair scale first");
     return;
   }
   pullOtaDraw("Custom Build", "Checking");
@@ -416,7 +417,7 @@ void customBuildRun() {
     pullOtaFail("Signature failed");
     return;
   }
-  if (!customBuildConfirmInstall(manifest, assignment.combinationHash)) return;
+  if (interactive && !customBuildConfirmInstall(manifest, assignment.combinationHash)) return;
   const String rollbackCombinationHash = installedCombination;
   const bool rollbackFound = rollbackCombinationHash.length() > 0
       ? customBuildFetchManifest(rollbackCombinationHash, rollbackManifest)
@@ -439,10 +440,10 @@ void customBuildTask(void *args) {
     delay(1);
   }
   if (otaRuntimeIsPaused()) {
-    if (args != nullptr) {
+    if (reinterpret_cast<uintptr_t>(args) == 1) {
       if (customBuildConfirmRelink()) customBuildPairScale(false);
     } else {
-      customBuildRun();
+      customBuildRun(args == nullptr);
     }
   } else {
     pullOtaFail("OTA runtime pause failed");
@@ -457,7 +458,7 @@ void customBuildTask(void *args) {
   vTaskDelete(NULL);
 }
 
-void customBuildStart(bool relink) {
+void customBuildStart(bool relink, bool interactive = true) {
   if (b_pullOtaRunning || b_ota) return;
   setOtaRuntimePaused(false);
   b_pullOtaRunning = true;
@@ -466,7 +467,7 @@ void customBuildStart(bool relink) {
       customBuildTask,
       "Custom OTA",
       HDS_OTA_TASK_STACK_BYTES,
-      reinterpret_cast<void *>(static_cast<uintptr_t>(relink)),
+      reinterpret_cast<void *>(static_cast<uintptr_t>(relink ? 1 : (interactive ? 0 : 2))),
       1,
       NULL);
   if (started != pdPASS) {
