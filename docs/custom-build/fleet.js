@@ -1,4 +1,5 @@
 import {buildLabel, buildSummary, deploymentState, lastSeenLabel, shortHash} from "./fleet-state.mjs?v=2";
+import {startFleetPolling} from "./fleet-polling.mjs";
 
 const storageKey = "hds-custom-build-fleet-v2";
 const legacyStorageKey = "hds-custom-build-fleet-v1";
@@ -92,6 +93,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   let buildStates = {};
   let selectedDeviceIds = new Set();
   let savingBuild = false;
+  let activeRequests = 0;
 
   const setSettingsOpen = open => {
     settings.hidden = !open;
@@ -99,20 +101,27 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   };
 
   const api = async (path, options = {}) => {
-    const response = await fetch(`${apiBase}${path}`, {
-      ...options,
-      headers: {
-        Authorization: `Bearer ${fleetKey}`,
-        ...(options.body ? {"Content-Type": "application/json"} : {}),
-      },
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const error = new Error(result.error || `request failed: ${response.status}`);
-      error.code = result.error;
-      throw error;
+    activeRequests += 1;
+    if (options.method && options.method !== "GET") generation += 1;
+    try {
+      const response = await fetch(`${apiBase}${path}`, {
+        ...options,
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${fleetKey}`,
+          ...(options.body ? {"Content-Type": "application/json"} : {}),
+        },
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = new Error(result.error || `request failed: ${response.status}`);
+        error.code = result.error;
+        throw error;
+      }
+      return result;
+    } finally {
+      activeRequests -= 1;
     }
-    return result;
   };
 
   const setMode = linked => {
@@ -176,13 +185,20 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
     addBuild.title = !scales.length ? "Link a scale first" : "";
   };
 
-  const loadFleet = async () => {
+  const editingFleet = () => Boolean(consoleRoot.querySelector("input:not([type=checkbox]):focus, select:focus")) ||
+    Boolean(consoleRoot.querySelector("input:disabled, details[open]")) ||
+    confirmDialog.open || forgetDialog.open;
+
+  const loadFleet = async (background = false) => {
     const currentGeneration = ++generation;
-    fleetStatus.textContent = "Loading scales";
-    buildStatus.textContent = "";
+    if (!background) {
+      fleetStatus.textContent = "Loading scales";
+      buildStatus.textContent = "";
+    }
     try {
       const result = await api("/api/v1/fleet/overview");
       if (currentGeneration !== generation) return;
+      if (background && (document.hidden || editingFleet())) return;
       scales = Array.isArray(result.scales) ? result.scales : [];
       builds = Array.isArray(result.builds) ? result.builds : [];
       buildStates = result.build_states || {};
@@ -465,6 +481,12 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
     {device_ids: [...selectedDeviceIds]}, null, "Clear assignment for",
   ));
   document.addEventListener("openscale-build-status", renderControls);
+  startFleetPolling(
+    () => Boolean(fleetKey) && !document.hidden && !activeRequests && !editingFleet() &&
+      scales.some(scale => scale.desired_combination &&
+        scale.desired_combination !== scale.installed_combination),
+    () => loadFleet(true),
+  );
 
   setMode(Boolean(fleetKey));
   renderControls();
