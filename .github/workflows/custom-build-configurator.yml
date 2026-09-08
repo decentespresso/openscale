@@ -35,3 +35,4 @@ jobs:
           node --check docs/custom-build/app.js
           node --check docs/custom-build/fleet.js
           node --test cloudflare/custom-build-worker/test/configurator.test.mjs
+          node --test cloudflare/custom-build-worker/test/fleet-polling.test.mjs
