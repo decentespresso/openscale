@@ -15,6 +15,8 @@ HARNESS = r"""
 #include <cstdint>
 #include <climits>
 #include <cstdio>
+#include <string>
+#include <vector>
 #include "calibration_validation.h"
 using std::max;
 using std::isfinite;
@@ -34,10 +36,15 @@ unsigned long pressDuration = 500;
 int pressPin = BUTTON_CIRCLE, wakeCause = ESP_SLEEP_WAKEUP_TIMER;
 int liveAdcs = 0, endedAdcs = 0, begunAdcs = 0;
 bool badSample = false, sampleAvailable = true, ext1 = false, pressOnRearm = false;
+bool rtcInputsReady = false;
 uint64_t timerUs = 0;
 bool holds[64] = {};
 int levels[64] = {};
 int32_t sampleRaw = 1000;
+std::vector<int32_t> sampleSequence;
+unsigned int samplesRead = 0;
+unsigned int invalidSampleAt = 0;
+int32_t lastSampleRaw = 1000;
 struct DebugInfo {
   int validSamples = 1;
   int32_t smoothedValue = 1000;
@@ -58,6 +65,7 @@ bool setCpuFrequencyMhz(unsigned long mhz) {
 }
 int esp_sleep_get_wakeup_cause() { return wakeCause; }
 int rtc_gpio_get_level(int pin) {
+  if (!rtcInputsReady) return LOW;
   return pin == pressPin && nowMs >= pressAt && nowMs - pressAt < pressDuration ? LOW : HIGH;
 }
 int digitalRead(int pin) { assert(pin == SCALE_DOUT); return sampleAvailable && nowMs >= readyAt ? LOW : HIGH; }
@@ -67,7 +75,7 @@ void gpio_hold_en(int pin) { holds[pin] = true; }
 void gpio_hold_dis(int pin) { holds[pin] = false; }
 void gpio_deep_sleep_hold_en() {}
 void gpio_deep_sleep_hold_dis() {}
-void configureWakePinsForDeepSleep() {}
+void configureWakePinsForDeepSleep() { rtcInputsReady = true; }
 void esp_sleep_enable_ext1_wakeup_io(uint64_t mask, int) {
   assert(mask == PIN_BITMASK);
   ext1 = true;
@@ -81,20 +89,42 @@ struct ADS1232_ADC {
   bool poweredDown = false;
   ADS1232_ADC(int, int, int, int) { liveAdcs++; }
   void begin() { begunAdcs++; }
-  bool update() { return true; }
-  DebugInfo getDebugInfo() { return {1, 1000, sampleRaw, badSample}; }
+  bool update() {
+    lastSampleRaw = samplesRead < sampleSequence.size() ? sampleSequence[samplesRead] : sampleRaw;
+    samplesRead++;
+    readyAt = nowMs + 100;
+    return true;
+  }
+  DebugInfo getDebugInfo() { return {1, 1000, lastSampleRaw, badSample || samplesRead == invalidSampleAt}; }
   void powerDown() { poweredDown = true; }
   void end() { assert(poweredDown); liveAdcs--; endedAdcs++; }
 };
 """
 
 CHECKS = r"""
+char menuWakeOnWeightLabel[24];
+std::string actionMessage, actionMessage2;
+int t_actionMessageDelay = 0, menuNotifications = 0, settingsWrites = 0;
+int storedInterval = -1;
+const int KEY_WOW_INTERVAL = 1;
+bool storageWorks = true;
+bool storagePutInt(int, int value) {
+  settingsWrites++;
+  if (storageWorks) storedInterval = value;
+  return storageWorks;
+}
+void menuActionMessageChanged() { menuNotifications++; }
+MENU_FUNCTIONS
+
 void resetBoot() {
   nowMs = 0; cpuMhz = 240; timerUs = 0; ext1 = false;
+  rtcInputsReady = false;
   GPIO_power_on_with = -1; wowButtonWake = false; wowTimerArmedThisBoot = false;
   liveAdcs = 0; endedAdcs = 0; begunAdcs = 0;
   pressAt = ULONG_MAX; pressOnRearm = false; pressPin = BUTTON_CIRCLE;
   readyAt = 500; sampleAvailable = true; badSample = false; sampleRaw = 1000;
+  samplesRead = 0; invalidSampleAt = 0; sampleSequence.clear();
+  wowWakeDiagnostics = {};
   wakeCause = ESP_SLEEP_WAKEUP_TIMER;
   for (int pin = 0; pin < 64; pin++) { holds[pin] = true; levels[pin] = LOW; }
 }
@@ -125,7 +155,7 @@ int main() {
   }
   for (bool missing : {false, true}) {
     for (int pin : {BUTTON_CIRCLE, BUTTON_SQUARE, BATTERY_CHARGING}) {
-      for (unsigned long start = 0; start <= (missing ? 998UL : 500UL); start += 2) {
+      for (unsigned long start = 0; start <= (missing ? 998UL : 700UL); start += 2) {
         resetBoot(); arm(); pressAt = start; pressPin = pin; sampleAvailable = !missing;
         assert(tick());
         assert(GPIO_power_on_with == pin && !wowRtc.armed);
@@ -149,6 +179,43 @@ int main() {
     resetBoot(); arm(); sampleRaw = raw;
     assert(!tick() && wowRtc.armed && timerUs == 2000000);
   }
+  for (const auto &sequence : std::vector<std::vector<int32_t>>{
+      {100000, 1000, 1000}, {1000, 100000, 1000}, {1000, 1000, 100000},
+      {1000, 2000, 0}, {1000, 0, 2000}}) {
+    resetBoot(); arm(); sampleSequence = sequence;
+    assert(!tick() && wowRtc.armed && samplesRead == 3);
+    assert(wowWakeDiagnostics.samplesRead == 3);
+    for (unsigned int index = 0; index < 3; index++) {
+      assert(wowWakeDiagnostics.raw[index] == sequence[index]);
+    }
+    assert(wowRtc.baselineRaw == 1000);
+  }
+  for (const auto &sequence : std::vector<std::vector<int32_t>>{
+      {100000, 1600, 1700}, {-100000, 400, 300}}) {
+    resetBoot(); arm(); sampleSequence = sequence;
+    assert(tick() && !wowRtc.armed && samplesRead == 3);
+  }
+  resetBoot(); arm(); readyAt = 950;
+  assert(!tick() && wowRtc.armed && samplesRead == 1 && nowMs == 1000);
+  for (unsigned int invalidAt : {2U, 3U}) {
+    resetBoot(); arm(); sampleRaw = 2000; invalidSampleAt = invalidAt;
+    assert(!tick() && wowRtc.armed && wowRtc.consecutiveFailures == 1);
+  }
+  resetBoot(); arm(); invalidSampleAt = 1;
+  assert(!tick() && wowRtc.armed && wowRtc.consecutiveFailures == 0);
+  for (float factor : {100.0f, -100.0f}) {
+    f_calibration_value = factor;
+    for (int32_t change : {-5000, -4999, -1000, 0, 1000, 4999, 5000}) {
+      resetBoot(); arm(); sampleRaw = 1000 + change;
+      assert(wowRtc.thresholdRaw == 5000);
+      assert(!tick() && wowRtc.armed);
+    }
+    for (int32_t change : {-5001, 5001}) {
+      resetBoot(); arm(); sampleRaw = 1000 + change;
+      assert(tick() && !wowRtc.armed);
+    }
+  }
+  f_calibration_value = 10;
   for (bool missing : {false, true}) {
     resetBoot(); arm();
     for (int failure = 1; failure <= WOW_MAX_FAILURES; failure++) {
@@ -194,6 +261,29 @@ int main() {
   assert(tick() && begunAdcs == 0 && !wowButtonWake);
   resetBoot(); arm(); wowRtc.magic = 0;
   assert(tick() && begunAdcs == 0);
+  for (float calibration : {CALIBRATION_VALUE_DEFAULT, 0.0f, NAN, INFINITY, 1e30f}) {
+    f_calibration_value = calibration;
+    i_wow_interval = 0;
+    settingsWrites = 0;
+    const int before = menuNotifications;
+    cycleWakeOnWeight();
+    assert(i_wow_interval == 0 && settingsWrites == 0);
+    assert(actionMessage2 == "Please calibrate" && menuNotifications == before + 1);
+    assert(t_actionMessageDelay == 2000);
+    for (int interval : {1, 2, 3}) {
+      i_wow_interval = interval;
+      cycleWakeOnWeight();
+      assert(i_wow_interval == 0 && storedInterval == 0 && actionMessage2 == "Off");
+    }
+  }
+  f_calibration_value = 10;
+  for (int expected : {1, 2, 3, 0}) {
+    cycleWakeOnWeight();
+    assert(i_wow_interval == expected && storedInterval == expected);
+  }
+  storageWorks = false;
+  cycleWakeOnWeight();
+  assert(i_wow_interval == 0 && actionMessage == "Save Failed");
   std::puts("WoW runtime checks passed: button sweep, charging, cleanup, failures, recovery, cap, gates");
 }
 """
@@ -207,7 +297,10 @@ def main():
     state = parameter[parameter.index("struct WowRtcState {"):]
     state = state[:state.index("#endif")]
     wow = (ROOT / "include/wake_on_weight.h").read_text(encoding="utf-8")
-    source = HARNESS + state + re.sub(r"^#include[^\n]*", "", wow, flags=re.MULTILINE) + CHECKS
+    menu = (ROOT / "include/menu.h").read_text(encoding="utf-8")
+    menuFunctions = menu[menu.index("void updateWakeOnWeightLabel() {"):]
+    menuFunctions = menuFunctions[:menuFunctions.index("#endif")]
+    source = HARNESS + state + re.sub(r"^#include[^\n]*", "", wow, flags=re.MULTILINE) + CHECKS.replace("MENU_FUNCTIONS", menuFunctions)
     with tempfile.TemporaryDirectory(prefix="wow-test-") as directory:
         cpp = Path(directory) / "wow.cpp"
         binary = Path(directory) / "wow-test.exe"

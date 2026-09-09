@@ -394,6 +394,11 @@ struct WowRtcState {
 RTC_DATA_ATTR WowRtcState wowRtc;
 bool wowTimerArmedThisBoot = false;
 bool wowButtonWake = false;
+struct WowWakeDiagnostics {
+  uint8_t samplesRead = 0;
+  int32_t raw[3] = {};
+};
+WowWakeDiagnostics wowWakeDiagnostics;
 #endif
 unsigned int i_buttonBootDelay = 500;
 bool b_showChargingUI = false;

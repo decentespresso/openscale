@@ -509,6 +509,27 @@ public:
                     b_tapTraceEnabled, b_tapTareEnabled, b_tapTimerEnabled);
     }
 
+#ifdef ESP32
+    if (inputString == "wakeinfo") {
+      Serial.printf("[wake] reset=%u cause=%u ext1=%llu wow=%d charge=%d circle=%d square=%d",
+                    (unsigned)esp_reset_reason(), (unsigned)esp_sleep_get_wakeup_cause(),
+                    (unsigned long long)esp_sleep_get_ext1_wakeup_status(), i_wow_interval,
+                    digitalRead(BATTERY_CHARGING), digitalRead(BUTTON_CIRCLE), digitalRead(BUTTON_SQUARE));
+#ifdef USB_DET
+      Serial.printf(" usb=%d", digitalRead(USB_DET));
+#endif
+      Serial.println();
+#ifdef ADS1232ADC
+      Serial.printf("[wow] source=%d armed=%u baseline=%ld threshold=%ld count=%u raw=%ld,%ld,%ld\n",
+                    GPIO_power_on_with, (unsigned)wowRtc.armed,
+                    (long)wowRtc.baselineRaw, (long)wowRtc.thresholdRaw,
+                    (unsigned)wowWakeDiagnostics.samplesRead,
+                    (long)wowWakeDiagnostics.raw[0], (long)wowWakeDiagnostics.raw[1],
+                    (long)wowWakeDiagnostics.raw[2]);
+#endif
+    }
+#endif
+
     if (inputString.startsWith("adsd ")) {
       String cmd = inputString.substring(5);
       cmd.trim();

@@ -548,7 +548,16 @@ void updateWakeOnWeightLabel() {
 }
 
 void cycleWakeOnWeight() {
-  const int next = (i_wow_interval + 1) % WOW_INTERVAL_COUNT;
+  const bool calibrated = f_calibration_value != CALIBRATION_VALUE_DEFAULT &&
+                          isValidCalibrationValue(f_calibration_value);
+  if (!calibrated && i_wow_interval == 0) {
+    actionMessage = "WakeOnWeight";
+    actionMessage2 = "Please calibrate";
+    menuActionMessageChanged();
+    t_actionMessageDelay = 2000;
+    return;
+  }
+  const int next = calibrated ? (i_wow_interval + 1) % WOW_INTERVAL_COUNT : 0;
   const bool stored = storagePutInt(KEY_WOW_INTERVAL, next);
   if (stored) i_wow_interval = next;
   updateWakeOnWeightLabel();

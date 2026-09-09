@@ -2,7 +2,8 @@
 
 Wake-on-Weight (WoW) defaults to off. When enabled, normal shutdown captures
 the current weight, then RTC timer wakes briefly power the primary ADS1232
-and compare one conversion against that baseline. A change greater than the
+and discard the first conversion after ADC startup. The next two valid conversions
+must both differ from the shutdown baseline in the same direction. A change greater than the
 50 g threshold (with a 500-raw-count minimum) continues into normal boot,
 including boot tare. Removing weight can
 also trigger a boot. No separate firmware or energy-menu build is required.
@@ -15,29 +16,34 @@ detection periods. The NVS key `wow_interval` stores indices 0 through 3;
 all default and migration paths use 0. The selected interval is snapshotted
 at shutdown. Changing it does not change a sleep session already underway.
 
+Enabling without a valid calibration displays `Please calibrate` and leaves the
+setting off. If calibration becomes invalid while enabled, the next press turns it off.
+
 The timer starts when entering deep sleep, after the micro-wake work.
 The detection period is sleep interval plus micro-wake duration. The PR's
 V8.1 measurement was approximately 850 ms per micro-wake, including about
 300 ms ROM/Arduino startup, 100 ms rail settling, and the first 10 SPS ADC
-conversion. Firmware polling has a separate 900 ms timeout after settling.
+conversion. Confirmation now adds two conversions, approximately 200 ms at 10 SPS.
+Firmware polling has a shared 900 ms timeout for all three conversions after settling.
 The revised path runs before Serial initialization and does not log per tick;
 its exact duration must be remeasured on hardware.
 
 | Sleep interval | Estimated detection period | Active duty |
 | --- | --- | --- |
-| 2 s | 2.85 s | 29.8% |
-| 3 s | 3.85 s | 22.1% |
-| 4 s | 4.85 s | 17.5% |
+| 2 s | 3.05 s | 34.4% |
+| 3 s | 4.05 s | 25.9% |
+| 4 s | 5.05 s | 20.8% |
 
-Duty is `0.85 / (sleep seconds + 0.85)`, not `0.85 / sleep seconds`.
+Duty is `1.05 / (sleep seconds + 1.05)`, not `1.05 / sleep seconds`.
 ADC failures lengthen the active portion. Sampling is intermittent: a load
 placed and removed between samples can be missed.
 
 ## Button and Charging Wake
 
 Normal deep sleep keeps the existing EXT1 any-low button and charging wake
-sources. During a WoW micro-wake, the same RTC input pins are checked on
-entry, every 2 ms during rail settling and ADC polling, after ADC cleanup,
+sources. A WoW micro-wake first releases their RTC holds and restores RTC input
+mode and pull-ups before reading any wake pin. The pins are checked on entry,
+every 2 ms during rail settling and ADC polling, after ADC cleanup,
 and immediately before the final pin-latch/sleep sequence. A detected press
 aborts the micro-wake and continues into normal boot without waiting for ADC
 readiness. Square has priority over circle, and both have priority over
@@ -64,8 +70,8 @@ An observed low-battery count or a known voltage below 3.2 V prevents arming.
 Non-finite or overflowing calibration thresholds also prevent arming.
 
 Battery protection during sleep uses a **900-tick maximum per session**,
-not recurring voltage measurements. At the measured 850 ms active duration,
-this is about 43, 58, or 73 minutes for 2, 3, or 4 s sleep intervals. It is a
+not recurring voltage measurements. With the estimated 1050 ms active duration,
+this is about 46, 61, or 76 minutes for 2, 3, or 4 s sleep intervals. It is a
 tick bound, not a precise wall-clock deadline; slow startup and ADC timeouts
 extend elapsed time. After the limit, WoW is disabled for that sleep session
 and the device stays in ordinary deep sleep until a physical/charging wake.
@@ -134,9 +140,9 @@ window** and 0.1 mA asleep, `Iavg = duty * 6 + (1 - duty) * 0.1`:
 
 | Sleep interval | Estimated average while WoW cycles |
 | --- | --- |
-| 2 s | 1.86 mA |
-| 3 s | 1.40 mA |
-| 4 s | 1.13 mA |
+| 2 s | 2.13 mA |
+| 3 s | 1.63 mA |
+| 4 s | 1.33 mA |
 
 The startup part runs at the boot clock, not 20 MHz. PM-enabled builds also
 use their configured frequency policy during polling. The 6 mA assumption is
