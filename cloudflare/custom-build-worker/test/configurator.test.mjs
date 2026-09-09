@@ -11,6 +11,7 @@ import {
   shortHash,
 } from "../../../docs/custom-build/fleet-state.mjs";
 import {buildEstimate, buildTimeRange} from "../../../docs/custom-build/build-estimate.mjs";
+import {elapsedTime, initBuildProgress} from "../../../docs/custom-build/build-progress.mjs";
 import {
   catalogRevisionChanged,
   defaultSelection,
@@ -357,4 +358,38 @@ test("USB-ready builds use a persistent updater cue instead of flashing", async 
   assert.ok(source.includes('result.state === "ready" && installMethod === "usb"'));
   assert.ok(source.includes('classList.toggle("is-ready", updaterReady)'));
   assert.equal(source.includes("is-next-step"), false);
+});
+
+test("build activity reflects confirmed stages and stops on disconnect or completion", () => {
+  assert.equal(elapsedTime(-1000), "0:00");
+  assert.equal(elapsedTime(578000), "9:38");
+  assert.equal(elapsedTime(3600000), "60:00");
+  const element = () => ({dataset: {}, hidden: false, textContent: "", attributes: {},
+    setAttribute(name, value) { this.attributes[name] = value; },
+    removeAttribute(name) { delete this.attributes[name]; }});
+  const steps = [element(), element(), element()];
+  const children = new Map(["[data-build-elapsed]", "[data-build-checked]", ".build-activity", ".build-live-details"]
+    .map(key => [key, element()]));
+  const root = {...element(), querySelectorAll: () => steps, querySelector: key => children.get(key)};
+  const update = initBuildProgress(root);
+  try {
+    update({state: "building", updated_at: new Date(Date.now() - 578000).toISOString()});
+    assert.equal(root.dataset.active, "true");
+    assert.deepEqual(steps.map(step => step.dataset.state), ["complete", "current", "pending"]);
+    assert.equal(steps[1].attributes["aria-current"], "step");
+    assert.match(children.get("[data-build-elapsed]").textContent, /^Elapsed 9:38/);
+    update({state: "building", connectionLost: true});
+    assert.equal(root.dataset.active, "false");
+    assert.match(children.get("[data-build-checked]").textContent, /interrupted/);
+    update({state: "building", pollingPaused: true});
+    assert.equal(root.dataset.active, "false");
+    update({state: "ready"});
+    assert.equal(root.hidden, false);
+    assert.equal(children.get(".build-live-details").hidden, true);
+    assert.equal(steps[2].attributes["aria-current"], "step");
+    assert.equal(steps[1].attributes["aria-current"], undefined);
+  } finally {
+    update({state: "missing"});
+  }
+  assert.equal(root.hidden, true);
 });

@@ -10,6 +10,7 @@ import {
 } from "./selection.mjs?v=5";
 import {initFleet} from "./fleet.js?v=12";
 import {buildEstimate} from "./build-estimate.mjs?v=1";
+import {initBuildProgress} from "./build-progress.mjs?v=1";
 
 (async () => {
   const themeStorageKey = "hds-custom-build-theme-v1";
@@ -78,6 +79,7 @@ import {buildEstimate} from "./build-estimate.mjs?v=1";
   const featureById = new Map(catalog.features.map(item => [item.id, item]));
   const pluginById = new Map(catalog.plugins.map(item => [item.id, item]));
   const buildButton = document.querySelector("#request-build");
+  const updateBuildProgress = initBuildProgress(document.querySelector("#build-progress"));
   const fleetPanel = document.querySelector("#fleet-panel");
   let toastTimer;
   let statusTimer;
@@ -89,6 +91,7 @@ import {buildEstimate} from "./build-estimate.mjs?v=1";
   let currentCombinationHash = "";
   let currentBuildState = "checking";
   let catalogRetryDelay = 2000;
+  let lastBuildResult;
 
   const escapeHtml = value => String(value).replace(/[&<>'"]/g, character => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
@@ -175,10 +178,13 @@ import {buildEstimate} from "./build-estimate.mjs?v=1";
       checking: "Checking the build cache."
     };
     const labels = {"rate-limited": "Rate limited", updating: "Updating"};
-    buildState.className = `ready state-${result.state}`;
-    buildState.textContent = labels[result.state] || result.state[0].toUpperCase() + result.state.slice(1);
+    buildState.className = `ready state-${result.connectionLost ? "unavailable" : result.state}`;
+    buildState.textContent = result.connectionLost ? "Reconnecting"
+      : labels[result.state] || result.state[0].toUpperCase() + result.state.slice(1);
     currentCombinationHash = combinationHash;
     currentBuildState = result.state;
+    lastBuildResult = result;
+    updateBuildProgress({...result, pollingPaused: pollRemaining <= 0});
     const updaterLink = document.querySelector("#hds-updater-link");
     const updaterReady = result.state === "ready" && installMethod === "usb";
     updaterLink.classList.toggle("is-ready", updaterReady);
@@ -188,7 +194,8 @@ import {buildEstimate} from "./build-estimate.mjs?v=1";
     const retryMessage = result.state === "failed" ?
       (result.retryable ? " One retry is available." : " No retries remain.") : "";
     document.querySelector("#status-message").textContent =
-      [messages[result.state] ?? messages.unavailable, retryMessage, buildEstimate(result, currentSelection)].filter(Boolean).join(" ");
+      result.connectionLost ? "Waiting for the build service to respond. The last confirmed build state is shown."
+        : [messages[result.state] ?? messages.unavailable, retryMessage, buildEstimate(result, currentSelection)].filter(Boolean).join(" ");
     buildButton.disabled = result.state !== "missing" && !(result.state === "failed" && result.retryable);
     const downloads = document.querySelector("#downloads");
     downloads.replaceChildren();
@@ -274,7 +281,7 @@ import {buildEstimate} from "./build-estimate.mjs?v=1";
         if (result.combination_hash === combinationHash) setStatus(result, generation);
       } catch (error) {
         if (error.name !== "AbortError") {
-          setStatus({state: "unavailable", combination_hash: combinationHash}, generation);
+          setStatus({...lastBuildResult, connectionLost: true, combination_hash: combinationHash}, generation);
         }
       }
     }, 10000);
