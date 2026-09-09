@@ -169,6 +169,8 @@ struct PullOtaManifest {
 };
 
 bool customBuildFetchManifest(const String &combinationHash, PullOtaManifest &manifest);
+void customBuildReportInstalled();
+void customBuildReportInstallState(const String &combinationHash, const char *state);
 
 struct PullOtaReleaseList {
   PullOtaManifest releases[HDS_OTA_MAX_RELEASE_CHOICES];
@@ -1408,7 +1410,9 @@ bool pullOtaInstall(
           rollbackCombinationHash)) {
     return pullOtaFail("FS state failed");
   }
+  customBuildReportInstallState(combinationHash, "installing");
   if (!pullOtaStreamAsset(manifest.firmware, U_FLASH, "Firmware")) {
+    customBuildReportInstallState(combinationHash, "failed");
     pullOtaClearPendingLittleFs();
     return false;
   }
@@ -1499,6 +1503,7 @@ bool pullOtaResumePendingLittleFs() {
     return false;
   }
   hdsOtaRollbackMarkValid();
+  customBuildReportInstalled();
   if (!pullOtaClearPendingLittleFs()) {
     pullOtaFail("FS state failed");
     pullOtaRecoveryError();

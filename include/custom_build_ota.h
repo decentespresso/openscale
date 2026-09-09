@@ -156,11 +156,17 @@ bool customBuildRequest(
 
 bool customBuildCheckIn(
     const String &installedCombination,
-    CustomBuildAssignment &assignment) {
+    CustomBuildAssignment &assignment,
+    const String &installCombination = "",
+    const char *installState = "installing") {
   JsonDocument request;
   request["installed_combination"] = installedCombination.length() > 0
       ? installedCombination.c_str() : nullptr;
   request["firmware_version"] = pullOtaCurrentVersion();
+  if (installCombination.length() > 0) {
+    request["install_combination"] = installCombination;
+    request["install_state"] = installState;
+  }
   String requestBody;
   serializeJson(request, requestBody);
   String body;
@@ -180,6 +186,24 @@ bool customBuildCheckIn(
   if (assignment.combinationHash.length() > 0 &&
       !customBuildHexValueValid(assignment.combinationHash, 64)) return false;
   return true;
+}
+
+void customBuildReportInstallState(const String &combinationHash, const char *state) {
+  if (!customBuildRelinkAvailable() || combinationHash.length() == 0) return;
+  CustomBuildAssignment assignment;
+  customBuildCheckIn(pullOtaCurrentCombinationHash(), assignment, combinationHash, state);
+}
+
+void customBuildReportInstalled() {
+  if (!customBuildRelinkAvailable()) return;
+  pullOtaDraw("Update done", "Syncing status");
+  if (!pullOtaEnsureWifi() || !pullOtaClockReady()) return;
+  for (uint8_t attempt = 0; attempt < 3; attempt++) {
+    CustomBuildAssignment assignment;
+    if (customBuildCheckIn(pullOtaCurrentCombinationHash(), assignment)) return;
+    if (attempt < 2) delay(1000);
+  }
+  Serial.println("[custom-ota] Install status report failed");
 }
 
 bool customBuildRegisterPairCode(const char *pairCode) {

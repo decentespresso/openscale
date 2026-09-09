@@ -1,4 +1,4 @@
-import {buildLabel, buildSummary, deploymentState, lastSeenLabel, shortHash} from "./fleet-state.mjs?v=2";
+import {buildLabel, buildSummary, deploymentState, lastSeenLabel, shortHash} from "./fleet-state.mjs?v=3";
 import {startFleetPolling} from "./fleet-polling.mjs";
 
 const storageKey = "hds-custom-build-fleet-v2";
@@ -198,14 +198,21 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
     try {
       const result = await api("/api/v1/fleet/overview");
       if (currentGeneration !== generation) return;
-      if (background && (document.hidden || editingFleet())) return;
+      if (background && document.hidden) return;
       scales = Array.isArray(result.scales) ? result.scales : [];
       builds = Array.isArray(result.builds) ? result.builds : [];
       buildStates = result.build_states || {};
       selectedDeviceIds = new Set([...selectedDeviceIds].filter(deviceId =>
         scales.some(scale => scale.device_id === deviceId)));
-      renderBuilds();
-      renderScales();
+      if (background && editingFleet()) {
+        for (const row of scaleRows.children) {
+          const scale = scales.find(item => item.device_id === row.dataset.deviceId);
+          if (scale) renderScaleStatus(row, scale);
+        }
+      } else {
+        renderBuilds();
+        renderScales();
+      }
       fleetStatus.textContent = scales.length
         ? `${scales.length} scale${scales.length === 1 ? "" : "s"}` : "No scales linked yet";
       buildStatus.textContent = builds.length
@@ -288,9 +295,23 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
     renderControls();
   };
 
+  const renderScaleStatus = (row, scale) => {
+    const installed = row.querySelector(".scale-build");
+    installed.querySelector("strong").textContent = scale.firmware_version || "Unknown";
+    installed.querySelector("span").textContent = scale.installed_combination
+      ? identityForBuild(scale.installed_combination) : (scale.last_seen_at ? "Official" : "Unknown");
+    row.querySelector(".desired-build strong").textContent = scale.desired_combination
+      ? identityForBuild(scale.desired_combination) : "None";
+    const state = row.querySelector(".deployment-state");
+    state.textContent = deploymentState(scale, buildStates);
+    state.dataset.state = state.textContent.toLowerCase().replaceAll(" ", "-");
+    row.querySelector(".last-seen").textContent = lastSeenLabel(scale.last_seen_at);
+  };
+
   const renderScales = () => {
     scaleRows.replaceChildren(...scales.map(scale => {
       const row = document.createElement("tr");
+      row.dataset.deviceId = scale.device_id;
       row.innerHTML = `
         <td class="scale-select"><input type="checkbox"></td>
         <td class="scale-identity"><input class="scale-name" maxlength="40"><span class="scale-hint"></span></td>
@@ -312,17 +333,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
       name.value = scale.name;
       name.addEventListener("keydown", event => { if (event.key === "Enter") name.blur(); });
       row.querySelector(".scale-hint").textContent = scale.serial_hint;
-      const installed = row.querySelector(".scale-build");
-      installed.querySelector("strong").textContent = scale.firmware_version || "Unknown";
-      installed.querySelector("span").textContent = scale.installed_combination
-        ? identityForBuild(scale.installed_combination) : (scale.last_seen_at ? "Official" : "Unknown");
-      const desired = row.querySelector(".desired-build");
-      desired.querySelector("strong").textContent = scale.desired_combination
-        ? identityForBuild(scale.desired_combination) : "None";
-      const state = row.querySelector(".deployment-state");
-      state.textContent = deploymentState(scale, buildStates);
-      state.dataset.state = state.textContent.toLowerCase().replaceAll(" ", "-");
-      row.querySelector(".last-seen").textContent = lastSeenLabel(scale.last_seen_at);
+      renderScaleStatus(row, scale);
       name.addEventListener("change", async () => {
         const previous = scales.find(item => item.device_id === scale.device_id)?.name || scale.name;
         const next = name.value.trim();
@@ -482,7 +493,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   ));
   document.addEventListener("openscale-build-status", renderControls);
   startFleetPolling(
-    () => Boolean(fleetKey) && !document.hidden && !activeRequests && !editingFleet() &&
+    () => Boolean(fleetKey) && !document.hidden && !activeRequests &&
       scales.some(scale => scale.desired_combination &&
         scale.desired_combination !== scale.installed_combination),
     () => loadFleet(true),

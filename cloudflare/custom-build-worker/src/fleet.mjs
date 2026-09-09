@@ -312,6 +312,9 @@ function scaleRecord(deviceId, device) {
       ? device.installed_combination : null,
     firmware_version: typeof device.firmware_version === "string" ? device.firmware_version : null,
     last_seen_at: typeof device.last_seen_at === "string" ? device.last_seen_at : null,
+    install_combination: hashPattern.test(device.install_combination || "") ? device.install_combination : null,
+    install_state: ["installing", "failed"].includes(device.install_state) ? device.install_state : null,
+    install_updated_at: typeof device.install_updated_at === "string" ? device.install_updated_at : null,
   };
 }
 
@@ -547,10 +550,18 @@ async function deviceAssignment(request, storage) {
 }
 
 async function deviceCheckIn(request, storage, env) {
+  const rawBody = await readJson(request);
+  const hasInstallState = rawBody && Object.hasOwn(rawBody, "install_state");
   const body = requireObject(
-    await readJson(request),
-    ["firmware_version", "installed_combination"],
+    rawBody,
+    hasInstallState
+      ? ["firmware_version", "installed_combination", "install_combination", "install_state"]
+      : ["firmware_version", "installed_combination"],
   );
+  if (hasInstallState && (!hashPattern.test(body.install_combination || "") ||
+      !["installing", "failed"].includes(body.install_state))) {
+    throw new FleetError(400, "invalid_install_state");
+  }
   if (body.installed_combination !== null &&
       !hashPattern.test(body.installed_combination || "")) {
     throw new FleetError(400, "invalid_combination_hash");
@@ -568,6 +579,9 @@ async function deviceCheckIn(request, storage, env) {
     const updated = {
       ...device,
       installed_combination: body.installed_combination,
+      install_combination: hasInstallState ? body.install_combination : null,
+      install_state: hasInstallState ? body.install_state : null,
+      install_updated_at: hasInstallState ? new Date().toISOString() : null,
       firmware_version: firmwareVersion,
       last_seen_at: new Date().toISOString(),
     };

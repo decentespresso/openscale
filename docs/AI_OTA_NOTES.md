@@ -24,6 +24,16 @@ AI-documentation audit, read `docs/AI_RELEASE_NOTES.md`.
 Opening the Custom Build menu performs one authenticated device check-in. Custom firmware reports
 the normalized compile-time `HDS_CUSTOM_BUILD_COMBINATION_HASH`; official firmware reports null.
 The response contains only linking state, one desired combination, and its canonical build state.
+Once pending filesystem state is saved, paired scales report the target combination as installing
+before streaming custom firmware, or failed if streaming fails. These reports never claim the
+target is already installed. The browser shows Installing only for the currently assigned target
+and shows Status unconfirmed after 15 minutes without completion. Old firmware remains compatible
+but cannot report installation start. Deploy the Worker changes before firmware using these fields.
+After verifying the installed filesystem and accepting the running firmware, the OTA completion
+path reports the current identity again before clearing its pending transaction and rebooting.
+Only previously paired devices report; up to three attempts are made without initiating another
+installation. A service outage does not roll back a verified installation. If all attempts fail,
+opening Custom Build later refreshes the report.
 
 Fresh devices start pairing from Custom Build. Once a pair code has been registered
 (`ota_custom/pair_init`), Connections exposes a separate Relink entry. Relink requires
