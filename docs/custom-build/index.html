@@ -23,7 +23,7 @@
       document.querySelector("#theme-color").content = dark ? "#111413" : "#0d6b4f";
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=17">
+  <link rel="stylesheet" href="styles.css?v=18">
   <link rel="stylesheet" href="fleet.css?v=7">
   <link rel="stylesheet" href="wizard.css?v=1">
 </head>
@@ -157,6 +157,18 @@
           <div class="service-section">
             <div class="service-heading">
               <span>Build status</span>
+            </div>
+            <div id="build-progress" hidden>
+              <ol class="build-steps" aria-label="Build progress">
+                <li data-build-step>Queued</li>
+                <li data-build-step>Building</li>
+                <li data-build-step>Ready</li>
+              </ol>
+              <div class="build-activity" aria-hidden="true"><span></span></div>
+              <div class="build-live-details">
+                <span data-build-elapsed></span>
+                <span data-build-checked></span>
+              </div>
             </div>
             <p id="status-message" class="status-message" role="status" aria-live="polite">Checking the build cache.</p>
             <p id="pull-ota-warning" class="pull-ota-warning" hidden>Wifi Pull OTA installs official releases and replaces this custom build.</p>
@@ -297,7 +309,7 @@
     </form>
   </dialog>
 
-  <script type="module" src="app.js?v=28"></script>
+  <script type="module" src="app.js?v=29"></script>
   <script type="module" src="wizard.js?v=2"></script>
 </body>
 </html>
