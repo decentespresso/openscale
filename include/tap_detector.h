@@ -19,57 +19,60 @@ class TapDetector {
     historyIndex = 0;
     historyCount = 0;
     sampleMs = now;
-    steady = false;
+    state = State::Settling;
     baseline = weight;
     previousWeight = weight;
-    rising = false;
-    risingFromSteady = false;
-    tapStartedMs = now;
-    lastReleaseMs = now;
+    valley = weight;
+    peak = weight;
+    riseOrigin = weight;
+    strongestHeight = 0.0f;
+    riseStartedMs = now;
+    lastTapStartedMs = now;
+    lastPeakMs = now;
+    releaseLevel = weight;
+    finalReleased = false;
+    lockedMs = now;
     sequenceCount = 0;
-    needsRelease = false;
-    sequenceLocked = false;
   }
 
   TapEvent tick(unsigned long now, float weight) {
-    if ((rising || needsRelease) && now - tapStartedMs > maxTapDurationMs) {
+    if (!isfinite(weight)) {
+      reset(now, 0.0f);
+      return TapEvent::None;
+    }
+    if (state == State::Locked) {
+      if (now - lockedMs > interTapWindowMs) reset(now, weight);
+      return TapEvent::None;
+    }
+    if ((state == State::Rising && now - riseStartedMs > maxTapDurationMs) ||
+        (state == State::Valley && !finalReleased &&
+         now - lastTapStartedMs > maxTapDurationMs)) {
       reset(now, weight);
       return TapEvent::None;
     }
-
-    if (sequenceLocked) {
-      if (now - lastReleaseMs <= interTapWindowMs) {
-        previousWeight = weight;
-        rising = false;
-        return TapEvent::None;
-      }
-      sequenceLocked = false;
-      sequenceCount = 0;
-    }
-
-    TapEvent event = expireSequence(now);
-
-    if (needsRelease && fabsf(weight - baseline) <= releaseRangeG) {
-      needsRelease = false;
-      lastReleaseMs = now;
-      if (sequenceCount == 3) event = completeTriple();
-    }
-
-    if (weight > previousWeight + peakSlopeG &&
-        !needsRelease && (sequenceCount > 0 || steady)) {
-      if (!rising) {
-        tapStartedMs = now;
-        risingFromSteady = steady;
-        rising = true;
-      }
-    } else if (weight < previousWeight - peakSlopeG && rising) {
-      rising = false;
-      if (previousWeight - baseline > peakHeightG) {
-        event = acceptPeak(now, weight, risingFromSteady);
+    if (state == State::Valley) {
+      const TapEvent event = updateValley(now, weight);
+      if (event != TapEvent::None || sequenceCount == 3) return event;
+      if (now - lastPeakMs > interTapWindowMs &&
+          (finalReleased || weight - previousWeight > peakSlopeG)) {
+        const TapEvent expired = sequenceCount == 2 && finalReleased ?
+            TapEvent::Double : TapEvent::None;
+        reset(now, weight);
+        return expired;
       }
     }
 
-    if (sequenceCount == 0 && !needsRelease && !sequenceLocked && !rising) {
+    TapEvent event = TapEvent::None;
+    if ((state == State::Ready || state == State::Valley) &&
+        weight - previousWeight > peakSlopeG) {
+      riseOrigin = state == State::Ready ? baseline : valley;
+      peak = weight;
+      riseStartedMs = now;
+      state = State::Rising;
+    }
+    if (state == State::Rising) {
+      event = updatePeak(now, weight);
+    } else if (state == State::Settling || state == State::Ready) {
       updateSteadyState(now, weight);
     }
 
@@ -78,29 +81,40 @@ class TapDetector {
   }
 
  private:
-  static constexpr float peakHeightG = 10.0f;
+  enum class State : uint8_t { Settling, Ready, Rising, Valley, Locked };
+
+  static constexpr float minPeakHeightG = 10.0f;
   static constexpr float peakSlopeG = 2.0f;
-  static constexpr float releaseRangeG = 2.0f;
+  static constexpr float minDropAfterPeakG = 6.0f;
+  static constexpr float minRepeatHeightG = 6.0f;
+  static constexpr float minDropFraction = 0.45f;
+  static constexpr float finalReleaseFraction = 0.70f;
+  static constexpr float minRepeatHeightFraction = 0.35f;
+  static constexpr unsigned long minTapSeparationMs = 50;
+  static constexpr unsigned long interTapWindowMs = 400;
+  static constexpr unsigned long maxTapDurationMs = 600;
   static constexpr unsigned long sampleIntervalMs = 100;
   static constexpr uint8_t steadySampleCount = 5;
   static constexpr float steadyRangeG = 0.5f;
-  static constexpr unsigned long interTapWindowMs = 400;
-  static constexpr unsigned long maxTapDurationMs = 600;
 
   float history[steadySampleCount];
   uint8_t historyIndex;
   uint8_t historyCount;
   unsigned long sampleMs;
-  bool steady;
+  State state;
   float baseline;
   float previousWeight;
-  bool rising;
-  bool risingFromSteady;
-  unsigned long tapStartedMs;
-  unsigned long lastReleaseMs;
+  float valley;
+  float peak;
+  float riseOrigin;
+  float strongestHeight;
+  unsigned long riseStartedMs;
+  unsigned long lastTapStartedMs;
+  unsigned long lastPeakMs;
+  float releaseLevel;
+  bool finalReleased;
+  unsigned long lockedMs;
   uint8_t sequenceCount;
-  bool needsRelease;
-  bool sequenceLocked;
 
   void updateSteadyState(unsigned long now, float weight) {
     if (now - sampleMs < sampleIntervalMs) return;
@@ -120,44 +134,61 @@ class TapDetector {
       sum += sample;
     }
     if (high - low < steadyRangeG) {
-      steady = true;
+      state = State::Ready;
       baseline = sum / steadySampleCount;
     } else if (fabsf(weight - baseline) > peakSlopeG) {
-      steady = false;
+      state = State::Settling;
     }
   }
 
-  TapEvent expireSequence(unsigned long now) {
-    if (sequenceCount == 0 || rising || needsRelease ||
-        now - lastReleaseMs < interTapWindowMs) {
+  TapEvent updatePeak(unsigned long now, float weight) {
+    peak = fmaxf(peak, weight);
+    const float amplitude = peak - riseOrigin;
+    const float height = peak - baseline;
+    const float requiredAmplitude = sequenceCount == 0 ? minPeakHeightG : minRepeatHeightG;
+    const bool prominent = amplitude > requiredAmplitude &&
+        height > strongestHeight * minRepeatHeightFraction;
+    if (!prominent && peak - weight > peakSlopeG) {
+      if (sequenceCount == 0) {
+        reset(now, weight);
+      } else {
+        valley = weight;
+        state = State::Valley;
+      }
       return TapEvent::None;
     }
-    const TapEvent event = sequenceCount == 2 && !needsRelease ?
-                               TapEvent::Double : TapEvent::None;
-    sequenceCount = 0;
-    return event;
+    const float requiredDrop = fmaxf(minDropAfterPeakG, amplitude * minDropFraction);
+    if (!prominent || peak - weight < requiredDrop) {
+      return TapEvent::None;
+    }
+    if (sequenceCount > 0 && riseStartedMs - lastTapStartedMs < minTapSeparationMs) {
+      valley = weight;
+      state = State::Valley;
+      return TapEvent::None;
+    }
+    strongestHeight = fmaxf(strongestHeight, height);
+    lastTapStartedMs = riseStartedMs;
+    lastPeakMs = now;
+    releaseLevel = baseline + fmaxf(2.0f, (peak - baseline) * (1.0f - finalReleaseFraction));
+    finalReleased = false;
+    ++sequenceCount;
+    state = State::Valley;
+    valley = weight;
+    return updateValley(now, weight);
   }
 
-  TapEvent acceptPeak(unsigned long now, float weight, bool startedFromSteady) {
-    needsRelease = fabsf(weight - baseline) > releaseRangeG;
-    if (sequenceCount == 0) {
-      if (!startedFromSteady) return TapEvent::None;
-      sequenceCount = 1;
-    } else {
-      ++sequenceCount;
+  TapEvent updateValley(unsigned long now, float weight) {
+    valley = fminf(valley, weight);
+    if (!finalReleased && weight <= releaseLevel) {
+      finalReleased = true;
+      lastPeakMs = now;
     }
-    if (!needsRelease) lastReleaseMs = now;
-
-    if (sequenceCount == 3) {
-      return needsRelease ? TapEvent::None : completeTriple();
+    if (sequenceCount == 3 && finalReleased) {
+      state = State::Locked;
+      lockedMs = now;
+      return TapEvent::Triple;
     }
     return TapEvent::None;
-  }
-
-  TapEvent completeTriple() {
-    sequenceCount = 0;
-    sequenceLocked = true;
-    return TapEvent::Triple;
   }
 };
 

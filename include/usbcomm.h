@@ -503,6 +503,12 @@ public:
         Serial.print("Off ");
     }
 
+    if (inputString == "tapd on" || inputString == "tapd off") {
+      b_tapTraceEnabled = inputString == "tapd on";
+      Serial.printf("[TAPTRACE] enabled=%d tare=%d timer=%d\n",
+                    b_tapTraceEnabled, b_tapTareEnabled, b_tapTimerEnabled);
+    }
+
     if (inputString.startsWith("adsd ")) {
       String cmd = inputString.substring(5);
       cmd.trim();

@@ -230,6 +230,7 @@ volatile bool b_timeOnTop = false;
 volatile bool b_btnFuncWhileConnected = false;
 bool b_tapTareEnabled = false;
 bool b_tapTimerEnabled = false;
+bool b_tapTraceEnabled = false;
 
 //
 int windowLength = 5;  // default window length

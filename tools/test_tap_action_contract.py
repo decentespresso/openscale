@@ -31,8 +31,19 @@ def main() -> None:
     recognized = function_body(finger, "isFingerPress")
     local_tap = function_body(tap, "runTapLocalAction")
     detector = function_body(tap, "tapDetectTick")
+    parameters = (ROOT / "include" / "parameter.h").read_text(encoding="utf-8")
+    usb = (ROOT / "include" / "usbcomm.h").read_text(encoding="utf-8")
+    sketch = (ROOT / "src" / "hds.ino").read_text(encoding="utf-8")
+    weighing = function_body(sketch, "pureScale")
 
-    assert "TAP_ACTION_DELAY_MS = 100" in tap
+    assert "bool b_tapTraceEnabled = false;" in parameters
+    assert 'inputString == "tapd on" || inputString == "tapd off"' in usb
+    assert 'b_tapTraceEnabled = inputString == "tapd on";' in usb
+    assert weighing.index("if (b_newDataReady)") < weighing.index("if (b_tapTraceEnabled)")
+    assert 'Serial.printf("[TAPRAW] %lu %.3f\\n", t_lastScaleData, raw_weight);' in weighing
+
+    assert "TAP_ACTION_DELAY_MS" not in tap
+    assert "tapActionArmed" not in tap
     assert "bleClientLive && !b_btnFuncWhileConnected" in shared
     assert "sendUsbButton(buttonNumber, 1);" in shared
     assert "sendWebsocketButton(buttonNumber, 1);" in shared
@@ -50,7 +61,8 @@ def main() -> None:
     assert "grinderRuntime.state == GRINDER_STATE_STOPPING" in detector
     assert "tapDetector.reset(now, weight);" in detector
     assert "power_off(-1);" in detector
-    assert "runTapLocalAction(tapTripleArmed);" in detector
+    assert "runTapLocalAction(tripleTapAction);" in detector
+    assert "if (doubleTapAction || tripleTapAction) {" in detector
     assert "runRecognizedButtonAction" not in tap
 
 
