@@ -254,8 +254,8 @@ def main():
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
     fleetScript = (pageRoot / "fleet.js").read_text(encoding="utf-8")
-    assert 'type="module" src="app.js?v=28"' in indexPage
-    assert 'href="styles.css?v=17"' in indexPage
+    assert 'type="module" src="app.js?v=29"' in indexPage
+    assert 'href="styles.css?v=18"' in indexPage
     assert 'href="fleet.css?v=7"' in indexPage
     assert 'id="request-build"' in indexPage
     assert "catalog-data" not in indexPage
