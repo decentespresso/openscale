@@ -27,6 +27,7 @@ constexpr const char *KEY_WIFI_BOOT = "wifi_boot";
 constexpr const char *KEY_AUTO_SLEEP = "auto_sleep";
 constexpr const char *KEY_QUICK_BOOT = "quick_boot";
 constexpr const char *KEY_DRIFT_MAX = "drift_max";
+constexpr const char *KEY_WOW_INTERVAL = "wow_interval";
 #if HDS_ENABLE_ENERGY_MENU
 constexpr const char *KEY_ENERGY_SCHEMA = "energy_schema";
 constexpr uint16_t ENERGY_SCHEMA_VERSION = 9;
@@ -178,7 +179,8 @@ inline bool storageHasAllSettings() {
     KEY_CAL1, KEY_CONTAINER, KEY_MODE, KEY_POUROVER, KEY_ESPRESSO,
     KEY_BEEP, KEY_WELCOME, KEY_BAT_CAL, KEY_HEARTBEAT, KEY_SCREEN_FLIP,
     KEY_TIME_ON_TOP, KEY_BTN_CONN, KEY_WIFI_BOOT, KEY_AUTO_SLEEP,
-    KEY_QUICK_BOOT, KEY_DRIFT_MAX, KEY_TAP_TARE, KEY_TAP_TIMER
+    KEY_QUICK_BOOT, KEY_DRIFT_MAX, KEY_TAP_TARE, KEY_TAP_TIMER,
+    KEY_WOW_INTERVAL
   };
   for (const char *key : keys) {
     if (!settingsPreferences.isKey(key)) {
@@ -206,7 +208,8 @@ inline bool storageEnsureDefaults() {
          storageEnsureBool(KEY_QUICK_BOOT, false) &&
          storageEnsureFloat(KEY_DRIFT_MAX, 0.05f) &&
          storageEnsureBool(KEY_TAP_TARE, false) &&
-         storageEnsureBool(KEY_TAP_TIMER, false);
+         storageEnsureBool(KEY_TAP_TIMER, false) &&
+         storageEnsureInt(KEY_WOW_INTERVAL, 0);
 }
 
 inline bool storageLegacyBool(size_t address, bool defaultValue) {
@@ -298,7 +301,8 @@ inline bool storageMigrateLegacyEeprom() {
                   storageEnsureBool(KEY_QUICK_BOOT, storageLegacyBool(LEGACY_QUICK_BOOT_ADDRESS, false)) &&
                   storageEnsureFloat(KEY_DRIFT_MAX, driftMax) &&
                   storageEnsureBool(KEY_TAP_TARE, false) &&
-                  storageEnsureBool(KEY_TAP_TIMER, false);
+                  storageEnsureBool(KEY_TAP_TIMER, false) &&
+                  storageEnsureInt(KEY_WOW_INTERVAL, 0);
   EEPROM.end();
   return migrated;
 }

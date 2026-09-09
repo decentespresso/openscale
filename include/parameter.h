@@ -380,6 +380,21 @@ bool b_ads1115InitFail = true;  //ads1115 not detected flag
 volatile bool b_wifiOnBoot = false;
 volatile bool b_autoSleep = true;
 volatile bool b_quickBoot = false;
+int i_wow_interval = 0;
+#ifdef ADS1232ADC
+struct WowRtcState {
+  uint32_t magic;
+  uint8_t armed;
+  uint8_t consecutiveFailures;
+  uint16_t tickCount;
+  int32_t baselineRaw;
+  int32_t thresholdRaw;
+  uint32_t intervalUs;
+};
+RTC_DATA_ATTR WowRtcState wowRtc;
+bool wowTimerArmedThisBoot = false;
+bool wowButtonWake = false;
+#endif
 unsigned int i_buttonBootDelay = 500;
 bool b_showChargingUI = false;
 #if HDS_ENABLE_GRINDER
@@ -575,6 +590,8 @@ int i_battery = 0;                          //电池充电循环变量
 int i_batteryRefreshTareInterval = 30 * 1000;  //Refresh battery every 30 seconds
 unsigned long t_batteryRefresh = 0;         //Battery refresh timestamp
 float f_batteryVoltage = 0;
+int i_lowBatteryCount = 0;
+int i_lowBatteryCountTotal = 0;
 #ifdef AVR
 float f_vref = 4.72;                  //5V pin true reading
 float f_true_battery_reading = 4.72;  //需测量usb vcc电压（不一定是usb，可以是电池电压）

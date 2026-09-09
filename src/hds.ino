@@ -769,6 +769,7 @@ void beforeDeepSleepFlush() {
 #endif
 
 void setup() {
+  wowMicroWakeOrContinue();
 #if HDS_ENABLE_ENERGY_MENU
   energyIdle.mainTask = xTaskGetCurrentTaskHandle();
 #endif
@@ -811,6 +812,7 @@ void setup() {
 
   b_quickBoot = storageGetBool(KEY_QUICK_BOOT, false);
   i_buttonBootDelay = b_quickBoot ? 0 : 500;
+  i_wow_interval = storageGetInt(KEY_WOW_INTERVAL, 0);
 
   Serial.println("NVS settings init success");
 
@@ -848,6 +850,9 @@ void setup() {
     b_ble_enabled = true;
   }
   while (true && GPIO_power_on_with > 0) {
+#ifdef ADS1232ADC
+    if (wowButtonWake) break;
+#endif
     if (i_buttonBootDelay == 0){
       Serial.println("Quick boot. Powering on...");
       break;
