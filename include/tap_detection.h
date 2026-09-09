@@ -6,12 +6,7 @@
 #include "parameter.h"
 #include "tap_detector.h"
 
-constexpr unsigned long TAP_ACTION_DELAY_MS = 100;
-
 static TapDetector tapDetector;
-static bool tapActionArmed = false;
-static bool tapTripleArmed = false;
-static unsigned long tapActionAtMs = 0;
 static bool tapDetectionGated = true;
 
 static inline void runTapLocalAction(bool tripleTap) {
@@ -42,7 +37,6 @@ void tapDetectTick() {
       || now - t_menuExitTime <= 1000) {
     if (!tapDetectionGated) {
       tapDetector.reset(now, weight);
-      tapActionArmed = false;
       tapDetectionGated = true;
     }
     return;
@@ -59,17 +53,10 @@ void tapDetectTick() {
       event == TapEvent::Triple && b_tapTimerEnabled;
 
   if (doubleTapAction || tripleTapAction) {
-    tapActionArmed = true;
-    tapTripleArmed = tripleTapAction;
-    tapActionAtMs = now;
-    Serial.println(tapTripleArmed ? "[TAP] triple tap -> timer" :
+    Serial.println(tripleTapAction ? "[TAP] triple tap -> timer" :
                                    "[TAP] double tap -> tare");
-  }
-
-  if (tapActionArmed && now - tapActionAtMs >= TAP_ACTION_DELAY_MS) {
-    tapActionArmed = false;
     power_off(-1);
-    runTapLocalAction(tapTripleArmed);
+    runTapLocalAction(tripleTapAction);
 #ifdef BUZZER
     buzzer.beep(1, BUZZER_DURATION);
 #endif

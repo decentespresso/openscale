@@ -66,6 +66,62 @@ Tare averages the current buffer, often one sample in fast mode, so it is noisie
 
 The USB ADS debug packet keeps its 41-byte framing and checksum. Byte 24 is the raw reset reason captured at boot. Bytes 25-37 are zero-filled because the current library does not precompute stats.
 
+## Scale-Top Taps
+
+`include/tap_detector.h` processes the existing `f_current_raw_value` after
+`pureScale()` in the weighing loop. It does not alter ADS polling or filtering.
+The states are Settling, Ready, Rising (including unloading), Valley, and Locked.
+Five stable samples at 100 ms intervals arm the first rise. Subsequent rises use
+their local valley, not the original baseline; rejected rebounds also start a
+new valley so an old undershoot cannot inflate a later peak's prominence.
+
+Thresholds are grouped in `TapDetector`: rises exceed 2 g per observed change.
+The first prominence exceeds 10 g; repeats rise more than 6 g from their local
+valley and their height above the original baseline exceeds 35% of the strongest
+accepted height. Keeping those tests separate admits overlapping taps without
+letting a negative undershoot inflate a small ringing peak. A peak unloading by
+at least 6 g and 45% of its local prominence arms the next valley. Action completion separately requires
+70% unloading of the final peak relative to the original baseline (with a 2 g
+floor). This rejects half-released holds without requiring deep unloading
+between taps. The relative height floor does not shrink after weaker accepted peaks.
+
+Rise onsets must be at least 50 ms apart. Preserve the original 400 ms wait for
+another rise and 600 ms maximum contact duration, including slower gestures.
+The wait starts at the confirmed drop and restarts once at final unloading,
+not on every cached sample or subsequent fluctuation. A double is emitted on
+the first tick beyond that wait, unless another rise is being evaluated. A
+held candidate cancels the sequence rather than falling back to tare. Triple
+is emitted as soon as the third peak satisfies the final unloading condition;
+until then no fourth peak can replace it.
+There is no additional 100 ms action delay: unloading is already confirmed and
+the double decision already reserves the full third-tap window. Local tare/timer
+actions and their enable settings are unchanged, including the existing tare delay.
+
+COM5 hardware capture on 2026-09-09 measured about 10 SPS. A natural double had
+401 ms between observed rises; a triple had about 60% initial unloading and
+7.6 g second prominence. The earlier 300 ms onset window, 200 ms duration,
+70% intermediate unloading, and 10 g repeat floor rejected those signals.
+Captured double/triple/held traces and original slower sequences are native
+regression tests. Observation timestamps can lag ADC acquisition by one debug
+poll interval, so hardware confirmation is still required after changing thresholds.
+
+A later fast series exposed a 48% initial fall and a 7.4 g local repeat rise
+while still above baseline; another light first peak fell only 7.2 g. The
+6 g / 45% drop and separate local-rise / baseline-height tests cover these
+captured traces. A captured 0.64 g second rise remains rejected deliberately:
+counting that as a tap would undermine noise and held-finger rejection.
+
+Cached readings create no extra edges. Recognition still requires distinct ADC
+peaks and valleys: 10 SPS cannot reliably resolve 50 ms taps, and smoothing can
+hide fast taps. Do not change sampling to compensate without a separate hardware
+review. Deep pressure modulation or large object bounces indistinguishable from
+tap traces remain a hardware-validation risk. Serial `tapd on` enables one
+`[TAPRAW] timestamp weight` line per fresh ADC reading in the weighing loop;
+`tapd off` disables it. It defaults off, is not persisted, and does not change
+sampling or filtering. Prefer this stream over repeated USB debug snapshots,
+which can miss intermediate samples. Replay timestamped weight traces in
+`test/test_tap_detector/test_main.cpp`.
+
 ## Async Web Server
 
 - Register handlers before `server.begin()`.
@@ -125,6 +181,8 @@ Run only the checks matching the change:
 ```sh
 python tools/test_calibration_validation.py
 python tools/test_soft_sleep_ads_wake.py
+python tools/test_tap_action_contract.py
+pio test -e native -f test_tap_detector
 pio run -e esp32s3
 ```
 

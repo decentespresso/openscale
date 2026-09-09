@@ -1412,6 +1412,9 @@ void pureScale() {
     float raw_weight = scale.getData();
     updatePressSampling();
     f_current_raw_value = raw_weight;
+    if (b_tapTraceEnabled) {
+      Serial.printf("[TAPRAW] %lu %.3f\n", t_lastScaleData, raw_weight);
+    }
 
     float current_diff = raw_weight - f_displayedValue - f_driftCompensation;
 
