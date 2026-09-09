@@ -31,12 +31,13 @@ void wowCaptureBaselineForSleep() {
   if (f_calibration_value == CALIBRATION_VALUE_DEFAULT) return;
   if (!isValidCalibrationValue(f_calibration_value)) return;
   const float threshold = WOW_TRIGGER_GRAMS * fabsf(f_calibration_value);
-  if (scale.getDebugInfo().validSamples <= 0) return;
+  const auto info = scale.getDebugInfo();
+  if (info.validSamples <= 0 || info.dataOutOfRange || info.signalTimeout) return;
   wowRtc.magic = WOW_RTC_MAGIC;
   wowRtc.armed = 1;
   wowRtc.tickCount = 0;
   wowRtc.consecutiveFailures = 0;
-  wowRtc.baselineRaw = scale.getDebugInfo().smoothedValue;
+  wowRtc.baselineRaw = info.smoothedValue;
   wowRtc.thresholdRaw = max((int32_t)(threshold + 0.5f), WOW_MIN_THRESHOLD_RAW);
   wowRtc.intervalUs = wowIntervalUs[i_wow_interval];
 }

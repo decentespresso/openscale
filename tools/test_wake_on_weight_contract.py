@@ -97,6 +97,16 @@ class WakeOnWeightContractTests(unittest.TestCase):
         self.assertIn("fabsf(f_calibration_value)", baseline)
         self.assertIn("wowRtc.intervalUs = wowIntervalUs", baseline)
 
+    def test_baseline_rejects_invalid_snapshot_before_arming(self):
+        baseline = body(WOW_ADS, "void wowCaptureBaselineForSleep()")
+        guard = "if (info.validSamples <= 0 || info.dataOutOfRange || info.signalTimeout) return;"
+        self.assertEqual(baseline.count("scale.getDebugInfo()"), 1)
+        self.assertIn("const auto info = scale.getDebugInfo();", baseline)
+        self.assertIn("wowRtc.baselineRaw = info.smoothedValue;", baseline)
+        self.assertLess(baseline.index("wowRtc.armed = 0;"), baseline.index(guard))
+        self.assertLess(baseline.index(guard), baseline.index("wowRtc.armed = 1;"))
+        self.assertLess(baseline.index(guard), baseline.index("wowRtc.baselineRaw ="))
+
     def test_micro_wakeup_gates(self):
         micro = body(WOW_ADS, "void wowMicroWakeOrContinue()")
         self.assertIn("getCpuFrequencyMhz()", micro)
