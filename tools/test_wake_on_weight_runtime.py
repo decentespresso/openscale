@@ -43,8 +43,9 @@ struct DebugInfo {
   int32_t smoothedValue = 1000;
   int32_t rawValue = 1000;
   bool dataOutOfRange = false;
+  bool signalTimeout = false;
 };
-struct Scale { DebugInfo getDebugInfo() { return {}; } } scale;
+struct Scale { DebugInfo info; DebugInfo getDebugInfo() { return info; } } scale;
 unsigned long millis() { return nowMs; }
 void delay(unsigned long ms) { nowMs += ms; }
 unsigned long getCpuFrequencyMhz() { return cpuMhz; }
@@ -111,6 +112,17 @@ bool tick() {
 void arm() { wowCaptureBaselineForSleep(); assert(wowRtc.armed); }
 int main() {
   static_assert(sizeof(WowRtcState) == 20);
+  for (bool outOfRange : {false, true}) {
+    for (bool timeout : {false, true}) {
+      resetBoot(); arm();
+      scale.info.dataOutOfRange = outOfRange;
+      scale.info.signalTimeout = timeout;
+      wowCaptureBaselineForSleep();
+      assert(bool(wowRtc.armed) == (!outOfRange && !timeout));
+      scale.info = {};
+      arm();
+    }
+  }
   for (bool missing : {false, true}) {
     for (int pin : {BUTTON_CIRCLE, BUTTON_SQUARE, BATTERY_CHARGING}) {
       for (unsigned long start = 0; start <= (missing ? 998UL : 500UL); start += 2) {
