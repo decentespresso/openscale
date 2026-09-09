@@ -245,12 +245,9 @@ String pullOtaCurrentVersion() {
 
 bool pullOtaCurrentReleaseVersion(String &version) {
   version = pullOtaCurrentVersion();
-  char normalized[18];
-  if (!pullOtaNormalizeVersionPrefix(version.c_str(), normalized, sizeof(normalized))) {
-    return false;
-  }
-  version = normalized;
-  return true;
+  version.trim();
+  if (version.startsWith("v") || version.startsWith("V")) version.remove(0, 1);
+  return pullOtaVersionIsRelease(version.c_str());
 }
 
 bool pullOtaParseVersionTriplet(String version, uint16_t parts[3]) {
@@ -495,9 +492,11 @@ void pullOtaBuildSelectableReleases(
     const PullOtaReleaseList &catalog,
     PullOtaReleaseSelection &selection) {
   String currentVersion = pullOtaCurrentVersion();
+  const bool currentIsPrerelease = pullOtaVersionIsRelease(currentVersion.c_str()) &&
+                                   !pullOtaVersionIsStable(currentVersion.c_str());
   for (uint8_t i = 0; i < catalog.count; i++) {
     int currentCompare = pullOtaCompareVersions(catalog.releases[i].version, currentVersion);
-    if (currentCompare != 0 && selection.count < HDS_OTA_MAX_RELEASE_CHOICES) {
+    if ((currentCompare != 0 || currentIsPrerelease) && selection.count < HDS_OTA_MAX_RELEASE_CHOICES) {
       selection.indices[selection.count++] = i;
     }
   }
@@ -525,7 +524,7 @@ bool pullOtaFindCurrentRelease(
     return false;
   }
   for (uint8_t i = 0; i < catalog.count; i++) {
-    if (pullOtaCompareVersions(catalog.releases[i].version, currentVersion) == 0 &&
+    if (catalog.releases[i].version == currentVersion &&
         catalog.releases[i].littlefs.present &&
         catalog.releases[i].littlefs.required) {
       current = catalog.releases[i];
@@ -607,8 +606,8 @@ bool pullOtaParseRollbackManifest(
   }
   JsonObject root = doc.as<JsonObject>();
   PullOtaManifest candidate;
-  if (root.isNull() || !pullOtaParseManifestObject(root, candidate) ||
-      pullOtaCompareVersions(candidate.version, currentVersion) != 0 ||
+  if (root.isNull() || !pullOtaParseManifestObject(root, candidate, HDS_OTA_ASSET_URL_PREFIX, false) ||
+      candidate.version != currentVersion ||
       !candidate.littlefs.present || !candidate.littlefs.required) {
     return false;
   }

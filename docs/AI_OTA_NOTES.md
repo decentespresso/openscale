@@ -94,6 +94,8 @@ Release builds publish WiFi OTA assets at the GitHub Release root:
 
 The release workflow creates draft releases, uploads binary assets first, uploads `manifest.sig` and `manifest.json` last, then publishes the release.
 
+Preview and RC tags (`vX.Y.Z-preview.N` and `vX.Y.Z-rc.N`) use the same signed asset publication flow but are marked prerelease and never latest. Their top-level manifests preserve the full version for recovery; they are excluded from the stable catalog and update picker.
+
 Official releases and custom builds embed both committed custom OTA public keys. Custom builds publish
 `firmware.bin`, `littlefs.bin`, `ota-manifest.sig`, and `ota-manifest.json` under the immutable
 R2 combination-hash prefix. The custom manifest is accepted only when its separate signature,
@@ -103,6 +105,8 @@ validate.
 Catalog manifests merge the previous latest stable signed manifest, dedupe by model, PCB, version, chip, and environment, sort newest to oldest, and keep the latest 10 production entries at `v3.1.13+`. Generated JSON is compact and limited to 16 KiB.
 
 When the installed release has aged out of the latest catalog, firmware fetches that release's own signed manifest using both supported tag forms. It accepts only the compatible top-level release entry with the exact installed version and required LittleFS metadata. Firmware rollback remains local in the other app slot; this fallback supplies the signed asset metadata needed to restore the single shared LittleFS partition.
+
+Recovery lookup preserves preview/RC suffixes and must not substitute stable assets with the same numeric version. A hosted custom build, including one based on `main`, instead uses its embedded combination hash and published `ota-manifest.json`/`ota-manifest.sig`. A local build without published recovery metadata is not a supported OTA starting point. Preview 3 predates exact-version recovery and lacks published signed recovery assets; use USB to move to a corrected release or a hosted custom build.
 
 ## Picker Rules
 

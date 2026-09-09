@@ -20,8 +20,9 @@ repository secrets or variables without explicit user authorization.
 `X.Y.Z` tag on a known-good commit reachable from `main`.
 
 `.github/workflows/release.yml` is the source of truth for release mechanics.
-The current workflow is for stable releases, not preview, RC, or prerelease
-tags.
+The workflow also accepts `vX.Y.Z-preview.N` and `vX.Y.Z-rc.N` tags, publishing
+them as prereleases without changing latest. All releases publish signed
+recovery assets; preview/RC entries stay out of the stable OTA catalog.
 
 For OTA signing, manifests, compatibility, picker, and rollback invariants,
 also read `docs/AI_OTA_NOTES.md`.
@@ -98,7 +99,7 @@ Do not expose signing-key material or non-public credentials.
 Inspect `.github/workflows/release.yml` and its tools directly. Confirm that the
 release still:
 
-- validates a stable numeric tag;
+- validates a stable numeric tag or a supported preview/RC tag;
 - requires the tag commit to be reachable from `main`;
 - checks out and builds the tagged commit;
 - builds `firmware.bin` and `littlefs.bin`;

@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 struct PullOtaVersionTriplet {
   uint16_t parts[3] = {0, 0, 0};
@@ -44,6 +45,19 @@ inline bool pullOtaParseVersionPrefix(const char *version, PullOtaVersionTriplet
 inline bool pullOtaVersionIsStable(const char *version) {
   PullOtaVersionTriplet parsed;
   return pullOtaParseVersionPrefix(version, parsed) && *parsed.suffix == '\0';
+}
+
+inline bool pullOtaVersionIsRelease(const char *version) {
+  PullOtaVersionTriplet parsed;
+  if (!pullOtaParseVersionPrefix(version, parsed)) return false;
+  const char *suffix = parsed.suffix;
+  if (*suffix == '\0') return true;
+  if (strncmp(suffix, "-preview.", 9) == 0) suffix += 9;
+  else if (strncmp(suffix, "-rc.", 4) == 0) suffix += 4;
+  else return false;
+  if (*suffix < '0' || *suffix > '9') return false;
+  while (*suffix >= '0' && *suffix <= '9') suffix++;
+  return *suffix == '\0';
 }
 
 inline bool pullOtaVersionHasComparablePrefix(const char *version, PullOtaVersionTriplet &parsed) {

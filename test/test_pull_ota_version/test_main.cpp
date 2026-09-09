@@ -1,5 +1,6 @@
 #include <unity.h>
 #include <string.h>
+#include <initializer_list>
 #include "pull_ota_catalog.h"
 #include "pull_ota_version.h"
 
@@ -20,6 +21,18 @@ void testDevBuildUsesNumericPrefix() {
   TEST_ASSERT_EQUAL_INT(0, pullOtaCompareVersionPrefixes("3.1.14", "3.1.13garbage"));
   TEST_ASSERT_EQUAL_INT(0, pullOtaCompareVersionPrefixes("3.1.14-preview.1-custom", "3.1.14"));
   TEST_ASSERT_FALSE(pullOtaVersionIsStable("3.1.14-preview.1-custom"));
+}
+
+void testRecoveryVersionsKeepPreviewIdentity() {
+  for (const char *version : {"3.1.14", "v3.1.14-preview.3", "3.1.14-rc.1"}) {
+    TEST_ASSERT_TRUE(pullOtaVersionIsRelease(version));
+  }
+  for (const char *version : {"3.1.14-dev", "3.1.14-custom", "3.1.14-preview.3-custom",
+                              "3.1.14-preview.", "3.1.14-preview.3/", "3.1.14-preview..3"}) {
+    TEST_ASSERT_FALSE(pullOtaVersionIsRelease(version));
+  }
+  TEST_ASSERT_FALSE(pullOtaVersionIsStable("3.1.14-preview.3"));
+  TEST_ASSERT_FALSE(pullOtaVersionIsStable("3.1.14-rc.1"));
 }
 
 void testComparisonHandlesVersionBounds() {
@@ -72,6 +85,7 @@ void testCatalogSortsDeduplicatesAndCaps() {
 int main() {
   UNITY_BEGIN();
   RUN_TEST(testStableVersionsStayStrict);
+  RUN_TEST(testRecoveryVersionsKeepPreviewIdentity);
   RUN_TEST(testDevBuildUsesNumericPrefix);
   RUN_TEST(testComparisonHandlesVersionBounds);
   RUN_TEST(testVersionPrefixNormalization);
