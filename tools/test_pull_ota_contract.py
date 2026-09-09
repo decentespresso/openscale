@@ -89,8 +89,17 @@ def main():
     assert_contains(PULL_OTA_HEADER, "const bool prefixedTags[] = {true, false}")
     assert_contains(PULL_OTA_HEADER, "pullOtaFetchSignedManifest(")
     assert_contains(PULL_OTA_HEADER, "pullOtaParseRollbackManifest(body, currentVersion, manifest)")
-    assert_contains(PULL_OTA_HEADER, "pullOtaParseManifestObject(root, candidate)")
-    assert_contains(PULL_OTA_HEADER, "pullOtaCompareVersions(candidate.version, currentVersion) != 0")
+    assert_contains(PULL_OTA_HEADER, "candidate.version != currentVersion")
+    assert_contains(ROOT / "include" / "pull_ota_version.h", "#define HDS_OTA_RELEASE_RECOVERY_VERSION 1")
+    assert_contains(PULL_OTA_HEADER, "pullOtaParseManifestObject(root, candidate, HDS_OTA_ASSET_URL_PREFIX, false)")
+    source = PULL_OTA_HEADER.read_text(encoding="utf-8")
+    release_version = function_body(source, "pullOtaCurrentReleaseVersion")
+    assert "pullOtaVersionIsRelease(version.c_str())" in release_version
+    assert "pullOtaNormalizeVersionPrefix" not in release_version
+    assert "catalog.releases[i].version == currentVersion" in function_body(source, "pullOtaFindCurrentRelease")
+    selection = function_body(source, "pullOtaBuildSelectableReleases")
+    assert "currentCompare != 0 || currentIsPrerelease" in selection
+    assert "!pullOtaVersionIsStable(currentVersion.c_str())" in selection
     assert_contains(PULL_OTA_HEADER, "!candidate.littlefs.present || !candidate.littlefs.required")
     assert_before(
         PULL_OTA_HEADER,

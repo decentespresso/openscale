@@ -22,8 +22,8 @@ jobs:
           TAG: ${{ github.event.inputs.tag }}
         run: |
           set -euo pipefail
-          if [[ ! "$TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Error: tag must match vX.Y.Z or X.Y.Z"
+          if [[ ! "$TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-(preview|rc)\.[0-9]+)?$ ]]; then
+            echo "Error: tag must be a stable, preview.N, or rc.N release"
             exit 1
           fi
           git fetch --force --tags origin
@@ -37,6 +37,10 @@ jobs:
             exit 1
           fi
           git checkout --detach "$TAG_COMMIT"
+          if [[ "$TAG" == *-* ]] && ! grep -Fxq '#define HDS_OTA_RELEASE_RECOVERY_VERSION 1' include/pull_ota_version.h; then
+            echo "Error: preview tag predates exact-version rollback lookup"
+            exit 1
+          fi
           for publicKey in keys/ota/hds_ota_manifest_public_key_{1..3}.pem; do
             if [ ! -f "$publicKey" ]; then
               echo "Error: tag $TAG predates the three-key OTA migration"
@@ -149,8 +153,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          RELEASE_FLAGS=()
+          if [[ "$TAG" == *-* ]]; then
+            RELEASE_FLAGS=(--prerelease --latest=false)
+          fi
           gh release create "$TAG" \
             --draft \
+            "${RELEASE_FLAGS[@]}" \
             --title="$TAG" \
             --generate-notes \
             "HDS_FW_${TAG}.zip" \

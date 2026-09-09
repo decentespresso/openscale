@@ -24,6 +24,7 @@ DEFAULT_CATALOG_MIN_VERSION = "v3.1.13"
 MAX_CATALOG_RELEASES = 10
 MAX_MANIFEST_BYTES = 16384
 STABLE_VERSION_RE = re.compile(r"^v?([0-9]+)\.([0-9]+)\.([0-9]+)$")
+RELEASE_VERSION_RE = re.compile(r"^v?([0-9]+\.[0-9]+\.[0-9]+(?:-(?:preview|rc)\.[0-9]+)?)$")
 
 
 def clean_version(tag):
@@ -116,7 +117,10 @@ def build_manifest(
     release_notes_url=None,
 ):
     build_dir = Path(build_dir)
-    version = clean_version(tag)
+    match = RELEASE_VERSION_RE.fullmatch(tag.strip())
+    if not match:
+        raise ValueError(f"invalid release version: {tag}")
+    version = match.group(1)
     min_from_version = clean_version(min_from) if min_from else ""
     manifest = {
         "model": model,
