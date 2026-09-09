@@ -72,15 +72,31 @@ static bool wowWaitForRail() {
   return !wowPhysicalWakeRequested();
 }
 
-static bool wowReadOneSample(ADS1232_ADC &adc, int32_t &rawSample, bool &outOfRange) {
+static bool wowReadWakeSamples(ADS1232_ADC &adc, int32_t &rawSample, bool &outOfRange) {
   const unsigned long startedAt = millis();
+  uint8_t samplesRead = 0;
+  int32_t previousSample = 0;
   while (millis() - startedAt < WOW_READ_TIMEOUT_MS) {
     if (wowPhysicalWakeRequested()) return false;
     if (digitalRead(SCALE_DOUT) == LOW) {
       if (adc.update()) {
-        rawSample = adc.getDebugInfo().rawValue;
-        outOfRange = adc.getDebugInfo().dataOutOfRange;
-        return true;
+        const auto info = adc.getDebugInfo();
+        wowWakeDiagnostics.raw[samplesRead] = info.rawValue;
+        samplesRead++;
+        wowWakeDiagnostics.samplesRead = samplesRead;
+        if (samplesRead > 1) {
+          outOfRange = info.validSamples <= 0 || info.dataOutOfRange || info.signalTimeout;
+          if (outOfRange) return false;
+          if (samplesRead == 3) {
+            const int64_t previousDelta = (int64_t)previousSample - wowRtc.baselineRaw;
+            const int64_t currentDelta = (int64_t)info.rawValue - wowRtc.baselineRaw;
+            const bool increased = previousDelta > wowRtc.thresholdRaw && currentDelta > wowRtc.thresholdRaw;
+            const bool decreased = previousDelta < -(int64_t)wowRtc.thresholdRaw && currentDelta < -(int64_t)wowRtc.thresholdRaw;
+            rawSample = increased || decreased ? info.rawValue : wowRtc.baselineRaw;
+            return true;
+          }
+          previousSample = info.rawValue;
+        }
       }
     }
     delay(2);
@@ -111,6 +127,7 @@ static void wowSetCpuFrequencyMhz(unsigned long frequencyMhz) {
 void wowMicroWakeOrContinue() {
   if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_TIMER) return;
   if (wowRtc.magic != WOW_RTC_MAGIC || !wowRtc.armed) return;
+  configureWakePinsForDeepSleep();
   if (wowPhysicalWakeRequested()) {
     wowRtc.armed = 0;
     return;
@@ -136,7 +153,7 @@ void wowMicroWakeOrContinue() {
   bool outOfRange = false;
   int32_t rawSample = 0;
   const bool gotSample =
-      wowReadOneSample(wowAdc, rawSample, outOfRange);
+      wowReadWakeSamples(wowAdc, rawSample, outOfRange);
   wowAdc.powerDown();
   wowAdc.end();
 

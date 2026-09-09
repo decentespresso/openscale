@@ -39,6 +39,14 @@ def main():
     if "usbCallbacks.toggleTimer = scaleTimer;" not in hds:
         raise AssertionError("USB timer callback is not wired")
 
+    wake = block_after(usb, 'if (inputString == "wakeinfo")')
+    for value in ("esp_reset_reason()", "esp_sleep_get_wakeup_cause()",
+                  "esp_sleep_get_ext1_wakeup_status()", "i_wow_interval",
+                  "digitalRead(BATTERY_CHARGING)", "digitalRead(USB_DET)"):
+        assert value in wake
+    for mutation in ("reset();", "digitalWrite(", "pinMode(", "storagePut"):
+        assert mutation not in wake
+
     print("USB text action contract tests passed")
 
 

@@ -174,15 +174,19 @@ class WakeOnWeightContractTests(unittest.TestCase):
     def test_docs_state_machine(self):
         self.assertIn("10 SPS", DOCS)
         self.assertIn("50 g", DOCS)
+        self.assertIn("WOW_TRIGGER_GRAMS = 50.0f", WOW)
         self.assertIn("2 s", DOCS)
         self.assertIn("3 s", DOCS)
         self.assertIn("4 s", DOCS)
         self.assertIn("defaults to off", DOCS)
 
     def test_button_polling_and_latched_boot(self):
-        for signature in ("static bool wowWaitForRail()", "static bool wowReadOneSample("):
+        configure = body(POWER, "void configureWakePinForDeepSleep(")
+        self.assertLess(configure.index("rtc_gpio_hold_dis(pin)"), configure.index("rtc_gpio_init(pin)"))
+        for signature in ("static bool wowWaitForRail()", "static bool wowReadWakeSamples("):
             self.assertIn("wowPhysicalWakeRequested()", body(WOW_ADS, signature))
         micro = body(WOW_ADS, "void wowMicroWakeOrContinue()")
+        self.assertLess(micro.index("configureWakePinsForDeepSleep()"), micro.index("wowPhysicalWakeRequested()"))
         self.assertGreaterEqual(micro.count("wowPhysicalWakeRequested()"), 3)
         self.assertIn("rtc_gpio_get_level", WOW)
         self.assertIn("if (wowButtonWake) break;", body(FIRMWARE, "void setup()"))

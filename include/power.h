@@ -97,6 +97,7 @@ void ADS_init() {
 
 int i_wakeupPin;
 void configureWakePinForDeepSleep(gpio_num_t pin) {
+  rtc_gpio_hold_dis(pin);
   rtc_gpio_init(pin);
   rtc_gpio_set_direction(pin, RTC_GPIO_MODE_INPUT_ONLY);
   rtc_gpio_pullup_en(pin);
@@ -248,6 +249,11 @@ void esp32_sleep() {
   digitalWrite(PWR_CTRL, LOW);
   gpio_hold_en((gpio_num_t)PWR_CTRL);
   gpio_deep_sleep_hold_en();
+  Serial.printf("[sleep] wow=%d circle=%d square=%d charge=%d\n", i_wow_interval,
+                rtc_gpio_get_level((gpio_num_t)BUTTON_CIRCLE),
+                rtc_gpio_get_level((gpio_num_t)BUTTON_SQUARE),
+                rtc_gpio_get_level((gpio_num_t)BATTERY_CHARGING));
+  Serial.flush();
   esp_deep_sleep_start();
 }
 #endif  //ESP32
