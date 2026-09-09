@@ -90,6 +90,7 @@ def main():
     assert_contains(PULL_OTA_HEADER, "pullOtaFetchSignedManifest(")
     assert_contains(PULL_OTA_HEADER, "pullOtaParseRollbackManifest(body, currentVersion, manifest)")
     assert_contains(PULL_OTA_HEADER, "candidate.version != currentVersion")
+    assert_contains(ROOT / "include" / "pull_ota_version.h", "#define HDS_OTA_RELEASE_RECOVERY_VERSION 1")
     assert_contains(PULL_OTA_HEADER, "pullOtaParseManifestObject(root, candidate, HDS_OTA_ASSET_URL_PREFIX, false)")
     source = PULL_OTA_HEADER.read_text(encoding="utf-8")
     release_version = function_body(source, "pullOtaCurrentReleaseVersion")

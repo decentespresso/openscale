@@ -1,6 +1,8 @@
 #ifndef PULL_OTA_VERSION_H
 #define PULL_OTA_VERSION_H
 
+#define HDS_OTA_RELEASE_RECOVERY_VERSION 1
+
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>

@@ -96,6 +96,8 @@ The release workflow creates draft releases, uploads binary assets first, upload
 
 Preview and RC tags (`vX.Y.Z-preview.N` and `vX.Y.Z-rc.N`) use the same signed asset publication flow but are marked prerelease and never latest. Their top-level manifests preserve the full version for recovery; they are excluded from the stable catalog and update picker.
 
+`HDS_OTA_RELEASE_RECOVERY_VERSION 1` in `include/pull_ota_version.h` declares full-version preview/RC recovery lookup and exact manifest identity matching. The release workflow requires this capability for prerelease tags; `tools/test_pull_ota_contract.py` checks the marker and its behavioral contract. A change to that contract requires reviewing the capability version and workflow gate together.
+
 Official releases and custom builds embed both committed custom OTA public keys. Custom builds publish
 `firmware.bin`, `littlefs.bin`, `ota-manifest.sig`, and `ota-manifest.json` under the immutable
 R2 combination-hash prefix. The custom manifest is accepted only when its separate signature,

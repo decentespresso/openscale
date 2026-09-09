@@ -45,6 +45,8 @@ def main():
     assert_contains(text, 'RELEASE_FLAGS=(--prerelease --latest=false)')
     assert_contains(text, '"${RELEASE_FLAGS[@]}"')
     assert_contains(text, 'preview tag predates exact-version rollback lookup')
+    assert_contains(text, "grep -Fxq '#define HDS_OTA_RELEASE_RECOVERY_VERSION 1' include/pull_ota_version.h")
+    assert_not_contains(text, 'grep -Fq "pullOtaVersionIsRelease"')
     assert_contains(text, 'git rev-parse --verify --end-of-options "refs/tags/$TAG^{commit}"')
     assert_contains(text, 'git checkout --detach "$TAG_COMMIT"')
     assert_contains(text, "tag $TAG predates the three-key OTA migration")

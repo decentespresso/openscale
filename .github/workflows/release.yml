@@ -37,7 +37,7 @@ jobs:
             exit 1
           fi
           git checkout --detach "$TAG_COMMIT"
-          if [[ "$TAG" == *-* ]] && ! grep -Fq "pullOtaVersionIsRelease" include/pull_ota.h; then
+          if [[ "$TAG" == *-* ]] && ! grep -Fxq '#define HDS_OTA_RELEASE_RECOVERY_VERSION 1' include/pull_ota_version.h; then
             echo "Error: preview tag predates exact-version rollback lookup"
             exit 1
           fi
