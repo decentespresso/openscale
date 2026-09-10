@@ -128,7 +128,7 @@ def main():
     assert_contains(PULL_OTA_HEADER, "maxAttempts = pending.restore ? 1 : 2")
     assert_contains(PULL_OTA_HEADER, "pullOtaBeginTargetLittleFsAttempt(attempts)")
     assert_contains(PULL_OTA_HEADER, "pullOtaActivateRollbackLittleFs(pending)")
-    assert_contains(PULL_OTA_HEADER, 'pullOtaDraw("UPDATE ERROR", "Use HDS updater!")')
+    assert_contains(PULL_OTA_HEADER, 'pullOtaFail("LittleFS could not", "be installed")')
     assert_contains(PULL_OTA_HEADER, "pullOtaPartitionShaMatches")
     assert_contains(PULL_OTA_HEADER, "ESP.getFlashChipSize()")
     assert_contains(PULL_OTA_HEADER, "ESP.getFlashChipSize() < manifest.flashSize")
@@ -202,7 +202,10 @@ def main():
     assert "pullOtaFindCurrentRelease" not in custom_branch
     assert "pullOtaFetchCurrentReleaseManifest" not in custom_branch
     assert 'pullOtaInstall(manifest, rollbackManifest, "", rollbackCombinationHash);' in interactive
-    assert run.index('pullOtaFail("Rollback missing")') < targeted_start
+    assert run.index('if (!rollbackFound) rollbackManifest = PullOtaManifest();') < targeted_start
+    install = contents[contents.index("bool pullOtaInstall("):contents.index("bool pullOtaVerifyPendingLittleFs(")]
+    assert install.index('pullOtaFail("Recovery unsupported"') < install.index("pullOtaStorePendingLittleFs(")
+    assert "manifest.forwardRecoveryVersion != HDS_OTA_FORWARD_RECOVERY_VERSION" in install
     if "pullOtaPickRelease(catalog, selection, &selectedCatalogIndex)" not in interactive:
         raise AssertionError("the interactive picker must remain on the no-target path")
     if "pullOtaConfirmInstall(manifest)" not in interactive:

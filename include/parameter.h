@@ -564,6 +564,8 @@ inline void leaveMenu() {
 bool b_calibration = false;  //Calibration flag
 volatile bool b_ota = false; //wifi ota flag
 volatile bool b_pullOtaRunning = false;
+volatile std::atomic<bool> filesystemRecoveryActive{false};
+volatile std::atomic<bool> webFilesystemReady{false};
 int i_calibration = 0;       //0 for manual cal, 1 for smart cal
 //bool b_set_sample = false;              //开机菜单 设置采样数
 bool b_show_info = false;               //开机菜单 显示信息

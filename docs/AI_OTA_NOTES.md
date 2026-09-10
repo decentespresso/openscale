@@ -24,6 +24,16 @@ AI-documentation audit, read `docs/AI_RELEASE_NOTES.md`.
 Opening the Custom Build menu performs one authenticated device check-in. Custom firmware reports
 the normalized compile-time `HDS_CUSTOM_BUILD_COMBINATION_HASH`; official firmware reports null.
 The response contains only linking state, one desired combination, and its canonical build state.
+Once pending filesystem state is saved, paired scales report the target combination as installing
+before streaming custom firmware, or failed if streaming fails. These reports never claim the
+target is already installed. The browser shows Installing only for the currently assigned target
+and shows Status unconfirmed after 15 minutes without completion. Old firmware remains compatible
+but cannot report installation start. Deploy the Worker changes before firmware using these fields.
+After verifying the installed filesystem and accepting the running firmware, the OTA completion
+path clears its pending transaction, reports the current identity again, and reboots.
+Only previously paired devices report; up to three attempts are made without initiating another
+installation. A service outage does not roll back a verified installation. If all attempts fail,
+opening Custom Build later refreshes the report.
 
 Fresh devices start pairing from Custom Build. Once a pair code has been registered
 (`ota_custom/pair_init`), Connections exposes a separate Relink entry. Relink requires
@@ -108,7 +118,7 @@ Catalog manifests merge the previous latest stable signed manifest, dedupe by mo
 
 When the installed release has aged out of the latest catalog, firmware fetches that release's own signed manifest using both supported tag forms. It accepts only the compatible top-level release entry with the exact installed version and required LittleFS metadata. Firmware rollback remains local in the other app slot; this fallback supplies the signed asset metadata needed to restore the single shared LittleFS partition.
 
-Recovery lookup preserves preview/RC suffixes and must not substitute stable assets with the same numeric version. A hosted custom build, including one based on `main`, instead uses its embedded combination hash and published `ota-manifest.json`/`ota-manifest.sig`. A local build without published recovery metadata is not a supported OTA starting point. Preview 3 predates exact-version recovery and lacks published signed recovery assets; use USB to move to a corrected release or a hosted custom build.
+Recovery lookup preserves preview/RC suffixes and must not substitute stable assets with the same numeric version. A hosted custom build, including one based on `main`, instead uses its embedded combination hash and published `ota-manifest.json`/`ota-manifest.sig`. Firmware containing the forward-recovery path can update without published source recovery assets when the signed target manifest declares `forward_recovery: 1`. Older source firmware, including preview 3, still needs its supported recovery assets or USB; these changes cannot alter already-flashed firmware.
 
 ## Picker Rules
 
@@ -122,7 +132,7 @@ Do not offer:
 - malformed versions
 - versions before `v3.1.13`
 - incompatible hardware
-- the same installed version
+- the same installed version, except when repairing LittleFS
 
 Compatible older stable releases at `v3.1.13+` may be offered as signed downgrades.
 
@@ -134,7 +144,7 @@ A start request may name a target release. Over BLE and USB that is the five-byt
 
 The unattended path skips only `pullOtaPickRelease()` and `pullOtaConfirmInstall()`. Everything else is shared and unchanged: WiFi, clock, signed catalog fetch and signature verification, rollback-manifest resolution before any write, `pullOtaInstall()`, HTTPS with CA validation, asset URL allowlisting, exact size checks, SHA-256 verification, and the staged LittleFS transaction with its bounded retries and rollback metadata.
 
-A request is refused when the target is absent from the verified catalog, incompatible with this hardware, not a stable numeric release, below `HDS_OTA_MIN_INSTALL_VERSION`, equal to the installed version, or when no signed rollback manifest can be resolved. A refusal calls `pullOtaFail()` and returns. It must never fall back to the picker, and it must never install a release other than the one requested.
+A request is refused when the target is absent from the verified catalog, incompatible with this hardware, not a stable numeric release, below `HDS_OTA_MIN_INSTALL_VERSION`, or equal to the installed version outside LittleFS recovery. Missing signed rollback metadata requires the target's signed forward-recovery capability; an older target without it is refused before writes. A refusal calls `pullOtaFail()` and returns. It must never fall back to the picker, and it must never install a release other than the one requested.
 
 An eligible downgrade is accepted, matching picker behavior.
 
@@ -150,6 +160,8 @@ Acceptance is not installability. A transport acknowledges only that a well-form
 
 Staged LittleFS OTA stores target and rollback metadata in NVS namespace `ota_fs`, including custom combination hashes and `target_try`, `fs_dirty`, `restore`, and `restore_try` recovery state. Custom-to-custom rollback fetches the installed combination's signed custom manifest and identifies both app slots by combination hash rather than their shared version string.
 
+`install_combo` retains the original attempted custom target across conversion to a rollback restore. Terminal failure telemetry uses that identity, not the running rollback firmware. Legacy restore transactions without an original target omit failure telemetry rather than attributing it to the wrong build.
+
 Flow:
 
 1. Current firmware stores both manifests, writes `firmware.bin` to the inactive app slot, and reboots.
@@ -158,11 +170,13 @@ Flow:
 4. A successful target write passes the same checks. The new application is then marked valid before pending state is cleared, and the device reboots.
 5. If both attempts fail before filesystem writing begins, `setup()` calls `hdsOtaRollback("LittleFS update")`; the previous application remains paired with its unchanged filesystem.
 6. If writing may have begun, recovery first replaces pending state with the previous application's matching signed filesystem asset, then rolls the application back. The previous application gets one recorded restore attempt.
-7. A failed restore stops at `UPDATE ERROR`. A successful restore clears pending state and reboots.
+7. A failed restore persists `ota_recovery/active` and pauses the failed `ota_fs` transaction. It disables filesystem serving, accepts the running firmware for filesystem-free operation, reports the failure, and returns to the application. The embedded HTTP setup page and on-device WiFi OTA and Custom Build menus remain available. A successful restore clears pending state and reboots.
 
 Invalid or version-mismatched pending metadata is cleared only by the validation and terminal paths implemented in `pullOtaLoadPendingLittleFs()`. A boot with no pending filesystem transaction can call `hdsOtaRollbackMarkValid()` after normal setup validation.
 
-The single LittleFS partition has no independent rollback slot. Do not weaken signed rollback-asset validation, bounded attempts, persisted write-state tracking, or the stop-on-failed-restore behavior.
+The single LittleFS partition has no independent rollback slot. Keep signed asset validation, bounded attempts, and persisted write-state tracking. Terminal failures must not serve unverified filesystem content or report a complete installation. Recovery state survives reboot and is cleared only after successful filesystem verification. Same-version and same-combination reinstalls are allowed in recovery; device check-ins report no installed combination until repair succeeds.
+
+`HDS_OTA_FORWARD_RECOVERY_VERSION 1` declares the bounded, filesystem-free fallback contract. Release manifests derive this capability from the built source header. Custom manifests derive it from the source checkout and require Pull OTA to be selected; historical builds never inherit the current builder's capability. Without a rollback manifest, installation saves the signed target firmware hash/size alongside filesystem metadata before flashing. On boot, exact running-firmware hash and identity verification precede accepting that app and any filesystem writes. This prevents bootloader rollback to an incompatible old app after a partial filesystem write. Two recorded target attempts then either complete the installation or return to the minimal fallback and menu. Available rollback manifests retain the normal rollback flow.
 
 `HDS_FEATURE_LITTLEFS` controls runtime filesystem use by the webserver and plugins. It does not disable or alter Pull OTA's mandatory staged `littlefs.bin` transaction.
 

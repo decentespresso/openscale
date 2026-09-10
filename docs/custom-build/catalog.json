@@ -130,7 +130,7 @@
       "id": "energy-menu",
       "name": "Energy Saving Beta",
       "description": "Enable optional energy-saving controls.",
-      "tooltip": "Adds the Energy Saving menu and its persistent feature toggles.",
+      "tooltip": "Adds Energy Saving settings under Power and saves your selections.",
       "requires": [],
       "firmware_refs": [
         "v3.1.14",

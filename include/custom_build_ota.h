@@ -156,11 +156,17 @@ bool customBuildRequest(
 
 bool customBuildCheckIn(
     const String &installedCombination,
-    CustomBuildAssignment &assignment) {
+    CustomBuildAssignment &assignment,
+    const String &installCombination = "",
+    const char *installState = "installing") {
   JsonDocument request;
-  request["installed_combination"] = installedCombination.length() > 0
+  request["installed_combination"] = !filesystemRecoveryActive.load() && installedCombination.length() > 0
       ? installedCombination.c_str() : nullptr;
   request["firmware_version"] = pullOtaCurrentVersion();
+  if (installCombination.length() > 0) {
+    request["install_combination"] = installCombination;
+    request["install_state"] = installState;
+  }
   String requestBody;
   serializeJson(request, requestBody);
   String body;
@@ -180,6 +186,24 @@ bool customBuildCheckIn(
   if (assignment.combinationHash.length() > 0 &&
       !customBuildHexValueValid(assignment.combinationHash, 64)) return false;
   return true;
+}
+
+void customBuildReportInstallState(const String &combinationHash, const char *state) {
+  if (!customBuildRelinkAvailable() || combinationHash.length() == 0) return;
+  CustomBuildAssignment assignment;
+  customBuildCheckIn(pullOtaCurrentCombinationHash(), assignment, combinationHash, state);
+}
+
+void customBuildReportInstalled() {
+  if (!customBuildRelinkAvailable()) return;
+  pullOtaDraw("Update done", "Syncing status");
+  if (!pullOtaEnsureWifi() || !pullOtaClockReady()) return;
+  for (uint8_t attempt = 0; attempt < 3; attempt++) {
+    CustomBuildAssignment assignment;
+    if (customBuildCheckIn(pullOtaCurrentCombinationHash(), assignment)) return;
+    if (attempt < 2) delay(1000);
+  }
+  Serial.println("[custom-ota] Install status report failed");
 }
 
 bool customBuildRegisterPairCode(const char *pairCode) {
@@ -397,7 +421,7 @@ void customBuildRun(bool interactive = true) {
     customBuildShowStatus("Custom Build", "No build assigned");
     return;
   }
-  if (assignment.combinationHash == installedCombination) {
+  if (assignment.combinationHash == installedCombination && !filesystemRecoveryActive.load()) {
     char hashPrefix[9];
     customBuildHashPrefix(installedCombination, hashPrefix);
     customBuildShowStatus("Already installed", hashPrefix);
@@ -422,10 +446,7 @@ void customBuildRun(bool interactive = true) {
   const bool rollbackFound = rollbackCombinationHash.length() > 0
       ? customBuildFetchManifest(rollbackCombinationHash, rollbackManifest)
       : pullOtaFetchCurrentReleaseManifest(rollbackManifest);
-  if (!rollbackFound) {
-    pullOtaFail("Rollback missing");
-    return;
-  }
+  if (!rollbackFound) rollbackManifest = PullOtaManifest();
   pullOtaInstall(
       manifest,
       rollbackManifest,
@@ -452,6 +473,7 @@ void customBuildTask(void *args) {
   const bool restartPending = (wsPendingMask & WSP_OTA_RESET) != 0;
   portEXIT_CRITICAL(&wsPendingMux);
   if (!restartPending) {
+    if (filesystemRecoveryActive.load()) pullOtaResumeFilesystemServices();
     b_ota = false;
     b_pullOtaRunning = false;
   }

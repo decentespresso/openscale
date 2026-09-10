@@ -111,6 +111,11 @@ while still above baseline; another light first peak fell only 7.2 g. The
 captured traces. A captured 0.64 g second rise remains rejected deliberately:
 counting that as a tap would undermine noise and held-finger rejection.
 
+Weight-tap recognition is gated during physical Circle/Square presses, their
+weight-sampling recovery, the double-click window, BLE shutdown confirmation,
+and a queued power-off. Button gestures keep priority over scale-top taps.
+`tools/test_tap_button_priority.py` exercises this gate with both tap actions enabled.
+
 Cached readings create no extra edges. Recognition still requires distinct ADC
 peaks and valleys: 10 SPS cannot reliably resolve 50 ms taps, and smoothing can
 hide fast taps. Do not change sampling to compensate without a separate hardware
@@ -170,7 +175,7 @@ if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TE
 | Device is pingable but HTTP times out mid-body | AsyncTCP starvation from main-loop work or hardware work moved into the callback. |
 | `ping` shows duplicates or BLE has packet loss | Look for `WiFi.setSleep(false)`. |
 | Device is unreachable after flash but USB enumerates | WiFi association failed on this boot; reset and retry. |
-| Boot logs show `LittleFS mount failed` | Upload the filesystem image; firmware-only flashing does not update LittleFS. |
+| LittleFS is unavailable | The embedded HTTP setup page remains available; use the scale's WiFi OTA or Custom Build menu to install signed firmware and filesystem together. Firmware-only flashing does not update LittleFS. |
 | Flashing becomes much slower than usual | Firmware may be interfering with bootloader handshake. Treat as a serious firmware bug. |
 | Panic or abort under multi-client WiFi load | Check the WebSocket heap constants and serial patterns above for connection churn, skipped broadcasts, and critical heap. |
 

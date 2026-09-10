@@ -57,6 +57,13 @@ def detect_active_board(config_path):
     return None
 
 
+def forward_recovery_version(config_path):
+    header = config_path.parent / "pull_ota_version.h"
+    if not header.is_file():
+        return 0
+    return int("#define HDS_OTA_FORWARD_RECOVERY_VERSION 1" in header.read_text(encoding="utf-8").splitlines())
+
+
 def detect_pcb_version(config_path):
     text = config_path.read_text(encoding="utf-8")
     active_board = detect_active_board(config_path)
@@ -115,6 +122,7 @@ def build_manifest(
     fs_partition_size=DEFAULT_FS_PARTITION_SIZE,
     fs_schema=DEFAULT_FS_SCHEMA,
     release_notes_url=None,
+    forward_recovery=0,
 ):
     build_dir = Path(build_dir)
     match = RELEASE_VERSION_RE.fullmatch(tag.strip())
@@ -139,6 +147,8 @@ def build_manifest(
     }
     if pcb:
         manifest["pcb"] = pcb
+    if forward_recovery == 1:
+        manifest["forward_recovery"] = 1
     littlefs_path = build_dir / "littlefs.bin"
     if not littlefs_path.is_file():
         raise FileNotFoundError(littlefs_path)
@@ -277,6 +287,7 @@ def main():
         fs_partition_size=args.fs_partition_size,
         fs_schema=args.fs_schema,
         release_notes_url=args.release_notes_url,
+        forward_recovery=forward_recovery_version(args.config),
     )
     if args.catalog:
         previous_manifests = [

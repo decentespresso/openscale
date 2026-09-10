@@ -74,7 +74,7 @@ FEATURE_PRESENTATION = {
     "energy-menu": (
         "Energy Saving Beta",
         "Enable optional energy-saving controls.",
-        "Adds the Energy Saving menu and its persistent feature toggles.",
+        "Adds Energy Saving settings under Power and saves your selections.",
     ),
 }
 HIDDEN_FEATURES = {"grinder"}
@@ -765,6 +765,13 @@ def combinationHash(value):
     return hashlib.sha256(canonical).hexdigest()
 
 
+def forwardRecoveryVersion(configuration, sourceRoot):
+    header = sourceRoot / "include" / "pull_ota_version.h"
+    if "pull-ota" not in configuration["features"] or not header.is_file():
+        return 0
+    return int("#define HDS_OTA_FORWARD_RECOVERY_VERSION 1" in header.read_text(encoding="utf-8").splitlines())
+
+
 def writeBuildManifest(
     configuration, buildDir, outputPath, commitSha=None, sourceRoot=ROOT, identity=None
 ):
@@ -784,6 +791,7 @@ def writeBuildManifest(
         "base_source": commitSha,
         "builder_source": identity["builder_source"],
         "firmware_version": identity["firmware_version"],
+        "forward_recovery": forwardRecoveryVersion(configuration, sourceRoot),
         "platformio_environment": platformioEnvironment(configuration),
         "partition_schema": partitionMetadata(sourceRoot),
         "packages": packageMetadata(configuration),

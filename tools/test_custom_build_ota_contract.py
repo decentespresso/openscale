@@ -115,7 +115,7 @@ def main():
     assert 'pullOtaFail("Service failed");' in failure
     installed = run.index("const String installedCombination = pullOtaCurrentCombinationHash()")
     check_in = run.index("customBuildCheckIn(installedCombination, assignment)")
-    no_op = run.index("if (assignment.combinationHash == installedCombination)")
+    no_op = run.index("if (assignment.combinationHash == installedCombination && !filesystemRecoveryActive.load())")
     ready_state = run.index('if (assignment.state == "queued"')
     manifest = run.index("customBuildFetchManifest(assignment.combinationHash, manifest)")
     install = run.index("pullOtaInstall(")

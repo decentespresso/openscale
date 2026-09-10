@@ -22,6 +22,14 @@ export function deploymentState(scale, buildStates, now = Date.now()) {
   if (Number.isFinite(lastSeen) && now - lastSeen > offlineAfterMs) return "Offline";
   const desired = scale.desired_combination;
   if (desired && desired === scale.installed_combination) return "Up to date";
+  const installUpdated = Date.parse(scale.install_updated_at || "");
+  const assignedAt = Date.parse(scale.desired_updated_at || "");
+  if (desired && scale.install_combination === desired && installUpdated >= assignedAt) {
+    if (scale.install_state === "failed") return "Install failed";
+    if (scale.install_state === "installing") {
+      return now - installUpdated > 15 * 60 * 1000 ? "Status unconfirmed" : "Installing";
+    }
+  }
   const buildState = buildStates[desired];
   if (["queued", "building"].includes(buildState)) return "Build preparing";
   if (desired && ["failed", "missing"].includes(buildState)) return "Build unavailable";

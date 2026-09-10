@@ -251,6 +251,9 @@ test("pairs, assigns, authenticates, and physically relinks a scale", async () =
     installed_combination: null,
     firmware_version: null,
     last_seen_at: null,
+    install_combination: null,
+    install_state: null,
+    install_updated_at: null,
   }]);
 });
 
@@ -272,6 +275,39 @@ test("device check-in reports authoritative installed state without changing des
     browser: true,
   })).status, 200);
 
+  const starting = await request(env, "/api/v1/device/check-in", {
+    method: "POST",
+    body: {installed_combination: null, firmware_version: "3.1.14",
+      install_combination: combinationHash, install_state: "installing"},
+    authorization: deviceSecret,
+    device: true,
+  });
+  assert.equal(starting.status, 200);
+  const inProgress = await storage.get(`device:${deviceId}`);
+  assert.equal(inProgress.install_state, "installing");
+  assert.equal(inProgress.install_combination, combinationHash);
+  assert.equal(inProgress.installed_combination, null);
+  assert.ok(Number.isFinite(Date.parse(inProgress.install_updated_at)));
+  for (const installState of ["complete", null, 123]) {
+    const invalid = await request(env, "/api/v1/device/check-in", {
+      method: "POST",
+      body: {installed_combination: null, firmware_version: "3.1.14",
+        install_combination: combinationHash, install_state: installState},
+      authorization: deviceSecret,
+      device: true,
+    });
+    assert.equal(invalid.status, 400);
+  }
+  assert.deepEqual(await storage.get(`device:${deviceId}`), inProgress);
+  const failed = await request(env, "/api/v1/device/check-in", {
+    method: "POST",
+    body: {installed_combination: null, firmware_version: "3.1.14",
+      install_combination: combinationHash, install_state: "failed"},
+    authorization: deviceSecret,
+    device: true,
+  });
+  assert.equal(failed.status, 200);
+  assert.equal((await storage.get(`device:${deviceId}`)).install_state, "failed");
   const converged = await request(env, "/api/v1/device/check-in", {
     method: "POST",
     body: {installed_combination: combinationHash, firmware_version: "3.1.14-custom"},
@@ -285,6 +321,8 @@ test("device check-in reports authoritative installed state without changing des
   });
   const installed = await storage.get(`device:${deviceId}`);
   assert.equal(installed.installed_combination, combinationHash);
+  assert.equal(installed.install_state, null);
+  assert.equal(installed.install_combination, null);
   assert.equal(installed.firmware_version, "3.1.14-custom");
   assert.ok(Number.isFinite(Date.parse(installed.last_seen_at)));
 
@@ -588,6 +626,9 @@ test("legacy fleet records remain readable with unknown installed state", async 
     installed_combination: null,
     firmware_version: null,
     last_seen_at: null,
+    install_combination: null,
+    install_state: null,
+    install_updated_at: null,
   });
 });
 
