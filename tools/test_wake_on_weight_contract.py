@@ -197,14 +197,17 @@ class WakeOnWeightContractTests(unittest.TestCase):
         self.assertLess(micro.index("wowAdc.powerDown()"), micro.index("wowAdc.end()"))
         self.assertLess(micro.index("wowAdc.end()"), micro.index("if (gotSample"))
 
-    def test_session_fallbacks_and_sleep_interval(self):
-        self.assertIn("WOW_MAX_TICKS = 900", WOW)
-        self.assertIn("WOW_MAX_FAILURES = 5", WOW)
-        self.assertIn("wowRtc.consecutiveFailures = 0", WOW)
+    def test_unlimited_retries_and_sleep_interval(self):
+        self.assertNotIn("WOW_MAX_TICKS", WOW)
+        self.assertNotIn("tickCount", WOW)
+        self.assertNotIn("tickCount", PARAMETER)
+        self.assertNotIn("WOW_MAX_FAILURES", WOW)
+        self.assertNotIn("consecutiveFailures", WOW)
+        self.assertNotIn("consecutiveFailures", PARAMETER)
         self.assertIn("if (wowRtc.armed) esp_sleep_enable_timer_wakeup", WOW)
         self.assertIn('"Sleep 2s", "Sleep 3s", "Sleep 4s"', MENU)
         self.assertIn("sleep intervals", DOCS)
-        self.assertIn("900-tick", DOCS)
+        self.assertIn("no fixed session time limit", DOCS)
 
 
 if __name__ == "__main__":

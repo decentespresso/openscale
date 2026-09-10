@@ -69,33 +69,29 @@ Arming requires a valid interval, calibration, and an existing live sample.
 An observed low-battery count or a known voltage below 3.2 V prevents arming.
 Non-finite or overflowing calibration thresholds also prevent arming.
 
-Battery protection during sleep uses a **900-tick maximum per session**,
-not recurring voltage measurements. With the estimated 1050 ms active duration,
-this is about 46, 61, or 76 minutes for 2, 3, or 4 s sleep intervals. It is a
-tick bound, not a precise wall-clock deadline; slow startup and ADC timeouts
-extend elapsed time. After the limit, WoW is disabled for that sleep session
-and the device stays in ordinary deep sleep until a physical/charging wake.
-A later qualifying shutdown starts a new session. The saved menu setting
-does not change. This deliberately does not provide all-night WoW standby.
+Wake-on-Weight has **no fixed session time limit**. Selecting a sleep interval
+enables ongoing weight checks until a wake event or loss of battery power.
+There are no recurring battery voltage measurements.
+The low-voltage arming check does not enforce a 3.2 V cutoff during standby.
+This user-selected mode can exhaust the battery; runtime depends on measured
+whole-cycle consumption and battery capacity, not a guaranteed number of weeks.
 
-Five consecutive ADC timeouts or unusable conversions also disable WoW for
-the current session. One reliable conversion resets the failure count.
-Both fallback paths preserve EXT1 and leave the timer unarmed in the fresh
-deep-sleep boot. They do not run the normal shutdown path or recapture a
-baseline. A button/charging request takes priority over fallback.
+ADC timeouts and unusable conversions are ignored, never treated as weight
+changes. The next timer wake retries without a failure-count cutoff and without
+recapturing the baseline. Each attempt retains its bounded read timeout and
+returns to deep sleep between attempts. Button and charging wakes remain active.
 
 No micro-wake initializes I2C, ADS1115, OLED, radio, storage, or battery ADC.
 No NVS reads or writes occur. V8.1's `BATTERY_PIN` is only a placeholder;
-using `analogRead(BATTERY_PIN)` would not measure its battery. The session
-cap bounds extra WoW consumption but is not a voltage cutoff or a substitute
-for cell protection. A cell already near empty can still discharge below
-the normal cutoff during that bounded session.
+using `analogRead(BATTERY_PIN)` would not measure its battery. Standby is not
+a substitute for hardware cell protection, and can discharge below the normal
+software cutoff.
 
 ## Resources and GPIOs
 
 RTC state is an explicit 20-byte structure in `include/parameter.h`: magic,
-armed flag, consecutive failure count, tick count, baseline, threshold, and
-sleep interval. Arming resets both counters; the layout has a new magic.
+armed flag, baseline, threshold, and sleep interval (including alignment padding).
+The layout has a new magic.
 Transient setup flags are not retained. No cross-task state is introduced.
 
 The micro-wake releases only primary `SCLK`, `PDWN`, `DOUT`, and `PWR_CTRL`
@@ -147,8 +143,8 @@ window** and 0.1 mA asleep, `Iavg = duty * 6 + (1 - duty) * 0.1`:
 The startup part runs at the boot clock, not 20 MHz. PM-enabled builds also
 use their configured frequency policy during polling. The 6 mA assumption is
 not a measured whole-cycle current and may underestimate consumption.
-Continuous multi-day standby projections are inappropriate because of the
-900-tick cap. After fallback only ordinary deep-sleep consumption remains.
+Standby duration needs hardware measurement; there is no fixed session cap.
+An unavailable ADC causes ongoing retries and can increase standby consumption.
 Measure complete cycles with an ammeter, including startup and failed reads.
 
 ## Verification
@@ -157,5 +153,5 @@ Run `python tools/test_wake_on_weight_contract.py` and
 `python tools/test_wake_on_weight_runtime.py`, then build `esp32s3` and
 `esp32s3-energy-menu`. Hardware follow-up should sweep normal button presses
 across startup, rail settling, ADC wait, and sleep handoff; check both buttons,
-charging insertion, ADC disconnect/recovery, session expiry, boot tare,
+charging insertion, ADC disconnect/recovery, extended standby, boot tare,
 resource cleanup, and whole-cycle current. WoW-off sleep must remain unchanged.
