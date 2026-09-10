@@ -132,7 +132,11 @@ def verifyEvidence(directory, args, digest):
 
 
 def draftMetadata(args):
-    release = githubJson(args.repository, f"releases/tags/{args.tag}")
+    identity = json.loads(run(["gh", "release", "view", args.tag, "--repo", args.repository, "--json", "databaseId"]))
+    releaseId = identity.get("databaseId")
+    require(type(releaseId) is int and releaseId > 0, "Invalid release ID")
+    release = githubJson(args.repository, f"releases/{releaseId}")
+    requireEqual(release.get("id"), releaseId, "Release ID differs")
     require(release.get("draft") is True, "Release is not a draft")
     requireEqual(release.get("tag_name"), args.tag, "Draft tag differs")
     require(release.get("prerelease") is ("-" in args.tag), "Draft classification differs")

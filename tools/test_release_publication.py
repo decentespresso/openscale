@@ -216,6 +216,38 @@ class PublicationTests(unittest.TestCase):
         digest = fileRecord(self.directory / "release-evidence.json")["sha256"]
         self.assertEqual(release.verifyEvidence(self.directory, self.args, digest), self.evidence)
 
+    def testDraftLookupUsesReleaseIdWhenTagEndpointIsUnavailable(self):
+        for tag in ("v3.1.14", "v3.1.14-preview.4"):
+            with self.subTest(tag=tag):
+                args = SimpleNamespace(tag=tag, repository=self.args.repository)
+                draft = {"id": 42, "draft": True, "prerelease": "-" in tag, "tag_name": tag,
+                         "assets": [{"name": name} for name in (*release.releaseNames(tag), *release.EVIDENCE_NAMES)]}
+                lookup = ["gh", "release", "view", tag, "--repo", args.repository, "--json", "databaseId"]
+                fetch = ["gh", "api", f"repos/{args.repository}/releases/42"]
+                def github(command):
+                    if command == lookup:
+                        return json.dumps({"databaseId": 42})
+                    if command == fetch:
+                        return json.dumps(draft)
+                    raise subprocess.CalledProcessError(1, command, stderr="HTTP 404")
+                with patch.object(release, "run", side_effect=github) as command:
+                    self.assertEqual(release.draftMetadata(args), draft)
+                    self.assertEqual([call.args[0] for call in command.call_args_list], [lookup, fetch])
+
+    def testDraftLookupFailsClosed(self):
+        for identity in ({}, {"databaseId": None}, {"databaseId": True}, {"databaseId": 0},
+                         {"databaseId": -1}, {"databaseId": "42"}):
+            with self.subTest(identity=identity), patch.object(release, "run", return_value=json.dumps(identity)), \
+                 patch.object(release, "githubJson") as github:
+                with self.assertRaisesRegex(ValueError, "release ID"):
+                    release.draftMetadata(self.args)
+                github.assert_not_called()
+        with patch.object(release, "run", side_effect=subprocess.CalledProcessError(1, ["gh"])), \
+             patch.object(release, "githubJson") as github:
+            with self.assertRaises(subprocess.CalledProcessError):
+                release.draftMetadata(self.args)
+            github.assert_not_called()
+
     def publicationHarness(self, mode="success", publish=True):
         names = (*release.releaseNames(self.args.tag), *release.EVIDENCE_NAMES)
         draft = {"id": 42, "draft": True, "prerelease": "-" in self.args.tag, "tag_name": self.args.tag,
@@ -227,6 +259,10 @@ class PublicationTests(unittest.TestCase):
             current["id"] += 1
         if mode == "not_draft":
             draft["draft"] = False
+        if mode == "wrong_tag":
+            draft["tag_name"] = "v3.1.15"
+        if mode == "wrong_classification":
+            draft["prerelease"] = not draft["prerelease"]
         if mode == "extra_asset":
             draft["assets"].append({"id": 99, "name": "unexpected"})
         if mode == "bad_digest":
@@ -247,21 +283,24 @@ class PublicationTests(unittest.TestCase):
                 (directory / mode).write_bytes(b"changed")
         responses = [draft, workflowRun, current] if publish else [draft]
         latest = ["v3.1.13", "v3.1.14" if mode == "changed_latest" else "v3.1.13"]
+        lookupIds = iter((draft["id"], current["id"]))
+        def run(command):
+            return json.dumps({"databaseId": next(lookupIds)}) if command[:3] == ["gh", "release", "view"] else ""
         with patch.object(release, "verifyCandidate"), patch.object(release, "downloadAssets", side_effect=download), \
              patch.object(release, "githubJson", side_effect=responses), patch.object(release, "latestStable", side_effect=latest), \
-             patch.object(release, "run") as command, patch.object(release, "sign_manifest_from_environment") as sign, \
+             patch.object(release, "run", side_effect=run) as command, \
+             patch.object(release, "sign_manifest_from_environment") as sign, \
              contextlib.redirect_stdout(io.StringIO()):
             if mode != "success":
                 with self.assertRaises(ValueError):
                     release.verifyDraft(self.args, publish=publish)
-                command.assert_not_called()
             else:
                 release.verifyDraft(self.args, publish=publish)
-                if publish:
-                    command.assert_called_once_with(["gh", "release", "edit", self.args.tag, "--repo", self.args.repository,
-                                                    "--verify-tag", "--draft=false", "--latest=false" if "-" in self.args.tag else "--latest=true"])
-                else:
-                    command.assert_not_called()
+            lookup = ["gh", "release", "view", self.args.tag, "--repo", self.args.repository, "--json", "databaseId"]
+            writes = [call.args[0] for call in command.call_args_list if call.args[0] != lookup]
+            expected = [["gh", "release", "edit", self.args.tag, "--repo", self.args.repository,
+                         "--verify-tag", "--draft=false", "--latest=false" if "-" in self.args.tag else "--latest=true"]]
+            self.assertEqual(writes, expected if publish and mode == "success" else [])
             sign.assert_not_called()
 
     def testPreparationNeverPublishes(self):
@@ -275,7 +314,8 @@ class PublicationTests(unittest.TestCase):
 
     def testFailuresNeverPublish(self):
         for mode in ("conclusion", "status", "head_sha", "path", "run_attempt", "bad_digest", "bad_signature",
-                     "changed_assets", "replaced_draft", "changed_latest", "not_draft", "extra_asset", *release.releaseNames(self.args.tag)):
+                     "changed_assets", "replaced_draft", "changed_latest", "not_draft", "wrong_tag",
+                     "wrong_classification", "extra_asset", *release.releaseNames(self.args.tag)):
             with self.subTest(mode=mode):
                 self.createAssets()
                 self.publicationHarness(mode)
