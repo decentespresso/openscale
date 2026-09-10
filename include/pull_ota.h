@@ -1028,6 +1028,8 @@ bool pullOtaStorePendingLittleFs(
     return false;
   }
   bool ok = preferences.clear() &&
+            (combinationHash.length() == 0 ||
+             preferences.putString("install_combo", combinationHash) == 64) &&
             (!forwardRecovery ||
              (preferences.putUChar("recovery", HDS_OTA_FORWARD_RECOVERY_VERSION) > 0 &&
               preferences.putString("fw_sha", manifest.firmware.sha256) > 0 &&
@@ -1172,8 +1174,11 @@ bool pullOtaActivateRollbackLittleFs(const PullOtaPendingLittleFs &pending) {
   if (!preferences.begin("ota_fs", false)) {
     return false;
   }
-  preferences.clear();
-  bool ok = (pending.rollbackCombinationHash.length() == 0 ||
+  const String attemptedCombination = preferences.getString("install_combo", pending.combinationHash);
+  bool ok = preferences.clear() &&
+            (attemptedCombination.length() == 0 ||
+             preferences.putString("install_combo", attemptedCombination) == 64) &&
+            (pending.rollbackCombinationHash.length() == 0 ||
              preferences.putString(
                  "combo", pending.rollbackCombinationHash) == 64) &&
             preferences.putString("url", pending.rollbackAsset.url) > 0 &&
@@ -1484,10 +1489,15 @@ bool pullOtaRecoveryError() {
   if (!filesystemRecoveryStore(true)) return false;
   Preferences preferences;
   if (!preferences.begin("ota_fs", false)) return false;
+  const String attemptedCombination = preferences.getString(
+      "install_combo", preferences.getBool("restore", false)
+          ? String("") : preferences.getString("combo", ""));
   const bool paused = preferences.putBool("paused", true) > 0;
   preferences.end();
   if (!paused || !hdsOtaAcceptFilesystemRecovery()) return false;
-  customBuildReportInstallState(pullOtaCurrentCombinationHash(), "failed");
+  if (pullOtaShaLooksValid(attemptedCombination)) {
+    customBuildReportInstallState(attemptedCombination, "failed");
+  }
   Serial.println("[pull-ota] LittleFS could not be installed; WiFi setup and OTA remain available");
   pullOtaFail("LittleFS could not", "be installed");
   return true;

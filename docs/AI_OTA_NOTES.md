@@ -160,6 +160,8 @@ Acceptance is not installability. A transport acknowledges only that a well-form
 
 Staged LittleFS OTA stores target and rollback metadata in NVS namespace `ota_fs`, including custom combination hashes and `target_try`, `fs_dirty`, `restore`, and `restore_try` recovery state. Custom-to-custom rollback fetches the installed combination's signed custom manifest and identifies both app slots by combination hash rather than their shared version string.
 
+`install_combo` retains the original attempted custom target across conversion to a rollback restore. Terminal failure telemetry uses that identity, not the running rollback firmware. Legacy restore transactions without an original target omit failure telemetry rather than attributing it to the wrong build.
+
 Flow:
 
 1. Current firmware stores both manifests, writes `firmware.bin` to the inactive app slot, and reboots.

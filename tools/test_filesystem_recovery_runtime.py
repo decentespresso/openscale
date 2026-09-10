@@ -70,11 +70,18 @@ def main():
 using String = std::string;
 volatile std::atomic<bool> filesystemRecoveryActive{false}, webFilesystemReady{true};
 std::map<String, bool> nvs;
+std::map<String, String> strings;
+std::map<String, uint32_t> numbers;
 std::vector<String> events;
+String runningCombination, reportedCombination;
 bool storageOk = true, acceptOk = true, clearOk = true;
 bool hdsOtaPendingVerify = true;
 bool b_ota = true;
 const int ESP_OK = 0;
+const int HDS_OTA_FORWARD_RECOVERY_VERSION = 1;
+bool pullOtaShaLooksValid(const String &value) {
+  return value.size() == 64 && value.find_first_not_of("0123456789abcdef") == String::npos;
+}
 struct Preferences {
   String name;
   bool begin(const char *value, bool) { name = value; return storageOk; }
@@ -83,6 +90,25 @@ struct Preferences {
     return found == nvs.end() ? fallback : found->second;
   }
   int putBool(const char *key, bool value) { nvs[name + key] = value; return 1; }
+  String getString(const char *key, const String &fallback) {
+    const auto found = strings.find(name + key);
+    return found == strings.end() ? fallback : found->second;
+  }
+  size_t putString(const char *key, const String &value) { strings[name + key] = value; return value.size(); }
+  int putUInt(const char *key, uint32_t value) { numbers[name + key] = value; return 4; }
+  int putUChar(const char *key, uint8_t value) { numbers[name + key] = value; return 1; }
+  bool clear() {
+    for (auto it = nvs.begin(); it != nvs.end();) {
+      if (it->first.rfind(name, 0) == 0) it = nvs.erase(it); else ++it;
+    }
+    for (auto it = strings.begin(); it != strings.end();) {
+      if (it->first.rfind(name, 0) == 0) it = strings.erase(it); else ++it;
+    }
+    for (auto it = numbers.begin(); it != numbers.end();) {
+      if (it->first.rfind(name, 0) == 0) it = numbers.erase(it); else ++it;
+    }
+    return true;
+  }
   void end() {}
 };
 struct Logger { void println(const char *) {};} Serial;
@@ -93,13 +119,30 @@ int esp_ota_mark_app_valid_cancel_rollback() {
 }
 void hdsOtaClearAttempts() {}
 void pullOtaPauseFilesystemServices() { webFilesystemReady.store(false); events.push_back("stop-fs"); }
-String pullOtaCurrentCombinationHash() { return "build"; }
-void customBuildReportInstallState(const String &, const char *state) { events.push_back(state); }
+String pullOtaCurrentCombinationHash() { return runningCombination; }
+void customBuildReportInstallState(const String &combination, const char *state) {
+  reportedCombination = combination; events.push_back(state);
+}
 bool pullOtaFail(const char *, const char * = "") { events.push_back("error"); return false; }
+struct PullOtaAsset {
+  bool present = true, required = true;
+  String url = "asset", sha256 = String(64, 'c');
+  size_t size = 1;
+};
+struct PullOtaManifest {
+  PullOtaAsset firmware, littlefs;
+  int forwardRecoveryVersion = 1;
+  String version = "3.1.14", fsPartitionLabel = "spiffs";
+  uint32_t fsPartitionSize = 1, fsSchema = 1;
+};
 struct PullOtaPendingLittleFs {
   bool restore = false, restoreAttempted = false, filesystemDirty = false;
   bool forwardRecovery = false;
   uint8_t targetAttempts = 0;
+  String combinationHash, rollbackCombinationHash;
+  PullOtaAsset rollbackAsset;
+  String rollbackVersion = "3.1.14", fsPartitionLabel = "spiffs";
+  uint32_t fsPartitionSize = 1, fsSchema = 1;
 };
 PullOtaPendingLittleFs saved;
 bool verified = false, succeeds = false, activateOk = true, pending = true;
@@ -112,7 +155,10 @@ bool pullOtaAttemptPendingLittleFs(const PullOtaPendingLittleFs &, bool &dirty) 
   if (saved.forwardRecovery) assert(!hdsOtaPendingVerify && nvs["ota_recoveryactive"]);
   attempts++; dirty = saved.filesystemDirty; return succeeds;
 }
-bool pullOtaActivateRollbackLittleFs(const PullOtaPendingLittleFs &) { events.push_back("rollback"); return activateOk; }
+bool activateRollback(const PullOtaPendingLittleFs &);
+bool pullOtaActivateRollbackLittleFs(const PullOtaPendingLittleFs &value) {
+  events.push_back("rollback"); return activateOk && activateRollback(value);
+}
 void hdsOtaRollbackMarkValid() { events.push_back("valid"); }
 void customBuildReportInstalled() { assert(!filesystemRecoveryActive.load()); events.push_back("installed"); }
 bool pullOtaClearPendingLittleFs() { events.push_back("clear"); return clearOk; }
@@ -122,12 +168,18 @@ unsigned long millis() { return 0; }
 void remoteQueueOtaResetAt(unsigned long) { events.push_back("restart"); }
 void reset() {
   filesystemRecoveryActive.store(false); webFilesystemReady.store(true);
-  nvs.clear(); events.clear(); saved = {};
+  nvs.clear(); strings.clear(); numbers.clear(); events.clear(); saved = {};
+  runningCombination = String(64, 'a'); reportedCombination.clear();
+  strings["ota_fsinstall_combo"] = String(64, 'b');
   storageOk = acceptOk = clearOk = hdsOtaPendingVerify = b_ota = activateOk = pending = true;
   verified = succeeds = false; attempts = 0;
 }
 '''
     source += re.sub(r"^#include[^\n]*", "", recovery, flags=re.MULTILINE)
+    source += "bool activateRollback(const PullOtaPendingLittleFs &pending) {" + function_body(
+        ota, "bool pullOtaActivateRollbackLittleFs(const PullOtaPendingLittleFs &pending) {") + "}\n"
+    source += "bool pullOtaStorePendingLittleFs(const PullOtaManifest &manifest, const PullOtaManifest &rollbackManifest, const String &combinationHash, const String &rollbackCombinationHash) {" + function_body(
+        ota, "bool pullOtaStorePendingLittleFs(") + "}\n"
     for text, declaration in (
         (rollback, "bool hdsOtaAcceptFilesystemRecovery()"),
         (ota, "bool pullOtaRecoveryError()"),
@@ -136,6 +188,37 @@ void reset() {
         source += declaration + " {" + function_body(text, declaration + " {") + "}\n"
     source += r'''
 int main() {
+  const String buildA(64, 'a'), buildB(64, 'b');
+  reset();
+  assert(pullOtaStorePendingLittleFs({}, {}, buildB, buildA));
+  assert(strings["ota_fsinstall_combo"] == buildB);
+  customBuildReportInstallState(buildB, "installing");
+  assert(reportedCombination == buildB);
+  runningCombination = buildB;
+  saved.combinationHash = strings["ota_fscombo"];
+  saved.rollbackCombinationHash = strings["ota_fsrb_combo"];
+  saved.filesystemDirty = true;
+  assert(!pullOtaResumePendingLittleFs() && attempts == 2);
+  assert(strings["ota_fscombo"] == buildA && strings["ota_fsinstall_combo"] == buildB);
+  runningCombination = buildA; hdsOtaPendingVerify = false; saved = {};
+  saved.restore = nvs["ota_fsrestore"];
+  assert(saved.restore && pullOtaResumePendingLittleFs());
+  assert(reportedCombination == buildB && events[events.size() - 2] == "failed");
+  assert(nvs["ota_fspaused"] && strings["ota_fsinstall_combo"] == buildB);
+  for (const String &legacyTarget : {buildB, String("invalid"), String("")}) {
+    reset(); strings.erase("ota_fsinstall_combo"); strings["ota_fscombo"] = legacyTarget;
+    assert(pullOtaRecoveryError());
+    assert(reportedCombination == (legacyTarget == buildB ? buildB : String("")));
+  }
+  reset(); strings.erase("ota_fsinstall_combo"); strings["ota_fscombo"] = buildA;
+  nvs["ota_fsrestore"] = true;
+  assert(pullOtaRecoveryError() && reportedCombination.empty());
+  reset(); strings.erase("ota_fsinstall_combo");
+  saved.combinationHash = buildB; saved.rollbackCombinationHash = buildA;
+  assert(activateRollback(saved) && strings["ota_fsinstall_combo"] == buildB);
+  reset();
+  assert(pullOtaStorePendingLittleFs({}, {}, "", buildA));
+  assert(pullOtaRecoveryError() && reportedCombination.empty());
   reset(); saved.restore = true;
   assert(pullOtaResumePendingLittleFs());
   assert(attempts == 1 && filesystemRecoveryActive.load() && !webFilesystemReady.load());
