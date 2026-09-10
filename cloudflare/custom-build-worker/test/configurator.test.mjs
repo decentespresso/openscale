@@ -72,8 +72,9 @@ test("ships 3.1.14 compatibility while main remains the cutover default", async 
   const shipped = JSON.parse(await readFile(
     new URL("../../../docs/custom-build/catalog.json", import.meta.url), "utf8",
   ));
-  assert.deepEqual(shipped.firmware_refs, ["v3.1.14", "v3.1.14-preview.3", "main"]);
+  assert.deepEqual(shipped.firmware_refs, ["v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main"]);
   assert.equal(firmwareRefLabel(shipped.firmware_refs[1]), "3.1.14-preview.3 (preview)");
+  assert.equal(firmwareRefLabel(shipped.firmware_refs[2]), "3.1.14-preview.4 (preview)");
   assert.equal(firmwareRefLabel(defaultSelection(shipped).firmware_ref), "main (development)");
   assert.equal(firmwareRefLabel(shipped.firmware_refs[0]), "3.1.14 (stable)");
 });

@@ -237,7 +237,7 @@ def main():
     assert pageCatalog["catalog_revision"] == serviceCatalog["catalog_revision"]
     assert len(pageCatalog["catalog_revision"]) == 64
     assert generatedCatalog["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
-    assert customBuild.FIRMWARE_REFS == ("v3.1.14", "v3.1.14-preview.3", "main")
+    assert customBuild.FIRMWARE_REFS == ("v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main")
     assert pageCatalog["custom_ota_signing_key_generation"] == 1
     assert serviceCatalog["custom_ota_signing_key_generation"] == 1
     assert all(
@@ -305,6 +305,8 @@ def main():
         "v3.1.14-preview.3", '#define HDS_FIRMWARE_VERSION "3.1.14"'
     ) == "3.1.14-preview.3-custom"
     assert serviceCatalog["firmware"]["v3.1.14-preview.3"]["custom_version"] == "3.1.14-preview.3-custom"
+    assert customBuild.customFirmwareVersion("v3.1.14-preview.4", "") == "3.1.14-preview.4-custom"
+    assert serviceCatalog["firmware"]["v3.1.14-preview.4"]["custom_version"] == "3.1.14-preview.4-custom"
     assert customBuild.customFirmwareVersion(
         "main", '#define HDS_FIRMWARE_VERSION "3.1.14"'
     ) == "3.1.14-custom"
