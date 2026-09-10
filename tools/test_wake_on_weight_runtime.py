@@ -166,10 +166,7 @@ int main() {
   }
   resetBoot(); arm(); pressOnRearm = true;
   assert(tick() && wowButtonWake && !wowRtc.armed);
-  resetBoot(); arm(); pressOnRearm = true; wowRtc.tickCount = WOW_MAX_TICKS - 1;
-  assert(tick() && wowButtonWake && timerUs == 0);
   resetBoot(); arm(); pressOnRearm = true; badSample = true;
-  wowRtc.consecutiveFailures = WOW_MAX_FAILURES - 1;
   assert(tick() && wowButtonWake && timerUs == 0);
   for (int32_t raw : {499, 1501, INT32_MIN, INT32_MAX}) {
     resetBoot(); arm(); sampleRaw = raw;
@@ -199,10 +196,10 @@ int main() {
   assert(!tick() && wowRtc.armed && samplesRead == 1 && nowMs == 1000);
   for (unsigned int invalidAt : {2U, 3U}) {
     resetBoot(); arm(); sampleRaw = 2000; invalidSampleAt = invalidAt;
-    assert(!tick() && wowRtc.armed && wowRtc.consecutiveFailures == 1);
+    assert(!tick() && wowRtc.armed && timerUs == 2000000);
   }
   resetBoot(); arm(); invalidSampleAt = 1;
-  assert(!tick() && wowRtc.armed && wowRtc.consecutiveFailures == 0);
+  assert(!tick() && wowRtc.armed && timerUs == 2000000);
   for (float factor : {100.0f, -100.0f}) {
     f_calibration_value = factor;
     for (int32_t change : {-5000, -4999, -1000, 0, 1000, 4999, 5000}) {
@@ -218,26 +215,24 @@ int main() {
   f_calibration_value = 10;
   for (bool missing : {false, true}) {
     resetBoot(); arm();
-    for (int failure = 1; failure <= WOW_MAX_FAILURES; failure++) {
+    for (int failure = 1; failure <= 1000; failure++) {
       resetBoot(); sampleAvailable = !missing; badSample = !missing;
       assert(!tick());
-      assert(wowRtc.consecutiveFailures == failure);
-      assert(bool(wowRtc.armed) == (failure < WOW_MAX_FAILURES));
-      assert((timerUs != 0) == bool(wowRtc.armed));
+      assert(wowRtc.armed && timerUs == 2000000);
+      assert(wowRtc.baselineRaw == 1000);
     }
+    resetBoot(); sampleRaw = 1501;
+    assert(tick() && !wowRtc.armed);
   }
-  resetBoot(); arm();
-  for (int i = 0; i < 4; i++) { resetBoot(); badSample = true; assert(!tick()); }
-  resetBoot(); assert(!tick() && wowRtc.consecutiveFailures == 0);
-  resetBoot(); badSample = true; assert(!tick() && wowRtc.consecutiveFailures == 1);
   for (int interval = 1; interval <= 3; interval++) {
     resetBoot(); i_wow_interval = interval; arm();
-    for (int count = 1; count <= WOW_MAX_TICKS; count++) {
+    for (int count = 1; count <= 70000; count++) {
       resetBoot(); assert(!tick());
-      assert(wowRtc.tickCount == count);
-      assert(bool(wowRtc.armed) == (count < WOW_MAX_TICKS));
-      assert(timerUs == (wowRtc.armed ? wowIntervalUs[interval] : 0));
+      assert(wowRtc.armed);
+      assert(timerUs == wowIntervalUs[interval]);
     }
+    resetBoot(); sampleRaw = 1501;
+    assert(tick() && !wowRtc.armed);
   }
   for (int interval : {-1, 0, 4, 100}) {
     resetBoot(); i_wow_interval = interval; wowCaptureBaselineForSleep();
@@ -284,7 +279,7 @@ int main() {
   storageWorks = false;
   cycleWakeOnWeight();
   assert(i_wow_interval == 0 && actionMessage == "Save Failed");
-  std::puts("WoW runtime checks passed: button sweep, charging, cleanup, failures, recovery, cap, gates");
+  std::puts("WoW runtime checks passed: button sweep, charging, cleanup, failures, recovery, unlimited standby, gates");
 }
 """
 

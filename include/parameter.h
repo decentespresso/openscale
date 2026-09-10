@@ -385,8 +385,6 @@ int i_wow_interval = 0;
 struct WowRtcState {
   uint32_t magic;
   uint8_t armed;
-  uint8_t consecutiveFailures;
-  uint16_t tickCount;
   int32_t baselineRaw;
   int32_t thresholdRaw;
   uint32_t intervalUs;
