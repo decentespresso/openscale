@@ -182,10 +182,6 @@ jobs:
             release-files/dependencies.txt
           gh release upload "$TAG" release-files/manifest.sig
           gh release upload "$TAG" release-files/manifest.json
-          gh release view "$TAG" --json assets --jq '.assets[].name' > release-assets.txt
-          grep -Fx firmware.bin release-assets.txt
-          grep -Fx littlefs.bin release-assets.txt
-          grep -Fx dependencies.txt release-assets.txt
-          grep -Fx manifest.json release-assets.txt
-          grep -Fx manifest.sig release-assets.txt
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir downloaded-release
+          python tools/verify_release_assets.py --tag "$TAG" --download-dir downloaded-release
           gh release edit "$TAG" --draft=false

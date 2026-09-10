@@ -109,6 +109,7 @@ release still:
 - verifies the previous signed catalog before reuse;
 - generates and verifies the new signed catalog;
 - uploads all required assets in the intended order;
+- downloads draft assets and verifies their signatures, manifest sizes/hashes, and agreement with build outputs, including all four USB ZIP images;
 - publishes only after asset and signature checks pass.
 
 Do not hand-edit generated manifests or signatures. Do not weaken HTTPS,
@@ -131,6 +132,8 @@ python tools/test_gzip_web_assets.py
 pio test -e native
 python tools/test_release_workflow_contract.py
 python tools/test_generate_release_manifest.py
+python tools/test_release_catalog_download.py
+python tools/test_verify_release_assets.py
 python tools/test_pull_ota_contract.py
 python tools/test_ota_rollback_contract.py
 python tools/test_ota_public_key_header.py

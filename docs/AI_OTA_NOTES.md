@@ -102,7 +102,7 @@ Release builds publish WiFi OTA assets at the GitHub Release root:
 - `manifest.json`
 - `manifest.sig`
 
-The release workflow creates draft releases, uploads binary assets first, uploads `manifest.sig` and `manifest.json` last, then publishes the release.
+The release workflow creates draft releases, uploads binary assets first, then uploads `manifest.sig` and `manifest.json`. Before publication it downloads the draft assets, verifies the manifest signature and exact prepared metadata, checks firmware and LittleFS sizes and SHA-256 hashes, and compares both images against build outputs. The USB ZIP must contain exactly the firmware, bootloader, partitions, and LittleFS images from that build. Download or verification failure leaves the release unpublished as a draft.
 
 Preview and RC tags (`vX.Y.Z-preview.N` and `vX.Y.Z-rc.N`) use the same signed asset publication flow but are marked prerelease and never latest. Their top-level manifests preserve the full version for recovery; they are excluded from the stable catalog and update picker.
 

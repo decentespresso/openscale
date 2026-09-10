@@ -22,6 +22,8 @@ on:
       - "tools/*release_manifest*.py"
       - "tools/test_release_workflow_contract.py"
       - "tools/test_release_catalog_download.py"
+      - "tools/verify_release_assets.py"
+      - "tools/test_verify_release_assets.py"
 
 jobs:
   test:
@@ -38,6 +40,7 @@ jobs:
           python tools/test_pull_ota_contract.py
           python tools/test_release_workflow_contract.py
           python tools/test_release_catalog_download.py
+          python tools/test_verify_release_assets.py
           python tools/test_ota_rollback_contract.py
           python tools/test_ota_public_key_header.py
           python tools/test_custom_ota_public_key_header.py
