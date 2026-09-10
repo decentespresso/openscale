@@ -3,6 +3,7 @@
 
 #include "ADS1232_ADC.h"
 #include "decent_protocol.h"
+#include "enob_test.h"
 #include <math.h>
 #include <string.h>
 
@@ -384,6 +385,22 @@ public:
 
       Serial.print("Battery Voltage Factor set to: ");
       Serial.println(f_batteryCalibrationFactor);
+    }
+
+    if (inputString.startsWith("enob")) {
+      int samples = 100;
+      const int separator = inputString.indexOf(' ');
+      if (separator >= 0) {
+        const int requested = inputString.substring(separator + 1).toInt();
+        if (requested >= 10 && requested <= 1000) samples = requested;
+      }
+      Serial.println("enob: settling 1s...");
+      const unsigned long settleUntil = millis() + 1000;
+      while (millis() < settleUntil) {
+        scale.update();
+        delay(10);
+      }
+      runEnobTest("usb enob", samples);
     }
 
     if (inputString.startsWith("cv ")) {
