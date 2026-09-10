@@ -101,7 +101,7 @@ def prepareEvidence(args):
     requireEqual(latestStable(args.repository), args.previous_tag, "Previous stable changed during preparation")
     verifyPreviousVersion(args.tag, args.previous_tag)
     previous = previousCatalog(args.previous_directory, args.previous_tag)
-    verifyAssets(args.directory, args.expected_dir, args.build_dir, KEY_DIR, args.tag, previous)
+    verifyAssets(args.directory, args.expected_dir, args.build_dir, KEY_DIR, args.tag, previous, args.repository)
     evidence = {
         "schema": 1, "tag": args.tag, "commit": args.commit, "previous_tag": args.previous_tag,
         "repository": args.repository, "artifacts": inventory(args.directory, args.tag),
@@ -169,7 +169,7 @@ def verifyDraft(args, publish=False):
         if evidence["previous_tag"]:
             downloadAssets(args.repository, evidence["previous_tag"], ("manifest.json", "manifest.sig"), previousDir)
         previous = previousCatalog(previousDir, evidence["previous_tag"])
-        verifyAssets(directory, None, None if publish else args.build_dir, KEY_DIR, args.tag, previous)
+        verifyAssets(directory, None, None if publish else args.build_dir, KEY_DIR, args.tag, previous, args.repository)
         if not publish:
             for name in (*releaseNames(args.tag), *EVIDENCE_NAMES):
                 requireEqual(fileRecord(directory / name), fileRecord(args.directory / name), f"Uploaded bytes differ: {name}")
@@ -186,7 +186,7 @@ def verifyDraft(args, publish=False):
         requireEqual(current["id"], release["id"], "Draft was replaced")
         requireEqual(assetSnapshot(current), assetSnapshot(release), "Draft assets changed during verification")
         requireEqual(latestStable(args.repository), evidence["previous_tag"], "Previous stable changed during verification")
-        run(["gh", "release", "edit", args.tag, "--repo", args.repository, "--draft=false",
+        run(["gh", "release", "edit", args.tag, "--repo", args.repository, "--verify-tag", "--draft=false",
              "--latest=false" if "-" in args.tag else "--latest=true"])
         print(f"Published verified release {args.tag} at {args.commit}")
 

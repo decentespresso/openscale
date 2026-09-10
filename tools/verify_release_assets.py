@@ -1,11 +1,16 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import zipfile
 
 from generate_release_manifest import MAX_MANIFEST_BYTES, build_catalog_manifest
+import generate_release_manifest as releaseManifest
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def requireEqual(actual, expected, description):
@@ -50,13 +55,55 @@ def verifyCatalog(manifest, previous):
     requireEqual(manifest.get("releases"), expected["releases"], "Signed catalog history changed")
 
 
-def verifyAssets(downloadDir, expectedDir, buildDir, keyDir, tag, previous=None):
+def verifyCompatibility(manifest, tag, repository, previous):
+    configPath = ROOT / "include/config.h"
+    expected = {
+        "model": releaseManifest.DEFAULT_MODEL,
+        "pcb": releaseManifest.detect_pcb_version(configPath),
+        "chip": releaseManifest.DEFAULT_CHIP,
+        "environment": releaseManifest.DEFAULT_ENVIRONMENT,
+        "partition_schema": releaseManifest.DEFAULT_PARTITION_SCHEMA,
+        "flash_size": releaseManifest.DEFAULT_FLASH_SIZE,
+        "app_partition_min_size": releaseManifest.DEFAULT_APP_PARTITION_MIN_SIZE,
+        "fs_partition_label": releaseManifest.DEFAULT_FS_PARTITION_LABEL,
+        "fs_partition_size": releaseManifest.DEFAULT_FS_PARTITION_SIZE,
+        "fs_schema": releaseManifest.DEFAULT_FS_SCHEMA,
+        "forward_recovery": releaseManifest.forward_recovery_version(configPath),
+        "release_notes_url": releaseManifest.github_release_notes_url(repository, tag),
+    }
+    if not expected["pcb"] or expected["forward_recovery"] != 1:
+        raise ValueError("Release source lacks the expected PCB or forward recovery capability")
+    for field, value in expected.items():
+        if type(manifest.get(field)) is not type(value) or manifest[field] != value:
+            raise ValueError(f"Invalid OTA compatibility field: {field}")
+    minimum = manifest.get("min_from")
+    previousVersion = previous["version"] if previous else releaseManifest.DEFAULT_CATALOG_MIN_VERSION
+    if not isinstance(minimum, str) or (minimum and (
+            releaseManifest.STABLE_VERSION_RE.fullmatch(minimum) is None or
+            releaseManifest.version_key(minimum) > releaseManifest.version_key(previousVersion))):
+        raise ValueError("min_from excludes the supported previous stable release")
+    for asset in ("firmware", "littlefs"):
+        metadata = manifest.get(asset)
+        if not isinstance(metadata, dict):
+            raise ValueError(f"Missing OTA asset: {asset}")
+        requireEqual(metadata.get("url"), releaseManifest.github_release_download_url(repository, tag, f"{asset}.bin"),
+                     f"Invalid canonical OTA URL: {asset}")
+        if type(metadata.get("size")) is not int or metadata["size"] <= 0:
+            raise ValueError(f"Invalid OTA asset size: {asset}")
+    if manifest["firmware"]["size"] > expected["app_partition_min_size"]:
+        raise ValueError("Firmware exceeds the OTA app partition")
+    requireEqual(manifest["littlefs"]["size"], expected["fs_partition_size"], "LittleFS image does not fill its partition")
+
+
+def verifyAssets(downloadDir, expectedDir, buildDir, keyDir, tag, previous=None,
+                 repository=releaseManifest.DEFAULT_REPOSITORY):
     manifest = signedJson(downloadDir / "manifest.json", downloadDir / "manifest.sig", keyDir)
     if expectedDir is not None:
         for name in ("manifest.json", "manifest.sig", "dependencies.txt"):
             requireEqual((downloadDir / name).read_bytes(), (expectedDir / name).read_bytes(),
                          f"Downloaded {name} differs from prepared release")
     requireEqual(manifest["version"], tag.removeprefix("v"), "Downloaded manifest has wrong version")
+    verifyCompatibility(manifest, tag, repository, previous)
     if previous is not None:
         verifyCatalog(manifest, previous)
     if manifest["littlefs"].get("required") is not True:
@@ -96,8 +143,9 @@ def main():
     parser.add_argument("--expected-dir", type=Path, default=Path("release-files"))
     parser.add_argument("--build-dir", type=Path, default=Path(".pio.nosync/build/esp32s3"))
     parser.add_argument("--key-dir", type=Path, default=Path("keys/ota"))
+    parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", releaseManifest.DEFAULT_REPOSITORY))
     args = parser.parse_args()
-    verifyAssets(args.download_dir, args.expected_dir, args.build_dir, args.key_dir, args.tag)
+    verifyAssets(args.download_dir, args.expected_dir, args.build_dir, args.key_dir, args.tag, repository=args.repository)
     print("Downloaded release assets verified")
 
 

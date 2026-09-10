@@ -230,6 +230,7 @@ jobs:
             RELEASE_FLAGS=(--prerelease --latest=false)
           fi
           gh release create "$TAG" \
+            --verify-tag \
             --draft \
             "${RELEASE_FLAGS[@]}" \
             --title="$TAG" \

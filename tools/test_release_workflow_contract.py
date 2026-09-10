@@ -70,6 +70,7 @@ def main():
     assert_contains(text, 'grep -aFq "FW: $HDS_FIRMWARE_VERSION" .pio.nosync/build/esp32s3/firmware.bin')
     assert_contains(text, "python tools/generate_release_manifest.py --tag \"$TAG\" --output-dir release-files --catalog --catalog-min-version v3.1.13")
     assert_contains(text, "gh release create")
+    assert_contains(text.split('gh release create "$TAG"', 1)[1].split('gh release upload', 1)[0], '--verify-tag')
     assert_contains(text, "--draft")
     assert_contains(text, "gh release upload")
     assert_contains(text, "release-files/littlefs.bin")

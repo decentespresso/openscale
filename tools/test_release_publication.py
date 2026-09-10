@@ -1,8 +1,10 @@
 import copy
 import contextlib
+import csv
 import io
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -12,8 +14,9 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-from generate_release_manifest import build_catalog_manifest, build_manifest, sign_manifest, write_manifest
+from generate_release_manifest import DEFAULT_FS_PARTITION_SIZE, build_catalog_manifest, build_manifest, detect_pcb_version, sign_manifest, write_manifest
 import release_publication as release
+import generate_release_manifest as manifestTool
 from verify_release_assets import fileRecord, verifyAssets
 
 
@@ -54,13 +57,14 @@ class PublicationTests(unittest.TestCase):
 
     def createAssets(self):
         for name, data in (("firmware.bin", b"FW: " + self.args.tag.removeprefix("v").encode() + b"\0"),
-                           ("littlefs.bin", b"filesystem"), ("bootloader.bin", b"bootloader"),
+                           ("littlefs.bin", bytes(DEFAULT_FS_PARTITION_SIZE)), ("bootloader.bin", b"bootloader"),
                            ("partitions.bin", b"partitions"), ("dependencies.txt", b"dependencies")):
             (self.directory / name).write_bytes(data)
         self.previous = build_manifest(self.directory, "v3.1.13", self.args.repository, "hds", "3.0.0")
         self.signJson(self.previous, self.previousDir, "manifest")
         self.manifest = build_catalog_manifest(
-            build_manifest(self.directory, self.args.tag, self.args.repository, "hds", "3.0.0"),
+            build_manifest(self.directory, self.args.tag, self.args.repository, "hds", "3.0.0",
+                           pcb=detect_pcb_version(release.ROOT / "include/config.h"), forward_recovery=1),
             [self.previous], "v3.1.13")
         self.signJson(self.manifest, self.directory, "manifest")
         with zipfile.ZipFile(self.directory / f"HDS_FW_{self.args.tag}.zip", "w") as archive:
@@ -97,6 +101,61 @@ class PublicationTests(unittest.TestCase):
         self.signJson({**self.previous, "releases": []}, self.previousDir, "manifest")
         with self.assertRaisesRegex(ValueError, "omits its own"):
             release.previousCatalog(self.previousDir, "v3.1.13")
+
+    def testResignedIncompatibleManifestsAreRejectedBeforeEvidence(self):
+        changes = {
+            "model": "wrong", "pcb": "PCB: 7.2", "chip": "esp32", "environment": "wrong",
+            "partition_schema": "wrong", "flash_size": 16777216, "app_partition_min_size": 8388608,
+            "fs_partition_label": "wrong", "fs_partition_size": 1, "fs_schema": 2,
+            "min_from": "3.1.14", "forward_recovery": 0,
+            "release_notes_url": "https://example.invalid/notes",
+            "firmware.url": "https://github.com/decentespresso/openscale/releases/download/v3.1.13/firmware.bin",
+            "littlefs.url": "https://example.invalid/littlefs.bin",
+            "firmware.size": 8388608, "littlefs.size": 1,
+        }
+        original = copy.deepcopy(self.manifest)
+        for field, value in changes.items():
+            with self.subTest(field=field):
+                current = {key: copy.deepcopy(item) for key, item in original.items() if key != "releases"}
+                if "." in field:
+                    asset, key = field.split(".")
+                    current[asset][key] = value
+                else:
+                    current[field] = value
+                manifest = build_catalog_manifest(current, [self.previous], "v3.1.13")
+                self.signJson(manifest, self.directory, "manifest")
+                with patch.object(release, "verifyCandidate"), patch.object(release, "run", return_value=self.args.commit), \
+                     patch.object(release, "latestStable", return_value="v3.1.13"), \
+                     patch.object(release, "sign_manifest_from_environment") as sign:
+                    with self.assertRaises(ValueError):
+                        release.prepareEvidence(self.args)
+                    sign.assert_not_called()
+
+    def testReleaseDefaultsMatchFirmwareAndPartitionLayout(self):
+        source = (release.ROOT / "include/pull_ota.h").read_text(encoding="utf-8")
+        for name in ("CHIP", "ENVIRONMENT", "PARTITION_SCHEMA", "FLASH_SIZE", "APP_PARTITION_MIN_SIZE",
+                     "FS_PARTITION_LABEL", "FS_PARTITION_SIZE", "FS_SCHEMA"):
+            value = getattr(manifestTool, "DEFAULT_" + name)
+            literal = json.dumps(value)
+            self.assertRegex(source, rf'\bHDS_OTA_{name}\s*=\s*{re.escape(literal)};')
+        lines = (release.ROOT / "partitions/default_8MB.csv").read_text().splitlines()
+        rows = [tuple(field.strip() for field in row) for row in csv.reader(line for line in lines if not line.startswith("#"))]
+        self.assertEqual(min(int(row[4], 0) for row in rows if row[1] == "app"), manifestTool.DEFAULT_APP_PARTITION_MIN_SIZE)
+        filesystem = next(row for row in rows if row[0] == manifestTool.DEFAULT_FS_PARTITION_LABEL)
+        self.assertEqual(int(filesystem[4], 0), manifestTool.DEFAULT_FS_PARTITION_SIZE)
+        self.assertEqual(max(int(row[3], 0) + int(row[4], 0) for row in rows), manifestTool.DEFAULT_FLASH_SIZE)
+
+    def testMinimumSourceIncludesPreviousStable(self):
+        for minimum in ("", "3.0.0", "3.1.13", "3.1.14", "invalid", None):
+            with self.subTest(minimum=minimum):
+                current = {key: value for key, value in self.manifest.items() if key != "releases"}
+                current["min_from"] = minimum
+                self.signJson(build_catalog_manifest(current, [self.previous], "v3.1.13"), self.directory, "manifest")
+                if minimum in ("", "3.0.0", "3.1.13"):
+                    verifyAssets(self.directory, None, self.directory, self.keyDir, self.args.tag, self.previous)
+                else:
+                    with self.assertRaisesRegex(ValueError, "min_from"):
+                        verifyAssets(self.directory, None, None, self.keyDir, self.args.tag, self.previous)
 
     def testCandidateCannotReplaceANewerOrEqualStable(self):
         release.verifyPreviousVersion("v3.1.14", "v3.1.13")
@@ -200,7 +259,7 @@ class PublicationTests(unittest.TestCase):
                 release.verifyDraft(self.args, publish=publish)
                 if publish:
                     command.assert_called_once_with(["gh", "release", "edit", self.args.tag, "--repo", self.args.repository,
-                                                    "--draft=false", "--latest=false" if "-" in self.args.tag else "--latest=true"])
+                                                    "--verify-tag", "--draft=false", "--latest=false" if "-" in self.args.tag else "--latest=true"])
                 else:
                     command.assert_not_called()
             sign.assert_not_called()

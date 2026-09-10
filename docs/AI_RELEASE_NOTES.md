@@ -123,6 +123,8 @@ release still:
 - generates and verifies the new signed catalog;
 - uploads all required assets in the intended order;
 - downloads draft assets and verifies their signatures, manifest sizes/hashes, and agreement with build outputs, including all four USB ZIP images;
+- validates model/PCB, chip/environment, flash and partition contracts, canonical URLs, forward recovery, and a minimum source version that permits the previous stable before signing evidence;
+- uses `--verify-tag` for both draft creation and publication so missing remote tags are not implicitly recreated;
 - signs an inventory binding the candidate, repository, previous stable, preparation run, and all six release assets;
 - stops at a verified draft, then publishes only through separately approved evidence from a successful preparation run.
 
