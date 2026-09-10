@@ -234,7 +234,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Create prospective release tag for development validation
-        if: inputs.firmware_ref == 'main' || inputs.firmware_ref == 'v3.1.14-preview.3'
+        if: inputs.firmware_ref == 'main' || inputs.firmware_ref == 'v3.1.14-preview.3' || inputs.firmware_ref == 'v3.1.14-preview.4'
         run: |
           if ! git show-ref --verify --quiet refs/tags/v3.1.14; then
             git tag v3.1.14 "${{ github.sha }}"

@@ -51,7 +51,7 @@ def main():
     assert "compile-matrix:" not in customWorkflow
     dispatchBuild = customWorkflow.split("\n  build:\n", 1)[1]
     assert dispatchBuild.lstrip().startswith("if: github.event_name == 'workflow_dispatch'")
-    assert "if: inputs.firmware_ref == 'main' || inputs.firmware_ref == 'v3.1.14-preview.3'" in dispatchBuild
+    assert "if: inputs.firmware_ref == 'main' || inputs.firmware_ref == 'v3.1.14-preview.3' || inputs.firmware_ref == 'v3.1.14-preview.4'" in dispatchBuild
     assert 'git tag v3.1.14 "${{ github.sha }}"' in dispatchBuild
 
     assert "dependency-build:" not in otaWorkflow
@@ -64,9 +64,10 @@ def main():
     assert manifest["patches"] == {
         "v3.1.14": "patches/main.patch",
         "v3.1.14-preview.3": "patches/main.patch",
+        "v3.1.14-preview.4": "patches/main.patch",
         "main": "patches/main.patch",
     }
-    assert workerConfig["vars"]["ALLOWED_FIRMWARE_REFS"] == "main,v3.1.14,v3.1.14-preview.3"
+    assert workerConfig["vars"]["ALLOWED_FIRMWARE_REFS"] == "main,v3.1.14,v3.1.14-preview.3,v3.1.14-preview.4"
     assert workerConfig["vars"]["BUILDER_REF"] == "main"
     assert changedPlugins.changedPluginIds([
         "plugins/pressensor/plugin.json",
@@ -79,6 +80,7 @@ def main():
         {"plugin": "pressensor", "firmware_ref": "main"},
         {"plugin": "pressensor", "firmware_ref": "v3.1.14"},
         {"plugin": "pressensor", "firmware_ref": "v3.1.14-preview.3"},
+        {"plugin": "pressensor", "firmware_ref": "v3.1.14-preview.4"},
     ]
     assert changedPlugins.changedPluginMatrix([
         "plugins/default-web-apps/assets/index.html"
