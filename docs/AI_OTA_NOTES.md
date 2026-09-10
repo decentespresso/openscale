@@ -102,7 +102,7 @@ Release builds publish WiFi OTA assets at the GitHub Release root:
 - `manifest.json`
 - `manifest.sig`
 
-The release workflow creates draft releases, uploads binary assets first, uploads `manifest.sig` and `manifest.json` last, then publishes the release.
+The release workflow creates draft releases, uploads binary assets first, then uploads `manifest.sig` and `manifest.json`. Before publication it downloads the draft assets, verifies the manifest signature and exact prepared metadata, checks firmware and LittleFS sizes and SHA-256 hashes, and compares both images against build outputs. The USB ZIP must contain exactly the firmware, bootloader, partitions, and LittleFS images from that build. Download or verification failure leaves the release unpublished as a draft.
 
 Preview and RC tags (`vX.Y.Z-preview.N` and `vX.Y.Z-rc.N`) use the same signed asset publication flow but are marked prerelease and never latest. Their top-level manifests preserve the full version for recovery; they are excluded from the stable catalog and update picker.
 
@@ -115,6 +115,8 @@ combination hash, fixed Worker asset prefix, hardware compatibility, sizes, and 
 validate.
 
 Catalog manifests merge the previous latest stable signed manifest, dedupe by model, PCB, version, chip, and environment, sort newest to oldest, and keep the latest 10 production entries at `v3.1.13+`. Generated JSON is compact and limited to 16 KiB.
+
+Release preparation requires the automatically selected previous stable catalog and its valid signature. Downloads get three attempts, five seconds apart, with partial files removed before each attempt. Retrieval or verification failure aborts the release. The explicit `bootstrap_catalog` workflow input permits an empty release history only; it never bypasses a failed download or signature check for an existing stable release.
 
 When the installed release has aged out of the latest catalog, firmware fetches that release's own signed manifest using both supported tag forms. It accepts only the compatible top-level release entry with the exact installed version and required LittleFS metadata. Firmware rollback remains local in the other app slot; this fallback supplies the signed asset metadata needed to restore the single shared LittleFS partition.
 
