@@ -411,10 +411,10 @@ async function addBuild(request, storage, env) {
   const ownerFleetId = await fleetId(request);
   const body = requireObject(await readJson(request), ["combination_hash"]);
   const key = `fleet:${ownerFleetId}`;
-  if (!(await storage.get(key))) throw new FleetError(404, "fleet_not_found");
   const reference = await readyBuildReference(env, body.combination_hash);
   return storage.transaction(async transaction => {
     const fleet = await transaction.get(key);
+    if (!fleet) await enforcePairCreationRate(request, transaction, Date.now());
     const builds = fleetBuilds(fleet);
     const existing = builds.find(build => build.combination_hash === reference.combination_hash);
     if (existing) return {...existing, state: "ready"};
