@@ -160,7 +160,7 @@ bool customBuildCheckIn(
     const String &installCombination = "",
     const char *installState = "installing") {
   JsonDocument request;
-  request["installed_combination"] = installedCombination.length() > 0
+  request["installed_combination"] = !filesystemRecoveryActive.load() && installedCombination.length() > 0
       ? installedCombination.c_str() : nullptr;
   request["firmware_version"] = pullOtaCurrentVersion();
   if (installCombination.length() > 0) {
@@ -421,7 +421,7 @@ void customBuildRun(bool interactive = true) {
     customBuildShowStatus("Custom Build", "No build assigned");
     return;
   }
-  if (assignment.combinationHash == installedCombination) {
+  if (assignment.combinationHash == installedCombination && !filesystemRecoveryActive.load()) {
     char hashPrefix[9];
     customBuildHashPrefix(installedCombination, hashPrefix);
     customBuildShowStatus("Already installed", hashPrefix);
@@ -446,10 +446,7 @@ void customBuildRun(bool interactive = true) {
   const bool rollbackFound = rollbackCombinationHash.length() > 0
       ? customBuildFetchManifest(rollbackCombinationHash, rollbackManifest)
       : pullOtaFetchCurrentReleaseManifest(rollbackManifest);
-  if (!rollbackFound) {
-    pullOtaFail("Rollback missing");
-    return;
-  }
+  if (!rollbackFound) rollbackManifest = PullOtaManifest();
   pullOtaInstall(
       manifest,
       rollbackManifest,
@@ -476,6 +473,7 @@ void customBuildTask(void *args) {
   const bool restartPending = (wsPendingMask & WSP_OTA_RESET) != 0;
   portEXIT_CRITICAL(&wsPendingMux);
   if (!restartPending) {
+    if (filesystemRecoveryActive.load()) pullOtaResumeFilesystemServices();
     b_ota = false;
     b_pullOtaRunning = false;
   }

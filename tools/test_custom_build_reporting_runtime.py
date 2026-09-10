@@ -23,7 +23,8 @@ def main():
 #include <vector>
 using String = std::string;
 struct CustomBuildAssignment {};
-struct PullOtaManifest { int firmware = 0; };
+struct PullOtaManifest { int firmware = 0; struct { bool present = true; } littlefs; int forwardRecoveryVersion = 0; };
+const int HDS_OTA_FORWARD_RECOVERY_VERSION = 1;
 bool b_ota, storeOk, streamOk;
 const int U_FLASH = 0;
 struct PullOtaPendingLittleFs {
@@ -31,6 +32,7 @@ struct PullOtaPendingLittleFs {
   bool restoreAttempted = false;
   uint8_t targetAttempts = 0;
   bool filesystemDirty = false;
+  bool forwardRecovery = false;
 };
 bool paired, network, clockReady, pending, verified, succeeds;
 int reports, failedReports, retries;
@@ -54,12 +56,14 @@ bool pullOtaLoadPendingLittleFs(PullOtaPendingLittleFs &) { return pending; }
 bool pullOtaVerifyPendingLittleFs(const PullOtaPendingLittleFs &) { return verified; }
 bool pullOtaBeginRollbackLittleFsAttempt() { return true; }
 bool pullOtaBeginTargetLittleFsAttempt(uint8_t) { return true; }
-void pullOtaRecoveryError() { assert(false); }
+bool pullOtaRecoveryError() { assert(false); return false; }
+bool filesystemRecoveryStore(bool) { return true; }
+bool hdsOtaAcceptFilesystemRecovery() { return true; }
 bool pullOtaAttemptPendingLittleFs(const PullOtaPendingLittleFs &, bool &) { return succeeds; }
 bool pullOtaActivateRollbackLittleFs(const PullOtaPendingLittleFs &) { return true; }
 void hdsOtaRollbackMarkValid() { events.push_back("valid"); }
 bool pullOtaClearPendingLittleFs() { events.push_back("clear"); return true; }
-bool pullOtaFail(const char *) { return false; }
+bool pullOtaFail(const char *, const char * = "") { return false; }
 bool pullOtaStorePendingLittleFs(const PullOtaManifest &, const PullOtaManifest &,
     const String &, const String &) { events.push_back("store"); return storeOk; }
 bool pullOtaStreamAsset(int, int, const char *) { events.push_back("stream"); return streamOk; }
@@ -81,6 +85,14 @@ void reset() {
     source += "bool pullOtaResumePendingLittleFs() {" + resume + "}\n"
     source += r'''
 int main() {
+  for (int capability : {0, 1, 2}) {
+    reset();
+    PullOtaManifest target, missingRollback;
+    target.forwardRecoveryVersion = capability;
+    missingRollback.littlefs.present = false;
+    assert(pullOtaInstall(target, missingRollback, String(64, 'b'), identity) == (capability == 1));
+    if (capability != 1) assert(events.empty() && reports == 0);
+  }
   reset();
   assert(pullOtaInstall({}, {}, String(64, 'b'), identity));
   assert(reported == identity);
@@ -102,7 +114,7 @@ int main() {
   reset();
   assert(pullOtaResumePendingLittleFs());
   assert(reported == identity);
-  assert((events == std::vector<String>{"valid", "report", "clear", "restart"}));
+  assert((events == std::vector<String>{"valid", "clear", "report", "restart"}));
   reset();
   verified = false;
   assert(!pullOtaResumePendingLittleFs());

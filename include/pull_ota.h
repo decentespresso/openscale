@@ -6,6 +6,7 @@
 
 #include "display.h"
 #include "parameter.h"
+#include "filesystem_recovery.h"
 #include "pull_ota_catalog.h"
 #include "pull_ota_version.h"
 #if HDS_FEATURE_WEBSERVER
@@ -27,6 +28,7 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <esp_partition.h>
+#include <esp_ota_ops.h>
 #include <mbedtls/md.h>
 #include <mbedtls/pk.h>
 #include <string.h>
@@ -35,6 +37,7 @@
 
 void wifi_init();
 void hdsOtaRollbackMarkValid();
+bool hdsOtaAcceptFilesystemRecovery();
 
 #ifndef HDS_OTA_MANIFEST_URL
 #define HDS_OTA_MANIFEST_URL "https://github.com/decentespresso/openscale/releases/latest/download/manifest.json"
@@ -164,6 +167,7 @@ struct PullOtaManifest {
   uint32_t appPartitionMinSize = 0;
   uint32_t fsPartitionSize = 0;
   uint32_t fsSchema = 0;
+  uint8_t forwardRecoveryVersion = 0;
   PullOtaAsset firmware;
   PullOtaAsset littlefs;
 };
@@ -187,6 +191,7 @@ struct PullOtaPendingLittleFs {
   bool restore = false;
   bool restoreAttempted = false;
   bool filesystemDirty = false;
+  bool forwardRecovery = false;
   uint8_t targetAttempts = 0;
   String version = "";
   String rollbackVersion = "";
@@ -448,6 +453,8 @@ bool pullOtaParseManifestObject(
   manifest.appPartitionMinSize = (uint32_t)appPartitionMinSize;
   manifest.fsPartitionSize = (uint32_t)fsPartitionSize;
   manifest.fsSchema = (uint32_t)fsSchema;
+  manifest.forwardRecoveryVersion = root["forward_recovery"] == HDS_OTA_FORWARD_RECOVERY_VERSION
+      ? HDS_OTA_FORWARD_RECOVERY_VERSION : 0;
   if (!pullOtaParseAsset(root["firmware"], manifest.firmware, true, assetUrlPrefix)) {
     return false;
   }
@@ -498,7 +505,7 @@ void pullOtaBuildSelectableReleases(
                                    !pullOtaVersionIsStable(currentVersion.c_str());
   for (uint8_t i = 0; i < catalog.count; i++) {
     int currentCompare = pullOtaCompareVersions(catalog.releases[i].version, currentVersion);
-    if ((currentCompare != 0 || currentIsPrerelease) && selection.count < HDS_OTA_MAX_RELEASE_CHOICES) {
+    if ((currentCompare != 0 || currentIsPrerelease || filesystemRecoveryActive.load()) && selection.count < HDS_OTA_MAX_RELEASE_CHOICES) {
       selection.indices[selection.count++] = i;
     }
   }
@@ -724,10 +731,7 @@ bool pullOtaVerifyManifestSignature(
       body, signature, signatureLen, publicKeys, sizeof(publicKeys) / sizeof(publicKeys[0]));
 }
 
-bool pullOtaPartitionShaMatches(const PullOtaAsset &asset) {
-  const esp_partition_t *partition = esp_partition_find_first(
-      ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
-      HDS_OTA_FS_PARTITION_LABEL);
+bool pullOtaPartitionShaMatches(const PullOtaAsset &asset, const esp_partition_t *partition) {
   if (partition == nullptr || asset.size > partition->size) {
     return false;
   }
@@ -754,6 +758,12 @@ bool pullOtaPartitionShaMatches(const PullOtaAsset &asset) {
   bool hashFinished = pullOtaHashFinish(hash, digest);
   return ok && hashFinished && checked == asset.size &&
          sha256Matches(digest, asset.sha256);
+}
+
+bool pullOtaPartitionShaMatches(const PullOtaAsset &asset) {
+  return pullOtaPartitionShaMatches(asset, esp_partition_find_first(
+      ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
+      HDS_OTA_FS_PARTITION_LABEL));
 }
 
 bool pullOtaLittleFsPartitionSizeMatches(uint32_t expectedSize) {
@@ -1004,8 +1014,10 @@ bool pullOtaStorePendingLittleFs(
     const PullOtaManifest &rollbackManifest,
     const String &combinationHash = "",
     const String &rollbackCombinationHash = "") {
+  const bool forwardRecovery = !rollbackManifest.littlefs.present;
   if (!manifest.littlefs.present || !manifest.littlefs.required ||
-      !rollbackManifest.littlefs.present || !rollbackManifest.littlefs.required ||
+      (forwardRecovery ? manifest.forwardRecoveryVersion != HDS_OTA_FORWARD_RECOVERY_VERSION
+                       : !rollbackManifest.littlefs.required) ||
       (combinationHash.length() > 0 && !pullOtaShaLooksValid(combinationHash)) ||
       (rollbackCombinationHash.length() > 0 &&
        !pullOtaShaLooksValid(rollbackCombinationHash))) {
@@ -1015,8 +1027,12 @@ bool pullOtaStorePendingLittleFs(
   if (!preferences.begin("ota_fs", false)) {
     return false;
   }
-  preferences.clear();
-  bool ok = (combinationHash.length() == 0 ||
+  bool ok = preferences.clear() &&
+            (!forwardRecovery ||
+             (preferences.putUChar("recovery", HDS_OTA_FORWARD_RECOVERY_VERSION) > 0 &&
+              preferences.putString("fw_sha", manifest.firmware.sha256) > 0 &&
+              preferences.putUInt("fw_size", (uint32_t)manifest.firmware.size) > 0)) &&
+            (combinationHash.length() == 0 ||
              preferences.putString("combo", combinationHash) == 64) &&
             (rollbackCombinationHash.length() == 0 ||
              preferences.putString("rb_combo", rollbackCombinationHash) == 64) &&
@@ -1024,10 +1040,11 @@ bool pullOtaStorePendingLittleFs(
             preferences.putUInt("size", (uint32_t)manifest.littlefs.size) > 0 &&
             preferences.putString("sha", manifest.littlefs.sha256) > 0 &&
             preferences.putString("version", manifest.version) > 0 &&
-            preferences.putString("rb_url", rollbackManifest.littlefs.url) > 0 &&
+            (forwardRecovery ||
+            (preferences.putString("rb_url", rollbackManifest.littlefs.url) > 0 &&
             preferences.putUInt("rb_size", (uint32_t)rollbackManifest.littlefs.size) > 0 &&
             preferences.putString("rb_sha", rollbackManifest.littlefs.sha256) > 0 &&
-            preferences.putString("rb_ver", rollbackManifest.version) > 0 &&
+            preferences.putString("rb_ver", rollbackManifest.version) > 0)) &&
             preferences.putString("label", manifest.fsPartitionLabel) > 0 &&
             preferences.putUInt("fs_size", manifest.fsPartitionSize) > 0 &&
             preferences.putUInt("fs_schema", manifest.fsSchema) > 0 &&
@@ -1041,14 +1058,15 @@ bool pullOtaStorePendingLittleFs(
 }
 
 bool pullOtaActivateRollbackLittleFs(const PullOtaPendingLittleFs &pending);
-[[noreturn]] void pullOtaRecoveryError();
+bool pullOtaRecoveryError();
 
 bool pullOtaLoadPendingLittleFs(PullOtaPendingLittleFs &pending) {
   Preferences preferences;
   if (!preferences.begin("ota_fs", true)) {
     return false;
   }
-  bool hasPending = preferences.getBool("pending", false);
+  bool hasPending = preferences.getBool("pending", false) &&
+                    !(preferences.getBool("paused", false) && filesystemRecoveryActive.load());
   if (!hasPending) {
     preferences.end();
     return false;
@@ -1070,6 +1088,11 @@ bool pullOtaLoadPendingLittleFs(PullOtaPendingLittleFs &pending) {
   loaded.restore = preferences.getBool("restore", false);
   loaded.restoreAttempted = preferences.getBool("restore_try", false);
   loaded.filesystemDirty = preferences.getBool("fs_dirty", false);
+  const uint8_t recoveryVersion = preferences.getUChar("recovery", 0);
+  loaded.forwardRecovery = recoveryVersion == HDS_OTA_FORWARD_RECOVERY_VERSION;
+  PullOtaAsset recoveryFirmware;
+  recoveryFirmware.sha256 = preferences.getString("fw_sha", "");
+  recoveryFirmware.size = preferences.getUInt("fw_size", 0);
   loaded.targetAttempts = preferences.getUChar("target_try", 0);
   loaded.rollbackAsset.present = true;
   loaded.rollbackAsset.required = true;
@@ -1087,6 +1110,12 @@ bool pullOtaLoadPendingLittleFs(PullOtaPendingLittleFs &pending) {
   loaded.fsPartitionSize = preferences.getUInt("fs_size", 0);
   loaded.fsSchema = preferences.getUInt("fs_schema", 0);
   preferences.end();
+  if (recoveryVersion != 0 &&
+      (!loaded.forwardRecovery || loaded.restore || recoveryFirmware.size == 0 ||
+       !pullOtaShaLooksValid(recoveryFirmware.sha256))) {
+    pullOtaRecoveryError();
+    return false;
+  }
   const bool targetUrlAllowed = loaded.combinationHash.length() == 0
       ? pullOtaUrlAllowed(loaded.asset.url)
       : pullOtaCustomLittleFsUrlAllowed(
@@ -1097,28 +1126,37 @@ bool pullOtaLoadPendingLittleFs(PullOtaPendingLittleFs &pending) {
       loaded.fsPartitionLabel != HDS_OTA_FS_PARTITION_LABEL ||
       loaded.fsPartitionSize != HDS_OTA_FS_PARTITION_SIZE ||
       loaded.fsSchema != HDS_OTA_FS_SCHEMA) {
-    pullOtaClearPendingLittleFs();
+    if (loaded.filesystemDirty) pullOtaRecoveryError();
+    else pullOtaClearPendingLittleFs();
     return false;
   }
   const bool rollbackUrlAllowed = loaded.rollbackCombinationHash.length() == 0
       ? pullOtaUrlAllowed(loaded.rollbackAsset.url)
       : pullOtaCustomLittleFsUrlAllowed(
           loaded.rollbackAsset.url, loaded.rollbackCombinationHash);
-  if (!loaded.restore &&
+  if (!loaded.restore && !loaded.forwardRecovery &&
       (!rollbackUrlAllowed ||
        !pullOtaShaLooksValid(loaded.rollbackAsset.sha256) ||
        loaded.rollbackAsset.size != HDS_OTA_FS_PARTITION_SIZE ||
        (loaded.rollbackCombinationHash.length() == 0 &&
-        !pullOtaVersionLooksStable(loaded.rollbackVersion)))) {
-    pullOtaClearPendingLittleFs();
+        !pullOtaVersionIsRelease(loaded.rollbackVersion.c_str())))) {
+    if (loaded.filesystemDirty) pullOtaRecoveryError();
+    else pullOtaClearPendingLittleFs();
     return false;
   }
-  if (!pullOtaIdentityMatches(loaded.version, loaded.combinationHash)) {
+  const bool recoveryFirmwareMatches = !loaded.forwardRecovery ||
+      pullOtaPartitionShaMatches(recoveryFirmware, esp_ota_get_running_partition());
+  if (!pullOtaIdentityMatches(loaded.version, loaded.combinationHash) || !recoveryFirmwareMatches) {
+    if (loaded.forwardRecovery && loaded.filesystemDirty) {
+      pullOtaRecoveryError();
+      return false;
+    }
     if (!loaded.restore && loaded.filesystemDirty &&
         pullOtaIdentityMatches(
             loaded.rollbackVersion, loaded.rollbackCombinationHash)) {
       if (!pullOtaActivateRollbackLittleFs(loaded)) {
         pullOtaRecoveryError();
+        return false;
       }
       return pullOtaLoadPendingLittleFs(pending);
     }
@@ -1277,6 +1315,7 @@ bool pullOtaConfirmInstall(const PullOtaManifest &manifest) {
 }
 
 void pullOtaPauseFilesystemServices() {
+  webFilesystemReady.store(false);
 #if HDS_FEATURE_WEBSERVER
   stopWebServer();
 #endif
@@ -1285,7 +1324,7 @@ void pullOtaPauseFilesystemServices() {
 }
 
 void pullOtaResumeFilesystemServices() {
-  LittleFS.begin();
+  if (!filesystemRecoveryActive.load()) LittleFS.begin();
 #if HDS_FEATURE_WEBSERVER
   if (b_wifiEnabled) {
     startWebServer();
@@ -1402,6 +1441,10 @@ bool pullOtaInstall(
     const PullOtaManifest &rollbackManifest,
     const String &combinationHash = "",
     const String &rollbackCombinationHash = "") {
+  if (!rollbackManifest.littlefs.present &&
+      manifest.forwardRecoveryVersion != HDS_OTA_FORWARD_RECOVERY_VERSION) {
+    return pullOtaFail("Recovery unsupported", "Choose newer build");
+  }
   b_ota = true;
   if (!pullOtaStorePendingLittleFs(
           manifest,
@@ -1436,13 +1479,18 @@ bool pullOtaVerifyPendingLittleFs(const PullOtaPendingLittleFs &pending) {
   return LittleFS.totalBytes() > 0;
 }
 
-[[noreturn]] void pullOtaRecoveryError() {
-  b_ota = true;
-  Serial.println("[pull-ota] UPDATE ERROR - Use HDS updater");
-  while (true) {
-    pullOtaDraw("UPDATE ERROR", "Use HDS updater!");
-    delay(1000);
-  }
+bool pullOtaRecoveryError() {
+  pullOtaPauseFilesystemServices();
+  if (!filesystemRecoveryStore(true)) return false;
+  Preferences preferences;
+  if (!preferences.begin("ota_fs", false)) return false;
+  const bool paused = preferences.putBool("paused", true) > 0;
+  preferences.end();
+  if (!paused || !hdsOtaAcceptFilesystemRecovery()) return false;
+  customBuildReportInstallState(pullOtaCurrentCombinationHash(), "failed");
+  Serial.println("[pull-ota] LittleFS could not be installed; WiFi setup and OTA remain available");
+  pullOtaFail("LittleFS could not", "be installed");
+  return true;
 }
 
 bool pullOtaAttemptPendingLittleFs(
@@ -1477,13 +1525,17 @@ bool pullOtaResumePendingLittleFs() {
   uint8_t attempts = pending.restore ? 0 : pending.targetAttempts;
   bool filesystemWriteStarted = pending.filesystemDirty;
   bool updated = pullOtaVerifyPendingLittleFs(pending);
+  if (pending.forwardRecovery && !updated &&
+      (!filesystemRecoveryStore(true) || !hdsOtaAcceptFilesystemRecovery())) {
+    return false;
+  }
   while (!updated && attempts < maxAttempts) {
     attempts++;
     bool attemptRecorded = pending.restore
         ? !pending.restoreAttempted && pullOtaBeginRollbackLittleFsAttempt()
         : pullOtaBeginTargetLittleFsAttempt(attempts);
     if (!attemptRecorded) {
-      pullOtaRecoveryError();
+      return pullOtaRecoveryError();
     }
     bool attemptWriteStarted = false;
     if (pullOtaAttemptPendingLittleFs(pending, attemptWriteStarted)) {
@@ -1493,21 +1545,23 @@ bool pullOtaResumePendingLittleFs() {
     }
     filesystemWriteStarted = filesystemWriteStarted || attemptWriteStarted;
     if (pending.restore) {
-      pullOtaRecoveryError();
+      return pullOtaRecoveryError();
     }
   }
   if (!updated) {
+    if (pending.forwardRecovery) return pullOtaRecoveryError();
     if (filesystemWriteStarted && !pullOtaActivateRollbackLittleFs(pending)) {
-      pullOtaRecoveryError();
+      return pullOtaRecoveryError();
     }
     return false;
   }
   hdsOtaRollbackMarkValid();
-  customBuildReportInstalled();
+  if (!filesystemRecoveryStore(false)) return pullOtaRecoveryError();
   if (!pullOtaClearPendingLittleFs()) {
     pullOtaFail("FS state failed");
-    pullOtaRecoveryError();
+    return pullOtaRecoveryError();
   }
+  customBuildReportInstalled();
   pullOtaDraw("Update done", "Restarting");
   delay(1500);
   remoteQueueOtaResetAt(millis());
@@ -1584,10 +1638,7 @@ void pullOtaRunUpdate(const PullOtaTargetVersion &target) {
     rollbackFound = pullOtaFindCurrentRelease(catalog, rollbackManifest);
     if (!rollbackFound) rollbackFound = pullOtaFetchCurrentReleaseManifest(rollbackManifest);
   }
-  if (!rollbackFound) {
-    pullOtaFail("Rollback missing");
-    return;
-  }
+  if (!rollbackFound) rollbackManifest = PullOtaManifest();
   uint8_t selectedCatalogIndex = 0;
   if (target.present) {
     if (!pullOtaFindTargetRelease(catalog, selection, target, &selectedCatalogIndex)) {
@@ -1651,6 +1702,7 @@ void pullOtaUpdateTask(void *args) {
   const bool restartPending = (wsPendingMask & WSP_OTA_RESET) != 0;
   portEXIT_CRITICAL(&wsPendingMux);
   if (!restartPending) {
+    if (filesystemRecoveryActive.load()) pullOtaResumeFilesystemServices();
     b_ota = false;
     b_pullOtaRunning = false;
   }

@@ -6,6 +6,7 @@
 #include "esp_system.h"
 #include "mdns_name.h"
 #include "parameter.h"
+#include "filesystem_recovery.h"
 #include "wifi_setup.h"
 #include <ArduinoJson.h>
 #include <AsyncJson.h>
@@ -22,7 +23,6 @@ static AsyncWebServer server(80);
 static AsyncWebSocket websocket("/snapshot");
 #endif
 
-#if !HDS_FEATURE_LITTLEFS
 static const char HDS_WIFI_SETUP_PAGE[] PROGMEM = R"html(<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>OpenScale setup</title><style>body{font:16px sans-serif;max-width:30rem;margin:2rem auto;padding:0 1rem}label,input,button{display:block;width:100%;box-sizing:border-box;margin:.5rem 0}input,button{padding:.7rem}</style>
@@ -31,11 +31,10 @@ static const char HDS_WIFI_SETUP_PAGE[] PROGMEM = R"html(<!doctype html>
 <form id="name"><label>Device name<input name="name" required></label><button>Save name</button></form>
 <p id="status"></p><script>
 const send=(path,data)=>fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>{if(!r.ok)throw Error(r.status);return 'Saved. Restarting.'});
-wifi.onsubmit=e=>{e.preventDefault();send('/setup/wifi',Object.fromEntries(new FormData(wifi))).then(show).catch(show)};
-name.onsubmit=e=>{e.preventDefault();send('/setup/name',Object.fromEntries(new FormData(name))).then(show).catch(show)};
-const show=value=>status.textContent=value;
+document.getElementById('wifi').onsubmit=e=>{e.preventDefault();send('/setup/wifi',Object.fromEntries(new FormData(e.currentTarget))).then(show).catch(show)};
+document.getElementById('name').onsubmit=e=>{e.preventDefault();send('/setup/name',Object.fromEntries(new FormData(e.currentTarget))).then(show).catch(show)};
+const show=value=>document.getElementById('status').textContent=value;
 </script></html>)html";
-#endif
 
 static const unsigned long HTTP_MIN_INTERVAL_WHILE_STREAMING_MS = 200;
 static const int HTTP_STREAMING_BURST = 24;
@@ -79,6 +78,13 @@ static const char *parseDeviceNameRequest(JsonVariant &json) {
 }
 
 void startWebServer() {
+#if HDS_FEATURE_LITTLEFS
+  webFilesystemReady.store(!filesystemRecoveryActive.load() && LittleFS.begin());
+  if (!webFilesystemReady.load()) {
+    filesystemRecoveryActive.store(true);
+    Serial.println("LittleFS unavailable -- serving WiFi setup");
+  }
+#endif
   static bool handlersRegistered = false;
   if (!handlersRegistered) {
     AsyncCallbackJsonWebHandler *wifiHandler = new AsyncCallbackJsonWebHandler(
@@ -146,24 +152,19 @@ void startWebServer() {
 #endif
 
 #if HDS_FEATURE_LITTLEFS
-    if (!LittleFS.begin()) {
-      Serial.println("LittleFS mount failed -- web UI unavailable");
-      server.onNotFound([](AsyncWebServerRequest *request) {
-        request->send(503, "text/plain",
-                      "filesystem mount failed; device needs reflashing");
-      });
-    } else {
-      server.serveStatic("/", LittleFS, "/")
-          .setTryGzipFirst(true)
-          .setDefaultFile("index.html")
-          .setCacheControl(LITTLEFS_CACHE_CONTROL);
-      Serial.println("Serving web-apps");
-    }
-#else
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-      request->send(200, "text/html", HDS_WIFI_SETUP_PAGE);
-    });
+    server.serveStatic("/", LittleFS, "/")
+        .setTryGzipFirst(true)
+        .setDefaultFile("index.html")
+        .setCacheControl(LITTLEFS_CACHE_CONTROL)
+        .setFilter([](AsyncWebServerRequest *) {
+          return webFilesystemReady.load() && !filesystemRecoveryActive.load();
+        });
 #endif
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+      AsyncWebServerResponse *response = request->beginResponse(200, "text/html", HDS_WIFI_SETUP_PAGE);
+      response->addHeader("Cache-Control", "no-store");
+      request->send(response);
+    });
 
     server.addMiddleware([](AsyncWebServerRequest *request, ArMiddlewareNext next) {
       const String &url = request->url();

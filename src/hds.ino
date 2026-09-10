@@ -1115,7 +1115,8 @@ void setup() {
     ble_init();
   }
 #if HDS_FEATURE_WIFI
-  if (b_wifiOnBoot && GPIO_power_on_with != BATTERY_CHARGING && !b_pendingOtaLittleFs) {
+  if (b_wifiOnBoot && GPIO_power_on_with != BATTERY_CHARGING && !b_pendingOtaLittleFs &&
+      !filesystemRecoveryActive.load()) {
     wifi_init();
   }
 #endif
@@ -1231,7 +1232,23 @@ void setup() {
       hdsOtaRollback("LittleFS update");
     }
   } else {
-    hdsOtaRollbackMarkValid();
+    if (filesystemRecoveryActive.load()) {
+      if (!filesystemRecoveryStore(true) || !hdsOtaAcceptFilesystemRecovery()) {
+        hdsOtaRollback("LittleFS recovery");
+      }
+    } else {
+      hdsOtaRollbackMarkValid();
+    }
+  }
+  if (filesystemRecoveryActive.load()) {
+    b_ota = false;
+    if (b_pendingOtaLittleFs && b_ble_enabled) ble_init();
+    if (!b_wifiEnabled) {
+      b_wifiOnBoot = true;
+      wifi_init();
+    } else {
+      pullOtaResumeFilesystemServices();
+    }
   }
 #endif
 #if HDS_ENABLE_ENERGY_MENU

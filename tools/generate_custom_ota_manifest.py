@@ -56,6 +56,7 @@ def customManifest(buildDir, build, baseUrl):
         "firmware": asset("firmware.bin"),
         "littlefs": littlefs,
         "custom_build": True,
+        "forward_recovery": 1 if build.get("forward_recovery") == 1 else 0,
         "combination_hash": combinationHash,
     }
 

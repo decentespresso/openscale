@@ -25,11 +25,17 @@ void tapDetectTick() {
   const unsigned long now = millis();
   const float weight = f_current_raw_value;
   const bool timerRunning = stopWatch.isRunning();
+  const bool buttonGestureActive =
+      digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW ||
+      circle_press_data.active || square_press_data.active ||
+      now - circle_press_data.releaseTime <= DOUBLECLICK_DELAY ||
+      now - square_press_data.releaseTime <= DOUBLECLICK_DELAY ||
+      (b_shutdownFailBle && now - t_shutdownFailBle < 3000) || b_powerOff;
   const bool noTapActionAvailable =
       (!b_tapTareEnabled && !b_tapTimerEnabled) ||
       (timerRunning && !b_tapTimerEnabled);
 
-  if (noTapActionAvailable || b_bootTare || b_bootFreshTarePending
+  if (buttonGestureActive || noTapActionAvailable || b_bootTare || b_bootFreshTarePending
 #if HDS_ENABLE_GRINDER
       || grinderRuntime.state == GRINDER_STATE_GRINDING
       || grinderRuntime.state == GRINDER_STATE_STOPPING
