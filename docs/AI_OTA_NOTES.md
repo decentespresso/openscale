@@ -116,6 +116,8 @@ validate.
 
 Catalog manifests merge the previous latest stable signed manifest, dedupe by model, PCB, version, chip, and environment, sort newest to oldest, and keep the latest 10 production entries at `v3.1.13+`. Generated JSON is compact and limited to 16 KiB.
 
+Release preparation requires the automatically selected previous stable catalog and its valid signature. Downloads get three attempts, five seconds apart, with partial files removed before each attempt. Retrieval or verification failure aborts the release. The explicit `bootstrap_catalog` workflow input permits an empty release history only; it never bypasses a failed download or signature check for an existing stable release.
+
 When the installed release has aged out of the latest catalog, firmware fetches that release's own signed manifest using both supported tag forms. It accepts only the compatible top-level release entry with the exact installed version and required LittleFS metadata. Firmware rollback remains local in the other app slot; this fallback supplies the signed asset metadata needed to restore the single shared LittleFS partition.
 
 Recovery lookup preserves preview/RC suffixes and must not substitute stable assets with the same numeric version. A hosted custom build, including one based on `main`, instead uses its embedded combination hash and published `ota-manifest.json`/`ota-manifest.sig`. Firmware containing the forward-recovery path can update without published source recovery assets when the signed target manifest declares `forward_recovery: 1`. Older source firmware, including preview 3, still needs its supported recovery assets or USB; these changes cannot alter already-flashed firmware.

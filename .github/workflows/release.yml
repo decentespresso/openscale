@@ -6,6 +6,10 @@ on:
       tag:
         description: "Tag to release (must already exist on main)"
         required: true
+      bootstrap_catalog:
+        description: "First release only: allow no previous stable catalog"
+        type: boolean
+        default: false
 
 jobs:
   build-and-release:
@@ -91,6 +95,7 @@ jobs:
 
       - name: Prepare release assets
         env:
+          BOOTSTRAP_CATALOG: ${{ inputs.bootstrap_catalog }}
           TAG: ${{ github.event.inputs.tag }}
           HDS_RELEASE_TAG: ${{ github.event.inputs.tag }}
           HDS_RELEASE_REPOSITORY: ${{ github.repository }}
@@ -127,16 +132,25 @@ jobs:
           PREVIOUS_TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // ""')"
           if [ -n "$PREVIOUS_TAG" ]; then
             mkdir -p previous-release
-            gh release download "$PREVIOUS_TAG" --repo "$GITHUB_REPOSITORY" --pattern manifest.json --dir previous-release || true
-            gh release download "$PREVIOUS_TAG" --repo "$GITHUB_REPOSITORY" --pattern manifest.sig --dir previous-release || true
-            if [ -f previous-release/manifest.json ] || [ -f previous-release/manifest.sig ]; then
-              if [ ! -f previous-release/manifest.json ] || [ ! -f previous-release/manifest.sig ]; then
-                echo "Error: previous OTA catalog is incomplete"
+            for attempt in 1 2 3; do
+              rm -f previous-release/manifest.json previous-release/manifest.sig
+              if gh release download "$PREVIOUS_TAG" --repo "$GITHUB_REPOSITORY" --pattern manifest.json --dir previous-release &&
+                 gh release download "$PREVIOUS_TAG" --repo "$GITHUB_REPOSITORY" --pattern manifest.sig --dir previous-release &&
+                 [ -s previous-release/manifest.json ] && [ -s previous-release/manifest.sig ]; then
+                break
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "Error: previous OTA catalog download failed or is incomplete ($PREVIOUS_TAG)"
                 exit 1
               fi
-              verifyManifestSignature previous-release/manifest.json previous-release/manifest.sig
-              PREVIOUS_MANIFEST_ARGS=(--previous-manifest previous-release/manifest.json)
-            fi
+              echo "Retrying previous OTA catalog download ($attempt/3)"
+              sleep 5
+            done
+            verifyManifestSignature previous-release/manifest.json previous-release/manifest.sig
+            PREVIOUS_MANIFEST_ARGS=(--previous-manifest previous-release/manifest.json)
+          elif [ "${BOOTSTRAP_CATALOG:-false}" != "true" ]; then
+            echo "Error: no previous stable release; first release requires explicit bootstrap_catalog"
+            exit 1
           fi
           python tools/generate_release_manifest.py --tag "$TAG" --output-dir release-files --catalog --catalog-min-version v3.1.13 "${PREVIOUS_MANIFEST_ARGS[@]}"
           if [ ! -f release-files/manifest.sig ]; then
