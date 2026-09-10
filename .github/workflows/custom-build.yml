@@ -1,6 +1,11 @@
 name: Custom firmware build
 
 on:
+  workflow_call:
+    inputs:
+      commit:
+        type: string
+        required: true
   pull_request:
     paths:
       - ".github/workflows/custom-build.yml"
@@ -160,13 +165,14 @@ jobs:
           --verify-plugin-environment "esp32s3-$PLUGIN_ID"
 
   compile_custom:
-    if: github.event_name == 'pull_request'
-    name: custom firmware (3.1.14 minimal)
+    if: github.event_name != 'workflow_dispatch' || inputs.commit != ''
+    name: custom firmware (candidate minimal)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.commit || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Create prospective release tag
@@ -193,7 +199,7 @@ jobs:
           path = Path(".pio.nosync/pr-ci.json")
           path.parent.mkdir(parents=True, exist_ok=True)
           path.write_text(json.dumps({
-              "firmware_ref": "v3.1.14",
+              "firmware_ref": "main",
               "features": [],
               "plugins": [],
           }) + "\n", encoding="utf-8")
@@ -209,13 +215,16 @@ jobs:
             echo 'CUSTOM_OTA_KEY'
           } >> "$GITHUB_ENV"
       - name: Build minimal custom firmware and filesystem
+        env:
+          CANDIDATE_COMMIT: ${{ inputs.commit || github.sha }}
         run: >-
           python tools/build_custom_firmware.py
           --config .pio.nosync/pr-ci.json
-          --source-commit "$(git rev-parse --verify --end-of-options 'refs/tags/v3.1.14^{commit}')"
+          --source-commit "$CANDIDATE_COMMIT"
+          --builder-commit "$CANDIDATE_COMMIT"
 
   build:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.commit == ''
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

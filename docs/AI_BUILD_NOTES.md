@@ -34,7 +34,7 @@ Do not add an environment merely because it exists. Changes limited to ADS1232 b
 - Firmware builds require OpenSSL through `OPENSSL`, `PATH`, or Git for Windows with `git.exe` on `PATH`; clean targets do not.
 - `plugins/default-web-apps/assets/` is the default LittleFS data directory.
 - `gzip_web_assets.py` generates deterministic `.gz` siblings before LittleFS image builds.
-- `git_rev_macro.py` injects `GIT_REV`; non-git source trees fall back to `nogit0`.
+- `git_rev_macro.py` requires a Git checkout and injects `GIT_REV`. Explicit `HDS_FIRMWARE_VERSION` overrides retain the release/custom identity; ordinary builds retain the version in `include/config.h`.
 - `CONFIG_ASYNC_TCP_RUNNING_CORE=1` pins AsyncTCP to core 1, and `CONFIG_ASYNC_TCP_STACK_SIZE=8192` gives the AsyncTCP task an 8 KiB stack.
 - `ELEGANTOTA_USE_ASYNC_WEBSERVER=1` is set; `ElegantOTA.loop()` runs in `loop()`.
 - `include/hds_features.h` keeps the normal `esp32s3` feature defaults. `esp32s3-custom` reads `custom-build.json` through `tools/configure_custom_build.py` and stages generated headers and filesystem data under `.pio.nosync`.
