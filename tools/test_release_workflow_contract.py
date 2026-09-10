@@ -6,6 +6,7 @@ import sys
 import tempfile
 import configparser
 import re
+import textwrap
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,6 +70,7 @@ def main():
     assert_contains(text, 'grep -aFq "FW: $HDS_FIRMWARE_VERSION" .pio.nosync/build/esp32s3/firmware.bin')
     assert_contains(text, "python tools/generate_release_manifest.py --tag \"$TAG\" --output-dir release-files --catalog --catalog-min-version v3.1.13")
     assert_contains(text, "gh release create")
+    assert_contains(text.split('gh release create "$TAG"', 1)[1].split('gh release upload', 1)[0], '--verify-tag')
     assert_contains(text, "--draft")
     assert_contains(text, "gh release upload")
     assert_contains(text, "release-files/littlefs.bin")
@@ -77,11 +79,12 @@ def main():
     assert_contains(text, "verifyManifestSignature previous-release/manifest.json previous-release/manifest.sig")
     assert_contains(text, "release-files/dependencies.txt")
     assert_contains(text, "verifyManifestSignature release-files/manifest.json release-files/manifest.sig")
-    assert_contains(text, "gh release edit")
-    assert_contains(text, "--draft=false")
+    assert_not_contains(text, "gh release edit")
+    assert_not_contains(text, "--draft=false")
     assert_contains(text, 'gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir downloaded-release')
     assert_before(text, 'gh release upload "$TAG" release-files/manifest.json', 'python tools/verify_release_assets.py')
-    assert_before(text, 'python tools/verify_release_assets.py', 'gh release edit "$TAG" --draft=false')
+    assert_before(text, 'python tools/verify_release_assets.py', 'python tools/release_publication.py evidence')
+    assert_before(text, 'python tools/release_publication.py evidence', 'python tools/release_publication.py verify-draft')
     assert_before(text, "openssl dgst -sha256 -verify", "python tools/generate_release_manifest.py")
     assert_before(text, "tag $TAG predates the three-key OTA migration", "python tools/write_ota_public_key_header.py")
     assert_before(text, "tag $TAG predates the release version injection migration", "python tools/write_ota_public_key_header.py")
@@ -92,7 +95,35 @@ def main():
     assert_before(text, "python tools/generate_release_manifest.py", "verifyManifestSignature release-files/manifest.json")
     assert_before(text, "verifyManifestSignature release-files/manifest.json", "gh release create")
     assert_before(text, "release-files/manifest.sig", "release-files/manifest.json")
-    assert_before(text, "release-files/manifest.json", "gh release edit")
+    publish = (ROOT / ".github/workflows/publish-release.yml").read_text(encoding="utf-8")
+    assert_contains(text, 'needs: [resolve, preflight, custom-preflight]')
+    assert_contains(text, 'uses: ./.github/workflows/nightly.yml')
+    assert_contains(text, 'uses: ./.github/workflows/custom-build.yml')
+    assert text.count('commit: ${{ inputs.expected_commit }}') >= 2
+    assert_contains(text, 'test "$TAG_COMMIT" = "$EXPECTED_COMMIT"')
+    assert_contains(text, 'if [ "$PREVIOUS_TAG" != "$EXPECTED_PREVIOUS_TAG" ]')
+    for workflow in (text, publish):
+        for value in ('environment: firmware-release', 'group: firmware-release', 'cancel-in-progress: false',
+                      'test "$GITHUB_REF" = refs/heads/main', 'persist-credentials: false'):
+            assert_contains(workflow, value)
+    assert_contains(publish, 'python tools/release_publication.py publish')
+    assert_contains(publish, '--evidence-sha256 "$EVIDENCE_SHA256"')
+    assert_not_contains(publish, 'pio run')
+    assert_not_contains(publish, 'HDS_OTA_SIGNING_KEY_PEM')
+    assert_contains(nightly, 'workflow_call:')
+    assert nightly.count('ref: ${{ inputs.commit || github.sha }}') == 4
+    assert_contains(nightly, 'needs: [ai-documentation, native-tests, build, energy-build]')
+    assert_contains(nightly, 'if: always()')
+    assert_contains(nightly, 'node --test cloudflare/custom-build-worker/test/*.test.mjs')
+    gate = nightly.split('\n  release-ready:\n', 1)[1].split("python - <<'PY'\n", 1)[1]
+    gate = textwrap.dedent(gate.rsplit('\n          PY', 1)[0])
+    jobs = ('ai-documentation', 'native-tests', 'build', 'energy-build')
+    for changedJob in jobs:
+        for result in ('success', 'failure', 'cancelled', 'skipped'):
+            results = {job: {'result': result if job == changedJob else 'success'} for job in jobs}
+            checked = subprocess.run([sys.executable, '-c', gate], capture_output=True, text=True,
+                                     env={**os.environ, 'RESULTS': json.dumps(results)})
+            assert (checked.returncode == 0) == (result == 'success'), (changedJob, result, checked.stderr)
     assert_not_contains(text, "git rev-parse ${{ github.event.inputs.tag }}")
     assert_not_contains(text, "gh release create ${{ github.event.inputs.tag }}")
     assert_not_contains(text, '--tag "${{ github.event.inputs.tag }}"')

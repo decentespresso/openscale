@@ -7,7 +7,7 @@ import tempfile
 import textwrap
 import zipfile
 
-from generate_release_manifest import build_manifest, sign_manifest, write_manifest
+from generate_release_manifest import DEFAULT_FS_PARTITION_SIZE, build_manifest, detect_pcb_version, sign_manifest, write_manifest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +31,7 @@ python() { "$TEST_PYTHON" "$@"; }
 def main():
     workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     publication = workflow.split('          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir downloaded-release', 1)[1]
+    publication = publication.split("\n      - name:", 1)[0]
     script = "set -euo pipefail\n" + MOCK + 'gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir downloaded-release\n' + textwrap.dedent(publication)
     names = ("firmware.bin", "bootloader.bin", "partitions.bin", "littlefs.bin")
     scenarios = (
@@ -39,6 +40,7 @@ def main():
         "firmware.bin", "littlefs.bin", "missing_firmware", "missing_signature",
         "missing_zip", "zip_firmware.bin", "zip_bootloader.bin", "zip_partitions.bin",
         "zip_littlefs.bin", "zip_missing", "zip_extra", "zip_invalid",
+        "wrong_embedded_version",
     )
     with tempfile.TemporaryDirectory() as directory:
         base = Path(directory)
@@ -56,10 +58,18 @@ def main():
             for index in range(1, 4):
                 shutil.copyfile(public, case / f"keys/ota/hds_ota_manifest_public_key_{index}.pem")
             shutil.copyfile(ROOT / "tools/verify_release_assets.py", case / "tools/verify_release_assets.py")
+            shutil.copyfile(ROOT / "tools/generate_release_manifest.py", case / "tools/generate_release_manifest.py")
+            (case / "include").mkdir()
+            for name in ("config.h", "pull_ota_version.h"):
+                shutil.copyfile(ROOT / "include" / name, case / "include" / name)
             for name in names:
                 (build / name).write_bytes(name.encode())
             tag = "v3.1.14-preview.4" if scenario == "preview" else "v3.1.14"
-            manifest = build_manifest(build, tag, "decentespresso/openscale", "hds", "3.0.0")
+            version = tag.removeprefix("v") + ("-dev.abc" if scenario == "wrong_embedded_version" else "")
+            (build / "firmware.bin").write_bytes(b"FW: " + version.encode() + b"\0")
+            (build / "littlefs.bin").write_bytes(bytes(DEFAULT_FS_PARTITION_SIZE))
+            manifest = build_manifest(build, tag, "decentespresso/openscale", "hds", "3.0.0",
+                                      pcb=detect_pcb_version(ROOT / "include/config.h"), forward_recovery=1)
             if scenario == "wrong_version":
                 manifest = {**manifest, "version": "3.1.13"}
             if scenario in ("wrong_size", "wrong_hash"):
@@ -102,7 +112,7 @@ def main():
             )
             success = scenario in ("success", "preview")
             assert (result.returncode == 0) == success, (scenario, result.stdout, result.stderr)
-            assert (case / "published").exists() == success, scenario
+            assert not (case / "published").exists(), scenario
     print("uploaded release asset verification tests passed")
 
 

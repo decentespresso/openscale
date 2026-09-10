@@ -118,6 +118,12 @@ Catalog manifests merge the previous latest stable signed manifest, dedupe by mo
 
 Release preparation requires the automatically selected previous stable catalog and its valid signature. Downloads get three attempts, five seconds apart, with partial files removed before each attempt. Retrieval or verification failure aborts the release. The explicit `bootstrap_catalog` workflow input permits an empty release history only; it never bypasses a failed download or signature check for an existing stable release.
 
+The selected previous tag must also match the operator's `previous_tag` input.
+Preparation verifies the previous catalog identity and preserved compatible history,
+then stops at a signed draft. A separate `publish-release.yml` dispatch verifies
+the approved evidence digest, successful preparation run, and unchanged assets
+before publication. Neither publication nor approval rebuilds firmware.
+
 When the installed release has aged out of the latest catalog, firmware fetches that release's own signed manifest using both supported tag forms. It accepts only the compatible top-level release entry with the exact installed version and required LittleFS metadata. Firmware rollback remains local in the other app slot; this fallback supplies the signed asset metadata needed to restore the single shared LittleFS partition.
 
 Recovery lookup preserves preview/RC suffixes and must not substitute stable assets with the same numeric version. A hosted custom build, including one based on `main`, instead uses its embedded combination hash and published `ota-manifest.json`/`ota-manifest.sig`. Firmware containing the forward-recovery path can update without published source recovery assets when the signed target manifest declares `forward_recovery: 1`. Older source firmware, including preview 3, still needs its supported recovery assets or USB; these changes cannot alter already-flashed firmware.

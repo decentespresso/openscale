@@ -61,6 +61,7 @@ def main():
         ("both_fail", True, False, 3),
         ("invalid_signature", True, False, 2),
         ("list_failure", True, False, 0),
+        ("wrong_previous", False, False, 0),
     )
     with tempfile.TemporaryDirectory() as directory:
         base = Path(directory)
@@ -88,6 +89,7 @@ def main():
                 [BASH, "-c", script], cwd=case, capture_output=True, text=True,
                 env={**os.environ, "SCENARIO": scenario, "STABLE_TAG": "v3.1.13",
                      "BOOTSTRAP_CATALOG": str(bootstrap).lower(), "TAG": "v3.1.14",
+                     "EXPECTED_PREVIOUS_TAG": "" if scenario == "empty" else "v3.1.12" if scenario == "wrong_previous" else "v3.1.13",
                      "GITHUB_REPOSITORY": "decentespresso/openscale",
                      "TEST_PYTHON": Path(sys.executable).as_posix(),
                      "HDS_OTA_SIGNING_KEY_FILE": str(base / "private.pem")},

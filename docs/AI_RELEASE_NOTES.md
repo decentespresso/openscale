@@ -19,10 +19,23 @@ repository secrets or variables without explicit user authorization.
 `main` is the releasable branch. Stable releases use a numeric `vX.Y.Z` or
 `X.Y.Z` tag on a known-good commit reachable from `main`.
 
-`.github/workflows/release.yml` is the source of truth for release mechanics.
-The workflow also accepts `vX.Y.Z-preview.N` and `vX.Y.Z-rc.N` tags, publishing
-them as prereleases without changing latest. All releases publish signed
-recovery assets; preview/RC entries stay out of the stable OTA catalog.
+`.github/workflows/release.yml` prepares a verified signed draft. It requires
+the approved full candidate SHA and expected previous stable tag, and reuses
+`nightly.yml` and the minimal custom build from `custom-build.yml` against that
+exact candidate before signing. It never publishes automatically.
+
+`.github/workflows/publish-release.yml` separately approves existing draft bytes
+using the evidence SHA-256 from a successful preparation run. It rechecks the
+tag, signed inventory, previous stable catalog, and draft asset metadata without
+rebuilding or signing. Both workflows run from `main` and share concurrency.
+
+Preview/RC tags (`vX.Y.Z-preview.N`, `vX.Y.Z-rc.N`) remain prereleases and never
+become latest. Stable publication explicitly selects latest. All releases publish
+signed recovery assets; preview/RC entries stay out of the stable OTA catalog.
+
+Administrators must configure required reviewers and branch restrictions on the
+`firmware-release` environment; naming it in YAML alone does not enforce approval.
+See `docs/release-3.1.14-checklist.md` for operational and hardware sign-off.
 
 For OTA signing, manifests, compatibility, picker, and rollback invariants,
 also read `docs/AI_OTA_NOTES.md`.
@@ -89,8 +102,8 @@ Review `README.md` and related documentation when the release changes:
 - build, flashing, recovery, OTA, downgrade, or rollback;
 - required manual actions and known limitations.
 
-The workflow publishes generated GitHub notes after its checks. Ensure PR titles
-and user-facing documentation are accurate before dispatch.
+Preparation generates draft notes. Review them and the user-facing documentation
+before approving publication.
 
 Do not expose signing-key material or non-public credentials.
 
@@ -110,7 +123,10 @@ release still:
 - generates and verifies the new signed catalog;
 - uploads all required assets in the intended order;
 - downloads draft assets and verifies their signatures, manifest sizes/hashes, and agreement with build outputs, including all four USB ZIP images;
-- publishes only after asset and signature checks pass.
+- validates model/PCB, chip/environment, flash and partition contracts, canonical URLs, forward recovery, and a minimum source version that permits the previous stable before signing evidence;
+- uses `--verify-tag` for both draft creation and publication so missing remote tags are not implicitly recreated;
+- signs an inventory binding the candidate, repository, previous stable, preparation run, and all six release assets;
+- stops at a verified draft, then publishes only through separately approved evidence from a successful preparation run.
 
 Do not hand-edit generated manifests or signatures. Do not weaken HTTPS,
 signature, hash, size, schema, compatibility, or rollback checks.
@@ -134,6 +150,7 @@ python tools/test_release_workflow_contract.py
 python tools/test_generate_release_manifest.py
 python tools/test_release_catalog_download.py
 python tools/test_verify_release_assets.py
+python tools/test_release_publication.py
 python tools/test_pull_ota_contract.py
 python tools/test_ota_rollback_contract.py
 python tools/test_ota_public_key_header.py
@@ -180,15 +197,22 @@ Before tagging, confirm:
 Only after explicit authorization:
 
 1. Create and push the stable tag on the approved commit.
-2. Dispatch `Release firmware` with that exact tag.
-3. Inspect the complete workflow result and raw failures.
-4. Confirm the release points to the intended commit.
-5. Confirm the legacy ZIP, required OTA assets, and `dependencies.txt` are present.
-6. Confirm the release is neither draft nor prerelease.
-7. Check the manifest version, hardware, environment, partitions, assets, and
-   minimum supported source version.
-8. Verify installation through relevant user and OTA paths.
-9. Record limitations or rollback actions.
+2. Dispatch `Release firmware` from `main` with the tag, `expected_commit`, and
+   `previous_tag`. The expected baseline for 3.1.14 is `v3.1.13` while it remains
+   the most recently published stable release.
+3. Inspect the successful preparation run and record its evidence SHA-256.
+4. Confirm the draft contains the legacy ZIP, required OTA assets,
+   `dependencies.txt`, `release-evidence.json`, and `release-evidence.sig`.
+5. Test the exact final draft binaries by USB and record hardware sign-off.
+6. Dispatch `Publish firmware` from `main` with the same tag and commit and the
+   approved `evidence_sha256`. Approve the protected environment.
+7. Confirm stable/latest or preview/prerelease classification as appropriate.
+8. Check manifest compatibility and test the real production OTA path.
+9. Record results, limitations, and recovery actions.
+
+If preparation fails after creating a draft, leave it unpublished. Investigate
+before explicitly cleaning up that unpublished draft and rerunning preparation.
+Do not bypass the successful-run check with manual publication.
 
 Do not delete or replace published assets without evaluating signed catalog,
 downgrade, and rollback consequences.

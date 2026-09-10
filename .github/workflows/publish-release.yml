@@ -1,0 +1,49 @@
+name: Publish firmware
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Verified draft release tag"
+        required: true
+      expected_commit:
+        description: "Full candidate SHA approved after hardware testing"
+        required: true
+      evidence_sha256:
+        description: "Evidence SHA-256 from the successful preparation summary"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: firmware-release
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Verify approved bytes and publish without rebuilding
+        env:
+          TAG: ${{ inputs.tag }}
+          COMMIT: ${{ inputs.expected_commit }}
+          EVIDENCE_SHA256: ${{ inputs.evidence_sha256 }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          python tools/release_publication.py publish --tag "$TAG" --commit "$COMMIT" --evidence-sha256 "$EVIDENCE_SHA256"

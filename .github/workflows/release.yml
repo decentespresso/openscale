@@ -6,24 +6,76 @@ on:
       tag:
         description: "Tag to release (must already exist on main)"
         required: true
+      expected_commit:
+        description: "Approved full candidate commit SHA"
+        required: true
+      previous_tag:
+        description: "Expected previous published stable tag; empty only for bootstrap"
+        default: v3.1.13
       bootstrap_catalog:
         description: "First release only: allow no previous stable catalog"
         type: boolean
         default: false
 
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-release
+  cancel-in-progress: false
+
 jobs:
-  build-and-release:
+  resolve:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - env:
+          TAG: ${{ inputs.tag }}
+          COMMIT: ${{ inputs.expected_commit }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          python tools/release_publication.py candidate --tag "$TAG" --commit "$COMMIT"
+
+  preflight:
+    needs: resolve
+    uses: ./.github/workflows/nightly.yml
+    with:
+      commit: ${{ inputs.expected_commit }}
+
+  custom-preflight:
+    needs: resolve
+    uses: ./.github/workflows/custom-build.yml
+    with:
+      commit: ${{ inputs.expected_commit }}
+
+  build-and-release:
+    needs: [resolve, preflight, custom-preflight]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: firmware-release
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          ref: main
+          ref: ${{ inputs.expected_commit }}
+          persist-credentials: false
 
       - name: Verify tag and checkout release commit
         env:
           TAG: ${{ github.event.inputs.tag }}
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
         run: |
           set -euo pipefail
           if [[ ! "$TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-(preview|rc)\.[0-9]+)?$ ]]; then
@@ -40,6 +92,7 @@ jobs:
             echo "Error: tag $TAG is not reachable from main"
             exit 1
           fi
+          test "$TAG_COMMIT" = "$EXPECTED_COMMIT"
           git checkout --detach "$TAG_COMMIT"
           if [[ "$TAG" == *-* ]] && ! grep -Fxq '#define HDS_OTA_RELEASE_RECOVERY_VERSION 1' include/pull_ota_version.h; then
             echo "Error: preview tag predates exact-version rollback lookup"
@@ -96,6 +149,7 @@ jobs:
       - name: Prepare release assets
         env:
           BOOTSTRAP_CATALOG: ${{ inputs.bootstrap_catalog }}
+          EXPECTED_PREVIOUS_TAG: ${{ inputs.previous_tag }}
           TAG: ${{ github.event.inputs.tag }}
           HDS_RELEASE_TAG: ${{ github.event.inputs.tag }}
           HDS_RELEASE_REPOSITORY: ${{ github.repository }}
@@ -130,6 +184,10 @@ jobs:
           done
           PREVIOUS_MANIFEST_ARGS=()
           PREVIOUS_TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // ""')"
+          if [ "$PREVIOUS_TAG" != "$EXPECTED_PREVIOUS_TAG" ]; then
+            echo "Error: previous stable release differs from the approved baseline"
+            exit 1
+          fi
           if [ -n "$PREVIOUS_TAG" ]; then
             mkdir -p previous-release
             for attempt in 1 2 3; do
@@ -167,11 +225,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          RELEASE_FLAGS=()
+          RELEASE_FLAGS=(--latest=false)
           if [[ "$TAG" == *-* ]]; then
             RELEASE_FLAGS=(--prerelease --latest=false)
           fi
           gh release create "$TAG" \
+            --verify-tag \
             --draft \
             "${RELEASE_FLAGS[@]}" \
             --title="$TAG" \
@@ -184,4 +243,22 @@ jobs:
           gh release upload "$TAG" release-files/manifest.json
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir downloaded-release
           python tools/verify_release_assets.py --tag "$TAG" --download-dir downloaded-release
-          gh release edit "$TAG" --draft=false
+      - name: Sign release evidence
+        env:
+          TAG: ${{ inputs.tag }}
+          COMMIT: ${{ inputs.expected_commit }}
+          PREVIOUS_TAG: ${{ inputs.previous_tag }}
+          GH_TOKEN: ${{ github.token }}
+          HDS_OTA_SIGNING_KEY_PEM: ${{ secrets.HDS_OTA_SIGNING_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          python tools/release_publication.py evidence --tag "$TAG" --commit "$COMMIT" --previous-tag "$PREVIOUS_TAG"
+      - name: Upload and verify evidence and draft bytes
+        env:
+          TAG: ${{ inputs.tag }}
+          COMMIT: ${{ inputs.expected_commit }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" downloaded-release/release-evidence.json downloaded-release/release-evidence.sig
+          python tools/release_publication.py verify-draft --tag "$TAG" --commit "$COMMIT"

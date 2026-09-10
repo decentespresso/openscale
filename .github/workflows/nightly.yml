@@ -2,6 +2,11 @@
 name: Build firmware
 
 on:
+  workflow_call:
+    inputs:
+      commit:
+        type: string
+        required: true
   push:
     branches:
       - main
@@ -16,7 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.commit || github.sha }}
           fetch-depth: 0
+          persist-credentials: false
       - name: Create prospective release tag
         run: |
           if ! git show-ref --verify --quiet refs/tags/v3.1.14; then
@@ -25,10 +32,15 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
       - run: |
+          set -euo pipefail
           for test in tools/test_*.py; do
             python "$test"
           done
+          node --test cloudflare/custom-build-worker/test/*.test.mjs
 
   native-tests:
     name: Native unit tests
@@ -37,6 +49,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
@@ -51,6 +66,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          persist-credentials: false
 
       - uses: actions/cache@v6
         with:
@@ -115,6 +133,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          persist-credentials: false
 
       - uses: actions/cache@v6
         with:
@@ -131,3 +152,20 @@ jobs:
 
       - name: Build Energy Menu firmware
         run: pio run -e esp32s3-energy-menu
+
+  release-ready:
+    if: always()
+    needs: [ai-documentation, native-tests, build, energy-build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          results = json.loads(os.environ["RESULTS"])
+          assert all(job["result"] == "success" for job in results.values()), results
+          PY

@@ -100,14 +100,19 @@ def main():
         {"plugin": "transitive", "firmware_ref": "v1.2.3"},
     ]
     compileCustom = customWorkflow.split("\n  compile_custom:\n", 1)[1].split("\n  build:\n", 1)[0]
-    assert compileCustom.lstrip().startswith("if: github.event_name == 'pull_request'")
+    assert compileCustom.lstrip().startswith("if: github.event_name != 'workflow_dispatch' || inputs.commit != ''")
     assert '"features": []' in compileCustom
     assert '"plugins": []' in compileCustom
-    assert '"firmware_ref": "v3.1.14"' in compileCustom
+    assert '"firmware_ref": "main"' in compileCustom
     assert "--config .pio.nosync/pr-ci.json" in compileCustom
     assert 'git tag v3.1.14 "${{ github.sha }}"' in verifyPlugins
     assert 'git tag v3.1.14 "${{ github.sha }}"' in compileCustom
-    assert "--source-commit \"$(git rev-parse --verify --end-of-options 'refs/tags/v3.1.14^{commit}')\"" in compileCustom
+    assert '--source-commit "$CANDIDATE_COMMIT"' in compileCustom
+    assert '--builder-commit "$CANDIDATE_COMMIT"' in compileCustom
+    assert 'ref: ${{ inputs.commit || github.sha }}' in compileCustom
+    assert 'CANDIDATE_COMMIT: ${{ inputs.commit || github.sha }}' in compileCustom
+    assert 'refs/tags/v3.1.14^{commit}' not in compileCustom
+    assert "if: github.event_name == 'workflow_dispatch' && inputs.commit == ''" in dispatchBuild
     with tempfile.TemporaryDirectory() as directory:
         subprocess.run(
             ["git", "clone", "--quiet", "--no-checkout", str(ROOT), directory],
