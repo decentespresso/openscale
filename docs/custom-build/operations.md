@@ -22,9 +22,9 @@ The Worker stores SHA-256 hashes of fleet and device secrets, never their raw va
 recovery key as a bearer credential. A scale's `device_secret` stays in the `ota_custom` NVS
 namespace and must never be displayed or logged.
 
-The browser keeps the fleet recovery key only in tab-scoped session storage. It removes the legacy
-persistent copy when the configurator next opens. Move the configurator to a dedicated origin before
-making recovery keys persistent again.
+The browser keeps the fleet recovery key in local storage and migrates older session-only keys
+after persistence succeeds. Treat scripts on the shared origin as trusted with this credential.
+Saving a first build stops if the browser cannot persist the newly generated key.
 
 ## Fleet Data Model
 
@@ -33,6 +33,9 @@ contains device IDs and immutable build references. Each build reference contain
 `combination_hash`, a user-editable label, firmware version, feature and plugin identifiers, and the
 time it was added. The binaries remain in R2 under `v1/<combination-hash>/`; adding or removing a
 fleet reference never copies or deletes those objects.
+
+A ready build can create the library before any scale is paired. New libraries share the bounded
+pairing-creation quota. Pairing later preserves saved builds and does not automatically assign one.
 
 Device records distinguish these fields:
 

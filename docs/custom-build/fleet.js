@@ -180,9 +180,8 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
     const readyHash = getReadyHash();
     const alreadyAdded = builds.some(build => build.combination_hash === readyHash);
     addBuild.hidden = !readyHash;
-    addBuild.disabled = !scales.length || !readyHash || savingBuild;
+    addBuild.disabled = !readyHash || savingBuild;
     addBuild.textContent = savingBuild ? "Saving..." : alreadyAdded ? "My scales" : "Save build";
-    addBuild.title = !scales.length ? "Link a scale first" : "";
   };
 
   const editingFleet = () => Boolean(consoleRoot.querySelector("input:not([type=checkbox]):focus, select:focus")) ||
@@ -382,15 +381,16 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   };
 
   const activateKey = key => {
-    fleetKey = normalizedFleetKey(key);
-    if (!fleetPattern.test(fleetKey)) {
+    const candidateKey = normalizedFleetKey(key);
+    if (!fleetPattern.test(candidateKey)) {
       showToast("Enter a valid recovery key");
       return false;
     }
-    if (!saveKey(fleetKey)) {
+    if (!saveKey(candidateKey)) {
       showToast("Scale access could not be saved. Allow browser storage and try again.");
       return false;
     }
+    fleetKey = candidateKey;
     setMode(true);
     setSettingsOpen(false);
     loadFleet();
@@ -451,7 +451,8 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   });
   addBuild.addEventListener("click", async () => {
     const combinationHash = getReadyHash();
-    if (!combinationHash || !scales.length || savingBuild) return;
+    if (!combinationHash || savingBuild) return;
+    if (!fleetKey && !activateKey(encodeBase32(crypto.getRandomValues(new Uint8Array(20))))) return;
     const showScales = () => {
       buildSelect.value = combinationHash;
       document.querySelector(".fleet-scales-section").scrollIntoView({

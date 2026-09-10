@@ -314,6 +314,56 @@ test("fleet assignment uses only the explicit scale selection", async () => {
   assert.ok(source.includes("{device_ids: [...selectedDeviceIds]}"));
 });
 
+test("ready builds save without paired scales and require durable recovery access", async () => {
+  const source = await readFile(new URL("../../../docs/custom-build/fleet.js", import.meta.url), "utf8");
+  const handler = source.slice(source.indexOf('addBuild.addEventListener("click"'), source.indexOf('selectAll.addEventListener("change"'));
+  assert.ok(source.includes("addBuild.disabled = !readyHash || savingBuild"));
+  assert.equal(source.includes("Link a scale first"), false);
+  for (const mode of ["new", "existing", "storage-blocked", "request-failed", "not-ready"]) {
+    const requests = [];
+    const errors = [];
+    const context = {
+      fleetKey: mode === "existing" ? "existing-key" : "",
+      scales: [], builds: [], savingBuild: false,
+      getReadyHash: () => mode === "not-ready" ? "" : "a".repeat(64),
+      crypto: {getRandomValues: value => value.fill(1)},
+      encodeBase32: () => "new-key",
+      activateKey: key => {
+        if (mode === "storage-blocked") return false;
+        context.fleetKey = key;
+        return true;
+      },
+      addBuild: {addEventListener: (event, listener) => { context.click = listener; }},
+      api: async (path, options) => {
+        requests.push({path, key: context.fleetKey, body: JSON.parse(options.body)});
+        if (mode === "request-failed") throw new Error("offline");
+      },
+      renderControls: () => {}, showToast: () => {}, showApiError: error => errors.push(error),
+      loadFleet: async () => true,
+      buildSelect: {focus: () => {}},
+      document: {querySelector: () => ({scrollIntoView: () => {}})},
+      matchMedia: () => ({matches: true}),
+    };
+    runInNewContext(handler, context);
+    await context.click();
+    assert.equal(context.savingBuild, false);
+    assert.equal(requests.length, ["storage-blocked", "not-ready"].includes(mode) ? 0 : 1);
+    if (requests.length) {
+      assert.equal(requests[0].path, "/api/v1/fleet/builds");
+      assert.equal(requests[0].key, mode === "existing" ? "existing-key" : "new-key");
+      assert.equal(requests[0].body.combination_hash, "a".repeat(64));
+    }
+    assert.equal(errors.length, mode === "request-failed" ? 1 : 0);
+  }
+  const activate = source.slice(source.indexOf("const activateKey ="), source.indexOf('document.querySelector("#start-fleet")'));
+  const context = {
+    fleetKey: "", normalizedFleetKey: key => key, fleetPattern: /^[A-Z2-7]{32}$/,
+    saveKey: () => false, showToast: () => {}, setMode: () => {}, setSettingsOpen: () => {}, loadFleet: () => {},
+  };
+  assert.equal(runInNewContext(activate + 'activateKey("A".repeat(32))', context), false);
+  assert.equal(context.fleetKey, "");
+});
+
 
 test("theme follows the system until a saved preference overrides it", async () => {
   const html = await readFile(new URL("../../../docs/custom-build/index.html", import.meta.url), "utf8");

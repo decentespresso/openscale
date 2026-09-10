@@ -8,7 +8,7 @@ import {
   resolveSelection,
   selectionQuery,
 } from "./selection.mjs?v=5";
-import {initFleet} from "./fleet.js?v=13";
+import {initFleet} from "./fleet.js?v=14";
 import {buildEstimate} from "./build-estimate.mjs?v=1";
 import {initBuildProgress} from "./build-progress.mjs?v=1";
 

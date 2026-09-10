@@ -370,6 +370,50 @@ test("device check-in reports authoritative installed state without changing des
   assert.equal(scale.firmware_version, "3.1.15-custom");
 });
 
+test("saves builds before pairing and preserves them when the first scale is linked", async () => {
+  const {env, storage} = environment();
+  const save = authorization => request(env, "/api/v1/fleet/builds", {
+    method: "POST", body: {combination_hash: combinationHash}, authorization, browser: true,
+  });
+  assert.equal((await save("invalid")).status, 401);
+  assert.equal((await save(fleetSecret)).status, 409);
+  assert.equal([...storage.values.keys()].some(key => key.startsWith("fleet:")), false);
+  await readyBuild(env, combinationHash);
+  assert.equal((await save(fleetSecret)).status, 200);
+  assert.equal((await save(fleetSecret)).status, 200);
+  const overview = async authorization => (await request(env, "/api/v1/fleet/overview", {
+    authorization, browser: true,
+  })).json();
+  const beforePairing = await overview(fleetSecret);
+  assert.deepEqual(beforePairing.scales, []);
+  assert.equal(beforePairing.builds.length, 1);
+  assert.equal(beforePairing.builds[0].combination_hash, combinationHash);
+  assert.equal(beforePairing.builds[0].state, "ready");
+  assert.deepEqual((await overview(secondFleetSecret)).builds, []);
+  await linkScale(env, {
+    selectedDeviceId: deviceId, authorization: deviceSecret, pairCode: "A3F921-100009",
+  });
+  const afterPairing = await overview(fleetSecret);
+  assert.deepEqual(afterPairing.builds, beforePairing.builds);
+  assert.equal(afterPairing.scales.length, 1);
+  assert.equal(afterPairing.scales[0].desired_combination, null);
+});
+
+test("new build libraries share the bounded pairing creation quota", async () => {
+  const {env} = environment();
+  await readyBuild(env, combinationHash);
+  const save = authorization => request(env, "/api/v1/fleet/builds", {
+    method: "POST", body: {combination_hash: combinationHash}, authorization, browser: true,
+  });
+  for (let index = 0; index < pairCreationsPerClient; index++) {
+    assert.equal((await save("A".repeat(31) + String.fromCharCode(65 + index))).status, 200);
+  }
+  const limited = await save("Z".repeat(32));
+  assert.equal(limited.status, 429);
+  assert.ok(Number(limited.headers.get("Retry-After")) > 0);
+  assert.equal((await save(fleetSecret)).status, 200);
+});
+
 test("fleet build library stores references without owning artifacts", async () => {
   const {env, storage} = environment();
   await readyBuild(env, combinationHash);
