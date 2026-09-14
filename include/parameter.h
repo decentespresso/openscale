@@ -7,6 +7,7 @@
 #include <math.h>
 #include <mutex>
 #include "calibration_validation.h"
+#include "auto_off_activity.h"
 #include "energy_runtime_policy.h"
 #include "pull_ota_target.h"
 #if HDS_ENABLE_ENERGY_MENU
@@ -22,6 +23,7 @@ struct PowerCadenceState {
   uint32_t batterySampleSequence = 0;
 };
 PowerCadenceState powerCadence;
+AutoOffWeightActivityTracker autoOffWeightActivity;
 #if HDS_ENABLE_ENERGY_MENU
 EnergyPolicy energyPolicy;
 EnergyPowerManagement energyPowerManagement;
