@@ -11,6 +11,8 @@ struct AutoOffWeightActivityTracker {
   bool initialized = false;
   unsigned long windowStartedAt = 0;
   float windowStartWeight = 0.0f;
+  unsigned long previousSampleAt = 0;
+  float previousWeight = 0.0f;
 
   void reset(unsigned long now, float weight) {
     if (!isfinite(weight)) {
@@ -20,6 +22,17 @@ struct AutoOffWeightActivityTracker {
     initialized = true;
     windowStartedAt = now;
     windowStartWeight = weight;
+    previousSampleAt = now;
+    previousWeight = weight;
+  }
+
+  bool hasActivity(unsigned long now, float weight) const {
+    const unsigned long elapsed = now - windowStartedAt;
+    const float delta = fabsf(weight - windowStartWeight);
+    const bool fastEnough = elapsed == 0 ||
+      delta * 1000.0f >= MIN_RATE_G_PER_SEC * static_cast<float>(elapsed);
+
+    return delta >= MIN_DELTA_G && fastEnough;
   }
 
   bool update(unsigned long now, float weight) {
@@ -32,18 +45,16 @@ struct AutoOffWeightActivityTracker {
       return false;
     }
 
-    const unsigned long elapsed = now - windowStartedAt;
-    const float delta = fabsf(weight - windowStartWeight);
-    const bool fastEnough = elapsed == 0 ||
-      delta * 1000.0f >= MIN_RATE_G_PER_SEC * static_cast<float>(elapsed);
-
-    if (delta >= MIN_DELTA_G && fastEnough) {
+    if (now - windowStartedAt >= WINDOW_MS && !hasActivity(now, weight)) {
+      windowStartedAt = previousSampleAt;
+      windowStartWeight = previousWeight;
+    }
+    if (hasActivity(now, weight)) {
       reset(now, weight);
       return true;
     }
-    if (elapsed >= WINDOW_MS) {
-      reset(now, weight);
-    }
+    previousSampleAt = now;
+    previousWeight = weight;
     return false;
   }
 };
