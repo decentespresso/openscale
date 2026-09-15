@@ -38,7 +38,7 @@ def main():
     ota_at = loop.index("if (b_ota)")
     assert pending_at < ota_at < loop.index("processBleStatusResponse();")
     assert ota_at < loop.index("if (b_powerOff)")
-    assert ota_at < loop.index("buttonCircle.check();")
+    assert ota_at < loop.index("serviceScaleButtonInputs(false);")
     assert ota_at < loop.index("checkBattery();")
     assert loop.index("blePauseForOta()") < loop.index("ElegantOTA.loop();")
     assert "if (!otaTransportsStopped)" in loop
