@@ -37,6 +37,11 @@ def main():
     assert "esp32s3-grinder" not in firmwareWorkflow
     assert "name: firmware (esp32s3)" in firmwareWorkflow
     assert "name: firmware (esp32s3-energy-menu)" in energyBuild
+    assert read("constraints-pioarduino.txt").splitlines() == ["pioarduino==6.1.19"]
+    nestedCoreConstraint = "UV_CONSTRAINT: ${{ github.workspace }}/constraints-pioarduino.txt"
+    assert nestedCoreConstraint in energyBuild.split("\n  release-ready:", 1)[0]
+    assert nestedCoreConstraint in customWorkflow.split("\njobs:", 1)[0]
+    assert '"constraints-pioarduino.txt"' in customWorkflow.split("  workflow_dispatch:", 1)[0]
     assert "for test in tools/test_*.py" in firmwareWorkflow
 
     assert "detect_plugins:" in customWorkflow

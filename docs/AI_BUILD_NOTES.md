@@ -49,6 +49,20 @@ Do not add an environment merely because it exists. Changes limited to ADS1232 b
 
 ### Windows Energy-Menu Builds
 
+Before a fresh PM-capable build, constrain the nested pioarduino Core:
+
+```powershell
+$env:UV_CONSTRAINT = Join-Path $PWD 'constraints-pioarduino.txt'
+```
+
+On Linux/macOS use `export UV_CONSTRAINT="$PWD/constraints-pioarduino.txt"`.
+The SDK builder installs its own Core into the selected core directory's
+`penv`. Version 6.2.0 switches SCons to 4.11.1 during the nested Arduino build,
+conflicting with this platform's SCons 4.8.1. The constraint keeps that Core
+at 6.1.19 without changing the firmware or disabling size checks. CI applies
+it to Energy Menu and custom builds. Constraints do not downgrade an already
+installed Core; use a fresh ignored local core directory in that case.
+
 The PM-capable energy-menu environments compile ESP-IDF libraries. Use a
 short physical worktree path, such as `D:\w180`, with its ignored local
 `.pio-core` directory. Set `PLATFORMIO_BUILD_DIR` to `D:\w180\build` for

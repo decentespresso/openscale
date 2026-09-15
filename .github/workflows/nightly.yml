@@ -130,6 +130,8 @@ jobs:
   energy-build:
     name: firmware (esp32s3-energy-menu)
     runs-on: ubuntu-latest
+    env:
+      UV_CONSTRAINT: ${{ github.workspace }}/constraints-pioarduino.txt
 
     steps:
       - uses: actions/checkout@v7
