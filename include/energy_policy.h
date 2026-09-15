@@ -7,6 +7,7 @@ enum class EnergyFeature : uint8_t {
   OledRedraw,
   OledIdle,
   LightSleep,
+  LightSleepPlus,
   UsbSleepTest,
   Count
 };
@@ -30,6 +31,11 @@ struct EnergySettings {
   bool lightSleepAllowed(bool usbPresent) const {
     return enabled(EnergyFeature::LightSleep) &&
            (!usbPresent || enabled(EnergyFeature::UsbSleepTest));
+  }
+
+  bool lightSleepPlusActive() const {
+    return enabled(EnergyFeature::LightSleep) &&
+           enabled(EnergyFeature::LightSleepPlus);
   }
 
   bool usbSleepTestActive() const {

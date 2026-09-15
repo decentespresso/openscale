@@ -30,7 +30,7 @@ constexpr const char *KEY_DRIFT_MAX = "drift_max";
 constexpr const char *KEY_WOW_INTERVAL = "wow_interval";
 #if HDS_ENABLE_ENERGY_MENU
 constexpr const char *KEY_ENERGY_SCHEMA = "energy_schema";
-constexpr uint16_t ENERGY_SCHEMA_VERSION = 9;
+constexpr uint16_t ENERGY_SCHEMA_VERSION = 10;
 constexpr const char *KEY_ENERGY_SERIAL_QUIET = "e_serial_quiet";
 constexpr const char *KEY_ENERGY_MOTION_POLL = "e_motion";
 constexpr const char *KEY_ENERGY_ACC_RAIL_OFF = "e_acc_rail";
@@ -38,7 +38,7 @@ constexpr const char *KEY_ENERGY_POWER_CADENCE = "e_power_cad";
 constexpr const char *KEY_ENERGY_OLED_STATIC = "e_oled_static";
 
 constexpr const char *ENERGY_FEATURE_KEYS[] = {
-  "e_oled_redraw", "e_oled_idle", "e_light_sleep", "e_usb_sleep"
+  "e_oled_redraw", "e_oled_idle", "e_light_sleep", "e_light_plus", "e_usb_sleep"
 };
 static_assert(sizeof(ENERGY_FEATURE_KEYS) / sizeof(ENERGY_FEATURE_KEYS[0]) ==
               static_cast<size_t>(EnergyFeature::Count));
@@ -127,15 +127,33 @@ inline bool storageRemoveIfPresent(const char *key) {
 }
 
 inline bool energyLoadSettings(EnergySettings &settings) {
-  const bool schemaCurrent = settingsPreferences.getType(KEY_ENERGY_SCHEMA) == PT_U16 &&
-                             settingsPreferences.getUShort(KEY_ENERGY_SCHEMA, 0) == ENERGY_SCHEMA_VERSION;
+  const bool schemaTyped = settingsPreferences.getType(KEY_ENERGY_SCHEMA) == PT_U16;
+  const uint16_t storedSchema = schemaTyped
+                                  ? settingsPreferences.getUShort(KEY_ENERGY_SCHEMA, 0)
+                                  : 0;
+  const bool schemaCurrent = storedSchema == ENERGY_SCHEMA_VERSION;
+  const uint8_t lightSleepIndex = static_cast<uint8_t>(EnergyFeature::LightSleep);
+  const uint8_t lightSleepPlusIndex = static_cast<uint8_t>(EnergyFeature::LightSleepPlus);
+  const bool migrateAggressiveLightSleep =
+    storedSchema == 9 &&
+    !settingsPreferences.isKey(ENERGY_FEATURE_KEYS[lightSleepPlusIndex]) &&
+    settingsPreferences.getType(ENERGY_FEATURE_KEYS[lightSleepIndex]) == PT_U8 &&
+    settingsPreferences.getUChar(ENERGY_FEATURE_KEYS[lightSleepIndex], 0) == 1;
   bool loaded = true;
   settings.features = 0;
   for (uint8_t index = 0; index < static_cast<uint8_t>(EnergyFeature::Count); ++index) {
     const EnergyFeature feature = static_cast<EnergyFeature>(index);
+    const bool defaultEnabled =
+      feature == EnergyFeature::LightSleepPlus && migrateAggressiveLightSleep;
     bool enabled = false;
-    loaded = storageLoadValidatedBool(ENERGY_FEATURE_KEYS[index], false, enabled) && loaded;
+    loaded = storageLoadValidatedBool(
+      ENERGY_FEATURE_KEYS[index], defaultEnabled, enabled) && loaded;
     settings.select(feature, enabled);
+  }
+  if (!settings.enabled(EnergyFeature::LightSleep) &&
+      settings.enabled(EnergyFeature::LightSleepPlus)) {
+    settings.select(EnergyFeature::LightSleepPlus, false);
+    loaded = storagePutBool(ENERGY_FEATURE_KEYS[lightSleepPlusIndex], false) && loaded;
   }
   if (schemaCurrent) return loaded;
   loaded = storageRemoveIfPresent(KEY_ENERGY_SERIAL_QUIET) && loaded;

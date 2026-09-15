@@ -57,7 +57,7 @@ class EnergyLightSleepContractTests(unittest.TestCase):
 
     def test_feature_count_and_menu_order(self):
         self.assertEqual(
-            ["OledRedraw", "OledIdle", "LightSleep", "UsbSleepTest"],
+            ["OledRedraw", "OledIdle", "LightSleep", "LightSleepPlus", "UsbSleepTest"],
             re.findall(r"^  (\w+),$", POLICY, re.MULTILINE),
         )
         self.assertEqual(
@@ -75,12 +75,15 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertIn("static_cast<size_t>(EnergyFeature::Count)", MENU)
 
     def test_storage_migration_preserves_retained_features(self):
-        self.assertIn("ENERGY_SCHEMA_VERSION = 9", STORAGE)
+        self.assertIn("ENERGY_SCHEMA_VERSION = 10", STORAGE)
         self.assertIn('"e_light_sleep"', STORAGE)
+        self.assertIn('"e_light_plus"', STORAGE)
         self.assertIn('"e_usb_sleep"', STORAGE)
         self.assertIn("KEY_ENERGY_MOTION_POLL", STORAGE)
         self.assertIn("KEY_ENERGY_ACC_RAIL_OFF", STORAGE)
         migration = body(STORAGE, "inline bool energyLoadSettings")
+        self.assertIn("migrateAggressiveLightSleep", migration)
+        self.assertIn("EnergyFeature::LightSleepPlus", migration)
         self.assertIn("storageRemoveIfPresent(KEY_ENERGY_SERIAL_QUIET)", migration)
         self.assertIn("storageRemoveIfPresent(KEY_ENERGY_MOTION_POLL)", migration)
         self.assertIn("storageRemoveIfPresent(KEY_ENERGY_ACC_RAIL_OFF)", migration)
@@ -121,7 +124,8 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertIn("setEnergyLightSleepEnabled(isEnabled)", transition)
         self.assertIn("initEnergyPowerManagement()", FIRMWARE)
         self.assertIn("serviceEnergyPowerManagement()", FIRMWARE)
-        self.assertIn("setEnergyPerformanceCritical(b_ota || b_pullOtaRunning)", FIRMWARE)
+        self.assertIn("energyResponsiveButtonBoostActive(now)", FIRMWARE)
+        self.assertIn("setEnergyPerformanceCritical(", FIRMWARE)
 
     def test_pm_lock_policy(self):
         self.assertIn("ESP_PM_CPU_FREQ_MAX", POWER)
@@ -172,9 +176,28 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertIn("BUTTON_POLL_INTERVAL_MS = 2", FIRMWARE)
         self.assertIn("ulTaskNotifyTake(pdTRUE, waitTicks)", FIRMWARE)
         self.assertIn("digitalRead(SCALE_DOUT) == LOW", FIRMWARE)
-        self.assertIn("serviceEnergyButtonGesture(buttonNow)", loop)
-        self.assertIn("hdsIntervalElapsed(buttonNow, energyIdle.lastButtonPoll, BUTTON_POLL_INTERVAL_MS)", loop)
+        buttons = body(FIRMWARE, "bool serviceScaleButtonInputs(bool forcePoll)")
+        self.assertIn("serviceEnergyButtonGesture(buttonNow)", buttons)
+        self.assertIn("hdsIntervalElapsed(buttonNow, energyIdle.lastButtonPoll, BUTTON_POLL_INTERVAL_MS)", buttons)
+        self.assertIn("serviceScaleButtonInputs(false)", loop)
         self.assertNotIn("websocket.count()", loop)
+
+    def test_responsive_button_wake_profile(self):
+        toggle = body(MENU, "void toggleEnergyLightSleep()")
+        self.assertIn("EnergyFeature::LightSleepPlus", toggle)
+        self.assertIn('showEnergyAction("Light Sleep+", true, stored)', toggle)
+        boost = body(FIRMWARE, "bool energyResponsiveButtonBoostActive(unsigned long now)")
+        self.assertIn("!energyPolicy.settings.lightSleepPlusActive()", boost)
+        self.assertIn("ENERGY_BUTTON_RESPONSE_BOOST_MS = 50", FIRMWARE)
+        restore = body(FIRMWARE, "uint64_t serviceEnergyLightSleepWakeRestore()")
+        self.assertIn("esp_sleep_get_ext1_wakeup_status()", restore)
+        self.assertIn("lastLightSleepButtonWakeAt", restore)
+        self.assertIn("buttonGestureActive = true", restore)
+        loop = body(FIRMWARE, "void loop()")
+        self.assertLess(loop.index("setEnergyPerformanceCritical(true)"), loop.index("serviceScaleButtonInputs(true)"))
+        self.assertLess(loop.index("serviceScaleButtonInputs(true)"), loop.index("processWsPendingCmds()"))
+        wait = body(FIRMWARE, "unsigned long energyMainLoopWaitMs(unsigned long now)")
+        self.assertIn("earlier(waitMs, 200)", wait)
 
     def test_light_sleep_off_keeps_polling_and_on_uses_wake_sources(self):
         buttons = body(FIRMWARE, "bool serviceEnergyButtonGesture(unsigned long now)")
@@ -262,14 +285,15 @@ class EnergyLightSleepContractTests(unittest.TestCase):
     def test_light_sleep_transition_and_boot_fail_closed(self):
         toggle = body(MENU, "void toggleEnergyLightSleep()")
         enable_runtime = toggle.index("setEnergyLightSleepEnabled(true)")
-        enable_store = toggle.index("energyStoreFeature(EnergyFeature::LightSleep, true)")
+        enable_store = toggle.index("storeEnergyLightSleepProfile(true, false")
         self.assertLess(enable_runtime, enable_store)
+        self.assertIn("storeEnergyLightSleepProfile(true, true", toggle)
         transition = body(FIRMWARE, "bool setEnergyLightSleepEnabled(bool enabled)")
         self.assertIn("setEnergyIdleWakeEnabled(false)", transition)
         self.assertIn("applyEnergyLightSleepSetting(false)", transition)
         setup = body(FIRMWARE, "void setup()")
         self.assertIn("Stored Light Sleep rejected; disabled", setup)
-        self.assertIn("energyStoreFeature(EnergyFeature::LightSleep, false)", setup)
+        self.assertIn("clearEnergyLightSleepProfileSelection()", setup)
         self.assertNotIn("while (1)", setup[setup.index("initEnergyPowerManagement()") : setup.index("energyPolicy.begin")])
 
     def test_deferred_work_wakes_main_loop(self):
@@ -332,7 +356,7 @@ class EnergyLightSleepContractTests(unittest.TestCase):
         self.assertIn("lightSleepEnabled && serialTransportActive && !usbSleepTestEnabled", POWER)
         service = body(FIRMWARE, "void serviceEnergyPowerManagement()")
         self.assertIn("setEnergyLightSleepEnabled(false)", service)
-        self.assertIn("energyStoreFeature(EnergyFeature::LightSleep, false)", service)
+        self.assertIn("clearEnergyLightSleepProfileSelection()", service)
         self.assertIn("failureLogged", service)
         self.assertNotIn("esp_sleep_enable_uart_wakeup", FIRMWARE + POWER)
         self.assertNotIn("uart_set_wakeup_threshold", FIRMWARE + POWER)

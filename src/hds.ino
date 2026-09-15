@@ -57,6 +57,7 @@ void waitForEnergyMainLoopWork();
 #ifndef GRINDER_MENU_CHORD_HOLD_MS
 #define GRINDER_MENU_CHORD_HOLD_MS 500
 #endif
+bool handleGrinderMenuChord();
 #endif
 
 constexpr unsigned long BUTTON_POLL_INTERVAL_MS = 2;
@@ -81,6 +82,21 @@ constexpr unsigned long ENERGY_ADC_RECOVERY_START_MS = 1501;
 constexpr unsigned long ENERGY_ADC_RECOVERY_RETRY_MS = 5001;
 constexpr unsigned long ENERGY_DISPLAY_DEADLINE_MS = 500;
 constexpr unsigned long ENERGY_USB_FALLBACK_POLL_MS = 10;
+constexpr unsigned long ENERGY_BUTTON_RESPONSE_BOOST_MS = 50;
+
+bool energyLightSleepButtonWake(uint64_t wakeMask) {
+  return (wakeMask & energyLightSleepWakePinMask((gpio_num_t)BUTTON_CIRCLE)) != 0 ||
+         (wakeMask & energyLightSleepWakePinMask((gpio_num_t)BUTTON_SQUARE)) != 0;
+}
+
+bool clearEnergyLightSleepProfileSelection() {
+  energyPolicy.settings.select(EnergyFeature::LightSleep, false);
+  energyPolicy.settings.select(EnergyFeature::LightSleepPlus, false);
+  const bool lightStored = energyStoreFeature(EnergyFeature::LightSleep, false);
+  const bool plusStored = energyStoreFeature(EnergyFeature::LightSleepPlus, false);
+  updateEnergyMenuRow(EnergyFeature::LightSleep);
+  return lightStored && plusStored;
+}
 
 bool energySerialTransportActive() {
 #ifdef USB_DET
@@ -193,15 +209,27 @@ void refreshEnergyIdleWakeForRuntimeState() {
   if (!energyPolicy.featureEnabled(EnergyFeature::LightSleep) ||
       setEnergyIdleWakeEnabled(true)) return;
   setEnergyLightSleepEnabled(false);
-  energyPolicy.settings.select(EnergyFeature::LightSleep, false);
-  energyStoreFeature(EnergyFeature::LightSleep, false);
-  updateEnergyMenuRow(EnergyFeature::LightSleep);
+  clearEnergyLightSleepProfileSelection();
   Serial.println("[energy] Light Sleep disabled after wake source failure");
 }
 
-void serviceEnergyLightSleepWakeRestore() {
-  if (!energyIdle.wakePinsNeedRestore) return;
+uint64_t serviceEnergyLightSleepWakeRestore() {
+  if (!energyIdle.wakePinsNeedRestore) return 0;
   energyIdle.wakePinsNeedRestore = false;
+  const uint64_t wakeMask = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1
+                              ? esp_sleep_get_ext1_wakeup_status()
+                              : 0;
+  energyIdle.lastLightSleepWakeMask = wakeMask;
+  if (energyLightSleepButtonWake(wakeMask)) {
+    const unsigned long wakeAt = millis();
+    energyIdle.buttonGestureActive = true;
+    energyIdle.lastButtonActivityAt = wakeAt;
+    energyIdle.lastLightSleepButtonWakeAt = wakeAt;
+    energyIdle.lastLightSleepButtonPollAt = 0;
+    energyIdle.lastLightSleepButtonEventAt = 0;
+    energyIdle.lightSleepButtonTracePending = true;
+    energyIdle.lightSleepButtonWakeCount++;
+  }
   const bool restored = restoreEnergyLightSleepWakePins(energyIdle.rtcWakeMask);
   pinMode(SCALE_DOUT, INPUT);
   pinMode(BUTTON_CIRCLE, INPUT_PULLUP);
@@ -209,11 +237,11 @@ void serviceEnergyLightSleepWakeRestore() {
 #ifdef USB_DET
   pinMode(USB_DET, INPUT_PULLUP);
 #endif
-  if (restored) return;
+  if (restored) return wakeMask;
   setEnergyLightSleepEnabled(false);
-  energyPolicy.settings.select(EnergyFeature::LightSleep, false);
-  energyStoreFeature(EnergyFeature::LightSleep, false);
+  clearEnergyLightSleepProfileSelection();
   Serial.println("[energy] Light Sleep disabled after wake pin restore failure");
+  return 0;
 }
 
 bool serviceEnergyButtonGesture(unsigned long now) {
@@ -224,8 +252,16 @@ bool serviceEnergyButtonGesture(unsigned long now) {
   } else if (energyIdle.buttonGestureActive &&
              now - energyIdle.lastButtonActivityAt > DOUBLECLICK_DELAY) {
     energyIdle.buttonGestureActive = false;
+    energyIdle.lightSleepButtonTracePending = false;
   }
   return energyIdle.buttonGestureActive;
+}
+
+bool energyResponsiveButtonBoostActive(unsigned long now) {
+  return energyPolicy.featureEnabled(EnergyFeature::LightSleep) &&
+         !energyPolicy.settings.lightSleepPlusActive() &&
+         energyIdle.buttonGestureActive &&
+         now - energyIdle.lastButtonActivityAt <= ENERGY_BUTTON_RESPONSE_BOOST_MS;
 }
 
 bool energyMainLoopHasPendingWork() {
@@ -348,6 +384,39 @@ void waitForEnergyMainLoopWork() {
 }
 #endif
 
+bool serviceScaleButtonInputs(bool forcePoll) {
+  const bool buttonInputAllowed = !b_ota
+      && !buttonChecksSuppressedUntilRelease()
+#if HDS_ENABLE_GRINDER
+      && !handleGrinderMenuChord()
+#endif
+      ;
+  if (!buttonInputAllowed) return false;
+  const unsigned long buttonNow = millis();
+#if HDS_ENABLE_ENERGY_MENU
+  const bool gestureActive = serviceEnergyButtonGesture(buttonNow);
+  const bool buttonPollDue = (forcePoll || gestureActive) &&
+    (forcePoll ||
+     hdsIntervalElapsed(buttonNow, energyIdle.lastButtonPoll, BUTTON_POLL_INTERVAL_MS));
+  if (buttonPollDue) energyIdle.lastButtonPoll = buttonNow;
+#else
+  static unsigned long lastButtonPoll = 0;
+  const bool buttonPollDue = forcePoll ||
+    hdsIntervalElapsed(buttonNow, lastButtonPoll, BUTTON_POLL_INTERVAL_MS);
+  if (buttonPollDue) lastButtonPoll = buttonNow;
+#endif
+  if (!buttonPollDue) return false;
+#if HDS_ENABLE_ENERGY_MENU
+  if (forcePoll && energyIdle.lightSleepButtonTracePending &&
+      energyIdle.lastLightSleepButtonPollAt == 0) {
+    energyIdle.lastLightSleepButtonPollAt = buttonNow;
+  }
+#endif
+  buttonCircle.check();
+  buttonSquare.check();
+  return true;
+}
+
 void adsDebugCallback(const ADS1232DebugInfo& info) {
   static unsigned long lastDebugPrint = 0;
   unsigned long now = millis();
@@ -403,6 +472,12 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
   int pin = button->getPin();
   switch (eventType) {
     case AceButton::kEventPressed:
+#if HDS_ENABLE_ENERGY_MENU
+      if (energyIdle.lightSleepButtonTracePending) {
+        energyIdle.lastLightSleepButtonEventAt = millis();
+        energyIdle.lightSleepButtonTracePending = false;
+      }
+#endif
 #ifdef BUZZER
       if (GPIO_power_on_with != BATTERY_CHARGING)
         buzzer.beep(1, BUZZER_DURATION);
@@ -1258,9 +1333,7 @@ void setup() {
   if (lightSleepRequested &&
       (!lightSleepReady || !setEnergyLightSleepEnabled(true))) {
     setEnergyLightSleepEnabled(false);
-    energyPolicy.settings.select(EnergyFeature::LightSleep, false);
-    const bool stored = energyStoreFeature(EnergyFeature::LightSleep, false);
-    updateEnergyMenuRow(EnergyFeature::LightSleep);
+    const bool stored = clearEnergyLightSleepProfileSelection();
     Serial.println(stored
       ? "[energy] Stored Light Sleep rejected; disabled"
       : "[energy] Stored Light Sleep rejected; persistence failed");
@@ -2054,17 +2127,17 @@ void serviceEnergyPowerManagement() {
   energyPowerManagement.setSerialTransportActive(energySerialTransportActive());
   energyPowerManagement.setUsbSleepTestEnabled(
     energyPolicy.featureEnabled(EnergyFeature::UsbSleepTest));
-  const bool performanceOk = setEnergyPerformanceCritical(b_ota || b_pullOtaRunning);
-  const bool serviceOk = energyPowerManagement.service(millis());
+  const unsigned long now = millis();
+  const bool performanceOk = setEnergyPerformanceCritical(
+    b_ota || b_pullOtaRunning || energyResponsiveButtonBoostActive(now));
+  const bool serviceOk = energyPowerManagement.service(now);
   if (performanceOk && serviceOk) {
     failureLogged = false;
     return;
   }
   if (energyPolicy.featureEnabled(EnergyFeature::LightSleep)) {
     setEnergyLightSleepEnabled(false);
-    energyPolicy.settings.select(EnergyFeature::LightSleep, false);
-    energyStoreFeature(EnergyFeature::LightSleep, false);
-    updateEnergyMenuRow(EnergyFeature::LightSleep);
+    clearEnergyLightSleepProfileSelection();
   }
   if (!failureLogged) {
     Serial.println("[energy] PM transition failed; Light Sleep disabled");
@@ -2117,7 +2190,13 @@ void loop() {
   static bool otaBleClientDisconnected = false;
   static bool otaTransportsStopped = false;
 #if HDS_ENABLE_ENERGY_MENU
-  serviceEnergyLightSleepWakeRestore();
+  const uint64_t lightSleepWakeMask = serviceEnergyLightSleepWakeRestore();
+  if (energyLightSleepButtonWake(lightSleepWakeMask)) {
+    if (!energyPolicy.settings.lightSleepPlusActive()) {
+      setEnergyPerformanceCritical(true);
+    }
+    serviceScaleButtonInputs(true);
+  }
 #endif
   processWsPendingCmds();
   if (b_ota) {
@@ -2214,28 +2293,7 @@ void loop() {
     usbCallbacks.poll();
   }
 
-  if (!b_ota
-      && !buttonChecksSuppressedUntilRelease()
-#if HDS_ENABLE_GRINDER
-      && !handleGrinderMenuChord()
-#endif
-  ) {
-    const unsigned long buttonNow = millis();
-#if HDS_ENABLE_ENERGY_MENU
-    const bool buttonPollDue = serviceEnergyButtonGesture(buttonNow) &&
-      hdsIntervalElapsed(buttonNow, energyIdle.lastButtonPoll, BUTTON_POLL_INTERVAL_MS);
-    if (buttonPollDue) energyIdle.lastButtonPoll = buttonNow;
-#else
-    static unsigned long lastButtonPoll = 0;
-    const bool buttonPollDue =
-      hdsIntervalElapsed(buttonNow, lastButtonPoll, BUTTON_POLL_INTERVAL_MS);
-    if (buttonPollDue) lastButtonPoll = buttonNow;
-#endif
-    if (buttonPollDue) {
-      buttonCircle.check();
-      buttonSquare.check();
-    }
-  }
+  serviceScaleButtonInputs(false);
 #ifdef BUZZER
   buzzer.check();
 #endif
