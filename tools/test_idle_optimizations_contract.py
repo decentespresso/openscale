@@ -149,17 +149,23 @@ class IdleOptimizationContractTests(unittest.TestCase):
     def test_button_poll_cadence_contract(self):
         self.assertIn("BUTTON_POLL_INTERVAL_MS = 2", HDS)
         loop = function_body(HDS, "loop")
-        gate = "hdsIntervalElapsed(buttonNow, lastButtonPoll, BUTTON_POLL_INTERVAL_MS)"
-        self.assertIn(gate, loop)
-        self.assertLess(loop.index(gate), loop.index("buttonCircle.check();"))
-        self.assertLess(loop.index(gate), loop.index("buttonSquare.check();"))
-        self.assertLess(loop.index("handleGrinderMenuChord()"), loop.index(gate))
-        self.assertIn("const unsigned long buttonNow = millis();", loop)
-        self.assertIn("hdsIntervalElapsed(buttonNow, lastButtonPoll, BUTTON_POLL_INTERVAL_MS)", loop)
-        self.assertIn("lastButtonPoll = buttonNow;", loop)
+        buttons = function_body(HDS, "serviceScaleButtonInputs")
+        stock_gate = "hdsIntervalElapsed(buttonNow, lastButtonPoll, BUTTON_POLL_INTERVAL_MS)"
+        energy_gate = "hdsIntervalElapsed(buttonNow, energyIdle.lastButtonPoll, BUTTON_POLL_INTERVAL_MS)"
+        self.assertIn(stock_gate, buttons)
+        self.assertIn(energy_gate, buttons)
+        self.assertLess(buttons.index(stock_gate), buttons.index("buttonCircle.check();"))
+        self.assertLess(buttons.index(stock_gate), buttons.index("buttonSquare.check();"))
+        self.assertLess(
+            buttons.index("handleGrinderMenuChord()"),
+            buttons.index("const unsigned long buttonNow = millis();"),
+        )
+        self.assertIn("serviceScaleButtonInputs(false);", loop)
+        self.assertIn("lastButtonPoll = buttonNow;", buttons)
         self.assertTrue(elapsed(2, 0, 2))
         self.assertFalse(elapsed(1, 0, 2))
         self.assertTrue(elapsed(0x00000001, 0xFFFFFFFF, 2))
+
 
 
 if __name__ == "__main__":

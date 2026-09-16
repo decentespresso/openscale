@@ -519,6 +519,25 @@ public:
       Serial.printf(" usb=%d", digitalRead(USB_DET));
 #endif
       Serial.println();
+#if HDS_ENABLE_ENERGY_MENU
+      const char *lightSleepProfile =
+        !energyPolicy.featureEnabled(EnergyFeature::LightSleep)
+          ? "off"
+          : energyPolicy.settings.lightSleepPlusActive() ? "plus" : "normal";
+      const long buttonPollMs = energyIdle.lastLightSleepButtonPollAt == 0
+                                  ? -1
+                                  : static_cast<long>(energyIdle.lastLightSleepButtonPollAt -
+                                                      energyIdle.lastLightSleepButtonWakeAt);
+      const long buttonEventMs = energyIdle.lastLightSleepButtonEventAt == 0
+                                   ? -1
+                                   : static_cast<long>(energyIdle.lastLightSleepButtonEventAt -
+                                                       energyIdle.lastLightSleepButtonWakeAt);
+      Serial.printf("[lswake] profile=%s mask=%llu buttons=%lu fast_poll_ms=%ld event_ms=%ld\n",
+                    lightSleepProfile,
+                    (unsigned long long)energyIdle.lastLightSleepWakeMask,
+                    (unsigned long)energyIdle.lightSleepButtonWakeCount,
+                    buttonPollMs, buttonEventMs);
+#endif
 #ifdef ADS1232ADC
       Serial.printf("[wow] source=%d armed=%u baseline=%ld threshold=%ld count=%u raw=%ld,%ld,%ld\n",
                     GPIO_power_on_with, (unsigned)wowRtc.armed,

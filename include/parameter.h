@@ -53,6 +53,12 @@ struct EnergyIdleState {
   unsigned long lastScaleData = 0;
   unsigned long lastScaleRecovery = 0;
   unsigned long lastWeightTick = 0;
+  uint64_t lastLightSleepWakeMask = 0;
+  unsigned long lastLightSleepButtonWakeAt = 0;
+  unsigned long lastLightSleepButtonPollAt = 0;
+  unsigned long lastLightSleepButtonEventAt = 0;
+  uint32_t lightSleepButtonWakeCount = 0;
+  bool lightSleepButtonTracePending = false;
 };
 EnergyIdleState energyIdle;
 portMUX_TYPE energyActivityMux = portMUX_INITIALIZER_UNLOCKED;

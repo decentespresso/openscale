@@ -51,17 +51,21 @@ def main():
         "USB timeout gate",
     )
     button_input = extract_block(
-        loop,
-        "if (!b_ota\n      && !buttonChecksSuppressedUntilRelease()",
+        contents,
+        "bool serviceScaleButtonInputs(bool forcePoll) {",
     )
     require_all(
         button_input,
         [
+            "const bool buttonInputAllowed = !b_ota",
+            "&& !buttonChecksSuppressedUntilRelease()",
             "buttonCircle.check();",
             "buttonSquare.check();",
         ],
         "button input gate",
     )
+    if "serviceScaleButtonInputs(false);" not in loop:
+        raise AssertionError("main loop does not route normal button input through the shared gate")
 
     gate_at = loop.index("if (!b_ota && Serial.available()) {")
     if loop.index("processWsPendingCmds();") >= gate_at:

@@ -11,6 +11,7 @@ on:
       - ".github/workflows/custom-build.yml"
       - "*.py"
       - "custom-build.json"
+      - "constraints-pioarduino.txt"
       - "docs/custom-build/**"
       - "include/**"
       - "keys/**"
@@ -58,6 +59,9 @@ on:
 
 permissions:
   contents: read
+
+env:
+  UV_CONSTRAINT: ${{ github.workspace }}/constraints-pioarduino.txt
 
 concurrency:
   group: custom-build-${{ github.event_name == 'workflow_dispatch' && inputs.combination_hash || github.run_id }}
