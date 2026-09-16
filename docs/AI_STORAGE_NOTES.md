@@ -16,6 +16,7 @@ Do not reconstruct the active settings layout from the old address declarations 
 | NVS `wifi` | `src/wifi_setup.cpp` | WiFi SSID and password, plus the `mdns_name` device name (default `hds`). |
 | NVS `ota_fs` | `include/pull_ota.h` | Pending staged LittleFS metadata. |
 | NVS `ota_verify` | `include/ota_rollback.h` | OTA boot-verification attempt count. |
+| NVS `ota_recovery` | `include/filesystem_recovery.h` | Persisted filesystem-free recovery state. |
 | NVS `ota_custom` | `include/custom_build_ota.h` | Random device ID and device authentication secret. |
 | LittleFS | `include/webserver.h`, OTA code | On-device web application files. |
 | Browser `localStorage` | Files under `plugins/default-web-apps/assets/` | Per-browser application data; unrelated to device NVS. |
@@ -48,8 +49,11 @@ The device name lives in `wifi`, not `hds`, so renaming a scale never touches th
 | `drift_max` | float | `0.05` |
 | `tap_tare` | bool | `false` |
 | `tap_timer` | bool | `false` |
+| `wow_interval` | int | `0` (off); indices 1-3 select 2-4 second sleep intervals. |
 
 `schema` is a `uint16_t`, currently `1`. Do not rename a key or change its stored type in place. Add an explicit migration, preserve old data until the new schema is complete, then increment the schema version.
+
+Energy-menu builds additionally load `energy_schema` and the `ENERGY_FEATURE_KEYS` array in `include/storage.h`. These are independent of the base settings schema. Missing or invalid booleans receive validated defaults. Schemas 5-9 with enabled `e_light_sleep` and no `e_light_plus` migrate to the former aggressive behavior; an explicitly stored plus setting is preserved. A disabled Light Sleep setting clears a stale plus bit. Retired energy keys are removed only by the energy migration, and the schema marker is written only after successful loading and cleanup. The current menu enables both Light Sleep bits through one toggle; the legacy responsive profile remains readable.
 
 ## Legacy EEPROM Migration
 

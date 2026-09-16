@@ -24,11 +24,19 @@ After this, one can simply use `$pio run -t upload` and platformio will build an
 
 ## Custom firmware
 
-The [custom build configurator](https://decentespresso.github.io/openscale/custom-build/) builds approved feature and plugin combinations from the stable 3.1.14 source. Builds can be downloaded for USB installation or assigned to linked scales for signed WiFi installation and fleet status tracking.
+The [custom build configurator](https://decentespresso.github.io/openscale/custom-build/) builds approved feature and plugin combinations. During release preparation it defaults to `main`; stable 3.1.14 becomes available only after its tag exists and the service cutover is verified. Builds can be downloaded for USB installation or assigned to linked scales for signed WiFi installation and fleet status tracking.
 
 ## Scale-top tap controls
 
 Optional scale-top gestures can tare with a double tap and start or stop the timer with a triple tap. Both are disabled by default and can be enabled independently under `Setup > Scale`.
+
+## Power and wake
+
+Weight changes during use now refresh the auto-off timer, so active weighing does not require a button press to keep the scale awake. A static load does not keep resetting the timer.
+
+Optional [Wake-on-Weight](docs/wake-on-weight.md) is available under `Setup > Power` and defaults to off. It checks for added or removed weight between deep-sleep intervals. This mode consumes battery during standby and has no ongoing low-voltage cutoff; read its limitations before enabling it.
+
+Custom builds with `Energy Saving Beta` also expose OLED idle/redraw controls and a single `Light Sleep` toggle under `Power`. These remain optional, not part of the standard release build.
 
 
 # New Features in 3.0.0
@@ -37,7 +45,7 @@ Optional scale-top gestures can tare with a double tap and start or stop the tim
 
 Decent Scale uses WiFi for web apps, WebSocket data streaming, and OTA updates.
 
-To enable WiFi mode, go to HDS setup menu and find "Wifi settings" entry. From there you can enable/disable WiFi as well as see current WiFi details. If you toggle WiFi on/off, a restart of the scale is required for the new settings to take effect.
+To enable WiFi mode in 3.1.14, open `Setup > Connections` and toggle `WiFi`. Older firmware groups these entries under `WiFi Settings`. A restart is required for changes to take effect; exiting setup applies the queued restart.
 
 **First-time setup:** if no WiFi credentials are stored, the scale opens its own access point — SSID `DecentScale`, password `12345678`, IP `192.168.1.1`. Connect to it and navigate to [hds.local](http://hds.local) to enter your home WiFi credentials. The same page can rename the scale (see **Scale name** below). The scale will restart and connect to your network.
 
@@ -270,7 +278,7 @@ Simply run `pio run -t buildfs -t uploadfs` with the Esp32s3 connected to your c
 
 Trunk-based: `main` is the single long-lived branch and is always releasable. Do work on short-lived feature branches and merge into `main` once CI passes.
 
-Releases: tag a known-good commit on `main` with the version (`vX.Y.Z`), then run the "Release firmware" workflow with that tag. The workflow publishes the legacy ZIP plus machine-readable OTA assets:
+Releases use two separately authorized steps. After the [release checklist](docs/release-3.1.14-checklist.md) passes, tag the approved commit on `main` (`vX.Y.Z`). Run `Release firmware` from `main` with that tag, its full `expected_commit`, and the `previous_tag`. It prepares and verifies a signed draft; it does not publish. Test those exact draft binaries, then run `Publish firmware` with the same tag/commit and the approved `evidence_sha256`. Publication does not rebuild. The draft includes the legacy USB ZIP, dependency inventory, signed release evidence, and machine-readable OTA assets:
 
 - `firmware.bin`: raw OTA firmware image.
 - `littlefs.bin`: raw filesystem image. WiFi OTA releases always publish and require it so skipped versions and test builds with unknown filesystem state are brought back to the production filesystem.
@@ -281,7 +289,9 @@ Key 1 continues signing releases until firmware containing all three public keys
 
 The scale checks `https://github.com/decentespresso/openscale/releases/latest/download/manifest.json`, downloads `manifest.sig`, verifies the detached signature with the public key compiled into the firmware, then verifies `model`, optional `pcb`, `min_from`, chip, environment, flash size, partition schema, filesystem partition size/schema, HTTPS certificate chain, asset URL prefix, asset size, and SHA-256 before writing firmware. Manifest `version` and `min_from` must be stable numeric `major.minor.patch` values. The workflow builds a signed catalog from `v3.1.13` upward by merging the previous latest stable signed manifest with the new release, deduping compatible entries, and sorting newest to oldest. The WiFi updater lists compatible stable releases except the firmware version already running.
 
-When `littlefs.required` is true, OTA is staged. The current firmware stores both the target and rollback LittleFS metadata in NVS, writes `firmware.bin` to the inactive app OTA slot, and reboots. The new firmware attempts the target LittleFS twice before it is marked valid. If both attempts fail before a filesystem write starts, the application rolls back. If a filesystem write started, the old application restores its matching LittleFS once from the signed catalog. A failed restore stops at `UPDATE ERROR` and directs the user to the HDS updater. Successful target or rollback recovery clears the pending state and reboots. Set `HDS_RELEASE_MIN_FROM` as a repository variable to raise the oldest version that can self-update.
+WiFi OTA always stages the required LittleFS update. With signed rollback metadata available, the current firmware saves both target and rollback metadata, writes the inactive app slot, and reboots. The new firmware verifies or attempts the target filesystem at most twice before accepting normal operation. On failure it rolls back, restoring the previous filesystem once if writing had begun. Firmware with the 3.1.14 recovery support pauses a failed restore, disables unverified web assets, and keeps the embedded WiFi setup page and update menus available for repair. Older rollback firmware can instead stop at `UPDATE ERROR` and require USB recovery. Successful recovery clears the pending state and reboots.
+
+When the installed build has no published recovery assets, firmware that already supports forward recovery may install a signed target declaring `forward_recovery: 1`. It verifies the newly running firmware before attempting filesystem writes, then either completes the update or retains filesystem-free repair access. This cannot add recovery support to already-installed older firmware. See [WiFi OTA updates](docs/wifi-ota.md) for supported source paths. `HDS_RELEASE_MIN_FROM` may raise the minimum source version, but release verification rejects a value that excludes the previous stable release.
 
 The single LittleFS partition has no independent rollback slot, so recovery requires the signed rollback asset to remain available. The firmware records attempt and write state before changing the partition so power loss resumes the same bounded recovery transaction instead of entering normal weighing with a partial installation.
 

@@ -71,6 +71,7 @@ documentation contract across the complete set.
 | Repository-wide agent rules | `AGENTS.md` |
 | Paths and subsystem entry points | `docs/AI_REPO_MAP.md` |
 | PlatformIO, build, flash, serial, LittleFS | `docs/AI_BUILD_NOTES.md` |
+| Custom build composition, plugins, service deployment | `docs/AI_PLUGIN_NOTES.md`, `docs/custom-build/operations.md` |
 | Runtime, callbacks, tasks, timers, weighing | `docs/AI_FIRMWARE_NOTES.md` |
 | OLED, setup menus, layout, display options | `docs/AI_DISPLAY_NOTES.md` |
 | Pins, boards, electrical behavior, wake, sleep holds | `docs/AI_GPIO_NOTES.md` |
