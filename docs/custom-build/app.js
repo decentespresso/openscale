@@ -6,8 +6,9 @@ import {
   optionReason,
   parseSelection,
   resolveSelection,
+  selectableFirmwareRefs,
   selectionQuery,
-} from "./selection.mjs?v=5";
+} from "./selection.mjs?v=6";
 import {initFleet} from "./fleet.js?v=14";
 import {buildEstimate} from "./build-estimate.mjs?v=1";
 import {initBuildProgress} from "./build-progress.mjs?v=1";
@@ -121,7 +122,7 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
     return wrapper;
   };
 
-  catalog.firmware_refs.forEach(ref => refSelect.add(new Option(firmwareRefLabel(ref), ref)));
+  selectableFirmwareRefs(catalog).forEach(ref => refSelect.add(new Option(firmwareRefLabel(ref), ref)));
   catalog.features.filter(item => !item.hidden).forEach(item => featureRoot.append(makeOption(item, "feature")));
   catalog.plugins.forEach(item => pluginRoot.append(makeOption(item, "plugin")));
 
@@ -449,6 +450,8 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
   buildButton.addEventListener("click", async () => {
     const generation = selectionGeneration;
     const selection = currentSelection;
+    if (selection.firmware_ref === "main" &&
+        !window.confirm("Main is only for testing, not normal use. Build testing firmware from main?")) return;
     buildButton.disabled = true;
     setStatus({state: "checking"}, generation);
     try {

@@ -24,7 +24,7 @@ After this, one can simply use `$pio run -t upload` and platformio will build an
 
 ## Custom firmware
 
-The [custom build configurator](https://decentespresso.github.io/openscale/custom-build/) builds approved feature and plugin combinations. During release preparation it defaults to `main`; stable 3.1.14 becomes available only after its tag exists and the service cutover is verified. Builds can be downloaded for USB installation or assigned to linked scales for signed WiFi installation and fleet status tracking.
+The [custom build configurator](https://decentespresso.github.io/openscale/custom-build/) builds approved feature and plugin combinations. At the 3.1.14 release cutover, it offers `3.1.14 (stable)` by default and `main (development)` for testing only, with confirmation before requesting a main build. Deploy this configurator only after the stable tag exists and the service cutover is verified. Builds can be downloaded for USB installation or assigned to linked scales for signed WiFi installation and fleet status tracking.
 
 ## Scale-top tap controls
 

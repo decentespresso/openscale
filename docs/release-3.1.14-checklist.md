@@ -53,7 +53,7 @@ The [pre-tag audit](release-3.1.14-preflight.md) records checks against the merg
 - Record the approved Worker, builder, and configurator/catalog revisions.
   Deploy service support before firmware relies on new fields. This workflow
   does not perform that deployment.
-- After tagging is separately authorized, verify stable custom builds and their signed artifacts against the tagged source. Then switch configurator/build defaults to `v3.1.14` and remove `main` from the production catalog and Worker allow-list as described in `AI_BUILD_NOTES.md`. Keep published recovery assets, including previews and existing custom builds. Do not perform this cutover while the stable tag is absent.
+- After tagging is separately authorized, verify stable custom builds and their signed artifacts against the tagged source. Then deploy the prepared configurator with only `3.1.14 (stable)` and `main (development)` in the selector, stable selected by default, and a testing-only confirmation before main build requests. Retain main and preview backend compatibility and published recovery assets, including existing custom builds. Keep the cutover PR draft and do not deploy its stable-default UI while the stable tag is absent. See `AI_BUILD_NOTES.md` for the deployment order.
 - Verify pairing, assignment, install progress/failure/completion, already-installed
   behavior, and service outages. Keep installed custom builds needed for recovery.
 - Treat an RC USB test as separate from the production 3.1.13-to-3.1.14 OTA path.

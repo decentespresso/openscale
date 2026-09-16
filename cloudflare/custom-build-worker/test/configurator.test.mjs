@@ -19,6 +19,7 @@ import {
   optionReason,
   parseSelection,
   resolveSelection,
+  selectableFirmwareRefs,
   selectionQuery,
 } from "../../../docs/custom-build/selection.mjs";
 
@@ -68,15 +69,59 @@ test("labels stable, preview, and development firmware refs", () => {
 });
 
 
-test("ships 3.1.14 compatibility while main remains the cutover default", async () => {
+test("offers only stable 3.1.14 and main with stable selected by default", async () => {
   const shipped = JSON.parse(await readFile(
     new URL("../../../docs/custom-build/catalog.json", import.meta.url), "utf8",
   ));
   assert.deepEqual(shipped.firmware_refs, ["v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main"]);
-  assert.equal(firmwareRefLabel(shipped.firmware_refs[1]), "3.1.14-preview.3 (preview)");
-  assert.equal(firmwareRefLabel(shipped.firmware_refs[2]), "3.1.14-preview.4 (preview)");
-  assert.equal(firmwareRefLabel(defaultSelection(shipped).firmware_ref), "main (development)");
-  assert.equal(firmwareRefLabel(shipped.firmware_refs[0]), "3.1.14 (stable)");
+  assert.deepEqual(selectableFirmwareRefs(shipped), ["v3.1.14", "main"]);
+  assert.equal(firmwareRefLabel(defaultSelection(shipped).firmware_ref), "3.1.14 (stable)");
+  assert.equal(defaultSelection({...shipped, firmware_refs: ["main"]}).firmware_ref, "main");
+  for (const ref of ["v3.1.14", "main"]) {
+    assert.equal(parseSelection(`?ref=${ref}&features=&plugins=`, shipped).firmware_ref, ref);
+  }
+  for (const ref of ["v3.1.14-preview.3", "v3.1.14-preview.4"]) {
+    assert.throws(() => parseSelection(`?ref=${ref}&features=&plugins=`, shipped), /unsupported_firmware_ref/);
+  }
+});
+
+
+test("main builds require confirmation and cancellation sends no request", async () => {
+  const source = await readFile(new URL("../../../docs/custom-build/app.js", import.meta.url), "utf8");
+  const handler = source.slice(source.indexOf('buildButton.addEventListener("click"'), source.indexOf('document.querySelector("#reset")'));
+  for (const [ref, accepted] of [["main", false], ["main", true], ["v3.1.14", false]]) {
+    const requests = [];
+    const warnings = [];
+    const states = [];
+    const context = {
+      selectionGeneration: 1,
+      currentSelection: {firmware_ref: ref, features: [], plugins: []},
+      selectionController: {signal: new AbortController().signal},
+      buildButton: {disabled: false, addEventListener: (event, listener) => { context.click = listener; }},
+      window: {confirm: message => { warnings.push(message); return accepted; }},
+      setStatus: result => states.push(result.state),
+      apiRequest: async (path, options) => {
+        requests.push({path, body: JSON.parse(options.body)});
+        return {state: "queued"};
+      },
+      clearCatalogReload: () => {},
+      handleCatalogStale: () => false,
+      showToast: () => {},
+      pollRemaining: 0,
+    };
+    runInNewContext(handler, context);
+    await context.click();
+    const submitted = ref !== "main" || accepted;
+    assert.equal(warnings.length, ref === "main" ? 1 : 0);
+    if (warnings.length) assert.match(warnings[0], /Main is only for testing/);
+    assert.equal(requests.length, submitted ? 1 : 0);
+    assert.equal(context.buildButton.disabled, submitted);
+    assert.deepEqual(states, submitted ? ["checking", "queued"] : []);
+    if (submitted) {
+      assert.equal(requests[0].path, "/api/v1/build");
+      assert.equal(requests[0].body.firmware_ref, ref);
+    }
+  }
 });
 
 

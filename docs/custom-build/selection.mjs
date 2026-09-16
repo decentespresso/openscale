@@ -24,9 +24,14 @@ function requireIds(values, field) {
   return [...values].sort();
 }
 
+export function selectableFirmwareRefs(catalog) {
+  return catalog.firmware_refs.filter(ref => ref === "main" || /^v\d+\.\d+\.\d+$/.test(ref));
+}
+
 export function defaultSelection(catalog) {
+  const refs = selectableFirmwareRefs(catalog);
   return {
-    firmware_ref: catalog.firmware_refs.at(-1),
+    firmware_ref: refs.find(ref => ref !== "main") || "main",
     features: catalog.features.filter(item => item.default).map(item => item.id).sort(),
     plugins: catalog.plugins.filter(item => item.default).map(item => item.id).sort(),
   };
@@ -66,7 +71,7 @@ function compatibilityPackages(maps, pluginIds) {
 export function resolveSelection(catalog, selection) {
   const maps = catalogMaps(catalog);
   const firmwareRef = selection.firmware_ref;
-  if (!catalog.firmware_refs.includes(firmwareRef)) {
+  if (!selectableFirmwareRefs(catalog).includes(firmwareRef)) {
     throw new SelectionError("unsupported_firmware_ref", {firmwareRef});
   }
   const requestedFeatures = requireIds(selection.features, "features");

@@ -158,6 +158,10 @@ Added user-facing Wake-on-Weight and auto-off notes without changing defaults.
 - Complete the stable custom-source/default/Worker cutover only after the tag
   exists. Validate minimal, normal, and advertised optional combinations with
   the tagged source and current trusted builder before publication.
+  The prepared configurator defaults to stable and offers only stable and main.
+  Main requires a testing-only confirmation before build requests. Keep these
+  UI changes in the draft PR until the stable service is ready; preview backend
+  compatibility and existing recovery assets remain unchanged.
 - Test pairing, assignment, progress, failure, completion, already-installed
   behavior, interrupted firmware/filesystem writes, restore failure, and repair.
   Neither fleet nor device state was changed during this audit.
