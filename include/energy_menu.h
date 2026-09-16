@@ -33,8 +33,7 @@ inline void updateEnergyMenuRow(EnergyFeature feature) {
   if (feature == EnergyFeature::LightSleep ||
       feature == EnergyFeature::LightSleepPlus) {
     const bool enabled = energyPolicy.settings.selected(EnergyFeature::LightSleep);
-    const bool plus = energyPolicy.settings.lightSleepPlusActive();
-    row[strlen(row) - 1] = !enabled ? 'o' : plus ? '+' : 'x';
+    row[strlen(row) - 1] = enabled ? 'x' : 'o';
     return;
   }
   row[strlen(row) - 1] = energyPolicy.settings.selected(feature) ? 'x' : 'o';
@@ -83,10 +82,10 @@ void toggleEnergyLightSleep() {
   if (!wasEnabled) {
     const bool applied = setEnergyLightSleepEnabled(true);
     const bool stored = applied &&
-      storeEnergyLightSleepProfile(true, false, false, false);
+      storeEnergyLightSleepProfile(true, true, false, wasPlus);
     if (stored) {
       energyPolicy.settings.select(EnergyFeature::LightSleep, true);
-      energyPolicy.settings.select(EnergyFeature::LightSleepPlus, false);
+      energyPolicy.settings.select(EnergyFeature::LightSleepPlus, true);
     } else if (applied) {
       setEnergyLightSleepEnabled(false);
     }
@@ -94,19 +93,10 @@ void toggleEnergyLightSleep() {
     showEnergyAction("Light Sleep", true, stored);
     return;
   }
-  if (!wasPlus) {
-    const bool stored = storeEnergyLightSleepProfile(true, true, true, false);
-    if (stored) {
-      energyPolicy.settings.select(EnergyFeature::LightSleepPlus, true);
-    }
-    updateEnergyMenuRow(EnergyFeature::LightSleep);
-    showEnergyAction("Light Sleep+", true, stored);
-    return;
-  }
   const bool applied = setEnergyLightSleepEnabled(false);
   energyPolicy.settings.select(EnergyFeature::LightSleep, false);
   energyPolicy.settings.select(EnergyFeature::LightSleepPlus, false);
-  const bool stored = storeEnergyLightSleepProfile(false, false, true, true);
+  const bool stored = storeEnergyLightSleepProfile(false, false, true, wasPlus);
   updateEnergyMenuRow(EnergyFeature::LightSleep);
   showEnergyAction("Light Sleep", false, applied && stored);
 }
