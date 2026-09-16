@@ -386,8 +386,16 @@ bool processNewBatterySample() {
   return confirmed;
 }
 
+void resetAutoOffTimer(unsigned long now) {
+  t_power_off = now;
+  autoOffWeightActivity.reset(now, f_displayedValue);
+}
+
 void evaluateAutoOff(double seconds, bool showCountdown) {
   const unsigned long now = millis();
+  if (autoOffWeightActivity.update(now, f_displayedValue)) {
+    t_power_off = now;
+  }
   if (!powerCadence.autoOff.shouldRun(now, 1000)) return;
   const double timeLeft = seconds - (now - t_power_off) / 1000;
   if (showCountdown) {
@@ -402,7 +410,7 @@ void evaluateAutoOff(double seconds, bool showCountdown) {
 void power_off(int min) {
   if (processNewBatterySample()) return;
   if (min == -1) {
-    t_power_off = millis();
+    resetAutoOffTimer(millis());
   } else if (min > 0 && !b_is_charging) {
     evaluateAutoOff(min * 60.0, true);
   }
@@ -431,7 +439,7 @@ void power_off_gyro(int sec) {
 void power_off(double sec) {
   if (processNewBatterySample()) return;
   if (sec == -1) {
-    t_power_off = millis();
+    resetAutoOffTimer(millis());
   } else if (sec > 0 && !b_is_charging) {
     evaluateAutoOff(sec, false);
   }
