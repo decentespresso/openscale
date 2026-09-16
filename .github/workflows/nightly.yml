@@ -155,6 +155,9 @@ jobs:
       - name: Build Energy Menu firmware
         run: pio run -e esp32s3-energy-menu
 
+      - name: Check button wake and energy migration regressions
+        run: python tools/check_energy_button_regressions.py
+
   release-ready:
     if: always()
     needs: [ai-documentation, native-tests, build, energy-build]

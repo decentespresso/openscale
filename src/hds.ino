@@ -259,7 +259,6 @@ bool serviceEnergyButtonGesture(unsigned long now) {
 
 bool energyResponsiveButtonBoostActive(unsigned long now) {
   return energyPolicy.featureEnabled(EnergyFeature::LightSleep) &&
-         !energyPolicy.settings.lightSleepPlusActive() &&
          energyIdle.buttonGestureActive &&
          now - energyIdle.lastButtonActivityAt <= ENERGY_BUTTON_RESPONSE_BOOST_MS;
 }
@@ -416,6 +415,32 @@ bool serviceScaleButtonInputs(bool forcePoll) {
   buttonSquare.check();
   return true;
 }
+
+#if HDS_ENABLE_ENERGY_MENU
+void primeScaleButtonInputs() {
+  buttonCircle.check();
+  buttonSquare.check();
+  const unsigned long startedAt = millis();
+  while (millis() - startedAt < config1.getDebounceDelay()) {
+    delay(BUTTON_POLL_INTERVAL_MS);
+  }
+  buttonCircle.check();
+  buttonSquare.check();
+  serviceEnergyButtonGesture(millis());
+}
+
+void finishEnergyButtonWakeDebounce() {
+  if (energyPolicy.settings.lightSleepPlusActive()) return;
+  const unsigned long startedAt = millis();
+  const unsigned long debounceMs = config1.getDebounceDelay();
+  while ((buttonCircle.isPressedRaw() && buttonCircle.getLastButtonState() != LOW) ||
+         (buttonSquare.isPressedRaw() && buttonSquare.getLastButtonState() != LOW)) {
+    if (millis() - startedAt >= debounceMs + BUTTON_POLL_INTERVAL_MS) break;
+    delay(BUTTON_POLL_INTERVAL_MS);
+    if (!serviceScaleButtonInputs(true)) break;
+  }
+}
+#endif
 
 void adsDebugCallback(const ADS1232DebugInfo& info) {
   static unsigned long lastDebugPrint = 0;
@@ -1327,6 +1352,7 @@ void setup() {
   }
 #endif
 #if HDS_ENABLE_ENERGY_MENU
+  primeScaleButtonInputs();
   const bool lightSleepRequested =
     energyPolicy.featureEnabled(EnergyFeature::LightSleep);
   const bool lightSleepReady = initEnergyIdleWake();
@@ -2192,10 +2218,8 @@ void loop() {
 #if HDS_ENABLE_ENERGY_MENU
   const uint64_t lightSleepWakeMask = serviceEnergyLightSleepWakeRestore();
   if (energyLightSleepButtonWake(lightSleepWakeMask)) {
-    if (!energyPolicy.settings.lightSleepPlusActive()) {
-      setEnergyPerformanceCritical(true);
-    }
-    serviceScaleButtonInputs(true);
+    setEnergyPerformanceCritical(true);
+    if (serviceScaleButtonInputs(true)) finishEnergyButtonWakeDebounce();
   }
 #endif
   processWsPendingCmds();
@@ -2650,8 +2674,6 @@ void drawBle(unsigned long now) {
     } else if ((now / 1000) & 1) {
       u8g2.drawXBM(3, 51, 5, 13, image_ble_enabled);
     }
-  } else {
-    u8g2.drawXBM(0, 51, 10, 13, image_ble_disabled);
   }
 }
 

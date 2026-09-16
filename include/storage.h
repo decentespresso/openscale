@@ -135,7 +135,7 @@ inline bool energyLoadSettings(EnergySettings &settings) {
   const uint8_t lightSleepIndex = static_cast<uint8_t>(EnergyFeature::LightSleep);
   const uint8_t lightSleepPlusIndex = static_cast<uint8_t>(EnergyFeature::LightSleepPlus);
   const bool migrateAggressiveLightSleep =
-    storedSchema == 9 &&
+    storedSchema >= 5 && storedSchema <= 9 &&
     !settingsPreferences.isKey(ENERGY_FEATURE_KEYS[lightSleepPlusIndex]) &&
     settingsPreferences.getType(ENERGY_FEATURE_KEYS[lightSleepIndex]) == PT_U8 &&
     settingsPreferences.getUChar(ENERGY_FEATURE_KEYS[lightSleepIndex], 0) == 1;
