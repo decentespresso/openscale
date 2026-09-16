@@ -178,7 +178,7 @@ Main
 
 Energy rows are part of `Power` only when `HDS_ENABLE_ENERGY_MENU` is enabled. Grind by weight remains entirely behind `HDS_ENABLE_GRINDER`. Pressensor remains absent from the normal tree and is added by its approved patch.
 
-`Light Sleep` is one on/off row, not a Responsive/Aggressive selector. Enabling it selects both Light Sleep bits; old responsive settings remain loadable. Button wake temporarily boosts CPU performance in either profile. The weighing screen hides the BLE icon when BLE is disabled. Check `tools/check_energy_button_regressions.py` and `tools/check_energy_ble_redraw.py` after changing these paths.
+`Light Sleep` is one on/off row, not a Responsive/Aggressive selector. See `docs/AI_STORAGE_NOTES.md` for legacy setting migration and `docs/AI_FIRMWARE_NOTES.md` for button-wake ordering. The weighing screen hides the BLE icon when BLE is disabled; validate that behavior with `tools/check_energy_ble_redraw.py`.
 
 The menu item type is:
 

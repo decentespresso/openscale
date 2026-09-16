@@ -24,7 +24,7 @@ After this, one can simply use `$pio run -t upload` and platformio will build an
 
 ## Custom firmware
 
-The [custom build configurator](https://decentespresso.github.io/openscale/custom-build/) builds approved feature and plugin combinations. At the 3.1.14 release cutover, it offers `3.1.14 (stable)` by default and `main (development)` for testing only, with confirmation before requesting a main build. Deploy this configurator only after the stable tag exists and the service cutover is verified. Builds can be downloaded for USB installation or assigned to linked scales for signed WiFi installation and fleet status tracking.
+The [custom build configurator](https://decentespresso.github.io/openscale/custom-build/) builds approved feature and plugin combinations. Choose `3.1.14 (stable)`, selected by default, for normal use. The other option, `main (development)`, is for testing only and requires confirmation before building. Download the build for USB installation or assign it to linked scales for signed WiFi installation and status tracking.
 
 ## Scale-top tap controls
 
@@ -278,7 +278,7 @@ Simply run `pio run -t buildfs -t uploadfs` with the Esp32s3 connected to your c
 
 Trunk-based: `main` is the single long-lived branch and is always releasable. Do work on short-lived feature branches and merge into `main` once CI passes.
 
-Releases use two separately authorized steps. After the [release checklist](docs/release-3.1.14-checklist.md) passes, tag the approved commit on `main` (`vX.Y.Z`). Run `Release firmware` from `main` with that tag, its full `expected_commit`, and the `previous_tag`. It prepares and verifies a signed draft; it does not publish. Test those exact draft binaries, then run `Publish firmware` with the same tag/commit and the approved `evidence_sha256`. Publication does not rebuild. The draft includes the legacy USB ZIP, dependency inventory, signed release evidence, and machine-readable OTA assets:
+`Release firmware` prepares a signed draft from a version tag (`vX.Y.Z`); `Publish firmware` publishes the verified draft without rebuilding. See [release workflow details](docs/AI_RELEASE_NOTES.md#release-model) for inputs and checks. Releases include the legacy USB ZIP, dependency inventory, signed release evidence, and machine-readable OTA assets:
 
 - `firmware.bin`: raw OTA firmware image.
 - `littlefs.bin`: raw filesystem image. WiFi OTA releases always publish and require it so skipped versions and test builds with unknown filesystem state are brought back to the production filesystem.

@@ -3,15 +3,6 @@
 This is an operator checklist, not evidence that the checks have passed.
 Release preparation does not publish firmware or deploy the custom-build service.
 
-The [pre-tag audit](release-3.1.14-preflight.md) records checks against the merged candidate and outstanding gates. It is not approval to tag or publish.
-
-## Before Tagging
-
-- Keep the source version, tags, release objects, signing secrets, and live service settings unchanged during this stage.
-- Verify the merged candidate on `main`, its existing CI, and the previous stable catalog and recovery assets. A local unsigned candidate manifest is only a compatibility dry run.
-- Confirm custom catalogs match the configurator and deployed status API. `v3.1.14` remains unavailable until its real tag exists; keep the current default during this check.
-- Record device validation for the candidate separately from final signed release binaries. An earlier PR sign-off is not evidence for the full stable/custom OTA matrix.
-
 ## Administrator Setup
 
 - Protect `main` with review and required CI, including `release-ready` and the
@@ -53,7 +44,6 @@ The [pre-tag audit](release-3.1.14-preflight.md) records checks against the merg
 - Record the approved Worker, builder, and configurator/catalog revisions.
   Deploy service support before firmware relies on new fields. This workflow
   does not perform that deployment.
-- After tagging is separately authorized, verify stable custom builds and their signed artifacts against the tagged source. Then deploy the prepared configurator with only `3.1.14 (stable)` and `main (development)` in the selector, stable selected by default, and a testing-only confirmation before main build requests. Retain main and preview backend compatibility and published recovery assets, including existing custom builds. Keep the cutover PR draft and do not deploy its stable-default UI while the stable tag is absent. See `AI_BUILD_NOTES.md` for the deployment order.
 - Verify pairing, assignment, install progress/failure/completion, already-installed
   behavior, and service outages. Keep installed custom builds needed for recovery.
 - Treat an RC USB test as separate from the production 3.1.13-to-3.1.14 OTA path.
