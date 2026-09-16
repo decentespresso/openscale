@@ -140,7 +140,7 @@ Do not offer:
 - malformed versions
 - versions before `v3.1.13`
 - incompatible hardware
-- the same installed version, except when repairing LittleFS
+- the same installed stable version, except when repairing LittleFS; a preview/RC may select the stable release with the same numeric version
 
 Compatible older stable releases at `v3.1.13+` may be offered as signed downgrades.
 
@@ -148,11 +148,11 @@ Compatible older stable releases at `v3.1.13+` may be offered as signed downgrad
 
 A start request may name a target release. Over BLE and USB that is the five-byte `0x1B` form; over the `/snapshot` WebSocket it is the `wifi_update` command's version argument. See `docs/AI_PROTOCOL_NOTES.md` for the wire forms. A request with no target keeps the interactive picker on every transport.
 
-`pullOtaRunUpdate()` resolves a target against `selection`, the picker's own list, never against the raw catalog. That inheritance is the safeguard: `pullOtaAddParsedRelease()` has already dropped ineligible and incompatible entries, and `pullOtaBuildSelectableReleases()` has already dropped the installed version. A release the picker would not have offered is simply not found. Do not resolve against `catalog` or reimplement the eligibility rules; a second copy is where the two paths would drift.
+`pullOtaRunUpdate()` resolves a target against `selection`, the picker's own list, never against the raw catalog. That inheritance is the safeguard: `pullOtaAddParsedRelease()` has already dropped ineligible and incompatible entries, and `pullOtaBuildSelectableReleases()` applies the installed-version rule, including preview-to-stable and filesystem-repair exceptions. A release the picker would not have offered is simply not found. Do not resolve against `catalog` or reimplement the eligibility rules; a second copy is where the two paths would drift.
 
 The unattended path skips only `pullOtaPickRelease()` and `pullOtaConfirmInstall()`. Everything else is shared and unchanged: WiFi, clock, signed catalog fetch and signature verification, rollback-manifest resolution before any write, `pullOtaInstall()`, HTTPS with CA validation, asset URL allowlisting, exact size checks, SHA-256 verification, and the staged LittleFS transaction with its bounded retries and rollback metadata.
 
-A request is refused when the target is absent from the verified catalog, incompatible with this hardware, not a stable numeric release, below `HDS_OTA_MIN_INSTALL_VERSION`, or equal to the installed version outside LittleFS recovery. Missing signed rollback metadata requires the target's signed forward-recovery capability; an older target without it is refused before writes. A refusal calls `pullOtaFail()` and returns. It must never fall back to the picker, and it must never install a release other than the one requested.
+A request is refused when the target is absent from the verified catalog, incompatible with this hardware, not a stable numeric release, below `HDS_OTA_MIN_INSTALL_VERSION`, or equal to the installed stable version outside LittleFS recovery. A preview/RC may select its same-numeric stable release. Missing signed rollback metadata requires the target's signed forward-recovery capability; an older target without it is refused before writes. A refusal calls `pullOtaFail()` and returns. It must never fall back to the picker, and it must never install a release other than the one requested.
 
 An eligible downgrade is accepted, matching picker behavior.
 

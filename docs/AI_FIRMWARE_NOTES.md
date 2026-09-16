@@ -48,6 +48,12 @@ The WebSocket callback updates visible state and queues hardware work. `loop()` 
 
 Use `wsQueuePending(bits)` for single actions. Use `wsReplacePending(set, clear)` for mutually exclusive pairs such as display, low power, sleep, and timer commands.
 
+## Auto-Off And Light Sleep
+
+`AutoOffWeightActivityTracker` in `include/auto_off_activity.h` refreshes the auto-off timer from meaningful changes in the displayed weight. Static loads, invalid samples, and small drift must not count as continuous activity. `tools/test_auto_off_weight_activity.py` covers the threshold and timing behavior.
+
+Light Sleep boosts CPU performance briefly after a button wake. `serviceScaleButtonInputs(true)` runs before wake debounce completion and deferred remote work; setup primes button inputs before enabling Light Sleep. Preserve that ordering and validate it with `tools/check_energy_button_regressions.py` using the pinned AceButton library.
+
 ## WiFi And BLE
 
 WiFi and BLE share the 2.4 GHz radio. Keep Arduino-ESP32 default modem sleep. Do not call `WiFi.setSleep(false)`.
