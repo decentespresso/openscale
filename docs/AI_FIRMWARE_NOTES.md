@@ -52,7 +52,7 @@ Use `wsQueuePending(bits)` for single actions. Use `wsReplacePending(set, clear)
 
 `AutoOffWeightActivityTracker` in `include/auto_off_activity.h` refreshes the auto-off timer from meaningful changes in the displayed weight. Static loads, invalid samples, and small drift must not count as continuous activity. `tools/test_auto_off_weight_activity.py` covers the threshold and timing behavior.
 
-Energy-menu builds keep legacy responsive and aggressive Light Sleep state readable, but expose a single on/off toggle. Both profiles boost CPU performance briefly after a button wake. `serviceScaleButtonInputs(true)` runs before wake debounce completion and deferred remote work; setup primes button inputs before enabling Light Sleep. Preserve that ordering and validate it with `tools/check_energy_button_regressions.py` using the pinned AceButton library.
+Light Sleep boosts CPU performance briefly after a button wake. `serviceScaleButtonInputs(true)` runs before wake debounce completion and deferred remote work; setup primes button inputs before enabling Light Sleep. Preserve that ordering and validate it with `tools/check_energy_button_regressions.py` using the pinned AceButton library.
 
 ## WiFi And BLE
 

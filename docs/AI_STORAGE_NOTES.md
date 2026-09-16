@@ -53,7 +53,7 @@ The device name lives in `wifi`, not `hds`, so renaming a scale never touches th
 
 `schema` is a `uint16_t`, currently `1`. Do not rename a key or change its stored type in place. Add an explicit migration, preserve old data until the new schema is complete, then increment the schema version.
 
-Energy-menu builds additionally load `energy_schema` and the `ENERGY_FEATURE_KEYS` array in `include/storage.h`. These are independent of the base settings schema. Missing or invalid booleans receive validated defaults. Schemas 5-9 with enabled `e_light_sleep` and no `e_light_plus` migrate to the former aggressive behavior; an explicitly stored plus setting is preserved. A disabled Light Sleep setting clears a stale plus bit. Retired energy keys are removed only by the energy migration, and the schema marker is written only after successful loading and cleanup. The current menu enables both Light Sleep bits through one toggle; the legacy responsive profile remains readable.
+Energy-menu settings use `energy_schema` and `ENERGY_FEATURE_KEYS` in `include/storage.h`, independently of the base settings schema. Missing or invalid booleans receive validated defaults.
 
 ## Legacy EEPROM Migration
 
