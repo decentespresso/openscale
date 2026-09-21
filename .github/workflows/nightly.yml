@@ -14,6 +14,7 @@ on:
 
 jobs:
   ai-documentation:
+    if: github.repository == 'decentespresso/openscale'
     name: Python contracts
     runs-on: ubuntu-latest
     permissions:
@@ -43,6 +44,7 @@ jobs:
           node --test cloudflare/custom-build-worker/test/*.test.mjs
 
   native-tests:
+    if: github.repository == 'decentespresso/openscale'
     name: Native unit tests
     runs-on: ubuntu-latest
     permissions:
@@ -61,6 +63,7 @@ jobs:
         run: pio test -e native
 
   build:
+    if: github.repository == 'decentespresso/openscale'
     name: firmware (esp32s3)
     runs-on: ubuntu-latest
 
@@ -128,6 +131,7 @@ jobs:
           path: .pio.nosync/build/esp32s3/dependencies.txt
 
   energy-build:
+    if: github.repository == 'decentespresso/openscale'
     name: firmware (esp32s3-energy-menu)
     runs-on: ubuntu-latest
     env:
@@ -159,7 +163,7 @@ jobs:
         run: python tools/check_energy_button_regressions.py
 
   release-ready:
-    if: always()
+    if: always() && github.repository == 'decentespresso/openscale'
     needs: [ai-documentation, native-tests, build, energy-build]
     runs-on: ubuntu-latest
     permissions:

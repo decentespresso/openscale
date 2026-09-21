@@ -24,10 +24,15 @@ def main():
     manifest = json.loads(read("plugins/pressensor/plugin.json"))
     workerConfig = tomllib.loads(read("cloudflare/custom-build-worker/wrangler.toml"))
 
+    upstreamOnly = "github.repository == 'decentespresso/openscale'"
+    assert firmwareWorkflow.count(upstreamOnly) == 5
+
     pythonContracts = firmwareWorkflow.split("\n  ai-documentation:\n", 1)[1].split(
         "\n  native-tests:\n", 1
     )[0]
     assert 'git tag v3.1.14 "${{ github.sha }}"' in pythonContracts
+    assert 'git tag v3.1.14-preview.3 "${{ github.sha }}"' in pythonContracts
+    assert 'git tag v3.1.14-preview.4 "${{ github.sha }}"' in pythonContracts
     stockBuild = firmwareWorkflow.split("\n  build:\n", 1)[1].split("\n  energy-build:\n", 1)[0]
     energyBuild = firmwareWorkflow.split("\n  energy-build:\n", 1)[1]
     assert firmwareWorkflow.count("pio run -e esp32s3\n") == 1
