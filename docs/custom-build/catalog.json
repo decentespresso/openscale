@@ -1,5 +1,5 @@
 {
-  "catalog_revision": "88803f7d532ac74d47624e2c5d6450c195ef5d742ec82abf4dc8153cd8ebad74",
+  "catalog_revision": "ab6da03ebf285eeaa2ba2ce9d8994582abb9592943507f5ca05218de7de7e51e",
   "custom_ota_signing_key_generation": 1,
   "firmware_refs": [
     "v3.1.14",
@@ -154,8 +154,8 @@
       "id": "default-web-apps",
       "name": "Default web apps",
       "description": "Install the bundled on-device dashboard and scale tools.",
-      "tooltip": "Adds the dashboard, Weigh Save, Dosing Assistant, and Quality Control Assistant. LittleFS, WebSocket, the web server, and WiFi are included automatically.",
-      "version": "1.0.0",
+      "tooltip": "Adds the dashboard, Shot Flow, Weigh Save, Dosing Assistant, and Quality Control Assistant. LittleFS, WebSocket, the web server, and WiFi are included automatically.",
+      "version": "1.3.0",
       "firmware_refs": [
         "v3.1.14",
         "v3.1.14-preview.3",

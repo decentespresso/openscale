@@ -1,0 +1,60 @@
+name: GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/pages.yml"
+      - "docs/**"
+      - "plugins/default-web-apps/assets/shot_flow/**"
+      - "plugins/default-web-apps/assets/shared/reconnecting-websocket.js"
+      - "tools/build_shot_flow_demo.py"
+      - "tools/shot_flow_demo/**"
+      - "tools/test_shot_flow_demo.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - uses: actions/configure-pages@v5
+      - name: Validate demo isolation
+        run: |
+          python tools/test_shot_flow_demo.py
+      - name: Stage Pages source
+        run: python tools/build_shot_flow_demo.py _pages_source
+      - uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./_pages_source
+          destination: ./_site
+      - name: Validate artifact contents
+        run: |
+          test -f _site/index.html
+          test -f _site/shot-flow/shot_flow.html
+          test -f _site/shot-flow/modules/profile-tools.js
+          test ! -d _site/plugins
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
