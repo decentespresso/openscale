@@ -40,12 +40,17 @@ jobs:
       - name: Validate demo isolation
         run: |
           python tools/test_shot_flow_demo.py
+      - name: Stage Pages source
+        run: python tools/build_shot_flow_demo.py _pages_source
       - uses: actions/jekyll-build-pages@v1
         with:
-          source: ./docs
+          source: ./_pages_source
           destination: ./_site
-      - name: Overlay Shot Flow demo
-        run: python tools/build_shot_flow_demo.py _site --overlay
+      - name: Validate artifact contents
+        run: |
+          test -f _site/shot-flow/shot_flow.html
+          test -f _site/shot-flow/modules/profile-tools.js
+          test ! -d _site/plugins
       - uses: actions/upload-pages-artifact@v4
         with:
           path: _site

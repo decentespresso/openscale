@@ -20,7 +20,10 @@ def main():
     assert "demo-websocket.js" not in production_html
     workflow = (ROOT / ".github/workflows/pages.yml").read_text(encoding="utf-8")
     assert "actions/jekyll-build-pages@v1" in workflow
-    assert "python tools/build_shot_flow_demo.py _site --overlay" in workflow
+    assert "python tools/build_shot_flow_demo.py _pages_source" in workflow
+    assert "source: ./_pages_source" in workflow
+    assert "test ! -d _site/plugins" in workflow
+    assert "_site --overlay" not in workflow
     assert '"tools/shot_flow_demo/**"' in workflow
 
     with tempfile.TemporaryDirectory() as directory:
