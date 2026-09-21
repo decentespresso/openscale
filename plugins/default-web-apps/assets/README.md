@@ -1,6 +1,6 @@
 ## Half Decent Web Apps
 
-Half Decent Web Apps Leveraging Low-Barrier Tech for Enhanced Scale Functionality. Half Decent Web Apps is a collection of four web applications built with plain JavaScript, HTML, and CSS. These apps open up new ways to interact with your Half Decent Scale, providing tools for espresso flow visualization, quality control, precise weighing, and simplified dosing directly from your web browser.
+Half Decent Web Apps Leveraging Low-Barrier Tech for Enhanced Scale Functionality. Half Decent Web Apps is a collection of three web applications built with plain JavaScript, HTML, and CSS, demonstrating various functionalities available through Web Bluetooth Low Energy (Web BLE) and Web USB.These apps aim to open up new ways to interact with your Half Decent Scale, providing powerful tools for quality control, precise weighing, and simplified dosing directly from your web browser.
 
 ***
 
@@ -11,8 +11,6 @@ Get hands-on with our web tools. (Currently available for desktop/laptop browser
 * **[Weigh and Save](https://decentespresso.com/support/scale/decentscale_webweigh)**: Your go-to app for general weighing tasks. Precisely measure items within a set timeframe and easily export the results for analysis or record-keeping.
 * **[Quality Control Assistant](https://decentespresso.com/support/scale/decentscale_qcweigh)**: Perfect for ensuring consistency. This app allows you to repeatedly weigh the same items, simplifying data tracking and quality checks.
 * **[Dosing Assistant](https://decentespresso.com/support/scale/samew_dosing_ast)**: Simplify your dosing process with an intuitive interface designed for achieving accurate and repeatable measurements.
-
-The scale-hosted **Shot Flow** app connects through the firmware WebSocket. It charts live flow and yield against dose-based Espresso 1:2 / 25s and Turbo 1:4 / 30s target profiles, supports free-pour, and can optionally suggest a grind adjustment. Completed shots retain their actual measured samples in browser-local IndexedDB through a Web Worker. The separate data manager creates target profiles from saved shots, deletes local records, and stores user defaults.
 
 ***
 
