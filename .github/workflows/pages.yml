@@ -48,6 +48,7 @@ jobs:
           destination: ./_site
       - name: Validate artifact contents
         run: |
+          test -f _site/index.html
           test -f _site/shot-flow/shot_flow.html
           test -f _site/shot-flow/modules/profile-tools.js
           test ! -d _site/plugins

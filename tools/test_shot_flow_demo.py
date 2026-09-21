@@ -22,12 +22,16 @@ def main():
     assert "actions/jekyll-build-pages@v1" in workflow
     assert "python tools/build_shot_flow_demo.py _pages_source" in workflow
     assert "source: ./_pages_source" in workflow
+    assert "test -f _site/index.html" in workflow
     assert "test ! -d _site/plugins" in workflow
     assert "_site --overlay" not in workflow
     assert '"tools/shot_flow_demo/**"' in workflow
 
     with tempfile.TemporaryDirectory() as directory:
         output = build_shot_flow_demo.build(Path(directory) / "site")
+        index = (output / "index.md").read_text(encoding="utf-8")
+        assert "[Shot Flow](shot-flow/shot_flow.html)" in index
+        assert "[Custom build configurator](custom-build/)" in index
         demo_html = (output / "shot-flow/shot_flow.html").read_text(encoding="utf-8")
         assert demo_html.count('src="demo-websocket.js"') == 1
         assert demo_html.index('src="demo-websocket.js"') < demo_html.index(
