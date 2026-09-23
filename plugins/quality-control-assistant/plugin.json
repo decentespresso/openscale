@@ -1,0 +1,22 @@
+{
+  "schema": 2,
+  "id": "quality-control-assistant",
+  "name": "Quality Control Assistant",
+  "description": "Record and evaluate repeated scale measurements.",
+  "tooltip": "Adds the Quality Control Assistant to the on-device dashboard. Requires Default web apps for shared styling and WebSocket support.",
+  "version": "1.0.0",
+  "firmware_refs": ["v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main"],
+  "requires": [],
+  "depends_on": ["default-web-apps"],
+  "conflicts": [],
+  "recommends": {"features": [], "plugins": []},
+  "patches": {},
+  "assets": [
+    {"source": "assets/quality_control_redirect.html", "target": "Quality_Control_Assistant/quality_control.html"}
+  ],
+  "budget": {
+    "firmware_flash_bytes": 0,
+    "static_ram_bytes": 0,
+    "littlefs_bytes": 65536
+  }
+}

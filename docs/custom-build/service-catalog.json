@@ -1,7 +1,7 @@
 {
   "schema": 2,
   "custom_ota_signing_key_generation": 1,
-  "catalog_revision": "88803f7d532ac74d47624e2c5d6450c195ef5d742ec82abf4dc8153cd8ebad74",
+  "catalog_revision": "54337e339ca042de968e7a37611e73ad7c1a9b120bbb74bff8ada2384c06dbaf",
   "firmware_refs": [
     "v3.1.14",
     "v3.1.14-preview.3",
@@ -160,20 +160,8 @@
       "patches": {},
       "assets": [
         {
-          "target": "Quality_Control_Assistant/README.md",
-          "sha256": "ba113023ee216058bbac3ad33b93625abe234dd403fc822a6526ae76c39cf91e"
-        },
-        {
-          "target": "Quality_Control_Assistant/quality_control.html",
-          "sha256": "8b5fb4c0aaddb07ea5a8cb9a598597f8c3360fe60183d463e19cd927502ec93a"
-        },
-        {
-          "target": "Quality_Control_Assistant/quality_control.js",
-          "sha256": "450016df049d6c16fc33d1876e45496b0dececc63e2c9482e145f654ee622621"
-        },
-        {
           "target": "README.md",
-          "sha256": "18e8f0e2e09290889dd772ad3b654fe35c35bb7ef5d745d4cae48d6589344581"
+          "sha256": "0f1e411a435313d963e013f3cd854339d7646d591cf7f854362bcb30b879dc26"
         },
         {
           "target": "Weigh_Save/README.md",
@@ -241,7 +229,7 @@
         },
         {
           "target": "index.html",
-          "sha256": "b427d0dedf5d08c481425ad12b453e2d6a1f9e55fd37e1b65c4a62fc4081a258"
+          "sha256": "3ee5ff319ff405ddfaf9a8f79b4281edf6ff3e1cc4213d0017254320fb7b9f2b"
         },
         {
           "target": "shared/app.css",
@@ -329,6 +317,44 @@
         }
       },
       "assets": []
+    },
+    "quality-control-assistant": {
+      "version": "1.0.0",
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main"
+      ],
+      "requires": [],
+      "depends_on": [
+        "default-web-apps"
+      ],
+      "conflicts": [],
+      "conflicts_features": [],
+      "recommends": {
+        "features": [],
+        "plugins": []
+      },
+      "patches": {},
+      "assets": [
+        {
+          "target": "Quality_Control_Assistant/quality_control.html",
+          "sha256": "d24a0bf4eb31f76738922174c8e0e03f80199bd8768e1b6313c97ec306d2ba3b"
+        },
+        {
+          "target": "apps/quality-control-assistant/index.html",
+          "sha256": "1108e1f65bbaff0a908062802334b9319db6838aaa2294cda6c922574437c0de"
+        },
+        {
+          "target": "apps/quality-control-assistant/quality_control.js",
+          "sha256": "450016df049d6c16fc33d1876e45496b0dececc63e2c9482e145f654ee622621"
+        }
+      ],
+      "webapp": {
+        "name": "Quality Control Assistant",
+        "href": "/apps/quality-control-assistant/index.html"
+      }
     }
   }
 }

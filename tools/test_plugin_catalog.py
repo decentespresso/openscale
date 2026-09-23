@@ -361,6 +361,27 @@ def main():
         assertRejected(lambda: customBuild.resolveConfiguration(writeConfig(root, [], ["../bad"])))
         resolved = customBuild.resolveConfiguration(writeConfig(root, [], ["default-web-apps"]))
         assert {"littlefs", "wifi", "webserver", "websocket"}.issubset(resolved["features"])
+        defaultStage = root / "default-stage"
+        customBuild.stageAssets(resolved, defaultStage)
+        assert not (defaultStage / "Quality_Control_Assistant/quality_control.html").exists()
+        qc = customBuild.resolveConfiguration(writeConfig(root, [], ["quality-control-assistant"]))
+        assert [plugin["id"] for plugin in qc["plugins"]] == [
+            "default-web-apps", "quality-control-assistant"
+        ]
+        qcStage = root / "qc-stage"
+        customBuild.stageAssets(qc, qcStage)
+        assert (qcStage / "apps/quality-control-assistant/index.html").is_file()
+        assert (qcStage / "apps/quality-control-assistant/quality_control.js").is_file()
+        assert (qcStage / "shared/theme.css").is_file()
+        assert (qcStage / "shared/reconnecting-websocket.js").is_file()
+        assert "/apps/quality-control-assistant/index.html" in (
+            qcStage / "Quality_Control_Assistant/quality_control.html"
+        ).read_text(encoding="utf-8")
+        assert json.loads((qcStage / "webapps.json").read_text(encoding="utf-8"))["apps"] == [{
+            "id": "quality-control-assistant",
+            "name": "Quality Control Assistant",
+            "href": "/apps/quality-control-assistant/index.html",
+        }]
         grindByWeight = customBuild.resolveConfiguration(writeConfig(root, [], ["grind-by-weight"]))
         assert {"grinder", "wifi", "mdns"}.issubset(grindByWeight["features"])
         assertRejected(lambda: customBuild.resolveConfiguration(

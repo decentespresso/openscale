@@ -14,7 +14,7 @@ TARGET = ROOT / "plugins" / "default-web-apps" / "assets" / "shared"
 PAGES = {
     "plugins/default-web-apps/assets/index.html": "shared/theme",
     "plugins/default-web-apps/assets/Weigh_Save/weigh_save.html": "../shared/theme",
-    "plugins/default-web-apps/assets/Quality_Control_Assistant/quality_control.html": "../shared/theme",
+    "plugins/quality-control-assistant/webapp/index.html": "/shared/theme",
     "plugins/default-web-apps/assets/dosing_assistant/dosing_assistant.html": "../shared/theme",
 }
 
@@ -173,7 +173,8 @@ def main():
         assert f"{prefix}.css?v=1" in references.stylesheets, path
         assert "theme-toggle-track" not in source, path
         for extension in ("css", "js"):
-            assert ((ROOT / path).parent / f"{prefix}.{extension}").is_file(), path
+            assetRoot = TARGET.parent if prefix.startswith("/") else (ROOT / path).parent
+            assert (assetRoot / f"{prefix.lstrip('/')}.{extension}").is_file(), path
 
     dashboard = (ROOT / "plugins/default-web-apps/assets/index.html").read_text(encoding="utf-8")
     runtimeColors = re.findall(r"\.style\.color\s*=\s*(['\"])(.*?)\1", dashboard)

@@ -2,8 +2,8 @@
   "schema": 2,
   "id": "default-web-apps",
   "name": "Default web apps",
-  "description": "Install the bundled on-device dashboard and scale tools.",
-  "tooltip": "Adds the dashboard, Weigh Save, Dosing Assistant, and Quality Control Assistant. LittleFS, WebSocket, the web server, and WiFi are included automatically.",
+  "description": "Install the on-device dashboard, Weigh Save, and Dosing Assistant.",
+  "tooltip": "Adds the dashboard, Weigh Save, and Dosing Assistant. LittleFS, WebSocket, the web server, and WiFi are included automatically.",
   "version": "1.0.0",
   "firmware_refs": ["v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main"],
   "requires": ["littlefs", "websocket"],
@@ -14,9 +14,6 @@
   "assets": [
     {"source": "assets/index.html", "target": "index.html"},
     {"source": "assets/README.md", "target": "README.md"},
-    {"source": "assets/Quality_Control_Assistant/README.md", "target": "Quality_Control_Assistant/README.md"},
-    {"source": "assets/Quality_Control_Assistant/quality_control.html", "target": "Quality_Control_Assistant/quality_control.html"},
-    {"source": "assets/Quality_Control_Assistant/quality_control.js", "target": "Quality_Control_Assistant/quality_control.js"},
     {"source": "assets/Weigh_Save/README.md", "target": "Weigh_Save/README.md"},
     {"source": "assets/Weigh_Save/main.js", "target": "Weigh_Save/main.js"},
     {"source": "assets/Weigh_Save/modules/export.js", "target": "Weigh_Save/modules/export.js"},
@@ -43,6 +40,6 @@
   "budget": {
     "firmware_flash_bytes": 0,
     "static_ram_bytes": 0,
-    "littlefs_bytes": 262144
+    "littlefs_bytes": 196608
   }
 }
