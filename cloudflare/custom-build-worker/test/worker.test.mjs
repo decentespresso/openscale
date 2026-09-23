@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { test } from "node:test";
 
-import worker, { BuildCoordinator } from "../src/worker.mjs";
+import worker, { BuildCoordinator, identityForSelection } from "../src/worker.mjs";
 
 
 const encoder = new TextEncoder();
@@ -122,6 +122,50 @@ async function api(env, path, method = "GET", body) {
     },
   }), env);
 }
+
+
+test("schema 2 webapps use normalized assets and reject collisions", () => {
+  const catalog = {
+    schema: 2,
+    custom_ota_signing_key_generation: 1,
+    firmware_refs: ["main"],
+    platformio_environment: "esp32s3-custom",
+    firmware: {
+      main: {
+        custom_version: "3.1.14-custom",
+        partition_schema: {path: "partitions/default.csv", sha256: "2".repeat(64)},
+      },
+    },
+    features: {
+      littlefs: {requires: [], firmware_refs: ["main"]},
+      webserver: {requires: [], firmware_refs: ["main"]},
+    },
+    plugins: {
+      alpha: {
+        version: "1.0.0", firmware_refs: ["main"], requires: ["littlefs", "webserver"],
+        depends_on: [], conflicts: [], patches: {},
+        assets: [{target: "apps/alpha/index.html", sha256: "3".repeat(64)}],
+        webapp: {name: "Alpha", href: "/apps/alpha/index.html"},
+      },
+      beta: {
+        version: "1.0.0", firmware_refs: ["main"], requires: ["littlefs", "webserver"],
+        depends_on: [], conflicts: [], patches: {},
+        assets: [{target: "apps/beta/index.html", sha256: "4".repeat(64)}],
+        webapp: {name: "Beta", href: "/apps/beta/index.html"},
+      },
+    },
+  };
+  const selection = {firmware_ref: "main", features: [], plugins: ["beta", "alpha"]};
+  const identity = identityForSelection(catalog, "1".repeat(40), selection);
+  assert.deepEqual(identity.plugins.map(plugin => plugin.id), ["alpha", "beta"]);
+  assert.equal(identity.plugins[0].webapp.name, "Alpha");
+  catalog.plugins.beta.assets[0].target = "apps/alpha/index.html";
+  assert.throws(() => identityForSelection(catalog, "1".repeat(40), selection),
+    error => error.code === "plugin_asset_collision");
+  catalog.plugins.beta.assets[0].target = "apps/alpha/index.html/child";
+  assert.throws(() => identityForSelection(catalog, "1".repeat(40), selection),
+    error => error.code === "plugin_asset_collision");
+});
 
 
 test("publishes immutable cache entries and deduplicates public builds", async () => {

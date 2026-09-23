@@ -451,7 +451,7 @@
 
   <section class="section" aria-labelledby="apps-title">
     <h2 id="apps-title">Available Apps</h2>
-    <ul class="app-list">
+    <ul class="app-list" id="app-list">
       <li><a href="Quality_Control_Assistant/quality_control.html">Quality Control Assistant</a></li>
       <li><a href="Weigh_Save/weigh_save.html">Weigh Save</a></li>
       <li><a href="dosing_assistant/dosing_assistant.html">Dosing assistant</a></li>
@@ -489,6 +489,27 @@
   </section>
 
   <script>
+    async function addPluginApps() {
+      const response = await fetch('/webapps.json', { cache: 'no-cache' });
+      if (!response.ok) return;
+      const registry = await response.json();
+      if (registry.schema !== 1 || !Array.isArray(registry.apps)) return;
+      const appList = document.getElementById('app-list');
+      const idPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+      for (const app of registry.apps) {
+        if (!idPattern.test(app.id) || typeof app.name !== 'string' ||
+            app.href !== `/apps/${app.id}/index.html`) continue;
+        const item = document.createElement('li');
+        const link = document.createElement('a');
+        link.href = app.href;
+        link.textContent = app.name;
+        item.append(link);
+        appList.append(item);
+      }
+    }
+
+    addPluginApps().catch(() => {});
+
     // WiFi form submission
     document.getElementById('wifi-form').addEventListener('submit', async function (e) {
       e.preventDefault();

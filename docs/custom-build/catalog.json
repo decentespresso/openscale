@@ -173,6 +173,35 @@
         "features": [],
         "plugins": []
       },
+      "asset_targets": [
+        "Quality_Control_Assistant/README.md",
+        "Quality_Control_Assistant/quality_control.html",
+        "Quality_Control_Assistant/quality_control.js",
+        "README.md",
+        "Weigh_Save/README.md",
+        "Weigh_Save/main.js",
+        "Weigh_Save/modules/export.js",
+        "Weigh_Save/modules/scale.js",
+        "Weigh_Save/modules/timer.js",
+        "Weigh_Save/modules/ui-controller.js",
+        "Weigh_Save/weigh_save.html",
+        "dosing_assistant/README.md",
+        "dosing_assistant/dosing_assistant.html",
+        "dosing_assistant/dosing_assistant.md",
+        "dosing_assistant/main.js",
+        "dosing_assistant/modules/constants.js",
+        "dosing_assistant/modules/export.js",
+        "dosing_assistant/modules/scale.js",
+        "dosing_assistant/modules/state-machine.js",
+        "dosing_assistant/modules/ui-controller.js",
+        "index.html",
+        "shared/app.css",
+        "shared/modules/download-file.js",
+        "shared/modules/presets.js",
+        "shared/reconnecting-websocket.js",
+        "shared/theme.css",
+        "shared/theme.js"
+      ],
       "default": true
     },
     {
@@ -202,7 +231,8 @@
         "plugins": [
           "default-web-apps"
         ]
-      }
+      },
+      "asset_targets": []
     },
     {
       "id": "pressensor",
@@ -225,7 +255,8 @@
       "recommends": {
         "features": [],
         "plugins": []
-      }
+      },
+      "asset_targets": []
     }
   ]
 }

@@ -1,0 +1,15 @@
+.plugin-preview-dialog {
+  width: min(92vw, 860px);
+  max-height: 90vh;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.plugin-preview-dialog::backdrop { background: rgba(12, 25, 20, .7); }
+.plugin-preview-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 12px; }
+.plugin-preview-head h2 { margin: 0; font-size: 1.1rem; }
+.plugin-preview-head button { border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; background: var(--surface); color: var(--ink); cursor: pointer; }
+.plugin-preview-dialog img { display: block; max-width: 100%; max-height: calc(90vh - 110px); margin: auto; object-fit: contain; }

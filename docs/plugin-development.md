@@ -216,3 +216,58 @@ be determined from the repository and supplied implementation.
 ```
 
 Replace every placeholder before starting. For an existing implementation PR, keep it open until the patch build and available hardware checks have succeeded.
+
+## Plugin webapps and presentation
+
+Each approved plugin lives in `plugins/<plugin-id>/` and has a `plugin.json` manifest. A plugin may add an on-device webapp, configurator preview, or handbook without plugin-specific changes to the configurator or the default dashboard.
+
+## Webapp files
+
+The preferred layout is:
+
+```text
+plugins/example/
+  plugin.json
+  webapp/
+    index.html
+    app.css
+    app.js
+```
+
+The build discovers regular files under `webapp/` and stages them at `/apps/example/`. `index.html` identifies the app; no separate `webapp` manifest section or asset list is needed. A non-default plugin can alternatively declare an ordinary asset targeting `index.html`. In that form, **all** of that plugin's declared assets form its app bundle and are staged under `/apps/<plugin-id>/`, including the index and its relative resources. Do not use both forms in one plugin. Use the `webapp/` form when the plugin also needs unrelated device-root assets.
+
+Every app must have `littlefs` and `webserver` in its resolved feature requirements. Declare them in `requires`, directly or through another required feature. Declare `websocket` when the app uses `/snapshot`; the build does not infer API use from JavaScript.
+
+Use relative paths for app resources, such as `./app.css` and `./app.js`. Use root-relative paths for firmware APIs, such as `/setup/name` and `/snapshot`. An app may reference files supplied by `default-web-apps` only when it declares `depends_on: ["default-web-apps"]`; otherwise it must provide its own files. Since `default-web-apps` is optional, an undeclared cross-plugin link can break in a valid build.
+
+The build reserves `/apps/` and `/webapps.json`. Other ordinary asset targets cannot claim them. Effective staged targets must be unique across selected plugins. Symlinks and traversal that escape a plugin directory are rejected; webapp discovery rejects symlinks and non-regular entries.
+
+## Device root
+
+`default-web-apps` keeps its existing dashboard at `/` when selected. It reads `/webapps.json` to list other selected apps. Without it, `/` redirects to the only selected app, shows a small inline launcher for two or more apps, or serves the firmware's small setup page when no app is selected. An app's real URL remains `/apps/<plugin-id>/index.html` in every combination.
+
+The registry is generated from selected apps and sorted by plugin ID:
+
+```json
+{"schema":1,"apps":[{"id":"example","name":"Example","href":"/apps/example/index.html"}]}
+```
+
+The app label comes from `plugin.json`'s `name`. Changing that name changes the runtime build identity for an app plugin.
+
+All webapps share the device's browser origin, storage, and firmware endpoints. `/apps/` is a file ownership boundary, not a security sandbox. Review app code for API calls, external requests, storage use, and destructive actions. Use plugin-specific versioned storage keys such as `openscale:example:settings:v1`.
+
+## Configurator presentation
+
+The optional `presentation` object accepts local plugin-relative paths:
+
+```json
+"presentation": {
+  "image": "media/preview.webp",
+  "image_alt": "Example dashboard showing live scale weight",
+  "handbook": "README.md"
+}
+```
+
+The image may be PNG, JPEG, or WebP, up to 500 KiB, 4096 pixels per side, and 16 megapixels. An image requires non-empty alt text of at most 240 characters. The handbook may be Markdown or PDF, up to 1 MiB. SVG and remote presentation URLs are not accepted. The configurator publishes preview images with content-hashed names and links handbooks to their source files on GitHub `main`.
+
+Presentation content is not included in firmware build identity. Runtime app files, effective asset paths and hashes, and the app label are included. Plugin authors should provide uncompressed HTML, CSS, and JavaScript; the existing filesystem build produces deterministic gzip variants.

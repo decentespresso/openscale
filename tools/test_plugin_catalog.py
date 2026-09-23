@@ -254,9 +254,13 @@ def main():
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
     fleetScript = (pageRoot / "fleet.js").read_text(encoding="utf-8")
-    assert 'type="module" src="app.js?v=32"' in indexPage
+    assert 'type="module" src="app.js?v=33"' in indexPage
     assert 'href="styles.css?v=18"' in indexPage
     assert 'href="fleet.css?v=7"' in indexPage
+    assert 'href="preview.css?v=1"' in indexPage
+    assert 'id="plugin-preview"' in indexPage
+    assert 'data-preview-plugin' in appScript
+    assert 'data-recommend-plugin' in appScript
     assert 'id="request-build"' in indexPage
     assert "catalog-data" not in indexPage
     assert 'fetch("catalog.json"' in appScript
