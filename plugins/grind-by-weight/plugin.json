@@ -15,6 +15,7 @@
   },
   "patches": {},
   "assets": [],
+  "presentation": {"handbook": "README.md"},
   "budget": {
     "firmware_flash_bytes": 65536,
     "static_ram_bytes": 4096,

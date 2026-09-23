@@ -232,7 +232,10 @@
           "default-web-apps"
         ]
       },
-      "asset_targets": []
+      "asset_targets": [],
+      "presentation": {
+        "handbook": "plugin-media/grind-by-weight/9bf8d6abe06db79c81eee26b668390907677a198e8f5c64b189fa7a31e2367d6.md"
+      }
     },
     {
       "id": "pressensor",
