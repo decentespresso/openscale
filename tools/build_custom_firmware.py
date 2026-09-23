@@ -148,6 +148,7 @@ def prepareBuildCheckout(
     builderTools = workspace / "builder-tools"
     builderTools.mkdir()
     shutil.copy2(builderRoot / "tools" / "configure_custom_build.py", builderTools)
+    shutil.copy2(builderRoot / "tools" / "plugin_presentation.py", builderTools)
     shutil.copy2(builderRoot / "tools" / "write_custom_ota_public_key_header.py", builderTools)
     shutil.copy2(builderRoot / "git_rev_macro.py", builderTools)
     for name in CUSTOM_OTA_PUBLIC_KEY_NAMES:
