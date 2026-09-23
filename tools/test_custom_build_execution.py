@@ -157,6 +157,7 @@ def main():
         builderTools = catalogRoot / "tools"
         builderTools.mkdir()
         shutil.copy2(customBuild.SCRIPT_ROOT / "tools" / "configure_custom_build.py", builderTools)
+        shutil.copy2(customBuild.SCRIPT_ROOT / "tools" / "plugin_presentation.py", builderTools)
         shutil.copy2(
             customBuild.SCRIPT_ROOT / "tools" / "write_custom_ota_public_key_header.py",
             builderTools,
@@ -263,6 +264,9 @@ def main():
             trustedTools = checkoutRoot / ".pio.nosync" / "builder-tools"
             assert (trustedTools / "configure_custom_build.py").read_bytes() == (
                 catalogRoot / "tools" / "configure_custom_build.py"
+            ).read_bytes()
+            assert (trustedTools / "plugin_presentation.py").read_bytes() == (
+                catalogRoot / "tools" / "plugin_presentation.py"
             ).read_bytes()
             assert (trustedTools / "git_rev_macro.py").read_bytes() == (
                 catalogRoot / "git_rev_macro.py"
