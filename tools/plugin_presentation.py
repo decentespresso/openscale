@@ -1,7 +1,6 @@
 import hashlib
 from pathlib import Path
 import shutil
-from urllib.parse import quote
 
 
 IMAGE_FORMATS = {".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG", ".webp": "WEBP"}
@@ -48,34 +47,39 @@ def previewMetadata(pluginId, pluginDir, presentation, safeRelativePath):
 def presentationMetadata(pluginId, manifest, pluginDir, safeRelativePath):
     presentation = manifest.get("presentation")
     if presentation is None:
-        return None, None
+        return None, []
     if not isinstance(presentation, dict) or not presentation or set(presentation) - PRESENTATION_KEYS:
         raise ValueError(f"invalid plugin presentation: {pluginId}")
     if "image_alt" in presentation and "image" not in presentation:
         raise ValueError(f"preview alt text has no image: {pluginId}")
     metadata = {}
-    preview = None
+    files = []
     if "image" in presentation:
         imageMetadata, source, published = previewMetadata(
             pluginId, pluginDir, presentation, safeRelativePath
         )
         metadata.update(imageMetadata)
-        preview = source, published
+        files.append((source, published))
     if "handbook" in presentation:
         relative, source = pluginFile(
             pluginDir, presentation["handbook"], f"{pluginId}.presentation.handbook", safeRelativePath
         )
-        if relative.suffix.lower() not in {".md", ".pdf"} or source.stat().st_size > MAX_HANDBOOK_BYTES:
+        if relative.suffix.lower() != ".md" or source.stat().st_size > MAX_HANDBOOK_BYTES:
             raise ValueError(f"invalid plugin handbook: {pluginId}")
-        metadata["handbook"] = (
-            "https://github.com/decentespresso/openscale/blob/main/plugins/"
-            f"{pluginId}/{quote(relative.as_posix(), safe='/')}"
-        )
-    return metadata, preview
+        contents = source.read_bytes()
+        try:
+            contents.decode("utf-8")
+        except UnicodeError as error:
+            raise ValueError(f"invalid plugin handbook text: {pluginId}") from error
+        digest = hashlib.sha256(contents).hexdigest()
+        published = Path("plugin-media") / pluginId / f"{digest}.md"
+        metadata["handbook"] = published.as_posix()
+        files.append((source, published))
+    return metadata, files
 
 
-def publishPreviews(previews, outputDir):
-    expected = {outputDir / relative.relative_to("plugin-media"): source for source, relative in previews}
+def publishPresentationFiles(files, outputDir):
+    expected = {outputDir / relative.relative_to("plugin-media"): source for source, relative in files}
     for target, source in expected.items():
         target.parent.mkdir(parents=True, exist_ok=True)
         if not target.is_file() or target.read_bytes() != source.read_bytes():

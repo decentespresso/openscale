@@ -13,3 +13,5 @@
 .plugin-preview-head h2 { margin: 0; font-size: 1.1rem; }
 .plugin-preview-head button { border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; background: var(--surface); color: var(--ink); cursor: pointer; }
 .plugin-preview-dialog img { display: block; max-width: 100%; max-height: calc(90vh - 110px); margin: auto; object-fit: contain; }
+.plugin-preview-dialog img[hidden], .plugin-preview-dialog pre[hidden] { display: none; }
+.plugin-preview-dialog pre { max-height: calc(90vh - 110px); margin: 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.55; }

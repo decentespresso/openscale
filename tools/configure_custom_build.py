@@ -9,7 +9,7 @@ import re
 import shutil
 import subprocess
 
-from plugin_presentation import presentationMetadata, publishPreviews
+from plugin_presentation import presentationMetadata, publishPresentationFiles
 
 
 SCRIPT_ROOT = Path(globals().get("__file__", Path.cwd() / "tools" / "configure_custom_build.py")).resolve().parents[1]
@@ -520,14 +520,13 @@ def buildBrowserCatalog():
 
 def writeBrowserCatalog(path):
     catalog = buildBrowserCatalog()
-    previews = []
+    presentationFiles = []
     for manifest, _, _ in loadPluginCatalog().values():
-        _, preview = presentationMetadata(
+        _, files = presentationMetadata(
             manifest["id"], manifest, ROOT / "plugins" / manifest["id"], safeRelativePath
         )
-        if preview:
-            previews.append(preview)
-    publishPreviews(previews, path.parent / "plugin-media")
+        presentationFiles.extend(files)
+    publishPresentationFiles(presentationFiles, path.parent / "plugin-media")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes((json.dumps(catalog, indent=2) + "\n").encode("utf-8"))
 

@@ -82,6 +82,7 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
   const previewDialog = document.querySelector("#plugin-preview");
   const previewTitle = document.querySelector("#plugin-preview-title");
   const previewImage = document.querySelector("#plugin-preview-image");
+  const previewHandbook = document.querySelector("#plugin-preview-handbook");
   const buildButton = document.querySelector("#request-build");
   const updateBuildProgress = initBuildProgress(document.querySelector("#build-progress"));
   const fleetPanel = document.querySelector("#fleet-panel");
@@ -96,14 +97,15 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
   let currentBuildState = "checking";
   let catalogRetryDelay = 2000;
   let lastBuildResult;
+  let handbookRequest = 0;
 
   const escapeHtml = value => String(value).replace(/[&<>'"]/g, character => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
   })[character]);
   const validPreviewPath = (plugin, path) => typeof path === "string" &&
     new RegExp(`^plugin-media/${plugin.id}/[0-9a-f]{64}\\.(png|jpg|jpeg|webp)$`).test(path);
-  const validHandbookUrl = (plugin, value) => typeof value === "string" &&
-    value.startsWith(`https://github.com/decentespresso/openscale/blob/main/plugins/${plugin.id}/`);
+  const validHandbookPath = (plugin, value) => typeof value === "string" &&
+    new RegExp(`^plugin-media/${plugin.id}/[0-9a-f]{64}\\.md$`).test(value);
 
   const makeOption = (item, kind) => {
     const wrapper = document.createElement("div");
@@ -137,14 +139,13 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
         button.textContent = "Preview";
         actions.append(button);
       }
-      if (validHandbookUrl(item, item.presentation.handbook)) {
-        const link = document.createElement("a");
-        link.className = "handbook-link";
-        link.href = item.presentation.handbook;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        link.textContent = "Handbook";
-        actions.append(link);
+      if (validHandbookPath(item, item.presentation.handbook)) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "handbook-link";
+        button.dataset.handbookPlugin = item.id;
+        button.textContent = "README";
+        actions.append(button);
       }
       wrapper.append(actions);
     }
@@ -458,13 +459,41 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
     if (!button) return;
     const plugin = pluginById.get(button.dataset.previewPlugin);
     if (!plugin || !validPreviewPath(plugin, plugin.presentation?.image)) return;
+    handbookRequest += 1;
     previewTitle.textContent = plugin.name;
+    previewHandbook.hidden = true;
+    previewImage.hidden = false;
     previewImage.alt = plugin.presentation.image_alt;
     previewImage.src = plugin.presentation.image;
     previewDialog.showModal();
   });
+  document.addEventListener("click", async event => {
+    const button = event.target.closest("[data-handbook-plugin]");
+    if (!button) return;
+    const plugin = pluginById.get(button.dataset.handbookPlugin);
+    if (!plugin || !validHandbookPath(plugin, plugin.presentation?.handbook)) return;
+    const request = ++handbookRequest;
+    previewTitle.textContent = plugin.name;
+    previewImage.hidden = true;
+    previewImage.removeAttribute("src");
+    previewHandbook.hidden = false;
+    previewHandbook.textContent = "Loading...";
+    previewDialog.showModal();
+    try {
+      const response = await fetch(plugin.presentation.handbook);
+      if (!response.ok) throw new Error("Handbook unavailable");
+      const content = await response.text();
+      if (request === handbookRequest && previewDialog.open) previewHandbook.textContent = content;
+    } catch {
+      if (request === handbookRequest && previewDialog.open) previewHandbook.textContent = "Handbook unavailable.";
+    }
+  });
   document.querySelector("#plugin-preview-close").addEventListener("click", () => previewDialog.close());
-  previewDialog.addEventListener("close", () => previewImage.removeAttribute("src"));
+  previewDialog.addEventListener("close", () => {
+    handbookRequest += 1;
+    previewImage.removeAttribute("src");
+    previewHandbook.textContent = "";
+  });
 
   document.addEventListener("change", event => {
     const input = event.target;

@@ -222,7 +222,8 @@ def testPresentation():
             browser = customBuild.buildBrowserCatalog()
             presentation = browser["plugins"][0]["presentation"]
             assert presentation["image"].startswith("plugin-media/picture/")
-            assert presentation["handbook"].endswith("/plugins/picture/README.md")
+            assert presentation["handbook"].startswith("plugin-media/picture/")
+            assert presentation["handbook"].endswith(".md")
             output = root / "site" / "catalog.json"
             stale = output.parent / "plugin-media" / "picture" / "stale.png"
             stale.parent.mkdir(parents=True)
@@ -230,6 +231,7 @@ def testPresentation():
             customBuild.writeBrowserCatalog(output)
             assert not stale.exists()
             assert (output.parent / presentation["image"]).is_file()
+            assert (output.parent / presentation["handbook"]).read_text(encoding="utf-8") == "# Picture\n"
 
             changed = {**data, "presentation": {**data["presentation"], "image_alt": "New alt"}}
             writePlugin(root, changed, {})
@@ -242,6 +244,14 @@ def testPresentation():
             assertRejected(customBuild.buildBrowserCatalog)
             writePlugin(root, {**data, "presentation": {"handbook": "../README.md"}}, {})
             assertRejected(customBuild.buildBrowserCatalog)
+            writePlugin(root, {**data, "presentation": {"handbook": "README.pdf"}}, {
+                "README.pdf": "not a README",
+            })
+            assertRejected(customBuild.buildBrowserCatalog)
+            writePlugin(root, data, {})
+            (directory / "README.md").write_bytes(b"\xff")
+            assertRejected(customBuild.buildBrowserCatalog)
+            (directory / "README.md").write_text("# Picture\n", encoding="utf-8")
             writePlugin(root, {**data, "presentation": {"image": "media/preview.svg", "image_alt": "SVG"}}, {
                 "media/preview.svg": "<svg></svg>",
             })

@@ -268,6 +268,6 @@ The optional `presentation` object accepts local plugin-relative paths:
 }
 ```
 
-The image may be PNG, JPEG, or WebP, up to 500 KiB, 4096 pixels per side, and 16 megapixels. An image requires non-empty alt text of at most 240 characters. The handbook may be Markdown or PDF, up to 1 MiB. SVG and remote presentation URLs are not accepted. The configurator publishes preview images with content-hashed names and links handbooks to their source files on GitHub `main`.
+The image may be PNG, JPEG, or WebP, up to 500 KiB, 4096 pixels per side, and 16 megapixels. An image requires non-empty alt text of at most 240 characters. The handbook must be Markdown, up to 1 MiB. SVG, PDF, and remote presentation URLs are not accepted. The configurator publishes both files with content-hashed names. It opens the image or the README text in a popup on the custom build page; it does not fetch the README from GitHub. Plugins without a `presentation` object remain valid.
 
 Presentation content is not included in firmware build identity. Runtime app files, effective asset paths and hashes, and the app label are included. Plugin authors should provide uncompressed HTML, CSS, and JavaScript; the existing filesystem build produces deterministic gzip variants.
