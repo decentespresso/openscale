@@ -216,7 +216,7 @@ def loadPlugin(pluginId, firmwareRef=None):
     webappDir = pluginDir / "webapp"
     webappIndex = webappDir / "index.html"
     rootAsset = any(target.as_posix() == "index.html" for _, target in checkedAssets)
-    discoveredWebapp = webappIndex.exists()
+    discoveredWebapp = webappIndex.is_file()
     if webappDir.exists() and (webappDir.is_symlink() or not webappDir.is_dir()):
         raise ValueError(f"invalid webapp directory: {pluginId}")
     if webappDir.is_dir() and not discoveredWebapp and any(webappDir.iterdir()):
@@ -239,6 +239,11 @@ def loadPlugin(pluginId, firmwareRef=None):
             (source, PurePosixPath("apps", pluginId, *target.parts))
             for source, target in checkedAssets
         ]
+    for _, target in checkedAssets:
+        if target.suffix.lower() == ".gz" and target.with_suffix("").suffix.lower() in {
+            ".html", ".js", ".css", ".svg"
+        }:
+            raise ValueError(f"precompressed plugin asset is managed by the build: {pluginId}/{target}")
     if discoveredWebapp or (rootAsset and pluginId != "default-web-apps"):
         manifest["webapp"] = {
             "name": manifest["name"],

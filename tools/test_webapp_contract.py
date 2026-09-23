@@ -195,6 +195,25 @@ def testWebapps(buildfs=False):
                 {"source": "assets/index.html", "target": "index.html"},
             ]), {"assets/index.html": "root", "webapp/index.html": "app"})
             assertRejected(lambda: customBuild.loadPlugin("dual-entry"))
+            directoryIndex = writePlugin(root, manifest("directory-index"), {})
+            (directoryIndex / "webapp" / "index.html").mkdir(parents=True)
+            assertRejected(lambda: customBuild.loadPlugin("directory-index"))
+            writePlugin(root, manifest("gzip-only"), {
+                "webapp/index.html": "app",
+                "webapp/app.js.gz": "supplied gzip",
+            })
+            assertRejected(lambda: customBuild.loadPlugin("gzip-only"))
+            writePlugin(root, manifest("gzip-sibling"), {
+                "webapp/index.html": "app",
+                "webapp/app.js": "source",
+                "webapp/app.js.gz": "supplied gzip",
+            })
+            assertRejected(lambda: customBuild.loadPlugin("gzip-sibling"))
+            writePlugin(root, manifest("gzip-declared", assets=[
+                {"source": "assets/index.html", "target": "index.html"},
+                {"source": "assets/app.css.gz", "target": "app.css.gz"},
+            ]), {"assets/index.html": "app", "assets/app.css.gz": "supplied gzip"})
+            assertRejected(lambda: customBuild.loadPlugin("gzip-declared"))
             writePlugin(root, manifest("reserved", assets=[
                 {"source": "assets/data.json", "target": "webapps.json"},
             ]), {"assets/data.json": "{}"})
