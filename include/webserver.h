@@ -152,11 +152,6 @@ void startWebServer() {
 #endif
 
 #if HDS_FEATURE_LITTLEFS
-    if (webFilesystemReady.load() && !LittleFS.exists("/index.html")) {
-      server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        request->send(200, "text/html", HDS_WIFI_SETUP_PAGE);
-      });
-    }
     server.serveStatic("/", LittleFS, "/")
         .setTryGzipFirst(true)
         .setDefaultFile("index.html")

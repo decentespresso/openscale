@@ -251,9 +251,8 @@ def testPresentation():
 def testFirmwareRootFallback():
     source = (SOURCE_ROOT / "include" / "webserver.h").read_text(encoding="utf-8")
     assert '#if !HDS_FEATURE_LITTLEFS\nstatic const char HDS_WIFI_SETUP_PAGE' not in source
-    assert '!LittleFS.exists("/index.html")' in source
-    assert source.index('!LittleFS.exists("/index.html")') < source.index('server.serveStatic("/", LittleFS, "/")')
-    assert 'request->send(200, "text/html", HDS_WIFI_SETUP_PAGE);' in source
+    assert source.index('server.serveStatic("/", LittleFS, "/")') < source.index('server.on("/", HTTP_GET')
+    assert 'request->beginResponse(200, "text/html", HDS_WIFI_SETUP_PAGE)' in source
 
 
 if __name__ == "__main__":
