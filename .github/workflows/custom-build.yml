@@ -91,6 +91,7 @@ jobs:
       - name: Validate custom build contracts
         run: |
           python tools/test_plugin_catalog.py
+          python tools/test_web_theme.py
           python tools/test_custom_build_execution.py
           python tools/test_custom_cache_transport.py
           python tools/test_plugin_ci_contract.py
@@ -287,6 +288,7 @@ jobs:
       - name: Validate custom build contracts
         run: |
           python tools/test_plugin_catalog.py
+          python tools/test_web_theme.py
           python tools/test_custom_build_execution.py
           python tools/test_custom_cache_transport.py
           node --test cloudflare/custom-build-worker/test/configurator.test.mjs

@@ -1,25 +1,35 @@
-<title>Decent Scale Dosing Assistant</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="connect-src 'self' ws:;">
-<link href="../shared/app.css" rel="stylesheet">
+<!doctype html>
+<html lang="en">
 <head>
-       <meta charset="UTF-8">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#0d6b4f">
+    <meta http-equiv="Content-Security-Policy" content="connect-src 'self' ws:;">
+    <title>Decent Scale Dosing Assistant</title>
+    <script src="../shared/theme.js?v=1"></script>
+    <link href="../shared/theme.css?v=1" rel="stylesheet">
+    <link href="../shared/app.css" rel="stylesheet">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 32 32' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cellipse cx='16' cy='16' rx='12' ry='8' stroke='currentColor' stroke-width='1.5'/%3E%3Crect x='10' y='10' width='12' height='4' rx='0.5' fill='currentColor'/%3E%3C/svg%3E">
 
-    </head>
+</head>
 
 <body class="min-h-screen bg-white font-sans">
     <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div class="bg-gray-100 rounded-lg p-4 sm:p-6 w-full max-w-5xl mx-auto">
             <div class="bg-gray-50 p-4 sm:p-6 rounded-lg shadow-sm mb-6">
-                <div class="flex justify-between items-center">
-                    <a href="https://decentespresso.com/support/decentscale" class="text-xl font-bold text-gray-800">Dosing Assistant</a>
-                    <span id="status" class="mr-2">Status: Not connected</span>
-                    <div class="relative">
+                <div class="assistant-header">
+                    <div class="assistant-heading">
+                        <a href="https://decentespresso.com/support/decentscale" class="text-xl font-bold text-gray-800">Dosing Assistant</a>
+                        <span data-hds-theme-toggle></span>
+                    </div>
+                    <div class="assistant-actions">
+                        <span id="status">Status: Not connected</span>
                         <button
                                 id="fullscreen-button"
                                 title="Toggle fullscreen"
-                                class="absolute -top-5 -right-5 w-6 h-6 flex items-center justify-center"
+                                type="button"
+                                aria-label="Toggle fullscreen"
                             >
                                 <svg
                                 xmlns="http://www.w3.org/2000/svg"
@@ -42,7 +52,7 @@
                                 fill="none"
                             >
                                 <path d="M4 14H10M10 14V20M10 14L3 21M20 10H14M14 10V4M14 10L21 3"
-                                      stroke="#000000"
+                                      stroke="currentColor"
                                       stroke-width="2"
                                       stroke-linecap="round"
                                       stroke-linejoin="round"/>
@@ -53,80 +63,37 @@
             </div>
 
             <div class="bg-gray-50 p-4 sm:p-6 rounded-lg shadow-sm mb-6">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                    <div class="flex flex-wrap items-center gap-2">
-                        <div class="flex items-center">
-                            <span class="mr-2 whitespace-nowrap">Target (g):</span>
-                            <input
-                                type="number"
-                                id="targetWeight"
-                                value="30"
-                                step="0.1"
-                                class="w-16 border border-gray-300 rounded px-2 py-1"
-                            />
-                        </div>
-                        <div class="flex items-center">
-                            <span class="mx-2">Min</span>
-                            <input
-                                type="number"
-                                id="lowThreshold"
-                                value="25"
-                                step="0.1"
-                                class="w-16 border border-gray-300 rounded px-2 py-1"
-                            />
-                        </div>
-                        <div class="flex items-center">
-                            <span class="mx-2">Max</span>
-                            <input
-                                type="number"
-                                id="highThreshold"
-                                value="33"
-                                step="0.1"
-                                class="w-16 border border-gray-300 rounded px-2 py-1"
-                            />
-                        </div>
-                    </div>
-
-                    <div class="flex flex-wrap items-center gap-4">
-                        <div class="flex items-center flex-1 min-w-[200px]">
-                            <span class="mr-2 whitespace-nowrap">Name:</span>
-                            <input
-                                type="text"
-                                id="objectName"
-                                class="border border-gray-300 rounded px-3 py-1 flex-1"
-                                placeholder="Enter object name"
-                            />
-                        </div>
-                        <div class="flex items-center flex-1 min-w-[200px]">
-                            <span class="mr-2 whitespace-nowrap">Preset:</span>
-                            <select
-                                id="presetSelect"
-                                class="border border-gray-300 rounded px-3 py-1 flex-1"
-                            >
-                                <option value="">Select a preset...</option>
-                                <option value="save_preset">Save Current Settings as Preset</option>
-                            </select>
-                        </div>
-                        <div class="flex items-center gap-2 mb-4">
-                            <input
-                                type="checkbox"
-                                id="soundEnabled"
-                                class="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-                                checked
-                            >
-                            <label for="soundEnabled" class="text-sm text-gray-700">
-                                Enable Sound Feedback
-                            </label>
-                        </div>
-                    </div>
+                <div class="dosing-settings">
+                    <label class="assistant-field dosing-number" for="targetWeight">Target (g)
+                        <input type="number" id="targetWeight" value="30" step="0.1" class="border border-gray-300 rounded px-3 py-2">
+                    </label>
+                    <label class="assistant-field dosing-number" for="lowThreshold">Min (g)
+                        <input type="number" id="lowThreshold" value="25" step="0.1" class="border border-gray-300 rounded px-3 py-2">
+                    </label>
+                    <label class="assistant-field dosing-number" for="highThreshold">Max (g)
+                        <input type="number" id="highThreshold" value="33" step="0.1" class="border border-gray-300 rounded px-3 py-2">
+                    </label>
+                    <label class="assistant-field dosing-text" for="objectName">Name
+                        <input type="text" id="objectName" class="border border-gray-300 rounded px-3 py-2" placeholder="Enter object name">
+                    </label>
+                    <label class="assistant-field dosing-text" for="presetSelect">Preset
+                        <select id="presetSelect" class="border border-gray-300 rounded px-3 py-2">
+                            <option value="">Select a preset...</option>
+                            <option value="save_preset">Save Current Settings as Preset</option>
+                        </select>
+                    </label>
+                    <label class="dosing-sound" for="soundEnabled">
+                        <input type="checkbox" id="soundEnabled" class="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500" checked>
+                        Enable Sound Feedback
+                    </label>
                 </div>
             </div>
 
             <div class="bg-gray-50 p-4 sm:p-6 rounded-lg shadow-sm mb-6">
-                <div class=" p-6 bg-gray-300 rounded-lg shadow-sm">
-                    <div class="flex flex-wrap justify-between mb-6 gap-4">
-                        <div class="flex items-center">
-                            <div id="weight" class="text-xl font-bold mr-4">Weight: 0.0g</div>
+                <div class="dosing-progress">
+                    <div class="dosing-progress-top">
+                        <div class="dosing-progress-actions">
+                            <div id="weight" class="text-xl font-bold">Weight: 0.0g</div>
                             <button
                                 id="tareButton"
                                 class="bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg"
@@ -134,7 +101,7 @@
                                 Zero
                             </button>
                         </div>
-                        <div class="flex items-center space-x-2">
+                        <div class="dosing-progress-actions">
                             <button
                                 id="dosingToggleButton"
                                 class="bg-purple-400 hover:bg-purple-500 text-white px-4 py-2 rounded-md"
@@ -181,3 +148,4 @@
     <script src="../shared/reconnecting-websocket.js"></script>
     <script type="module" src="./main.js"></script>
 </body>
+</html>

@@ -165,7 +165,7 @@
         },
         {
           "target": "Quality_Control_Assistant/quality_control.html",
-          "sha256": "56170dc8368b6aaa85a940a8bf4106cfef2e70675664ddb69c2f255926483914"
+          "sha256": "8b5fb4c0aaddb07ea5a8cb9a598597f8c3360fe60183d463e19cd927502ec93a"
         },
         {
           "target": "Quality_Control_Assistant/quality_control.js",
@@ -201,7 +201,7 @@
         },
         {
           "target": "Weigh_Save/weigh_save.html",
-          "sha256": "d1dd9f461c1741b1c7e2f526e08908b1f7830d49fdacdf18793dab85d68d4470"
+          "sha256": "dd95ab08d6adc03a19453710640e6fb7c4b14d63fc009a70ddbc876cf16ea0f2"
         },
         {
           "target": "dosing_assistant/README.md",
@@ -209,7 +209,7 @@
         },
         {
           "target": "dosing_assistant/dosing_assistant.html",
-          "sha256": "3167ea50f6888779fe1ee119e79b3ea3b64220b8b6133be509a009178ea28dac"
+          "sha256": "20e732a9a0e95b0fa765cedb58af9d54436e66658048deb458eb53badd3aa40a"
         },
         {
           "target": "dosing_assistant/dosing_assistant.md",
@@ -241,11 +241,11 @@
         },
         {
           "target": "index.html",
-          "sha256": "dba39a6a112b47d8e8180d857c132810c6a0895a1430cadf92143a56b5ffaa36"
+          "sha256": "a280dba6a00cebaac36733c9f15df4d5abe3918f2911937c60ba1ec7ec99db7f"
         },
         {
           "target": "shared/app.css",
-          "sha256": "66bca44bc6f90f4e2629f99e02e390804e3c21cc8acadec0cd91a88c228a6c85"
+          "sha256": "cf8c8c83cc20bdc33f7ca203cebe5b0708c2ee63134722a00a23cd8cdd01c897"
         },
         {
           "target": "shared/modules/download-file.js",
@@ -258,6 +258,14 @@
         {
           "target": "shared/reconnecting-websocket.js",
           "sha256": "99ff83e53ac31edc4686d6f0fe6013d917bc4600eebbc01699e3d4ddcd46d3e9"
+        },
+        {
+          "target": "shared/theme.css",
+          "sha256": "4b1ef48be6ab000dc1b71667e39a9b05dc4ff59559c4b86f3ea880612d7d9a85"
+        },
+        {
+          "target": "shared/theme.js",
+          "sha256": "c45fdfdd150b5cabc50e13257fee963fd8275fe4f1965a4084c7d2e306116705"
         }
       ]
     },
