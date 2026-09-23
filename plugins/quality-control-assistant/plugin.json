@@ -10,6 +10,11 @@
   "depends_on": ["default-web-apps"],
   "conflicts": [],
   "recommends": {"features": [], "plugins": []},
+  "presentation": {
+    "image": "media/preview.png",
+    "image_alt": "Quality Control Assistant showing espresso dose thresholds, live weight, and history controls",
+    "handbook": "README.md"
+  },
   "patches": {},
   "assets": [
     {"source": "assets/quality_control_redirect.html", "target": "Quality_Control_Assistant/quality_control.html"}

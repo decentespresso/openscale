@@ -288,6 +288,11 @@
       "webapp": {
         "name": "Quality Control Assistant",
         "href": "/apps/quality-control-assistant/index.html"
+      },
+      "presentation": {
+        "image": "plugin-media/quality-control-assistant/436a25a5cc8342d30fd4ca57ffe309643dc945e7bf3407979b8e1a966f6aed0e.png",
+        "image_alt": "Quality Control Assistant showing espresso dose thresholds, live weight, and history controls",
+        "handbook": "plugin-media/quality-control-assistant/05e584e329de5c98e0756300050e2022e6ef98c24d7ccf27c5113ae4455da40e.md"
       }
     }
   ]
