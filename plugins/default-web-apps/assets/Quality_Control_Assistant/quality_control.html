@@ -1,35 +1,43 @@
-<title>Decent Scale QC Assistant</title>
-    <link href="../shared/app.css" rel="stylesheet">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!doctype html>
+<html lang="en">
 <head>
-       <meta charset="UTF-8">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#0d6b4f">
+    <title>Decent Scale QC Assistant</title>
+    <script src="../shared/theme.js?v=1"></script>
+    <link href="../shared/theme.css?v=1" rel="stylesheet">
+    <link href="../shared/app.css" rel="stylesheet">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg width='32' height='32' viewBox='0 0 32 32' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cellipse cx='16' cy='16' rx='12' ry='8' stroke='currentColor' stroke-width='1.5'/%3E%3Crect x='10' y='10' width='12' height='4' rx='0.5' fill='currentColor'/%3E%3C/svg%3E">
 
-    </head>
+</head>
 
 <body class="min-h-screen bg-white font-sans">
     <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div class="bg-gray-100 rounded-lg p-4 sm:p-6 w-full max-w-5xl mx-auto">
             <div class="bg-gray-50 p-4 sm:p-6 rounded-lg shadow-sm mb-6">
-                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
-                    <a href="https://decentespresso.com/support/decentscale" class="text-xl font-bold text-gray-800">Quality Control Assistant</a>
-                    <div class="flex flex-wrap items-center gap-2">
-                        <span id="status" class="mr-2">Status: Not connected</span>
+                <div class="assistant-header">
+                    <div class="assistant-heading">
+                        <a href="https://decentespresso.com/support/decentscale" class="text-xl font-bold text-gray-800">Quality Control Assistant</a>
+                        <span data-hds-theme-toggle></span>
+                    </div>
+                    <div class="assistant-actions">
+                        <span id="status">Status: Not connected</span>
                         <button id="tareButton"
                                     class="bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg">
                                 Zero Scale
                             </button>
-                        <div class="relative">
-
-                            <button id="testPassSound"
-                                class="bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg">
+                        <button id="testPassSound"
+                            class="bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300 px-4 py-2 rounded-lg">
                             Test Sound
                         </button>
-                            <button
-                                id="fullscreen-button"
-                                title="Toggle fullscreen"
-                                class="absolute -top-3 -right-3 w-6 h-6 flex items-center justify-center"
-                            >
+                        <button
+                            id="fullscreen-button"
+                            title="Toggle fullscreen"
+                            type="button"
+                            aria-label="Toggle fullscreen"
+                        >
                                 <svg
                                 xmlns="http://www.w3.org/2000/svg"
                                 width="14"
@@ -51,14 +59,12 @@
                                 fill="none"
                             >
                                 <path d="M4 14H10M10 14V20M10 14L3 21M20 10H14M14 10V4M14 10L21 3"
-                                      stroke="#000000"
+                                      stroke="currentColor"
                                       stroke-width="2"
                                       stroke-linecap="round"
                                       stroke-linejoin="round"/>
                                 </svg>
-                            </button>
-                        </div>
-
+                        </button>
                     </div>
                 </div>
             </div>
@@ -66,21 +72,18 @@
             <div class="bg-gray-50 p-4 sm:p-6 rounded-lg shadow-sm mb-6">
                 <div class="font-medium mb-4">Quality Control Settings</div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    <div class="flex items-center">
-                        <label for="objectName" class="w-32 mr-2 whitespace-nowrap">Object Name:</label>
+                <div class="assistant-form-grid mb-6">
+                    <label class="assistant-field" for="objectName">Object Name
                         <input type="text" id="objectName"
-                               class="border border-gray-300 rounded px-3 py-1 flex-1"
+                               class="border border-gray-300 rounded px-3 py-2"
                                placeholder="Enter object name">
-                    </div>
-                    <div class="flex items-center">
-                        <label for="presetSelect" class="w-32 mr-2 whitespace-nowrap">Preset:</label>
-                        <select id="presetSelect"
-                                class="border border-gray-300 rounded px-3 py-1 flex-1">
+                    </label>
+                    <label class="assistant-field" for="presetSelect">Preset
+                        <select id="presetSelect" class="border border-gray-300 rounded px-3 py-2">
                             <option value="">Select a preset...</option>
                             <option value="save_preset">Save Current Settings as Preset</option>
                         </select>
-                    </div>
+                    </label>
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
@@ -151,3 +154,4 @@
         });
     </script>
 </body>
+</html>

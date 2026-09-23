@@ -19,13 +19,14 @@ Local build, flash, OTA, editor, cache, and CAD files are omitted unless they ar
 | Decent binary, BLE, USB, ADS debug | `include/decent_protocol.h`, then `include/ble.h` or `include/usbcomm.h` | `docs/AI_PROTOCOL_NOTES.md` |
 | WiFi, AP setup, credentials, mDNS | `src/wifi_setup.cpp`, `include/wifi_setup.h`, `include/mdns_name.h` | `docs/AI_BUILD_NOTES.md` |
 | HTTP and LittleFS serving | `include/webserver.h`, matching `plugins/default-web-apps/assets/` file | `docs/AI_FIRMWARE_NOTES.md` |
+| HDS web theme, CSS, and preference toggle | `plugins/default-web-apps/assets/shared/theme.css`, `plugins/default-web-apps/assets/shared/theme.js`, matching LittleFS page | `docs/AI_WEB_UI_NOTES.md` |
 | `/snapshot` WebSocket behavior | `include/websocket.h` | `docs/AI_FIRMWARE_NOTES.md`, `docs/AI_PROTOCOL_NOTES.md` |
 | Power, soft sleep, wake, shutdown | `include/power.h`, `include/websocket.h`, `include/wake_on_weight.h`, `src/hds.ino` | `docs/AI_GPIO_NOTES.md`, `docs/AI_FIRMWARE_NOTES.md` |
 | Auto-off activity, optional Light Sleep, energy settings | `include/auto_off_activity.h`, `include/energy_policy.h`, `include/energy_menu.h`, `src/hds.ino` | `docs/AI_FIRMWARE_NOTES.md`, `docs/AI_STORAGE_NOTES.md`, `docs/AI_BUILD_NOTES.md` |
 | WiFi OTA, manifests, signing, rollback | `include/pull_ota.h`, `include/ota_rollback.h`, `.github/workflows/release.yml` | `docs/AI_OTA_NOTES.md` |
 | Release preparation, tagging, assets, and documentation audit | `.github/workflows/release.yml`, `tools/generate_release_manifest.py`, `README.md`, changes since the previous release tag | `docs/AI_RELEASE_NOTES.md`, plus affected topic notes |
 | Motion and ESP-NOW | `include/gyro.h`, `include/espnow.h` | `docs/AI_GPIO_NOTES.md` when pins or power are involved |
-| Web apps | matching app `main.js`, its `modules/`, then `plugins/default-web-apps/assets/shared/` | `README.md` only when the local code is insufficient |
+| Web apps | matching app `main.js`, its `modules/`, then `plugins/default-web-apps/assets/shared/` | `docs/AI_WEB_UI_NOTES.md`, then `README.md` only when the local code is insufficient |
 | Hardware and mechanics | `Hardware/README.md`, `Scale Case/README.md` | matching STEP file only when required |
 
 Run the focused checks listed in the matching `docs/AI_*_NOTES.md` file. Widen to `README.md` only when task-local code and notes are insufficient.

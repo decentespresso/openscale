@@ -3,28 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#0d6b4f">
   <title>Half Decent Scale</title>
+  <script src="shared/theme.js?v=1"></script>
+  <link rel="stylesheet" href="shared/theme.css?v=1">
   <style>
     :root {
-      color-scheme: light;
-      --bg: #f4f5f6;
-      --surface: #fff;
-      --surface-hover: #f7f8f9;
-      --ink: #1f2328;
-      --ink-soft: #3f4650;
-      --muted: #5f6875;
-      --border: #d8dde3;
-      --border-soft: #e8ebef;
-      --accent: #0b7180;
-      --accent-strong: #075f6c;
-      --success: #118544;
-      --danger: #b42318;
       --radius-sm: 6px;
       --radius-md: 8px;
-      --radius-lg: 12px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--ink);
+      --radius-lg: 8px;
     }
 
     * {
@@ -35,7 +23,7 @@
       margin: 0 auto;
       width: min(100%, 1080px);
       padding: 24px 14px 28px;
-      background: var(--bg);
+      background: var(--canvas);
       color: var(--ink);
       font-family: inherit;
       -webkit-font-smoothing: antialiased;
@@ -69,7 +57,7 @@
     }
 
     a {
-      color: var(--accent-strong);
+      color: var(--green-dark);
       font-size: 1rem;
       font-weight: 650;
       text-decoration-thickness: 1px;
@@ -77,13 +65,13 @@
     }
 
     a:hover {
-      color: #064f5a;
+      color: var(--green-text-strong);
     }
 
     a:focus-visible,
     button:focus-visible,
     input:focus-visible {
-      outline: 3px solid rgba(11, 113, 128, .32);
+      outline: 3px solid var(--focus-green);
       outline-offset: 2px;
     }
 
@@ -91,6 +79,22 @@
       display: grid;
       gap: 4px;
       margin-bottom: 24px;
+    }
+
+    .app-header-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .app-header-top h1 { margin-bottom: 0; }
+
+    .app-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
     }
 
     .subtitle {
@@ -120,7 +124,7 @@
       display: flex;
       align-items: center;
       height: 100%;
-      border: 1px solid var(--border);
+      border: 1px solid var(--line);
       border-radius: var(--radius-md);
       padding: 12px 14px;
       background: var(--surface);
@@ -131,15 +135,15 @@
     }
 
     .app-list a:hover {
-      border-color: #c3cbd4;
-      background: var(--surface-hover);
+      border-color: var(--line-strong);
+      background: var(--surface-soft);
     }
 
     .docs-list {
       display: flex;
       flex-wrap: wrap;
       gap: 8px 16px;
-      border-top: 1px solid var(--border-soft);
+      border-top: 1px solid var(--line);
       padding-top: 14px;
       margin-bottom: 24px;
     }
@@ -163,7 +167,7 @@
     #wifi-popup input {
       width: 100%;
       height: 44px;
-      border: 1px solid var(--border);
+      border: 1px solid var(--line);
       border-radius: var(--radius-sm);
       padding: 10px 11px;
       background: var(--surface);
@@ -176,9 +180,9 @@
     }
 
     #wifi-popup input:focus {
-      border-color: var(--accent);
+      border-color: var(--green);
       outline: none;
-      box-shadow: 0 0 0 3px rgba(11, 113, 128, .08);
+      box-shadow: 0 0 0 3px var(--focus-green);
     }
 
     #wifi-popup button,
@@ -187,7 +191,7 @@
       align-items: center;
       justify-content: center;
       height: 44px;
-      border: 1px solid var(--border);
+      border: 1px solid var(--line);
       border-radius: var(--radius-sm);
       padding: 9px 14px;
       background: var(--surface);
@@ -200,8 +204,8 @@
 
     #wifi-popup button:hover,
     #tare-button:hover {
-      border-color: #c3cbd4;
-      background: var(--surface-hover);
+      border-color: var(--line-strong);
+      background: var(--surface-soft);
     }
 
     #wifi-popup button:active,
@@ -212,7 +216,7 @@
     #wifi-status {
       min-height: 20px;
       margin-top: 0.75rem;
-      color: var(--success);
+      color: var(--green-dark);
       font-size: 14px;
       line-height: 1.4;
     }
@@ -233,7 +237,7 @@
       margin-top: 24px;
       padding: 24px;
       background: var(--surface);
-      border: 1px solid var(--border);
+      border: 1px solid var(--line);
       border-radius: var(--radius-lg);
       box-shadow: none;
       max-width: none;
@@ -248,7 +252,7 @@
       min-height: 76px;
       display: grid;
       align-content: center;
-      color: var(--accent-strong);
+      color: var(--green-dark);
       font-size: 64px;
       font-weight: 750;
       line-height: .98;
@@ -259,14 +263,14 @@
     #tare-button {
       min-width: 128px;
       margin-top: 16px;
-      border-color: var(--accent-strong);
-      background: var(--accent-strong);
+      border-color: var(--green);
+      background: var(--green);
       color: #fff;
     }
 
     #tare-button:hover {
-      border-color: #064f5a;
-      background: #064f5a;
+      border-color: var(--green-hover);
+      background: var(--green-hover);
     }
 
     .connection-state {
@@ -278,7 +282,7 @@
     .settings-list {
       display: grid;
       gap: 0;
-      border-top: 1px solid var(--border-soft);
+      border-top: 1px solid var(--line);
     }
 
     .settings-row {
@@ -286,7 +290,7 @@
       grid-template-columns: minmax(96px, .62fr) minmax(0, 1fr);
       gap: 12px;
       align-items: start;
-      border-bottom: 1px solid var(--border-soft);
+      border-bottom: 1px solid var(--line);
       padding: 11px 0;
     }
 
@@ -319,7 +323,7 @@
     #reset-wifi-button {
       margin-top: 12px;
       min-width: 220px;
-      color: var(--ink-soft);
+      color: var(--muted);
     }
 
     #name-form {
@@ -391,7 +395,10 @@
 </head>
 <body>
   <header class="app-header">
-    <h1>OpenScale</h1>
+    <div class="app-header-top">
+      <div class="app-brand"><span class="brand-mark" aria-hidden="true"></span><h1>OpenScale</h1></div>
+      <span data-hds-theme-toggle></span>
+    </div>
     <p class="subtitle">Half Decent Scale control surface</p>
   </header>
 
@@ -489,7 +496,7 @@
       const pass = document.getElementById('password').value;
       const status = document.getElementById('wifi-status');
       status.textContent = 'Connecting...';
-      status.style.color = 'green';
+      status.style.color = 'var(--green-dark)';
 
       try {
         const response = await fetch(`http://${window.location.host}/setup/wifi`, {
@@ -504,11 +511,11 @@
           status.textContent = 'WiFi setup request sent successfully! Please restart the scale';
         } else {
           status.textContent = 'Failed to send WiFi setup request.';
-          status.style.color = 'red';
+          status.style.color = 'var(--danger)';
         }
       } catch (err) {
         status.textContent = 'Error connecting to server.';
-        status.style.color = 'red';
+        status.style.color = 'var(--danger)';
       }
     });
 
@@ -525,7 +532,7 @@
       e.preventDefault();
       const status = document.getElementById('name-status');
       status.textContent = 'Saving...';
-      status.style.color = 'green';
+      status.style.color = 'var(--green-dark)';
 
       try {
         const response = await fetch(`http://${window.location.host}/setup/name`, {
@@ -544,14 +551,14 @@
             : `Saved as ${body.name}. Restarting; reconnect at http://${body.name}.local`;
         } else if (response.status === 400) {
           status.textContent = 'Invalid name. Use 1-24 characters: letters, digits, or hyphens (not at the start or end).';
-          status.style.color = 'red';
+          status.style.color = 'var(--danger)';
         } else {
           status.textContent = 'Failed to save the name.';
-          status.style.color = 'red';
+          status.style.color = 'var(--danger)';
         }
       } catch (err) {
         status.textContent = 'Error connecting to server.';
-        status.style.color = 'red';
+        status.style.color = 'var(--danger)';
       }
     });
 
@@ -620,7 +627,7 @@
 
     ws.addEventListener('open', () => {
       connectionStatus.textContent = 'Connected';
-      connectionStatus.style.color = '#207044';
+      connectionStatus.style.color = 'var(--green-dark)';
       sendStatusRequest();
     });
 
@@ -651,16 +658,16 @@
 
     ws.addEventListener('error', () => {
       weightValue.textContent = 'Connection error';
-      weightValue.style.color = 'red';
+      weightValue.style.color = 'var(--danger)';
       connectionStatus.textContent = 'Connection error';
-      connectionStatus.style.color = 'red';
+      connectionStatus.style.color = 'var(--danger)';
     });
 
     ws.addEventListener('close', () => {
       weightValue.textContent = 'Disconnected';
-      weightValue.style.color = 'gray';
+      weightValue.style.color = 'var(--muted)';
       connectionStatus.textContent = 'Disconnected';
-      connectionStatus.style.color = 'gray';
+      connectionStatus.style.color = 'var(--muted)';
     });
 
     document.getElementById('reset-wifi-button').addEventListener('click', async function (e) {
@@ -677,13 +684,14 @@
 
         if (response.ok) {
           status.textContent = 'WiFi reset request sent successfully! Please restart the scale';
+          status.style.color = 'var(--green-dark)';
         } else {
           status.textContent = 'Failed to send WiFi reset request.';
-          status.style.color = 'red';
+          status.style.color = 'var(--danger)';
         }
       } catch (err) {
         status.textContent = 'Error connecting to server.';
-        status.style.color = 'red';
+        status.style.color = 'var(--danger)';
       }
     })
   </script>

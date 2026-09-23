@@ -34,6 +34,8 @@
     {"source": "assets/dosing_assistant/modules/state-machine.js", "target": "dosing_assistant/modules/state-machine.js"},
     {"source": "assets/dosing_assistant/modules/ui-controller.js", "target": "dosing_assistant/modules/ui-controller.js"},
     {"source": "assets/shared/app.css", "target": "shared/app.css"},
+    {"source": "assets/shared/theme.css", "target": "shared/theme.css"},
+    {"source": "assets/shared/theme.js", "target": "shared/theme.js"},
     {"source": "assets/shared/modules/download-file.js", "target": "shared/modules/download-file.js"},
     {"source": "assets/shared/modules/presets.js", "target": "shared/modules/presets.js"},
     {"source": "assets/shared/reconnecting-websocket.js", "target": "shared/reconnecting-websocket.js"}
