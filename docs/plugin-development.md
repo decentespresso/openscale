@@ -186,9 +186,8 @@ Maintainers review the actual patch contents, security boundaries, dependencies,
 Give the AI the feature source, plugin ID, supported firmware ref, available hardware, and this prompt:
 
 ```text
-Work in decentespresso/openscale as a lazy senior developer.
-
-First read AGENTS.md, docs/AI_REPO_MAP.md, docs/AI_PLUGIN_NOTES.md,
+Work in decentespresso/openscale.
+Read docs/AI_REPO_MAP.md, docs/AI_PLUGIN_NOTES.md,
 docs/AI_BUILD_NOTES.md, and docs/plugin-development.md. Inspect Grind by weight only as
 the built-in compile-gating reference and plugins/default-web-apps as the asset-plugin
 reference. Reuse existing build and catalog tools.
