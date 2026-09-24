@@ -452,8 +452,7 @@
   <section class="section" aria-labelledby="apps-title">
     <h2 id="apps-title">Available Apps</h2>
     <ul class="app-list" id="app-list">
-      <li><a href="Quality_Control_Assistant/quality_control.html">Quality Control Assistant</a></li>
-      <li><a href="Weigh_Save/weigh_save.html">Weigh Save</a></li>
+      <li id="default-apps-first"><a href="Weigh_Save/weigh_save.html">Weigh Save</a></li>
       <li><a href="dosing_assistant/dosing_assistant.html">Dosing assistant</a></li>
       <li><a target="_blank" rel="noopener noreferrer" href="https://decentespresso.com/support/scale/js/cocktail_maker/index.adp">Cocktail recipes</a></li>
       <li><a href="update">Update firmware</a></li>
@@ -504,7 +503,7 @@
         link.href = app.href;
         link.textContent = app.name;
         item.append(link);
-        appList.append(item);
+        appList.insertBefore(item, document.getElementById('default-apps-first'));
       }
     }
 

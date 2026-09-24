@@ -1,5 +1,5 @@
 {
-  "catalog_revision": "88803f7d532ac74d47624e2c5d6450c195ef5d742ec82abf4dc8153cd8ebad74",
+  "catalog_revision": "54337e339ca042de968e7a37611e73ad7c1a9b120bbb74bff8ada2384c06dbaf",
   "custom_ota_signing_key_generation": 1,
   "firmware_refs": [
     "v3.1.14",
@@ -153,8 +153,8 @@
     {
       "id": "default-web-apps",
       "name": "Default web apps",
-      "description": "Install the bundled on-device dashboard and scale tools.",
-      "tooltip": "Adds the dashboard, Weigh Save, Dosing Assistant, and Quality Control Assistant. LittleFS, WebSocket, the web server, and WiFi are included automatically.",
+      "description": "Install the on-device dashboard, Weigh Save, and Dosing Assistant.",
+      "tooltip": "Adds the dashboard, Weigh Save, and Dosing Assistant. LittleFS, WebSocket, the web server, and WiFi are included automatically.",
       "version": "1.0.0",
       "firmware_refs": [
         "v3.1.14",
@@ -174,9 +174,6 @@
         "plugins": []
       },
       "asset_targets": [
-        "Quality_Control_Assistant/README.md",
-        "Quality_Control_Assistant/quality_control.html",
-        "Quality_Control_Assistant/quality_control.js",
         "README.md",
         "Weigh_Save/README.md",
         "Weigh_Save/main.js",
@@ -260,6 +257,42 @@
         "plugins": []
       },
       "asset_targets": []
+    },
+    {
+      "id": "quality-control-assistant",
+      "name": "Quality Control Assistant",
+      "description": "Record and evaluate repeated scale measurements.",
+      "tooltip": "Adds the Quality Control Assistant to the on-device dashboard. Requires Default web apps for shared styling and WebSocket support.",
+      "version": "1.0.0",
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main"
+      ],
+      "requires": [],
+      "depends_on": [
+        "default-web-apps"
+      ],
+      "conflicts": [],
+      "conflicts_features": [],
+      "recommends": {
+        "features": [],
+        "plugins": []
+      },
+      "asset_targets": [
+        "apps/quality-control-assistant/index.html",
+        "apps/quality-control-assistant/quality_control.js"
+      ],
+      "webapp": {
+        "name": "Quality Control Assistant",
+        "href": "/apps/quality-control-assistant/index.html"
+      },
+      "presentation": {
+        "image": "plugin-media/quality-control-assistant/436a25a5cc8342d30fd4ca57ffe309643dc945e7bf3407979b8e1a966f6aed0e.png",
+        "image_alt": "Quality Control Assistant showing espresso dose thresholds, live weight, and history controls",
+        "handbook": "plugin-media/quality-control-assistant/c50c7f93dbc92d46ae2da2c518d16c898aeeed5cdeae11553ba756b9474988db.md"
+      }
     }
   ]
 }

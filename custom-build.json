@@ -4,6 +4,7 @@
     "pull-ota"
   ],
   "plugins": [
-    "default-web-apps"
+    "default-web-apps",
+    "quality-control-assistant"
   ]
 }

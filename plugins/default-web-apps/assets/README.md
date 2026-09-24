@@ -1,6 +1,6 @@
 ## Half Decent Web Apps
 
-Half Decent Web Apps Leveraging Low-Barrier Tech for Enhanced Scale Functionality. Half Decent Web Apps is a collection of three web applications built with plain JavaScript, HTML, and CSS, demonstrating various functionalities available through Web Bluetooth Low Energy (Web BLE) and Web USB.These apps aim to open up new ways to interact with your Half Decent Scale, providing powerful tools for quality control, precise weighing, and simplified dosing directly from your web browser.
+Half Decent Web Apps Leveraging Low-Barrier Tech for Enhanced Scale Functionality. The dashboard bundles Weigh Save and Dosing Assistant. Quality Control Assistant is a separate, optional plugin that depends on this package's shared assets. These apps use plain JavaScript, HTML, and CSS to provide weighing, quality control, and dosing workflows in a web browser.
 
 ***
 
@@ -53,7 +53,7 @@ These web applications serve two main goals:
 
 ### For Developers: Technical Deep Dive
 
-* **All codes are available at**[ openscale repo. ](https://github.com/decentespresso/openscale/tree/main/plugins/default-web-apps/assets)
+* **Source:** [default web apps](https://github.com/decentespresso/openscale/tree/main/plugins/default-web-apps/assets) and [Quality Control Assistant](https://github.com/decentespresso/openscale/tree/main/plugins/quality-control-assistant).
 * **Foundation**: Built with standard HTML, CSS, and JavaScript.
 * **Styling**: [Tailwind CSS](https://tailwindcss.com/) is used for a utility-first approach to styling, ensuring a responsive and modern interface. (Note: While Tailwind is a CSS framework, the core logic remains in plain JavaScript, avoiding heavy JS frameworks.)
 * **Connectivity**:

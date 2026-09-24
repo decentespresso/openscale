@@ -4,7 +4,7 @@ Read this for the default LittleFS web apps and their HDS styling.
 
 ## Theme Ownership
 
-`docs/custom-build/index.html`, `styles.css`, and `app.js` are the unchanged visual and behavior reference. Do not refactor them as part of LittleFS app styling. The LittleFS dashboard, Weigh Save, Quality Control Assistant, and Dosing Assistant load `plugins/default-web-apps/assets/shared/theme.css` and `theme.js`. Those are the common assets for the device pages only.
+`docs/custom-build/index.html`, `styles.css`, and `app.js` are the visual and behavior reference. Do not refactor them as part of LittleFS app styling. The LittleFS dashboard, Weigh Save, Quality Control Assistant, and Dosing Assistant load `plugins/default-web-apps/assets/shared/theme.css` and `theme.js`. Quality Control Assistant lives in its own plugin and depends on those shared assets. The theme files are common assets for the device pages only.
 
 The theme contract test compares the LittleFS light and dark tokens, brand mark, and animated toggle SVG with the configurator reference. It also checks each device page's theme references and the plugin manifest entries. `gzip_web_assets.py` makes deterministic gzip siblings for the LittleFS image; do not commit the generated `.gz` files.
 
