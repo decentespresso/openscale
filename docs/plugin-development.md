@@ -251,7 +251,7 @@ A webapp plugin normally looks like this:
 ```text
 plugins/example/
 |-- plugin.json
-`-- webapp/
+`-- assets/
     |-- index.html
     |-- app.css
     `-- app.js
@@ -436,30 +436,30 @@ Do not copy dependencies or implementation details merely because a reference pl
 
 # Webapp Files
 
-Use the preferred layout:
+Use this layout:
 
 ```text
 plugins/example/
   plugin.json
-  webapp/
+  assets/
     index.html
     app.css
     app.js
 ```
 
-Regular files under `webapp/` are staged at:
+Declare each runtime file in `plugin.json`:
 
-```text
-/apps/<plugin-id>/
+```json
+"assets": [
+  {"source": "assets/index.html", "target": "index.html"},
+  {"source": "assets/app.css", "target": "app.css"},
+  {"source": "assets/app.js", "target": "app.js"}
+]
 ```
 
-`index.html` identifies the app.
+For plugins other than `default-web-apps`, a declared `index.html` target identifies a webapp. Every declared asset in that plugin is staged under `/apps/<plugin-id>/`, with its target relative to that directory. A webapp plugin cannot also stage device-root assets; use a separate plugin for those files. Files under `webapp/` are not supported.
 
-A non-default plugin may alternatively declare an ordinary asset targeting `index.html`. When that form is used, all declared assets belonging to the plugin form the app bundle and are staged under `/apps/<plugin-id>/`.
-
-Do not use both forms in one plugin.
-
-Use the `webapp/` form when the plugin also needs unrelated device-root assets.
+`default-web-apps` uses the same `assets` declaration, but its dashboard and shared files keep their device-root paths.
 
 Every webapp must resolve:
 
