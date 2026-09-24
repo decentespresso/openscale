@@ -374,9 +374,7 @@ def main():
         assert (qcStage / "apps/quality-control-assistant/quality_control.js").is_file()
         assert (qcStage / "shared/theme.css").is_file()
         assert (qcStage / "shared/reconnecting-websocket.js").is_file()
-        assert "/apps/quality-control-assistant/index.html" in (
-            qcStage / "Quality_Control_Assistant/quality_control.html"
-        ).read_text(encoding="utf-8")
+        assert not (qcStage / "Quality_Control_Assistant/quality_control.html").exists()
         assert json.loads((qcStage / "webapps.json").read_text(encoding="utf-8"))["apps"] == [{
             "id": "quality-control-assistant",
             "name": "Quality Control Assistant",

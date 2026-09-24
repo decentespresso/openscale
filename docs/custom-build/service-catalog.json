@@ -339,10 +339,6 @@
       "patches": {},
       "assets": [
         {
-          "target": "Quality_Control_Assistant/quality_control.html",
-          "sha256": "d24a0bf4eb31f76738922174c8e0e03f80199bd8768e1b6313c97ec306d2ba3b"
-        },
-        {
           "target": "apps/quality-control-assistant/index.html",
           "sha256": "1108e1f65bbaff0a908062802334b9319db6838aaa2294cda6c922574437c0de"
         },

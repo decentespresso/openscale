@@ -16,9 +16,7 @@
     "handbook": "README.md"
   },
   "patches": {},
-  "assets": [
-    {"source": "assets/quality_control_redirect.html", "target": "Quality_Control_Assistant/quality_control.html"}
-  ],
+  "assets": [],
   "budget": {
     "firmware_flash_bytes": 0,
     "static_ram_bytes": 0,

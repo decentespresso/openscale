@@ -281,7 +281,6 @@
         "plugins": []
       },
       "asset_targets": [
-        "Quality_Control_Assistant/quality_control.html",
         "apps/quality-control-assistant/index.html",
         "apps/quality-control-assistant/quality_control.js"
       ],
@@ -292,7 +291,7 @@
       "presentation": {
         "image": "plugin-media/quality-control-assistant/436a25a5cc8342d30fd4ca57ffe309643dc945e7bf3407979b8e1a966f6aed0e.png",
         "image_alt": "Quality Control Assistant showing espresso dose thresholds, live weight, and history controls",
-        "handbook": "plugin-media/quality-control-assistant/05e584e329de5c98e0756300050e2022e6ef98c24d7ccf27c5113ae4455da40e.md"
+        "handbook": "plugin-media/quality-control-assistant/a1301c5456d68486b2f404b96eac8f44d419415ef6b3dc974fa02f9376d27ece.md"
       }
     }
   ]
