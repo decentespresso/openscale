@@ -84,8 +84,6 @@ def main():
     ]) == [
         {"plugin": "pressensor", "firmware_ref": "main"},
         {"plugin": "pressensor", "firmware_ref": "v3.1.14"},
-        {"plugin": "pressensor", "firmware_ref": "v3.1.14-preview.3"},
-        {"plugin": "pressensor", "firmware_ref": "v3.1.14-preview.4"},
     ]
     assert changedPlugins.changedPluginMatrix([
         "plugins/default-web-apps/assets/index.html"
@@ -96,6 +94,7 @@ def main():
         "transitive": ({"depends_on": ["dependent"]}, [], {
             "main": Path("transitive.patch"),
             "v1.2.3": Path("transitive-stable.patch"),
+            "v1.2.3-preview.1": Path("transitive-preview.patch"),
         }),
         "unrelated": ({"depends_on": []}, [], {"main": Path("unrelated.patch")}),
     }

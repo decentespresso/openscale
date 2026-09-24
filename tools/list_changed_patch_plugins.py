@@ -63,6 +63,7 @@ def changedPluginMatrix(paths, pluginCatalog=None):
         matrix.extend(
             {"plugin": pluginId, "firmware_ref": firmwareRef}
             for firmwareRef in sorted(patches)
+            if "-preview." not in firmwareRef
         )
     return matrix
 
