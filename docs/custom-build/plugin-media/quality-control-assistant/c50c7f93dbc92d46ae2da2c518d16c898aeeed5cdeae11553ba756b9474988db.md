@@ -6,4 +6,4 @@ The dashboard links directly to `/apps/quality-control-assistant/index.html` whe
 
 The app reads live weight from `/snapshot` and sends tare commands over the scale's WebSocket. It records pass/fail measurements against configurable thresholds, supports local presets and sound feedback, and exports CSV or JSON. Presets and measurements are stored in the browser's local storage for that scale's origin.
 
-The app's HTML and JavaScript are in `assets/` and declared in `plugin.json`. Shared assets remain owned by `default-web-apps`; the plugin manifest declares that dependency rather than copying them. Firmware APIs use root-relative URLs, and app-local resources use paths relative to `assets/index.html`.
+The build discovers the app's HTML and JavaScript under `assets/` automatically. Shared assets remain owned by `default-web-apps`; the plugin manifest declares that dependency rather than copying them. Firmware APIs use root-relative URLs, and app-local resources use paths relative to `assets/index.html`.
