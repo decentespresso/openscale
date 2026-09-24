@@ -125,21 +125,20 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
           <span class="status-badge"></span>
         </span>
       </label>
-      ${hasRecommendation ? `<button class="recommend-button" type="button" data-recommend-plugin="${escapeHtml(item.id)}">Recommended</button>` : ""}
       <button class="info-button" type="button" aria-label="More information about ${escapeHtml(item.name)}" aria-describedby="${tooltipId}">${icons.info}</button>
       <span class="tooltip" id="${tooltipId}" role="tooltip">${escapeHtml(item.tooltip || item.description || "More information")}</span>`;
-    if (kind === "plugin" && item.presentation) {
+    if (kind === "plugin") {
       const actions = document.createElement("div");
       actions.className = "plugin-actions";
-      if (validPreviewPath(item, item.presentation.image)) {
+      if (hasRecommendation) {
         const button = document.createElement("button");
         button.type = "button";
-        button.className = "preview-button";
-        button.dataset.previewPlugin = item.id;
-        button.textContent = "Preview";
+        button.className = "recommend-button";
+        button.dataset.recommendPlugin = item.id;
+        button.textContent = "Recommended";
         actions.append(button);
       }
-      if (validHandbookPath(item, item.presentation.handbook)) {
+      if (validHandbookPath(item, item.presentation?.handbook)) {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "handbook-link";
@@ -147,7 +146,15 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
         button.textContent = "README";
         actions.append(button);
       }
-      wrapper.append(actions);
+      if (validPreviewPath(item, item.presentation?.image)) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "preview-button";
+        button.dataset.previewPlugin = item.id;
+        button.textContent = "Preview";
+        actions.append(button);
+      }
+      if (actions.childElementCount) wrapper.append(actions);
     }
     return wrapper;
   };

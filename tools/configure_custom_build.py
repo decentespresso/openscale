@@ -88,7 +88,7 @@ DEFAULT_PLUGINS = {"default-web-apps"}
 CONFIG_KEYS = {"firmware_ref", "features", "plugins"}
 PLUGIN_KEYS = {
     "schema", "id", "name", "description", "tooltip", "version",
-    "firmware_refs", "requires", "conflicts", "patches", "assets", "budget",
+    "firmware_refs", "requires", "conflicts", "patches", "budget",
 }
 OPTIONAL_PLUGIN_KEYS = {"depends_on", "recommends", "conflicts_features", "presentation"}
 RECOMMENDATION_KEYS = {"features", "plugins"}
@@ -132,6 +132,27 @@ def assetTargetCollision(targets):
         for target in targets
         for depth in range(1, len(target.split("/")))
     )
+
+
+def pluginAssetSources(pluginDir, pluginId):
+    assetsDir = pluginDir / "assets"
+    if assetsDir.is_symlink() or (assetsDir.exists() and not assetsDir.is_dir()):
+        raise ValueError(f"invalid assets directory: {pluginId}")
+    if not assetsDir.exists():
+        return []
+    if (assetsDir / "index.html").exists() and not (assetsDir / "index.html").is_file():
+        raise ValueError(f"invalid app entrypoint: {pluginId}")
+    if (ROOT / ".git").exists():
+        result = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--",
+             f"plugins/{pluginId}/assets"],
+            cwd=ROOT, capture_output=True, check=True,
+        )
+        sources = [ROOT.joinpath(*PurePosixPath(os.fsdecode(path)).parts)
+                   for path in result.stdout.split(b"\0") if path]
+    else:
+        sources = list(assetsDir.rglob("*"))
+    return sorted(sources, key=lambda source: source.as_posix())
 
 
 def loadPlugin(pluginId, firmwareRef=None):
@@ -196,26 +217,24 @@ def loadPlugin(pluginId, firmwareRef=None):
         raise ValueError(f"invalid plugin budget: {pluginId}")
     if any(type(budget[key]) is not int or budget[key] < 0 for key in BUDGET_KEYS):
         raise ValueError(f"invalid plugin budget values: {pluginId}")
-    assets = manifest["assets"]
-    if not isinstance(assets, list):
-        raise ValueError(f"invalid plugin assets: {pluginId}")
     checkedAssets = []
-    for asset in assets:
-        if not isinstance(asset, dict) or set(asset) != {"source", "target"}:
-            raise ValueError(f"invalid plugin asset: {pluginId}")
-        sourceRelative = safeRelativePath(asset["source"], f"{pluginId}.source")
-        targetRelative = safeRelativePath(asset["target"], f"{pluginId}.target")
+    for source in pluginAssetSources(pluginDir, pluginId):
+        if source.is_symlink():
+            raise ValueError(f"invalid plugin asset: {pluginId}/{source}")
+        if source.is_dir():
+            continue
+        sourceRelative = source.relative_to(pluginDir / "assets").as_posix()
+        targetRelative = safeRelativePath(sourceRelative, f"{pluginId}.asset")
         if targetRelative.parts[0] in {"apps", "webapps.json"} or (
             targetRelative.parts[0] == "index.html" and len(targetRelative.parts) > 1
         ):
             raise ValueError(f"reserved plugin asset target: {pluginId}/{targetRelative}")
-        source = pluginDir.joinpath(*sourceRelative.parts).resolve()
-        if pluginDir.resolve() not in source.parents or not source.is_file():
-            raise ValueError(f"missing plugin asset: {pluginId}/{sourceRelative}")
-        checkedAssets.append((source, targetRelative))
+        if not source.is_file() or (pluginDir / "assets").resolve() not in source.resolve().parents:
+            raise ValueError(f"invalid plugin asset: {pluginId}/{sourceRelative}")
+        checkedAssets.append((source.resolve(), targetRelative))
     webappDir = pluginDir / "webapp"
     if webappDir.exists() or webappDir.is_symlink():
-        raise ValueError(f"webapp/ is unsupported; declare plugin assets: {pluginId}")
+        raise ValueError(f"webapp/ is unsupported; use assets/: {pluginId}")
     rootAsset = any(target.as_posix() == "index.html" for _, target in checkedAssets)
     if rootAsset and pluginId != "default-web-apps":
         checkedAssets = [

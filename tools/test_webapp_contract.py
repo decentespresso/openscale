@@ -30,7 +30,6 @@ def manifest(pluginId, name=None, **overrides):
         "conflicts": [],
         "recommends": {"features": [], "plugins": []},
         "patches": {},
-        "assets": [],
         "budget": {"firmware_flash_bytes": 0, "static_ram_bytes": 0, "littlefs_bytes": 0},
         **overrides,
     }
@@ -84,35 +83,23 @@ def assertRejected(action):
 def testWebapps(buildfs=False):
     with tempfile.TemporaryDirectory() as temporaryDirectory:
         root = Path(temporaryDirectory)
-        alpha = manifest("alpha", "Alpha & <Beta>", assets=[
-            {"source": "assets/index.html", "target": "index.html"},
-            {"source": "assets/app.css", "target": "app.css"},
-        ])
+        alpha = manifest("alpha", "Alpha & <Beta>")
         writePlugin(root, alpha, {
             "assets/index.html": '<link rel="stylesheet" href="./app.css">',
             "assets/app.css": "body { color: red; }",
         })
-        beta = manifest("beta", requires=["littlefs", "websocket"], assets=[
-            {"source": "assets/index.html", "target": "index.html"},
-            {"source": "assets/js/app.js", "target": "js/app.js"},
-            {"source": "assets/data.json", "target": "shared/beta.json"},
-        ])
+        beta = manifest("beta", requires=["littlefs", "websocket"])
         writePlugin(root, beta, {
             "assets/index.html": '<script src="./js/app.js"></script>',
             "assets/js/app.js": "console.log('beta')",
-            "assets/data.json": "{}",
+            "assets/shared/beta.json": "{}",
         })
-        secondRoot = manifest("second-root", assets=[
-            {"source": "assets/index.html", "target": "index.html"},
-            {"source": "assets/app.css", "target": "app.css"},
-        ])
+        secondRoot = manifest("second-root")
         writePlugin(root, secondRoot, {
             "assets/index.html": '<link rel="stylesheet" href="./app.css">',
             "assets/app.css": "body { color: blue; }",
         })
-        default = manifest("default-web-apps", assets=[
-            {"source": "assets/index.html", "target": "index.html"},
-        ])
+        default = manifest("default-web-apps")
         writePlugin(root, default, {"assets/index.html": "DEFAULT ROOT"})
         with patch.object(customBuild, "ROOT", root):
             empty = resolve(root, [])
@@ -183,52 +170,60 @@ def testWebapps(buildfs=False):
             changedFile = customBuild.combinationInput(resolve(root, ["alpha", "beta"]), COMMIT, SOURCE_ROOT)
             assert customBuild.combinationHash(changedFile) != originalHash
 
-            writePlugin(root, manifest("gamma", assets=[
-                {"source": "assets/shared.txt", "target": "shared.txt"},
-            ]), {"assets/shared.txt": "one"})
-            writePlugin(root, manifest("delta", assets=[
-                {"source": "assets/shared.txt", "target": "shared.txt"},
-            ]), {"assets/shared.txt": "two"})
+            writePlugin(root, alpha, {"assets/new.js": "console.log('new')"})
+            discovered = resolve(root, ["alpha", "beta"])
+            discoveredStage = root / "discovered-stage"
+            customBuild.stageAssets(discovered, discoveredStage)
+            assert (discoveredStage / "apps/alpha/new.js").is_file()
+            assert customBuild.combinationHash(
+                customBuild.combinationInput(discovered, COMMIT, SOURCE_ROOT)
+            ) != customBuild.combinationHash(changedFile)
+
+            (root / ".gitignore").write_text("plugins/alpha/assets/*.gz\n", encoding="utf-8")
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            writePlugin(root, alpha, {"assets/app.js.gz": "generated gzip"})
+            assert all(target.suffix != ".gz" for _, target in customBuild.loadPlugin("alpha")[1])
+            beforeAddedFile = customBuild.combinationHash(customBuild.combinationInput(
+                resolve(root, ["alpha"]), COMMIT, SOURCE_ROOT
+            ))
+            writePlugin(root, alpha, {"assets/added-after-git.js": "console.log('added')"})
+            assert customBuild.combinationHash(customBuild.combinationInput(
+                resolve(root, ["alpha"]), COMMIT, SOURCE_ROOT
+            )) != beforeAddedFile
+            subprocess.run(["git", "add", "-f", "plugins/alpha/assets/app.js.gz"], cwd=root, check=True)
+            assertRejected(lambda: customBuild.loadPlugin("alpha"))
+            subprocess.run(["git", "rm", "-q", "--cached", "plugins/alpha/assets/app.js.gz"], cwd=root, check=True)
+
+            writePlugin(root, manifest("gamma"), {"assets/shared.txt": "one"})
+            writePlugin(root, manifest("delta"), {"assets/shared.txt": "two"})
             assertRejected(lambda: resolve(root, ["gamma", "delta"]))
-            writePlugin(root, manifest("missing-features", requires=[], assets=[
-                {"source": "assets/index.html", "target": "index.html"},
-            ]), {"assets/index.html": "app"})
+            writePlugin(root, manifest("missing-features", requires=[]), {"assets/index.html": "app"})
             assertRejected(lambda: resolve(root, ["missing-features"]))
             writePlugin(root, manifest("legacy-webapp"), {"webapp/index.html": "app"})
             assertRejected(lambda: customBuild.loadPlugin("legacy-webapp"))
-            directoryIndex = writePlugin(root, manifest("directory-index", assets=[
-                {"source": "assets/index.html", "target": "index.html"},
-            ]), {})
+            writePlugin(root, manifest("legacy-list", assets=[]), {})
+            assertRejected(lambda: customBuild.loadPlugin("legacy-list"))
+            directoryIndex = writePlugin(root, manifest("directory-index"), {})
             (directoryIndex / "assets" / "index.html").mkdir(parents=True)
             assertRejected(lambda: customBuild.loadPlugin("directory-index"))
-            writePlugin(root, manifest("gzip-only", assets=[
-                {"source": "assets/index.html", "target": "index.html"},
-                {"source": "assets/app.js.gz", "target": "app.js.gz"},
-            ]), {"assets/index.html": "app", "assets/app.js.gz": "supplied gzip"})
+            writePlugin(root, manifest("gzip-only"), {
+                "assets/index.html": "app", "assets/app.js.gz": "supplied gzip",
+            })
             assertRejected(lambda: customBuild.loadPlugin("gzip-only"))
-            writePlugin(root, manifest("gzip-sibling", assets=[
-                {"source": "assets/index.html", "target": "index.html"},
-                {"source": "assets/app.js", "target": "app.js"},
-                {"source": "assets/app.js.gz", "target": "app.js.gz"},
-            ]), {
+            writePlugin(root, manifest("gzip-sibling"), {
                 "assets/index.html": "app",
                 "assets/app.js": "source",
                 "assets/app.js.gz": "supplied gzip",
             })
             assertRejected(lambda: customBuild.loadPlugin("gzip-sibling"))
-            writePlugin(root, manifest("gzip-declared", assets=[
-                {"source": "assets/index.html", "target": "index.html"},
-                {"source": "assets/app.css.gz", "target": "app.css.gz"},
-            ]), {"assets/index.html": "app", "assets/app.css.gz": "supplied gzip"})
-            assertRejected(lambda: customBuild.loadPlugin("gzip-declared"))
-            writePlugin(root, manifest("reserved", assets=[
-                {"source": "assets/data.json", "target": "webapps.json"},
-            ]), {"assets/data.json": "{}"})
+            writePlugin(root, manifest("gzip-css"), {
+                "assets/index.html": "app", "assets/app.css.gz": "supplied gzip",
+            })
+            assertRejected(lambda: customBuild.loadPlugin("gzip-css"))
+            writePlugin(root, manifest("reserved"), {"assets/webapps.json": "{}"})
             assertRejected(lambda: customBuild.loadPlugin("reserved"))
-            writePlugin(root, manifest("reserved", assets=[
-                {"source": "assets/data.json", "target": "webapps.json/child"},
-            ]), {})
-            assertRejected(lambda: customBuild.loadPlugin("reserved"))
+            writePlugin(root, manifest("reserved-child"), {"assets/webapps.json/child": "{}"})
+            assertRejected(lambda: customBuild.loadPlugin("reserved-child"))
 
 
 def testPresentation():

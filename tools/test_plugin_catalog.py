@@ -28,7 +28,6 @@ def pluginManifest(pluginId="code-plugin", **overrides):
         "requires": [],
         "conflicts": [],
         "patches": {},
-        "assets": [],
         "budget": {
             "firmware_flash_bytes": 0,
             "static_ram_bytes": 0,
@@ -121,14 +120,7 @@ def testTemporaryPluginValidation():
             writePlugin(root, pluginManifest(patches={firmwareRef: "../escape.patch"}))
             assertRejected(lambda: customBuild.loadPlugin("code-plugin", firmwareRef))
 
-            duplicateAssets = [
-                {"source": "assets/one.html", "target": "plugins/example/index.html"},
-                {"source": "assets/two.html", "target": "plugins/example/index.html"},
-            ]
-            writePlugin(root, pluginManifest(assets=duplicateAssets), {
-                "assets/one.html": "one",
-                "assets/two.html": "two",
-            })
+            writePlugin(root, pluginManifest(assets=[]))
             assertRejected(lambda: customBuild.loadPlugin("code-plugin", firmwareRef))
 
             writePlugin(root, pluginManifest(firmware_refs=["unknown-ref"]))
@@ -254,8 +246,8 @@ def main():
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
     fleetScript = (pageRoot / "fleet.js").read_text(encoding="utf-8")
-    assert 'type="module" src="app.js?v=34"' in indexPage
-    assert 'href="styles.css?v=18"' in indexPage
+    assert 'type="module" src="app.js?v=35"' in indexPage
+    assert 'href="styles.css?v=19"' in indexPage
     assert 'href="fleet.css?v=7"' in indexPage
     assert 'href="preview.css?v=2"' in indexPage
     assert 'id="plugin-preview"' in indexPage
