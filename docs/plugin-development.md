@@ -282,7 +282,6 @@ A typical plugin manifest looks like this:
   "patches": {
     "main": "patches/main.patch"
   },
-  "assets": [],
   "budget": {
     "firmware_flash_bytes": 32768,
     "static_ram_bytes": 2048,
@@ -305,7 +304,6 @@ The important fields are:
 * `conflicts_features` — firmware features that cannot be used with the plugin;
 * `recommends` — a combination of features or plugins known to work together;
 * `patches` — firmware patches for supported firmware revisions;
-* `assets` — files that need to be copied into the device filesystem;
 * `budget` — expected flash, RAM, and filesystem usage.
 
 Plugin IDs use lowercase letters, numbers, and hyphens.
@@ -447,19 +445,9 @@ plugins/example/
     app.js
 ```
 
-Declare each runtime file in `plugin.json`:
+The build discovers runtime files recursively under `assets/`. Their paths relative to that directory become their device paths; do not list them in `plugin.json`. A file at `assets/index.html` identifies a webapp. For plugins other than `default-web-apps`, the build stages every file under `/apps/<plugin-id>/`. A webapp plugin cannot also stage device-root assets; use a separate plugin for those files. Files under `webapp/` are not supported.
 
-```json
-"assets": [
-  {"source": "assets/index.html", "target": "index.html"},
-  {"source": "assets/app.css", "target": "app.css"},
-  {"source": "assets/app.js", "target": "app.js"}
-]
-```
-
-For plugins other than `default-web-apps`, a declared `index.html` target identifies a webapp. Every declared asset in that plugin is staged under `/apps/<plugin-id>/`, with its target relative to that directory. A webapp plugin cannot also stage device-root assets; use a separate plugin for those files. Files under `webapp/` are not supported.
-
-`default-web-apps` uses the same `assets` declaration, but its dashboard and shared files keep their device-root paths.
+`default-web-apps` uses the same `assets/` layout, but its dashboard and shared files keep their device-root paths. Git-ignored files do not enter the build. The build rejects symlinks, invalid paths, and supplied precompressed HTML, CSS, JavaScript, or SVG files.
 
 Every webapp must resolve:
 

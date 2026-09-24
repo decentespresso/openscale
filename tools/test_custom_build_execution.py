@@ -65,12 +65,11 @@ def writePlugin(
         patchPath.parent.mkdir(parents=True, exist_ok=True)
         patchPath.write_text(patchText, encoding="utf-8")
         patches[firmwareRefs[0]] = f"patches/{firmwareRefs[0]}.patch"
-    assets = []
-    if pluginId == "asset-only":
-        assetPath = pluginDir / "assets" / "index.html"
+    hasAssets = pluginId == "asset-only"
+    if hasAssets:
+        assetPath = pluginDir / "assets" / "page.html"
         assetPath.parent.mkdir(parents=True, exist_ok=True)
         assetPath.write_text("asset plugin", encoding="utf-8")
-        assets.append({"source": "assets/index.html", "target": "plugins/asset/index.html"})
     manifest = {
         "schema": 2,
         "id": pluginId,
@@ -79,16 +78,15 @@ def writePlugin(
         "tooltip": "Phase 2 test plugin.",
         "version": "1.0.0",
         "firmware_refs": firmwareRefs,
-        "requires": ["littlefs"] if assets else [],
+        "requires": ["littlefs"] if hasAssets else [],
         "depends_on": dependsOn or [],
         "conflicts": conflicts or [],
         "recommends": recommends or {"features": [], "plugins": []},
         "patches": patches,
-        "assets": assets,
         "budget": {
             "firmware_flash_bytes": 0,
             "static_ram_bytes": 0,
-            "littlefs_bytes": 1024 if assets else 0,
+            "littlefs_bytes": 1024 if hasAssets else 0,
         },
     }
     (pluginDir / "plugin.json").write_text(json.dumps(manifest), encoding="utf-8")
@@ -293,7 +291,7 @@ def main():
             stageRoot = root / "staged-assets"
             customBuild.stageAssets(configuration, stageRoot)
             assert not (stageRoot / "base.html").exists()
-            assert (stageRoot / "plugins" / "asset" / "index.html").is_file()
+            assert (stageRoot / "page.html").is_file()
             buildDir = root / "build"
             buildDir.mkdir()
             for name in (
@@ -347,7 +345,7 @@ def main():
                 ).read_bytes()
             ).hexdigest()
             assetPackage = next(item for item in first["packages"] if item["id"] == "asset-only")
-            assert assetPackage["assets"][0]["target"] == "plugins/asset/index.html"
+            assert assetPackage["assets"][0]["target"] == "page.html"
             (buildDir / "build-manifest.json").write_bytes(firstManifest.read_bytes())
             signingKey = root / "custom-ota.pem"
             publicKey = root / "custom-ota-public.pem"
@@ -422,7 +420,7 @@ def main():
                 configuration, sourceCommit, sourceRoot, "9" * 40
             )
             assert customBuild.combinationHash(changedIdentity) != combinationHash
-            assetPath = catalogRoot / "plugins" / "asset-only" / "assets" / "index.html"
+            assetPath = catalogRoot / "plugins" / "asset-only" / "assets" / "page.html"
             assetPath.write_text("changed asset plugin", encoding="utf-8")
             changedIdentity = customBuild.combinationInput(configuration, sourceCommit, sourceRoot)
             assert customBuild.combinationHash(changedIdentity) != combinationHash

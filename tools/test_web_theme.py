@@ -1,9 +1,10 @@
-import json
 import re
 from html.parser import HTMLParser
 from pathlib import Path
 import subprocess
 from xml.etree import ElementTree
+
+import configure_custom_build as customBuild
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -139,10 +140,9 @@ assert.equal(blocked.root.dataset.theme, 'light');
 
 
 def main():
-    manifest = json.loads((ROOT / "plugins/default-web-apps/plugin.json").read_text(encoding="utf-8"))
-    assets = {(asset["source"], asset["target"]) for asset in manifest["assets"]}
+    assets = {target.as_posix() for _, target in customBuild.loadPlugin("default-web-apps")[1]}
     for name in ("theme.css", "theme.js"):
-        assert (f"assets/shared/{name}", f"shared/{name}") in assets
+        assert f"shared/{name}" in assets
         assert (TARGET / name).is_file()
 
     referenceHtml = (REFERENCE / "index.html").read_text(encoding="utf-8")

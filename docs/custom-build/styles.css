@@ -484,9 +484,14 @@
       background: var(--amber-soft);
     }
 
-    .recommend-button {
-      position: static;
-      margin: 0 0 14px 51px;
+    .plugin-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin: 0 14px 14px 51px;
+    }
+
+    .plugin-actions button {
       min-height: 29px;
       padding: 0 10px;
       border: 1px solid var(--green-line);
@@ -498,38 +503,15 @@
       cursor: pointer;
     }
 
-    .recommend-button:hover, .recommend-button:focus-visible {
+    .plugin-actions button:hover,
+    .plugin-actions button:focus-visible {
       border-color: var(--green);
       background: #e3f4ec;
       outline: none;
     }
 
-    .recommend-button:focus-visible { box-shadow: 0 0 0 3px rgba(13, 121, 85, .14); }
+    .plugin-actions button:focus-visible { box-shadow: 0 0 0 3px rgba(13, 121, 85, .14); }
     .recommend-button:disabled { opacity: .55; cursor: not-allowed; }
-
-    .plugin-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin: 0 14px 14px 51px;
-      font-size: .75rem;
-    }
-
-    .preview-button,
-    .handbook-link {
-      border: 0;
-      padding: 0;
-      color: var(--green-dark);
-      background: transparent;
-      font: inherit;
-      font-weight: 650;
-      text-decoration: underline;
-      text-underline-offset: 3px;
-      cursor: pointer;
-    }
-
-    .preview-button:focus-visible,
-    .handbook-link:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
 
     .info-button {
       position: absolute;
@@ -1299,14 +1281,14 @@
       background: var(--amber-soft);
     }
 
-    html[data-theme="dark"] .recommend-button:hover,
-    html[data-theme="dark"] .recommend-button:focus-visible {
+    html[data-theme="dark"] .plugin-actions button:hover,
+    html[data-theme="dark"] .plugin-actions button:focus-visible {
       border-color: var(--green);
       color: var(--green-text-strong);
       background: var(--green-soft-strong);
     }
 
-    html[data-theme="dark"] .recommend-button:focus-visible { box-shadow: 0 0 0 3px var(--focus-green); }
+    html[data-theme="dark"] .plugin-actions button:focus-visible { box-shadow: 0 0 0 3px var(--focus-green); }
     html[data-theme="dark"] .info-button { color: #8a9690; }
 
     html[data-theme="dark"] .tooltip {

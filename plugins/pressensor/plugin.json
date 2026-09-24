@@ -14,7 +14,6 @@
     "v3.1.14": "patches/main.patch",
     "main": "patches/main.patch"
   },
-  "assets": [],
   "budget": {
     "firmware_flash_bytes": 32768,
     "static_ram_bytes": 2048,
