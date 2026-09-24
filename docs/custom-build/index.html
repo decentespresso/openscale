@@ -24,6 +24,7 @@
     })();
   </script>
   <link rel="stylesheet" href="styles.css?v=18">
+  <link rel="stylesheet" href="preview.css?v=2">
   <link rel="stylesheet" href="fleet.css?v=7">
   <link rel="stylesheet" href="wizard.css?v=1">
 </head>
@@ -309,7 +310,16 @@
     </form>
   </dialog>
 
-  <script type="module" src="app.js?v=32"></script>
+  <dialog id="plugin-preview" class="plugin-preview-dialog" aria-labelledby="plugin-preview-title">
+    <div class="plugin-preview-head">
+      <h2 id="plugin-preview-title"></h2>
+      <button id="plugin-preview-close" type="button" aria-label="Close preview">Close</button>
+    </div>
+    <img id="plugin-preview-image" alt="">
+    <pre id="plugin-preview-handbook" hidden></pre>
+  </dialog>
+
+  <script type="module" src="app.js?v=34"></script>
   <script type="module" src="wizard.js?v=2"></script>
 </body>
 </html>

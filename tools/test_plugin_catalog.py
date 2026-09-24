@@ -254,9 +254,15 @@ def main():
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
     fleetScript = (pageRoot / "fleet.js").read_text(encoding="utf-8")
-    assert 'type="module" src="app.js?v=32"' in indexPage
+    assert 'type="module" src="app.js?v=34"' in indexPage
     assert 'href="styles.css?v=18"' in indexPage
     assert 'href="fleet.css?v=7"' in indexPage
+    assert 'href="preview.css?v=2"' in indexPage
+    assert 'id="plugin-preview"' in indexPage
+    assert 'id="plugin-preview-handbook"' in indexPage
+    assert 'data-preview-plugin' in appScript
+    assert 'data-handbook-plugin' in appScript
+    assert 'data-recommend-plugin' in appScript
     assert 'id="request-build"' in indexPage
     assert "catalog-data" not in indexPage
     assert 'fetch("catalog.json"' in appScript
@@ -289,6 +295,7 @@ def main():
     assert grindByWeight["name"] == "Grind by weight"
     assert grindByWeight["requires"] == ["grinder"]
     assert grindByWeight["conflicts"] == ["pressensor"]
+    assert grindByWeight["presentation"]["handbook"].startswith("plugin-media/grind-by-weight/")
     assert pressensor["conflicts"] == ["grind-by-weight"]
     assert grindByWeight["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
     assert pressensor["firmware_refs"] == list(customBuild.FIRMWARE_REFS)

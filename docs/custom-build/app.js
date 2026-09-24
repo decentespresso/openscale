@@ -79,6 +79,10 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
   const pluginRoot = document.querySelector("#plugins");
   const featureById = new Map(catalog.features.map(item => [item.id, item]));
   const pluginById = new Map(catalog.plugins.map(item => [item.id, item]));
+  const previewDialog = document.querySelector("#plugin-preview");
+  const previewTitle = document.querySelector("#plugin-preview-title");
+  const previewImage = document.querySelector("#plugin-preview-image");
+  const previewHandbook = document.querySelector("#plugin-preview-handbook");
   const buildButton = document.querySelector("#request-build");
   const updateBuildProgress = initBuildProgress(document.querySelector("#build-progress"));
   const fleetPanel = document.querySelector("#fleet-panel");
@@ -93,10 +97,15 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
   let currentBuildState = "checking";
   let catalogRetryDelay = 2000;
   let lastBuildResult;
+  let handbookRequest = 0;
 
   const escapeHtml = value => String(value).replace(/[&<>'"]/g, character => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
   })[character]);
+  const validPreviewPath = (plugin, path) => typeof path === "string" &&
+    new RegExp(`^plugin-media/${plugin.id}/[0-9a-f]{64}\\.(png|jpg|jpeg|webp)$`).test(path);
+  const validHandbookPath = (plugin, value) => typeof value === "string" &&
+    new RegExp(`^plugin-media/${plugin.id}/[0-9a-f]{64}\\.md$`).test(value);
 
   const makeOption = (item, kind) => {
     const wrapper = document.createElement("div");
@@ -119,6 +128,27 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
       ${hasRecommendation ? `<button class="recommend-button" type="button" data-recommend-plugin="${escapeHtml(item.id)}">Recommended</button>` : ""}
       <button class="info-button" type="button" aria-label="More information about ${escapeHtml(item.name)}" aria-describedby="${tooltipId}">${icons.info}</button>
       <span class="tooltip" id="${tooltipId}" role="tooltip">${escapeHtml(item.tooltip || item.description || "More information")}</span>`;
+    if (kind === "plugin" && item.presentation) {
+      const actions = document.createElement("div");
+      actions.className = "plugin-actions";
+      if (validPreviewPath(item, item.presentation.image)) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "preview-button";
+        button.dataset.previewPlugin = item.id;
+        button.textContent = "Preview";
+        actions.append(button);
+      }
+      if (validHandbookPath(item, item.presentation.handbook)) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "handbook-link";
+        button.dataset.handbookPlugin = item.id;
+        button.textContent = "README";
+        actions.append(button);
+      }
+      wrapper.append(actions);
+    }
     return wrapper;
   };
 
@@ -422,6 +452,47 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
       features: plugin.recommends.features,
       plugins: [plugin.id, ...plugin.recommends.plugins]
     }, `Recommended setup for ${plugin.name} selected`);
+  });
+
+  document.addEventListener("click", event => {
+    const button = event.target.closest("[data-preview-plugin]");
+    if (!button) return;
+    const plugin = pluginById.get(button.dataset.previewPlugin);
+    if (!plugin || !validPreviewPath(plugin, plugin.presentation?.image)) return;
+    handbookRequest += 1;
+    previewTitle.textContent = plugin.name;
+    previewHandbook.hidden = true;
+    previewImage.hidden = false;
+    previewImage.alt = plugin.presentation.image_alt;
+    previewImage.src = plugin.presentation.image;
+    previewDialog.showModal();
+  });
+  document.addEventListener("click", async event => {
+    const button = event.target.closest("[data-handbook-plugin]");
+    if (!button) return;
+    const plugin = pluginById.get(button.dataset.handbookPlugin);
+    if (!plugin || !validHandbookPath(plugin, plugin.presentation?.handbook)) return;
+    const request = ++handbookRequest;
+    previewTitle.textContent = plugin.name;
+    previewImage.hidden = true;
+    previewImage.removeAttribute("src");
+    previewHandbook.hidden = false;
+    previewHandbook.textContent = "Loading...";
+    previewDialog.showModal();
+    try {
+      const response = await fetch(plugin.presentation.handbook);
+      if (!response.ok) throw new Error("Handbook unavailable");
+      const content = await response.text();
+      if (request === handbookRequest && previewDialog.open) previewHandbook.textContent = content;
+    } catch {
+      if (request === handbookRequest && previewDialog.open) previewHandbook.textContent = "Handbook unavailable.";
+    }
+  });
+  document.querySelector("#plugin-preview-close").addEventListener("click", () => previewDialog.close());
+  previewDialog.addEventListener("close", () => {
+    handbookRequest += 1;
+    previewImage.removeAttribute("src");
+    previewHandbook.textContent = "";
   });
 
   document.addEventListener("change", event => {

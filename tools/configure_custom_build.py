@@ -1,12 +1,15 @@
 import argparse
 import configparser
 import hashlib
+import html
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
 import subprocess
+
+from plugin_presentation import presentationMetadata, publishPresentationFiles
 
 
 SCRIPT_ROOT = Path(globals().get("__file__", Path.cwd() / "tools" / "configure_custom_build.py")).resolve().parents[1]
@@ -87,7 +90,7 @@ PLUGIN_KEYS = {
     "schema", "id", "name", "description", "tooltip", "version",
     "firmware_refs", "requires", "conflicts", "patches", "assets", "budget",
 }
-OPTIONAL_PLUGIN_KEYS = {"depends_on", "recommends", "conflicts_features"}
+OPTIONAL_PLUGIN_KEYS = {"depends_on", "recommends", "conflicts_features", "presentation"}
 RECOMMENDATION_KEYS = {"features", "plugins"}
 BUDGET_KEYS = {"firmware_flash_bytes", "static_ram_bytes", "littlefs_bytes"}
 BUILD_CONTRACT_SCHEMA = 2
@@ -120,6 +123,15 @@ def safeRelativePath(value, name):
     if path.is_absolute() or ".." in path.parts or "." in path.parts:
         raise ValueError(f"{name} must be relative and cannot contain . or ..")
     return path
+
+
+def assetTargetCollision(targets):
+    targetSet = set(targets)
+    return len(targets) != len(targetSet) or any(
+        "/".join(target.split("/")[:depth]) in targetSet
+        for target in targets
+        for depth in range(1, len(target.split("/")))
+    )
 
 
 def loadPlugin(pluginId, firmwareRef=None):
@@ -193,12 +205,35 @@ def loadPlugin(pluginId, firmwareRef=None):
             raise ValueError(f"invalid plugin asset: {pluginId}")
         sourceRelative = safeRelativePath(asset["source"], f"{pluginId}.source")
         targetRelative = safeRelativePath(asset["target"], f"{pluginId}.target")
+        if targetRelative.parts[0] in {"apps", "webapps.json"} or (
+            targetRelative.parts[0] == "index.html" and len(targetRelative.parts) > 1
+        ):
+            raise ValueError(f"reserved plugin asset target: {pluginId}/{targetRelative}")
         source = pluginDir.joinpath(*sourceRelative.parts).resolve()
         if pluginDir.resolve() not in source.parents or not source.is_file():
             raise ValueError(f"missing plugin asset: {pluginId}/{sourceRelative}")
         checkedAssets.append((source, targetRelative))
+    webappDir = pluginDir / "webapp"
+    if webappDir.exists() or webappDir.is_symlink():
+        raise ValueError(f"webapp/ is unsupported; declare plugin assets: {pluginId}")
+    rootAsset = any(target.as_posix() == "index.html" for _, target in checkedAssets)
+    if rootAsset and pluginId != "default-web-apps":
+        checkedAssets = [
+            (source, PurePosixPath("apps", pluginId, *target.parts))
+            for source, target in checkedAssets
+        ]
+    for _, target in checkedAssets:
+        if target.suffix.lower() == ".gz" and target.with_suffix("").suffix.lower() in {
+            ".html", ".js", ".css", ".svg"
+        }:
+            raise ValueError(f"precompressed plugin asset is managed by the build: {pluginId}/{target}")
+    if rootAsset and pluginId != "default-web-apps":
+        manifest["webapp"] = {
+            "name": manifest["name"],
+            "href": f"/apps/{pluginId}/index.html",
+        }
     assetTargets = [target.as_posix() for _, target in checkedAssets]
-    if len(assetTargets) != len(set(assetTargets)):
+    if assetTargetCollision(assetTargets):
         raise ValueError(f"duplicate plugin asset target: {pluginId}")
     patches = manifest["patches"]
     if not isinstance(patches, dict) or any(not isinstance(ref, str) for ref in patches):
@@ -326,7 +361,7 @@ def resolveCatalogSelection(pluginCatalog, requestedPluginIds, requestedFeatures
         for pluginId in pluginIds
         for _, target in pluginCatalog[pluginId][1]
     ]
-    if len(targets) != len(set(targets)):
+    if assetTargetCollision(targets):
         raise ValueError("plugin asset target collision")
     return pluginIds, featureIds
 
@@ -382,9 +417,19 @@ def loadPluginCatalog(validateDefaults=False):
                 ) from error
     if validateDefaults:
         try:
-            resolveCatalogSelection(plugins, DEFAULT_PLUGINS, DEFAULT_FEATURES, FIRMWARE_REFS[0])
+            resolveCatalogSelection(plugins, DEFAULT_PLUGINS, DEFAULT_FEATURES, "main")
         except ValueError as error:
             raise ValueError(f"invalid default selection: {error}") from error
+    for pluginId, (manifest, _, _) in plugins.items():
+        if "webapp" not in manifest:
+            continue
+        requirements = {
+            feature
+            for dependencyId in pluginOrder(plugins, [pluginId])
+            for feature in plugins[dependencyId][0]["requires"]
+        }
+        if not {"littlefs", "webserver"}.issubset(resolveFeatureIds(requirements, manifest["firmware_refs"][0])):
+            raise ValueError(f"webapp plugin lacks runtime features: {pluginId}")
     return plugins
 
 
@@ -433,31 +478,45 @@ def buildBrowserCatalog():
         if featureId in HIDDEN_FEATURES:
             feature["hidden"] = True
         features.append(feature)
+    browserPlugins = []
+    for manifest, assets, _ in plugins.values():
+        presentation, _ = presentationMetadata(
+            manifest["id"], manifest, ROOT / "plugins" / manifest["id"], safeRelativePath
+        )
+        browserPlugins.append({
+            **{
+                key: manifest[key]
+                for key in (
+                    "id", "name", "description", "tooltip", "version",
+                    "firmware_refs", "requires", "depends_on", "conflicts",
+                    "conflicts_features", "recommends",
+                )
+            },
+            "asset_targets": sorted(target.as_posix() for _, target in assets),
+            **({"webapp": manifest["webapp"]} if "webapp" in manifest else {}),
+            **({"presentation": presentation} if presentation else {}),
+            **({"default": True} if manifest["id"] in DEFAULT_PLUGINS else {}),
+        })
     return {
         "catalog_revision": catalogRevision(plugins),
         "custom_ota_signing_key_generation": CUSTOM_OTA_SIGNING_KEY_GENERATION,
         "firmware_refs": list(FIRMWARE_REFS),
         "features": features,
-        "plugins": [
-            {
-                **{
-                    key: manifest[key]
-                    for key in (
-                        "id", "name", "description", "tooltip", "version",
-                        "firmware_refs", "requires", "depends_on", "conflicts",
-                        "conflicts_features", "recommends",
-                    )
-                },
-                **({"default": True} if manifest["id"] in DEFAULT_PLUGINS else {}),
-            }
-            for manifest, _, _ in plugins.values()
-        ],
+        "plugins": browserPlugins,
     }
 
 
 def writeBrowserCatalog(path):
+    catalog = buildBrowserCatalog()
+    presentationFiles = []
+    for manifest, _, _ in loadPluginCatalog().values():
+        _, files = presentationMetadata(
+            manifest["id"], manifest, ROOT / "plugins" / manifest["id"], safeRelativePath
+        )
+        presentationFiles.extend(files)
+    publishPresentationFiles(presentationFiles, path.parent / "plugin-media")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes((json.dumps(buildBrowserCatalog(), indent=2) + "\n").encode("utf-8"))
+    path.write_bytes((json.dumps(catalog, indent=2) + "\n").encode("utf-8"))
 
 
 def buildServiceCatalog(sourceRoot=ROOT):
@@ -502,6 +561,7 @@ def buildServiceCatalog(sourceRoot=ROOT):
                     ],
                     key=lambda asset: (asset["target"], asset["sha256"]),
                 ),
+                **({"webapp": manifest["webapp"]} if "webapp" in manifest else {}),
             }
             for pluginId, (manifest, assets, patches) in plugins.items()
         },
@@ -570,6 +630,38 @@ def stageAssets(configuration, stageDir):
         destination = stageDir.joinpath(*target.parts)
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
+    apps = [
+        {"id": plugin["id"], **plugin["webapp"]}
+        for plugin in configuration["plugins"]
+        if "webapp" in plugin
+    ]
+    if apps:
+        (stageDir / "webapps.json").write_text(
+            json.dumps({"schema": 1, "apps": sorted(apps, key=lambda app: app["id"])},
+                       separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+    if any(plugin["id"] == "default-web-apps" for plugin in configuration["plugins"]):
+        return
+    if len(apps) == 1:
+        name = html.escape(apps[0]["name"])
+        href = html.escape(apps[0]["href"], quote=True)
+        page = ("<!doctype html><html lang=\"en\"><meta charset=\"utf-8\">"
+                f"<meta http-equiv=\"refresh\" content=\"0;url={href}\">"
+                f"<title>OpenScale</title><p><a href=\"{href}\">Open {name}</a></p></html>\n")
+        (stageDir / "index.html").write_text(page, encoding="utf-8")
+    elif len(apps) > 1:
+        links = "".join(
+            f'<li><a href="{html.escape(app["href"], quote=True)}">'
+            f'{html.escape(app["name"])}</a></li>'
+            for app in sorted(apps, key=lambda app: app["id"])
+        )
+        page = ("<!doctype html><html lang=\"en\"><meta charset=\"utf-8\">"
+                "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                "<title>OpenScale apps</title><style>body{font:16px system-ui,sans-serif;"
+                "max-width:32rem;margin:2rem auto;padding:0 1rem}li{margin:.75rem 0}</style>"
+                f"<h1>OpenScale</h1><ul>{links}</ul></html>\n")
+        (stageDir / "index.html").write_text(page, encoding="utf-8")
 
 
 def serializableConfiguration(configuration):
@@ -723,6 +815,7 @@ def partitionMetadata(sourceRoot):
 def combinationInput(configuration, commitSha, sourceRoot=ROOT, builderCommit=None):
     packages = []
     for package in packageMetadata(configuration):
+        plugin = next(plugin for plugin in configuration["plugins"] if plugin["id"] == package["id"])
         packages.append({
             "id": package["id"],
             "version": package["version"],
@@ -744,6 +837,7 @@ def combinationInput(configuration, commitSha, sourceRoot=ROOT, builderCommit=No
                 ],
                 key=lambda asset: (asset["target"], asset["sha256"]),
             ),
+            **({"webapp": plugin["webapp"]} if "webapp" in plugin else {}),
         })
     firmware = firmwareMetadata(configuration["firmware_ref"], sourceRoot)
     return {

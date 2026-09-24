@@ -26,6 +26,8 @@ After this, one can simply use `$pio run -t upload` and platformio will build an
 
 The [custom build configurator](https://decentespresso.github.io/openscale/custom-build/) builds approved feature and plugin combinations. Choose `3.1.14 (stable)`, selected by default, for normal use. The other option, `main (development)`, is for testing only and requires confirmation before building. Download the build for USB installation or assign it to linked scales for signed WiFi installation and status tracking.
 
+Plugin authors can use the [plugin development guide](docs/plugin-development.md) for package, webapp, and presentation rules.
+
 ## Scale-top tap controls
 
 Optional scale-top gestures can tare with a double tap and start or stop the timer with a triple tap. Both are disabled by default and can be enabled independently under `Setup > Scale`.

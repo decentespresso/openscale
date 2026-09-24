@@ -371,11 +371,12 @@
     }
 
     .plugin-grid .option-card { min-height: 94px; }
-    .plugin-grid .option-card.has-recommendation { min-height: 132px; }
+    .plugin-grid .option-card.has-recommendation { min-height: 0; }
     .option-card:hover { border-color: #b4c5bc; box-shadow: 0 6px 18px rgba(23, 56, 39, .05); }
     .option-card.is-checked { border-color: var(--green-line); background: #f1f9f5; }
     .option-card.is-required { border-color: #c6ddd2; background: #f5faf7; }
-    .option-card.is-disabled { opacity: .62; background: #f8f9f8; box-shadow: none; }
+    .option-card.is-disabled { background: #f8f9f8; box-shadow: none; }
+    .option-card.is-disabled .check-target { opacity: .62; }
 
     .native-check {
       position: absolute;
@@ -396,7 +397,7 @@
     }
 
     .native-check:disabled + .check-target { cursor: not-allowed; }
-    .has-recommendation .check-target { padding-bottom: 53px; }
+    .has-recommendation .check-target { min-height: 94px; padding-bottom: 17px; }
 
     .check-box {
       display: grid;
@@ -484,9 +485,8 @@
     }
 
     .recommend-button {
-      position: absolute;
-      left: 51px;
-      bottom: 14px;
+      position: static;
+      margin: 0 0 14px 51px;
       min-height: 29px;
       padding: 0 10px;
       border: 1px solid var(--green-line);
@@ -506,6 +506,30 @@
 
     .recommend-button:focus-visible { box-shadow: 0 0 0 3px rgba(13, 121, 85, .14); }
     .recommend-button:disabled { opacity: .55; cursor: not-allowed; }
+
+    .plugin-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 0 14px 14px 51px;
+      font-size: .75rem;
+    }
+
+    .preview-button,
+    .handbook-link {
+      border: 0;
+      padding: 0;
+      color: var(--green-dark);
+      background: transparent;
+      font: inherit;
+      font-weight: 650;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      cursor: pointer;
+    }
+
+    .preview-button:focus-visible,
+    .handbook-link:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
 
     .info-button {
       position: absolute;

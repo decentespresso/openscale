@@ -63,7 +63,7 @@ function jsonScalar(value) {
     `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`);
 }
 
-function canonicalJson(value) {
+export function canonicalJson(value) {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value && typeof value === "object") {
     return `{${Object.keys(value).sort().map(key => `${jsonScalar(key)}:${canonicalJson(value[key])}`).join(",")}}`;
@@ -282,6 +282,11 @@ function resolvePlugins(catalog, firmwareRef, selected) {
     if (plugin.assets.some(asset => !pathPattern.test(asset.target) || !hashPattern.test(asset.sha256))) {
       throw new ApiError(503, "invalid_service_catalog");
     }
+    if (plugin.webapp &&
+        (catalog.schema !== 2 || typeof plugin.webapp.name !== "string" ||
+         !plugin.webapp.name.trim() || plugin.webapp.href !== `/apps/${id}/index.html`)) {
+      throw new ApiError(503, "invalid_service_catalog");
+    }
     return {
       id,
       version: plugin.version,
@@ -289,6 +294,7 @@ function resolvePlugins(catalog, firmwareRef, selected) {
       assets: [...plugin.assets].sort((left, right) =>
         (left.target < right.target ? -1 : left.target > right.target ? 1 : 0) ||
         (left.sha256 < right.sha256 ? -1 : left.sha256 > right.sha256 ? 1 : 0)),
+      ...(plugin.webapp ? {webapp: plugin.webapp} : {}),
     };
   });
 }
@@ -325,18 +331,8 @@ function validateConflicts(catalog, pluginIds, featureIds) {
   }
 }
 
-async function resolveSelection(env, selection) {
+export function identityForSelection(catalog, sourceCommit, selection, builderCommit = sourceCommit) {
   const requested = requireSelection(selection);
-  const builderRef = env.BUILDER_REF || "main";
-  requireAllowedFirmwareRef(env, requested.firmware_ref);
-  const builderCommit = await resolveGithubCommit(env, builderRef, "builder_ref_unavailable");
-  const sourceCommit = requested.firmware_ref === builderRef
-    ? builderCommit
-    : await resolveGithubCommit(env, requested.firmware_ref, "firmware_ref_unavailable");
-  const catalog = await serviceCatalog(env, builderCommit);
-  if (requested.catalog_revision && requested.catalog_revision !== catalog.catalog_revision) {
-    throw new ApiError(409, "catalog_stale");
-  }
   if (!catalog.firmware_refs.includes(requested.firmware_ref)) {
     throw new ApiError(400, "unsupported_firmware_ref");
   }
@@ -355,7 +351,18 @@ async function resolveSelection(env, selection) {
   const platformioEnvironment = features.includes("energy-menu")
     ? "esp32s3-energy-menu-custom"
     : catalog.platformio_environment;
-  const identity = {
+  const assetTargets = plugins.flatMap(plugin => plugin.assets.map(asset => asset.target));
+  const targetSet = new Set(assetTargets);
+  if (assetTargets.length !== targetSet.size || assetTargets.some(target =>
+    target.split("/").slice(0, -1).some((_, index, parts) =>
+      targetSet.has(parts.slice(0, index + 1).join("/"))))) {
+    throw new ApiError(400, "plugin_asset_collision");
+  }
+  if (plugins.some(plugin => plugin.webapp) &&
+      (!features.includes("littlefs") || !features.includes("webserver"))) {
+    throw new ApiError(503, "invalid_service_catalog");
+  }
+  return {
     schema: catalog.schema,
     custom_ota_signing_key_generation: catalog.custom_ota_signing_key_generation,
     firmware_ref: requested.firmware_ref,
@@ -370,6 +377,21 @@ async function resolveSelection(env, selection) {
       sha256: firmware.partition_schema.sha256,
     },
   };
+}
+
+async function resolveSelection(env, selection) {
+  const requested = requireSelection(selection);
+  const builderRef = env.BUILDER_REF || "main";
+  requireAllowedFirmwareRef(env, requested.firmware_ref);
+  const builderCommit = await resolveGithubCommit(env, builderRef, "builder_ref_unavailable");
+  const sourceCommit = requested.firmware_ref === builderRef
+    ? builderCommit
+    : await resolveGithubCommit(env, requested.firmware_ref, "firmware_ref_unavailable");
+  const catalog = await serviceCatalog(env, builderCommit);
+  if (requested.catalog_revision && requested.catalog_revision !== catalog.catalog_revision) {
+    throw new ApiError(409, "catalog_stale");
+  }
+  const identity = identityForSelection(catalog, sourceCommit, requested, builderCommit);
   return {
     combinationHash: await sha256(canonicalJson(identity)),
     builderCommit,
@@ -377,8 +399,8 @@ async function resolveSelection(env, selection) {
     sourceCommit,
     configuration: {
       firmware_ref: requested.firmware_ref,
-      features,
-      plugins: plugins.map(plugin => plugin.id),
+      features: identity.features,
+      plugins: identity.plugins.map(plugin => plugin.id),
     },
   };
 }

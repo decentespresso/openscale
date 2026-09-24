@@ -162,6 +162,22 @@ test("blocks new direct and transitive conflicts without blocking removal", () =
 });
 
 
+test("prevents overlapping runtime asset targets", () => {
+  const withAssets = {
+    ...catalog,
+    plugins: [
+      plugin("alpha", "Alpha", {asset_targets: ["shared/app.js"]}),
+      plugin("beta", "Beta", {asset_targets: ["shared/app.js/child"]}),
+    ],
+  };
+  const current = {firmware_ref: "main", features: [], plugins: ["alpha"]};
+  assert.equal(optionReason(withAssets, current, "plugin", "beta"), "Asset conflict with Alpha");
+  assert.throws(() => resolveSelection(withAssets, {
+    ...current, plugins: ["alpha", "beta"],
+  }), error => error.code === "plugin_asset_collision");
+});
+
+
 test("round-trips sorted URL selections and rejects invalid links atomically", () => {
   const selection = {firmware_ref: "main", features: ["network", "wifi"], plugins: ["client"]};
   const query = selectionQuery({

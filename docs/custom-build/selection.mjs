@@ -124,6 +124,17 @@ export function resolveSelection(catalog, selection) {
     const featureId = (plugin.conflicts_features || []).find(feature => resolvedFeatures.has(feature));
     if (featureId) throw new SelectionError("feature_conflict", {pluginId: id, featureId});
   }
+  const ownedTargets = new Map();
+  for (const id of pluginIds) {
+    for (const target of maps.plugins.get(id).asset_targets || []) {
+      const otherPluginId = [...ownedTargets].find(([owned]) =>
+        target === owned || target.startsWith(`${owned}/`) || owned.startsWith(`${target}/`))?.[1];
+      if (otherPluginId) {
+        throw new SelectionError("plugin_asset_collision", {pluginId: id, otherPluginId});
+      }
+      ownedTargets.set(target, id);
+    }
+  }
   return {firmware_ref: firmwareRef, features: featureIds, plugins: pluginIds};
 }
 
@@ -144,12 +155,14 @@ function conflictReason(catalog, error, kind, id, current) {
       `Requires ${name}, unavailable for ${current.firmware_ref}`;
   }
   const resolved = resolveSelection(catalog, current);
-  if (error.code === "plugin_conflict") {
+  if (error.code === "plugin_conflict" || error.code === "plugin_asset_collision") {
     const pair = [error.details.pluginId, error.details.otherPluginId];
     const introduced = pair.find(pluginId => !resolved.plugins.includes(pluginId));
     const existing = pair.find(pluginId => pluginId !== introduced);
     if (kind === "plugin" && introduced === id) {
-      return `Conflicts with ${itemName(catalog, "plugin", existing)}`;
+      return error.code === "plugin_asset_collision"
+        ? `Asset conflict with ${itemName(catalog, "plugin", existing)}`
+        : `Conflicts with ${itemName(catalog, "plugin", existing)}`;
     }
     if (introduced) {
       return `Requires ${itemName(catalog, "plugin", introduced)}, which conflicts with ${itemName(catalog, "plugin", existing)}`;
