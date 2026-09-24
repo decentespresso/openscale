@@ -14,7 +14,7 @@ TARGET = ROOT / "plugins" / "default-web-apps" / "assets" / "shared"
 PAGES = {
     "plugins/default-web-apps/assets/index.html": "shared/theme",
     "plugins/default-web-apps/assets/Weigh_Save/weigh_save.html": "../shared/theme",
-    "plugins/quality-control-assistant/webapp/index.html": "/shared/theme",
+    "plugins/quality-control-assistant/assets/index.html": "/shared/theme",
     "plugins/default-web-apps/assets/dosing_assistant/dosing_assistant.html": "../shared/theme",
 }
 
