@@ -93,11 +93,13 @@ def testWebapps(buildfs=False):
             "assets/app.css": "body { color: red; }",
         })
         beta = manifest("beta", requires=["littlefs", "websocket"], assets=[
+            {"source": "assets/index.html", "target": "index.html"},
+            {"source": "assets/js/app.js", "target": "js/app.js"},
             {"source": "assets/data.json", "target": "shared/beta.json"},
         ])
         writePlugin(root, beta, {
-            "webapp/index.html": '<script src="./js/app.js"></script>',
-            "webapp/js/app.js": "console.log('beta')",
+            "assets/index.html": '<script src="./js/app.js"></script>',
+            "assets/js/app.js": "console.log('beta')",
             "assets/data.json": "{}",
         })
         secondRoot = manifest("second-root", assets=[
@@ -134,7 +136,8 @@ def testWebapps(buildfs=False):
             assert "/apps/beta/index.html" in launcher
             assert "Alpha &amp; &lt;Beta&gt;" in launcher
             assert (manyStage / "apps/beta/js/app.js").is_file()
-            assert (manyStage / "shared/beta.json").is_file()
+            assert (manyStage / "apps/beta/shared/beta.json").is_file()
+            assert not (manyStage / "shared/beta.json").exists()
             registry = json.loads((manyStage / "webapps.json").read_text(encoding="utf-8"))
             assert [app["id"] for app in registry["apps"]] == ["alpha", "beta"]
             twoRoots = resolve(root, ["alpha", "second-root"])
@@ -187,26 +190,30 @@ def testWebapps(buildfs=False):
                 {"source": "assets/shared.txt", "target": "shared.txt"},
             ]), {"assets/shared.txt": "two"})
             assertRejected(lambda: resolve(root, ["gamma", "delta"]))
-            writePlugin(root, manifest("missing-features", requires=[]), {
-                "webapp/index.html": "app",
-            })
-            assertRejected(lambda: resolve(root, ["missing-features"]))
-            writePlugin(root, manifest("dual-entry", assets=[
+            writePlugin(root, manifest("missing-features", requires=[], assets=[
                 {"source": "assets/index.html", "target": "index.html"},
-            ]), {"assets/index.html": "root", "webapp/index.html": "app"})
-            assertRejected(lambda: customBuild.loadPlugin("dual-entry"))
-            directoryIndex = writePlugin(root, manifest("directory-index"), {})
-            (directoryIndex / "webapp" / "index.html").mkdir(parents=True)
+            ]), {"assets/index.html": "app"})
+            assertRejected(lambda: resolve(root, ["missing-features"]))
+            writePlugin(root, manifest("legacy-webapp"), {"webapp/index.html": "app"})
+            assertRejected(lambda: customBuild.loadPlugin("legacy-webapp"))
+            directoryIndex = writePlugin(root, manifest("directory-index", assets=[
+                {"source": "assets/index.html", "target": "index.html"},
+            ]), {})
+            (directoryIndex / "assets" / "index.html").mkdir(parents=True)
             assertRejected(lambda: customBuild.loadPlugin("directory-index"))
-            writePlugin(root, manifest("gzip-only"), {
-                "webapp/index.html": "app",
-                "webapp/app.js.gz": "supplied gzip",
-            })
+            writePlugin(root, manifest("gzip-only", assets=[
+                {"source": "assets/index.html", "target": "index.html"},
+                {"source": "assets/app.js.gz", "target": "app.js.gz"},
+            ]), {"assets/index.html": "app", "assets/app.js.gz": "supplied gzip"})
             assertRejected(lambda: customBuild.loadPlugin("gzip-only"))
-            writePlugin(root, manifest("gzip-sibling"), {
-                "webapp/index.html": "app",
-                "webapp/app.js": "source",
-                "webapp/app.js.gz": "supplied gzip",
+            writePlugin(root, manifest("gzip-sibling", assets=[
+                {"source": "assets/index.html", "target": "index.html"},
+                {"source": "assets/app.js", "target": "app.js"},
+                {"source": "assets/app.js.gz", "target": "app.js.gz"},
+            ]), {
+                "assets/index.html": "app",
+                "assets/app.js": "source",
+                "assets/app.js.gz": "supplied gzip",
             })
             assertRejected(lambda: customBuild.loadPlugin("gzip-sibling"))
             writePlugin(root, manifest("gzip-declared", assets=[

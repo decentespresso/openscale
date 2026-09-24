@@ -214,27 +214,10 @@ def loadPlugin(pluginId, firmwareRef=None):
             raise ValueError(f"missing plugin asset: {pluginId}/{sourceRelative}")
         checkedAssets.append((source, targetRelative))
     webappDir = pluginDir / "webapp"
-    webappIndex = webappDir / "index.html"
+    if webappDir.exists() or webappDir.is_symlink():
+        raise ValueError(f"webapp/ is unsupported; declare plugin assets: {pluginId}")
     rootAsset = any(target.as_posix() == "index.html" for _, target in checkedAssets)
-    discoveredWebapp = webappIndex.is_file()
-    if webappDir.exists() and (webappDir.is_symlink() or not webappDir.is_dir()):
-        raise ValueError(f"invalid webapp directory: {pluginId}")
-    if webappDir.is_dir() and not discoveredWebapp and any(webappDir.iterdir()):
-        raise ValueError(f"webapp directory has no index.html: {pluginId}")
-    if discoveredWebapp and rootAsset:
-        raise ValueError(f"plugin has two webapp entries: {pluginId}")
-    if discoveredWebapp:
-        discoveredAssets = []
-        for source in sorted(webappDir.rglob("*")):
-            if source.is_symlink() or (not source.is_file() and not source.is_dir()):
-                raise ValueError(f"invalid webapp file: {pluginId}/{source.relative_to(pluginDir)}")
-            if source.is_dir():
-                continue
-            relative = source.relative_to(webappDir)
-            target = safeRelativePath(relative.as_posix(), f"{pluginId}.webapp")
-            discoveredAssets.append((source.resolve(), PurePosixPath("apps", pluginId, *target.parts)))
-        checkedAssets.extend(discoveredAssets)
-    elif rootAsset and pluginId != "default-web-apps":
+    if rootAsset and pluginId != "default-web-apps":
         checkedAssets = [
             (source, PurePosixPath("apps", pluginId, *target.parts))
             for source, target in checkedAssets
@@ -244,7 +227,7 @@ def loadPlugin(pluginId, firmwareRef=None):
             ".html", ".js", ".css", ".svg"
         }:
             raise ValueError(f"precompressed plugin asset is managed by the build: {pluginId}/{target}")
-    if discoveredWebapp or (rootAsset and pluginId != "default-web-apps"):
+    if rootAsset and pluginId != "default-web-apps":
         manifest["webapp"] = {
             "name": manifest["name"],
             "href": f"/apps/{pluginId}/index.html",
