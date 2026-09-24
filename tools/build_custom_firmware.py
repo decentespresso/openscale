@@ -183,20 +183,19 @@ def prepareBuildCheckout(
         raise ValueError("selected firmware has no platformio.ini")
     section = f"env:{platformioEnvironment}"
     scripts = config.get(section, "extra_scripts", fallback="")
+    scripts = replaceRequired(
+        scripts,
+        "pre:tools/configure_custom_build.py",
+        "pre:.pio.nosync/builder-tools/configure_custom_build.py",
+        "custom build configurator",
+    )
     baseScripts = config.get("env:esp32s3", "extra_scripts", fallback="")
-    configuratorSource = "pre:tools/configure_custom_build.py"
-    configuratorTarget = "pre:.pio.nosync/builder-tools/configure_custom_build.py"
-    if configuratorSource in baseScripts:
-        baseScripts = replaceRequired(baseScripts, configuratorSource, configuratorTarget, "custom build configurator")
-    else:
-        scripts = replaceRequired(scripts, configuratorSource, configuratorTarget, "custom build configurator")
     customKeySource = "pre:custom_ota_public_key_header.py"
     customKeyTarget = "pre:.pio.nosync/builder-tools/write_custom_ota_public_key_header.py"
     if customKeySource in baseScripts:
-        baseScripts = baseScripts.replace(customKeySource, customKeyTarget)
+        config.set("env:esp32s3", "extra_scripts", baseScripts.replace(customKeySource, customKeyTarget))
     else:
         scripts += "\n" + customKeyTarget
-    config.set("env:esp32s3", "extra_scripts", baseScripts)
     buildFlags = config.get("env:esp32s3", "build_flags", fallback="")
     config.set(
         "env:esp32s3",

@@ -12,7 +12,7 @@ pio run -e esp32s3 -t upload --upload-port <port>
 pio run -e esp32s3 -t uploadfs --upload-port <port>
 ```
 
-Firmware-only flashing does not update the staged on-device web apps. Flash LittleFS when the web UI matters.
+Firmware-only flashing does not update `plugins/default-web-apps/assets/`. Flash LittleFS when the on-device web UI matters.
 
 ## Environment Selection
 
@@ -32,7 +32,7 @@ Do not add an environment merely because it exists. Changes limited to ADS1232 b
 - CI records the PlatformIO version and `pio pkg list -e <environment>` in `dependencies.txt` for release and nightly dependency inventories.
 - Every PlatformIO build validates the repository OTA public keys and regenerates `.pio.nosync/generated/include/ota_public_key.h`.
 - Firmware builds require OpenSSL through `OPENSSL`, `PATH`, or Git for Windows with `git.exe` on `PATH`; clean targets do not.
-- The standard LittleFS image stages `default-web-apps` and `quality-control-assistant` under `.pio.nosync/default-data`; custom builds stage only selected plugins under `.pio.nosync/custom-data`.
+- `plugins/default-web-apps/assets/` is the default LittleFS data directory.
 - `gzip_web_assets.py` generates deterministic `.gz` siblings before LittleFS image builds.
 - `git_rev_macro.py` requires a Git checkout and injects `GIT_REV`. Explicit `HDS_FIRMWARE_VERSION` overrides retain the release/custom identity; ordinary builds retain the version in `include/config.h`.
 - `CONFIG_ASYNC_TCP_RUNNING_CORE=1` pins AsyncTCP to core 1, and `CONFIG_ASYNC_TCP_STACK_SIZE=8192` gives the AsyncTCP task an 8 KiB stack.

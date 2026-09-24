@@ -8,15 +8,11 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 import subprocess
-import sys
 
-SCRIPT_DIR = Path(globals().get("__file__", Path.cwd() / "tools" / "configure_custom_build.py")).resolve().parent
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
 from plugin_presentation import presentationMetadata, publishPresentationFiles
 
 
-SCRIPT_ROOT = SCRIPT_DIR.parent
+SCRIPT_ROOT = Path(globals().get("__file__", Path.cwd() / "tools" / "configure_custom_build.py")).resolve().parents[1]
 ROOT = Path(os.environ.get("HDS_CUSTOM_BUILD_CATALOG_ROOT", SCRIPT_ROOT)).resolve()
 ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 PATH_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
@@ -595,10 +591,7 @@ def writeServiceCatalog(path):
 
 
 def resolveConfiguration(configPath):
-    return resolveSelection(readJson(configPath))
-
-
-def resolveSelection(config):
+    config = readJson(configPath)
     if not isinstance(config, dict) or set(config) != CONFIG_KEYS:
         raise ValueError("custom build must contain firmware_ref, features, and plugins")
     firmwareRef = config["firmware_ref"]
@@ -960,15 +953,6 @@ except NameError:
 else:
     if not env.IsCleanTarget():
         workspace = Path(env.subst("$PROJECT_DIR")).resolve() / ".pio.nosync"
-        if env.subst("$PIOENV") in {"esp32s3-custom", "esp32s3-energy-menu-custom"}:
-            configPath = Path(os.environ.get("HDS_CUSTOM_BUILD_CONFIG", ROOT / "custom-build.json")).resolve()
-            configure(configPath, workspace)
-            env.Replace(PROJECT_DATA_DIR=str(workspace / "custom-data"))
-        else:
-            configuration = resolveSelection({
-                "firmware_ref": "main",
-                "features": [],
-                "plugins": ["default-web-apps", "quality-control-assistant"],
-            })
-            stageAssets(configuration, workspace / "default-data")
-            env.Replace(PROJECT_DATA_DIR=str(workspace / "default-data"))
+        configPath = Path(os.environ.get("HDS_CUSTOM_BUILD_CONFIG", ROOT / "custom-build.json")).resolve()
+        configure(configPath, workspace)
+        env.Replace(PROJECT_DATA_DIR=str(workspace / "custom-data"))

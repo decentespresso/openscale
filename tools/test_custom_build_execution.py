@@ -268,11 +268,6 @@ def main():
             assert (trustedTools / "plugin_presentation.py").read_bytes() == (
                 catalogRoot / "tools" / "plugin_presentation.py"
             ).read_bytes()
-            subprocess.run([
-                customRunner.sys.executable, "-I", "-c",
-                "import runpy,sys; runpy.run_path(sys.argv[1], run_name='isolated')",
-                str(trustedTools / "configure_custom_build.py"),
-            ], cwd=checkoutRoot, check=True)
             assert (trustedTools / "git_rev_macro.py").read_bytes() == (
                 catalogRoot / "git_rev_macro.py"
             ).read_bytes()
@@ -281,27 +276,6 @@ def main():
             ).read_bytes()
             for name in customRunner.CUSTOM_OTA_PUBLIC_KEY_NAMES:
                 assert (trustedTools / name).read_bytes() == (builderKeys / name).read_bytes()
-            baseCheckout = root / "base-script-checkout"
-            customRunner.cloneSource(sourceRoot, sourceCommit, baseCheckout)
-            basePlatformio = baseCheckout / "platformio.ini"
-            basePlatformio.write_text(
-                basePlatformio.read_text(encoding="utf-8").replace(
-                    "build_flags = !python3 git_rev_macro.py\n",
-                    "build_flags = !python3 git_rev_macro.py\n"
-                    "extra_scripts = pre:tools/configure_custom_build.py\n",
-                ).replace(
-                    "[env:esp32s3-custom]\n"
-                    "extends = env:esp32s3\n"
-                    "extra_scripts = pre:tools/configure_custom_build.py\n",
-                    "[env:esp32s3-custom]\n"
-                    "extends = env:esp32s3\n",
-                ),
-                encoding="utf-8",
-            )
-            customRunner.prepareBuildCheckout(baseCheckout, catalogRoot)
-            assert (baseCheckout / "platformio.ini").read_text(encoding="utf-8").count(
-                "pre:.pio.nosync/builder-tools/configure_custom_build.py"
-            ) == 1
             incompatibleCheckout = root / "incompatible-checkout"
             customRunner.cloneSource(sourceRoot, sourceCommit, incompatibleCheckout)
             incompatiblePlatformio = incompatibleCheckout / "platformio.ini"
