@@ -565,24 +565,6 @@ bool pullOtaSelectReleases(JsonObject root, PullOtaReleaseList &list) {
   return pullOtaAddParsedRelease(root, list);
 }
 
-bool pullOtaSelectRelease(JsonArray releases, PullOtaManifest &manifest) {
-  PullOtaReleaseList list;
-  if (!pullOtaSelectReleases(releases, list) || list.count == 0) {
-    return false;
-  }
-  manifest = list.releases[0];
-  return true;
-}
-
-bool pullOtaSelectRelease(JsonObject root, PullOtaManifest &manifest) {
-  PullOtaReleaseList list;
-  if (!pullOtaSelectReleases(root, list) || list.count == 0) {
-    return false;
-  }
-  manifest = list.releases[0];
-  return true;
-}
-
 bool pullOtaParseManifest(const String &body, PullOtaReleaseList &list) {
   JsonDocument doc;
   DeserializationError error = deserializeJson(doc, body);
@@ -594,15 +576,6 @@ bool pullOtaParseManifest(const String &body, PullOtaReleaseList &list) {
     return false;
   }
   return pullOtaSelectReleases(root, list);
-}
-
-bool pullOtaParseManifest(const String &body, PullOtaManifest &manifest) {
-  PullOtaReleaseList list;
-  if (!pullOtaParseManifest(body, list) || list.count == 0) {
-    return false;
-  }
-  manifest = list.releases[0];
-  return true;
 }
 
 bool pullOtaParseRollbackManifest(
