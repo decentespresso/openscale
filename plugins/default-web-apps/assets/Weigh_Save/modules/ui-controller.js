@@ -12,57 +12,13 @@ export class UIController {
         this.exportCSVButton = document.getElementById('exportCSV');
         this.exportJSONButton = document.getElementById('exportJSON');
         this.rateDisplay = document.getElementById('rate');
-        this.guidanceDisplay = document.getElementById('guidance');
-        this.progressFill = document.getElementById('progressFill');
-        this.progressPercent = document.getElementById('progressPercent');
-        this.setContainerWeightButton = document.getElementById('setContainerWeightButton');
-        this.connectButton = document.getElementById('connect');
-        this.dosingToggleButton = document.getElementById('dosingToggleButton');
-        this.durationInput = document.getElementById('duration');
-        this.intervalInput = document.getElementById('interval');
-        this.targetWeightInput = document.getElementById('targetWeight');
-        this.lowThresholdInput = document.getElementById('lowThreshold');
-        this.highThresholdInput = document.getElementById('highThreshold');
-
-        this.setupTargetWeightListener();
         this.fullscreenButton = document.getElementById('fullscreen-button');
         this.setupFullscreenHandler();
         console.log('UI Controller initialized with elements:', {
             weightDisplay: !!this.weightDisplay,
             statusDisplay: !!this.statusDisplay,
-            guidanceDisplay: !!this.guidanceDisplay,
-            progressFill: !!this.progressFill,
-            progressPercent: !!this.progressPercent,
             weightReadingsList: !!this.weightReadingsList
         });
-    }
-
-    setupTargetWeightListener() {
-        if (this.targetWeightInput) {
-            this.targetWeightInput.addEventListener('input', () => {
-                const targetWeightValue = parseFloat(this.targetWeightInput.value);
-
-                if (!isNaN(targetWeightValue)) {
-                    if (this.lowThresholdInput) {
-                        this.lowThresholdInput.value = (targetWeightValue - 1.0).toFixed(1);
-                    }
-                    if (this.highThresholdInput) {
-                        this.highThresholdInput.value = (targetWeightValue + 1.0).toFixed(1);
-                    }
-                    console.log('Updated thresholds:', {
-                        target: targetWeightValue,
-                        low: this.lowThresholdInput?.value,
-                        high: this.highThresholdInput?.value
-                    });
-                } else {
-                    if (this.lowThresholdInput) this.lowThresholdInput.value = '';
-                    if (this.highThresholdInput) this.highThresholdInput.value = '';
-                }
-            });
-            console.log('Target weight input listener set up');
-        } else {
-            console.warn('Target weight input element not found');
-        }
     }
 
     updateWeightDisplay(weight) {
@@ -76,72 +32,9 @@ export class UIController {
         }
     }
 
-    getWeightDisplay() {
-        if (this.weightDisplay) {
-            const weightText = this.weightDisplay.textContent;
-            return parseFloat(weightText.replace('Weight: ', '').replace('g', ''));
-        }
-        return 0;
-    }
-
-    updateProgressBar(percentage) {
-        if (this.progressFill) {
-            this.progressFill.style.width = `${percentage}%`;
-        }
-        if (this.progressPercent) {
-            this.progressPercent.textContent = `${percentage.toFixed(1)}%`;
-        }
-    }
-
-    updateProgressBarColor(status) {
-        if (!this.progressFill) return;
-
-        this.progressFill.classList.remove(
-            'bg-gray-300',
-            'bg-yellow-500',
-            'bg-green-500',
-            'bg-red-600'
-        );
-
-        switch (status) {
-            case 'success':
-                this.progressFill.classList.add('bg-green-500');
-                break;
-            case 'warning':
-                this.progressFill.classList.add('bg-yellow-500');
-                break;
-            case 'error':
-                this.progressFill.classList.add('bg-red-600');
-                break;
-            default:
-                this.progressFill.classList.add('bg-gray-300');
-        }
-    }
-
     updateStatus(message) {
         if (this.statusDisplay) {
             this.statusDisplay.textContent = `Status: ${message}`;
-        }
-    }
-
-    updateGuidance(message, type = 'info') {
-        if (this.guidanceDisplay) {
-            this.guidanceDisplay.textContent = message;
-
-            this.guidanceDisplay.className = 'mt-4 p-4 rounded-lg shadow-md text-center text-lg font-bold';
-            switch (type) {
-                case 'success':
-                    this.guidanceDisplay.classList.add('bg-green-100', 'text-green-800');
-                    break;
-                case 'warning':
-                    this.guidanceDisplay.classList.add('bg-yellow-100', 'text-yellow-800');
-                    break;
-                case 'error':
-                    this.guidanceDisplay.classList.add('bg-red-100', 'text-red-800');
-                    break;
-                default:
-                    this.guidanceDisplay.classList.add('bg-blue-100', 'text-blue-800');
-            }
         }
     }
 
@@ -193,119 +86,16 @@ export class UIController {
         this.updateExportButtonStates(hasData);
     }
 
-    updateConnectButton(text) {
-        if (this.connectButton) {
-            console.log('Updating connect button text to:', text);
-            this.connectButton.textContent = text;
-            if (text === 'Disconnect') {
-                this.connectButton.classList.add('bg-red-400', 'text-white');
-                this.connectButton.classList.remove('bg-purple-100', 'hover:bg-purple-200');
-            } else {
-                this.connectButton.classList.add('bg-purple-100', 'hover:bg-purple-200');
-                this.connectButton.classList.remove('bg-red-400', 'text-white');
-            }
-        } else {
-            console.error('Cannot update connect button - element not found');
-        }
-    }
-
-    updateDosingButton(text, isActive) {
-        if (this.dosingToggleButton) {
-            this.dosingToggleButton.textContent = text;
-            if (isActive) {
-                this.dosingToggleButton.classList.replace('bg-purple-400', 'bg-red-600');
-            } else {
-                this.dosingToggleButton.classList.replace('bg-red-600', 'bg-purple-400');
-            }
-        }
-    }
-
-    enableSetContainerWeightButton() {
-        if (this.setContainerWeightButton) {
-            this.setContainerWeightButton.removeAttribute('disabled');
-            this.setContainerWeightButton.classList.replace('bg-gray-400', 'bg-teal-500');
-        }
-    }
-
-    disableSetContainerWeightButton() {
-        if (this.setContainerWeightButton) {
-            this.setContainerWeightButton.setAttribute('disabled', '');
-            this.setContainerWeightButton.classList.replace('bg-teal-500', 'bg-gray-400');
-        }
-    }
-
-    showSetContainerWeightButton() {
-        if (this.setContainerWeightButton) {
-            this.setContainerWeightButton.classList.remove('invisible');
-        }
-        console.log("showSetContainerWeightButton")
-    }
-
-    hideSetContainerWeightButton() {
-        if (this.setContainerWeightButton) {
-            this.setContainerWeightButton.classList.add('invisible');
-        }
-    }
-
-    enableStartDosingButton() {
-        if (this.dosingToggleButton) {
-            this.dosingToggleButton.removeAttribute('disabled');
-            this.dosingToggleButton.classList.remove('opacity-50', 'cursor-not-allowed');
-            console.log('Start dosing button enabled');
-        }
-    }
-
-    disableStartDosingButton() {
-        if (this.dosingToggleButton) {
-            this.dosingToggleButton.setAttribute('disabled', '');
-            this.dosingToggleButton.classList.add('opacity-50', 'cursor-not-allowed');
-            console.log('Start dosing button disabled');
-        }
-    }
-
-    getTargetWeight() {
-        const input = document.getElementById('targetWeight');
-        return input ? input.value : '0';
-    }
-
-    getLowThreshold() {
-        const input = document.getElementById('lowThreshold');
-        return input ? input.value : '0';
-    }
-
-    getHighThreshold() {
-        const input = document.getElementById('highThreshold');
-        return input ? input.value : '0';
-    }
-
     updateExportButtonStates(hasData) {
         console.log('Updating export buttons state:', hasData ? 'enabled' : 'disabled');
 
         const enabledClasses = ['bg-purple-100', 'text-purple-800', 'border-purple-300', 'hover:bg-purple-200'];
         const disabledClasses = ['bg-gray-50', 'opacity-50', 'cursor-not-allowed'];
 
-        if (hasData) {
-            if (this.exportCSVButton) {
-                this.exportCSVButton.removeAttribute('disabled');
-                disabledClasses.forEach(cls => this.exportCSVButton.classList.remove(cls));
-                enabledClasses.forEach(cls => this.exportCSVButton.classList.add(cls));
-            }
-            if (this.exportJSONButton) {
-                this.exportJSONButton.removeAttribute('disabled');
-                disabledClasses.forEach(cls => this.exportJSONButton.classList.remove(cls));
-                enabledClasses.forEach(cls => this.exportJSONButton.classList.add(cls));
-            }
-        } else {
-            if (this.exportCSVButton) {
-                this.exportCSVButton.setAttribute('disabled', '');
-                enabledClasses.forEach(cls => this.exportCSVButton.classList.remove(cls));
-                disabledClasses.forEach(cls => this.exportCSVButton.classList.add(cls));
-            }
-            if (this.exportJSONButton) {
-                this.exportJSONButton.setAttribute('disabled', '');
-                enabledClasses.forEach(cls => this.exportJSONButton.classList.remove(cls));
-                disabledClasses.forEach(cls => this.exportJSONButton.classList.add(cls));
-            }
+        for (const button of [this.exportCSVButton, this.exportJSONButton].filter(Boolean)) {
+            button.disabled = !hasData;
+            enabledClasses.forEach(cls => button.classList.toggle(cls, hasData));
+            disabledClasses.forEach(cls => button.classList.toggle(cls, !hasData));
         }
     }
     updateTimer(time) {
@@ -346,16 +136,6 @@ export class UIController {
                 this.measurementAlert.style.display = 'none';
             }, 5000);
         }
-    }
-
-    getDurationSetting() {
-        return parseInt(this.durationInput?.value || '60');
-    }
-
-    getIntervalSetting() {
-        const intervalValue = this.intervalInput?.value;
-        console.log('Interval input value:', intervalValue);
-        return parseInt(this.intervalInput?.value || '5');
     }
 
     resetTimerState() {
