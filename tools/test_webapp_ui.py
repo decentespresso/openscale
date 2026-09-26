@@ -32,6 +32,27 @@ function element() {
 }
 
 (async () => {
+  const enabled = ['bg-purple-100', 'text-purple-800', 'border-purple-300', 'hover:bg-purple-200'];
+  const disabled = ['bg-gray-50', 'opacity-50', 'cursor-not-allowed'];
+  for (const app of ['Weigh_Save', 'dosing_assistant']) {
+    const {UIController} = await load(`${app}/modules/ui-controller.js`);
+    for (const hasData of [false, true]) for (const mask of [0, 1, 2, 3]) {
+      for (const initial of [[], enabled, disabled, [...enabled, ...disabled]]) {
+        const buttons = [0, 1].map(index => mask & (1 << index) ? element() : null);
+        buttons.filter(Boolean).forEach(button => button.classList.add(...initial, 'unrelated'));
+        const ui = {exportCSVButton: buttons[0], exportJSONButton: buttons[1]};
+        for (const value of [hasData, !hasData]) {
+          UIController.prototype.updateExportButtonStates.call(ui, value);
+          for (const button of buttons.filter(Boolean)) {
+            assert.equal(button.disabled, !value);
+            enabled.forEach(name => assert.equal(button.classList.contains(name), value));
+            disabled.forEach(name => assert.equal(button.classList.contains(name), !value));
+            assert.equal(button.classList.contains('unrelated'), true);
+          }
+        }
+      }
+    }
+  }
   const html = fs.readFileSync(path.join(assets, 'Weigh_Save/weigh_save.html'), 'utf8');
   const elements = Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)]
     .map(([, id]) => [id, element()]));

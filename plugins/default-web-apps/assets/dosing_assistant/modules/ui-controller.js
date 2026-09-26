@@ -270,28 +270,10 @@ export class UIController {
         const enabledClasses = ['bg-purple-100', 'text-purple-800', 'border-purple-300', 'hover:bg-purple-200'];
         const disabledClasses = ['bg-gray-50', 'opacity-50', 'cursor-not-allowed'];
 
-        if (hasData) {
-            if (this.exportCSVButton) {
-                this.exportCSVButton.removeAttribute('disabled');
-                disabledClasses.forEach(cls => this.exportCSVButton.classList.remove(cls));
-                enabledClasses.forEach(cls => this.exportCSVButton.classList.add(cls));
-            }
-            if (this.exportJSONButton) {
-                this.exportJSONButton.removeAttribute('disabled');
-                disabledClasses.forEach(cls => this.exportJSONButton.classList.remove(cls));
-                enabledClasses.forEach(cls => this.exportJSONButton.classList.add(cls));
-            }
-        } else {
-            if (this.exportCSVButton) {
-                this.exportCSVButton.setAttribute('disabled', '');
-                enabledClasses.forEach(cls => this.exportCSVButton.classList.remove(cls));
-                disabledClasses.forEach(cls => this.exportCSVButton.classList.add(cls));
-            }
-            if (this.exportJSONButton) {
-                this.exportJSONButton.setAttribute('disabled', '');
-                enabledClasses.forEach(cls => this.exportJSONButton.classList.remove(cls));
-                disabledClasses.forEach(cls => this.exportJSONButton.classList.add(cls));
-            }
+        for (const button of [this.exportCSVButton, this.exportJSONButton].filter(Boolean)) {
+            button.disabled = !hasData;
+            enabledClasses.forEach(cls => button.classList.toggle(cls, hasData));
+            disabledClasses.forEach(cls => button.classList.toggle(cls, !hasData));
         }
     }
     toggleFullScreen() {
