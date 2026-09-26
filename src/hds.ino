@@ -673,20 +673,6 @@ void buttonSquare_Pressed() {
   startPressSampling(BUTTON_SQUARE);
 }
 
-void setButtonPressConfig(int button, float min_peak, float max_net,
-                         float min_recovery, unsigned long max_press_time,
-                         unsigned long min_total_time) {
-  Serial.print("Button config updated for ");
-  Serial.print(button == BUTTON_CIRCLE ? "Circle" : "Square");
-  Serial.print(": min_peak=");
-  Serial.print(min_peak);
-  Serial.print(", max_net=");
-  Serial.print(max_net);
-  Serial.print(", min_recovery=");
-  Serial.print(min_recovery);
-  Serial.println();
-}
-
 
 
 void buttonCircle_DoubleClicked() {
@@ -1675,18 +1661,6 @@ void pureScale() {
   }
 }
 
-float getTemperatureDriftCompensation() {
-  return f_driftCompensation;
-}
-
-void adjustTemperatureDriftCompensation(float amount) {
-  f_driftCompensation += amount;
-  Serial.print("Manual temp-comp adjust: ");
-  Serial.print(amount, 4);
-  Serial.print("g, total: ");
-  Serial.println(f_driftCompensation, 4);
-}
-
 void resetTracking() {
   f_tracking_offset = 0.0;
   f_tracking_target = 0.0;
@@ -1900,15 +1874,6 @@ bool setScaleSamplesInUseWhenReady(uint8_t samplesInUse, const char *context) {
   return true;
 }
 
-void setStableOutputEnabled(bool enabled) {
-  b_stable_output_enabled = enabled;
-  if (!enabled) {
-    resetStableOutput();
-  }
-  Serial.print("Stable output ");
-  Serial.println(enabled ? "enabled" : "disabled");
-}
-
 void setStableOutputThreshold(float threshold) {
   STABLE_OUTPUT_THRESHOLD = threshold;
   Serial.print("Stable threshold set to: ");
@@ -1927,15 +1892,6 @@ void setTrackingUpdateInterval(float interval) {
   Serial.println(interval, 4);
 }
 
-
-void setTrackingEnabled(bool enabled) {
-  b_tracking_enabled = enabled;
-  if (!enabled) {
-    resetTracking();
-  }
-  Serial.print("Tracking system ");
-  Serial.println(enabled ? "enabled" : "disabled");
-}
 
 void displayEnhancedStatus(float raw_weight, float compensated_weight, float stable_weight) {
   Serial.println("=== Enhanced Scale Status ===");
@@ -1974,28 +1930,6 @@ void displayEnhancedStatus(float raw_weight, float compensated_weight, float sta
   Serial.println(i_STABLE_COUNT_THRESHOLD);
 
   Serial.println("=============================");
-}
-
-float getTrackingOffset() {
-  return f_tracking_offset;
-}
-
-float getStableOutputValue() {
-  return f_previous_stable_value;
-}
-
-void setManualTrackingOffset(float offset) {
-  f_tracking_offset = offset;
-  b_tracking_active = true;
-  Serial.print("Manual tracking offset set: ");
-  Serial.println(offset, 4);
-}
-
-void setManualStableValue(float value) {
-  f_previous_stable_value = value;
-  t_last_stable_change = millis();
-  Serial.print("Manual stable value set: ");
-  Serial.println(value, 4);
 }
 
 #if HDS_ENABLE_ENERGY_MENU
@@ -2814,26 +2748,4 @@ void drawTare() {
   if (millis() - t_tareStatus < 500) {
     u8g2.drawBox(30, 62, 128 - 30 * 2, 2);
   }
-}
-
-void drawDriftCompensationInfo() {
-  char factorText[20];
-  u8g2.setFont(u8g2_font_6x13_tr);
-
-  snprintf(factorText, sizeof(factorText), "TUI:%lums", TRACKING_UPDATE_INTERVAL);
-  u8g2.drawStr(0, 13, (char *)trim(factorText));
-  snprintf(factorText, sizeof(factorText), "TT:%.2f", TRACKING_THRESHOLD);
-  u8g2.drawStr(AR((char *)trim(factorText)), 13, (char *)trim(factorText));
-
-  snprintf(factorText, sizeof(factorText), "%.3f", f_maxDriftCompensation);
-  u8g2.drawStr(0, 26, (char *)"MDC");
-  u8g2.drawStr(0, 39, (char *)trim(factorText));
-
-  snprintf(factorText, sizeof(factorText), "TDC:%.2f", f_driftCompensation * -1);
-  u8g2.drawStr(AR((char *)trim(factorText)), 26, (char *)trim(factorText));
-
-  snprintf(factorText, sizeof(factorText), "RAW:%.2f", f_current_raw_value);
-  u8g2.drawStr(12, 64, (char *)trim(factorText));
-  snprintf(factorText, sizeof(factorText), "%.2f", f_displayedValue);
-  u8g2.drawStr(80, 64, (char *)trim(factorText));
 }
