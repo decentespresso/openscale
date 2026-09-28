@@ -1514,6 +1514,12 @@ void pureScale() {
              millis() - t_lastScaleData > 1500 &&
              millis() - t_lastScaleRecovery > 5000) {
     Serial.println("Scale ADC timeout. Power cycling ADC.");
+#if HDS_ENABLE_GRINDER
+    if (grinderSettings.enabled && grinderRuntime.state != GRINDER_STATE_ERROR &&
+        grinderRuntime.state != GRINDER_STATE_DISABLED) {
+      grinderEnterError("ADC timeout");
+    }
+#endif
     b_adc_recovery_active = true;
     if (i_adc_recovery_count < 255) {
       i_adc_recovery_count++;
