@@ -241,7 +241,7 @@
         },
         {
           "target": "index.html",
-          "sha256": "e022c1d20f455aa94d9163d66e192f9b9034eef98e8b957955cf36950c37d8bc"
+          "sha256": "d9d8afc865c62124add30ff3237c2c7f607551bc758cbf028435533456c44df4"
         },
         {
           "target": "shared/app.css",

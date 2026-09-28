@@ -488,6 +488,7 @@
     </ul>
   </section>
 
+  <script src="shared/reconnecting-websocket.js"></script>
   <script>
     async function addPluginApps() {
       const response = await fetch('/webapps.json', { cache: 'no-cache' });
@@ -584,7 +585,7 @@
     });
 
     // WebSocket for live weight
-    const ws = new WebSocket(`ws://${window.location.host}/snapshot`);
+    const ws = new ReconnectingWebSocket(`ws://${window.location.host}/snapshot`);
     const weightValue = document.getElementById('weight-value');
     const tareButton = document.getElementById('tare-button');
     const connectionStatus = document.getElementById('connection-status');
@@ -647,6 +648,7 @@
     }
 
     ws.addEventListener('open', () => {
+      weightValue.style.color = '';
       connectionStatus.textContent = 'Connected';
       connectionStatus.style.color = 'var(--green-dark)';
       sendStatusRequest();
