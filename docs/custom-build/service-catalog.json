@@ -217,7 +217,7 @@
         },
         {
           "target": "dosing_assistant/main.js",
-          "sha256": "ea97ded784ae50f310ecfb5180b81495a87a511257b765cee5166e858034426f"
+          "sha256": "c4063b6f7c464144bb65a788b1cc18476aea489fb4fdc9c38e1f97dfc9a1ed8b"
         },
         {
           "target": "dosing_assistant/modules/constants.js",
@@ -229,11 +229,11 @@
         },
         {
           "target": "dosing_assistant/modules/scale.js",
-          "sha256": "b38fbbb51838e08eeb247556f5f364345af7076a225c154465ea8e1471eb6f0a"
+          "sha256": "222b50b91921245e6495f9f661663c7de4b8a914ab0ef8af0672cdf317ccdb7f"
         },
         {
           "target": "dosing_assistant/modules/state-machine.js",
-          "sha256": "e460b0b0589842b5b9feb1cd1d77c253a1cbe375a2b7e60b496a8703e3870163"
+          "sha256": "212db756f7a1f34360e0b0a6f189a0aeafc2a6257bb7a801c69f85efe44bf431"
         },
         {
           "target": "dosing_assistant/modules/ui-controller.js",
