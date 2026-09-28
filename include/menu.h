@@ -836,6 +836,8 @@ void grinderZeroRangeMenu() {
 
 void calibrate() {
   leaveMenu();
+  i_cal_weight = 0;
+  i_button_cal_status = 1;
   b_calibration = true;
   i_calibration = 0;
 }
