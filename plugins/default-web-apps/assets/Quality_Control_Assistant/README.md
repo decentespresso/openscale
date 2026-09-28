@@ -24,7 +24,7 @@ Experience the app in action! It requires a **Chrome or Edge browser (version 70
     * Measured weight
     * Pass/Fail result
     * The exact QC settings active at the time of measurement.
-* **Local Data Storage:** All measurement data persists locally in your browser's cache (even if you close the tab, it will be there when you open it again).
+* **Local Data Storage:** Completed readings are saved in this browser's local storage and restored on reload at the same origin. Clearing site data, private-browsing restrictions, or storage limits can remove or prevent persistence. Export important readings; a storage warning means the current readings must be exported before closing the tab. Each reading has its own `hds.qc.history.v1.*` key, so simultaneous tabs do not overwrite one another. Reload combines saved readings and numbers the displayed rows.
 * **Flexible Data Export:** Easily download your collected QC data in:
     * **CSV (Comma Separated Values):** Perfect for spreadsheet analysis.
     * **JSON (JavaScript Object Notation):** Ideal for programmatic use or integration with other systems.

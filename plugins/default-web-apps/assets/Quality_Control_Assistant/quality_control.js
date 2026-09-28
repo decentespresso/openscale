@@ -5,6 +5,16 @@ class DecentScale {
         this.readingCount = 0;
         this.weightReadings = [];
         this.weightData = [];
+        this.history = new MeasurementHistory('qc', reading => reading &&
+            typeof reading.timestamp === 'string' && Number.isFinite(reading.weight) &&
+            typeof reading.result === 'string' && reading.qcSettings &&
+            ['lowThreshold', 'goalWeight', 'highThreshold', 'minWeight']
+                .every(key => Number.isFinite(reading.qcSettings[key])));
+        this.weightData = this.history.load().map((reading, index) => ({...reading, id: index + 1}));
+        this.readingCount = this.weightData.length;
+        this.weightReadings = this.weightData.map(reading =>
+            `${reading.id}. ${new Date(reading.timestamp).toLocaleString()}: ${reading.weight}g - ${reading.result.toUpperCase()}`);
+        this.displayWeightReadings();
         this.qcMode = false;
         this.qcSettings = {
             lowThreshold: 0,
@@ -518,6 +528,7 @@ class DecentScale {
         };
 
         this.weightData.push(reading);
+        this.history.append(reading);
         this.weightReadings.push(`${reading.id}. ${new Date(reading.timestamp).toLocaleString()}: ${reading.weight}g - ${result.toUpperCase()}`);
 
         console.log('Measurement saved:', reading);
