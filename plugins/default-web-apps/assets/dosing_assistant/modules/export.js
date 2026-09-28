@@ -29,7 +29,7 @@ export class DataExport {
         
         const csvContent = [
             headers.join(','),
-            ...rows.map(row => row.join(','))
+            ...rows.map(row => row.map(value => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','))
         ].join('\n');
         
         return {
