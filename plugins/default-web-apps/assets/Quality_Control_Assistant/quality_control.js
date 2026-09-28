@@ -409,23 +409,34 @@ class DecentScale {
             }
         };
 
-        this.savePreset(preset);
+        if (!this.savePreset(preset)) return;
         this.updatePresetList();
         alert(`Preset "${objectName}" saved successfully`);
     }
 
     savePreset(preset) {
+        if (!this.isValidPreset(preset?.settings)) {
+            alert('Please enter finite numeric QC settings');
+            return false;
+        }
         const presets = this.getPresets();
-        presets[preset.name] = preset.settings;
-        localStorage.setItem('decentScalePresets', JSON.stringify(presets));
+        localStorage.setItem('decentScaleQCPresets', JSON.stringify({...presets, [preset.name]: preset.settings}));
+        return true;
+    }
+
+    isValidPreset(preset) {
+        return preset && ['goalWeight', 'lowThreshold', 'highThreshold', 'minWeight']
+            .every(key => Number.isFinite(preset[key]));
     }
 
     getPresets() {
-        const presetsJson = localStorage.getItem('decentScalePresets');
+        const presetsJson = localStorage.getItem('decentScaleQCPresets') ??
+            localStorage.getItem('decentScalePresets');
         if (!presetsJson) return {};
         try {
             const presets = JSON.parse(presetsJson);
-            return presets && typeof presets === 'object' && !Array.isArray(presets) ? presets : {};
+            if (!presets || typeof presets !== 'object' || Array.isArray(presets)) return {};
+            return Object.fromEntries(Object.entries(presets).filter(([, preset]) => this.isValidPreset(preset)));
         } catch (error) {
             console.error('Invalid stored presets; ignoring saved preset data.', error);
             return {};
@@ -459,7 +470,7 @@ class DecentScale {
             presetSelect.appendChild(option);
         });
 
-        const lastUsed = localStorage.getItem('lastUsedPreset');
+        const lastUsed = localStorage.getItem('lastUsedQCPreset') ?? localStorage.getItem('lastUsedPreset');
         if (lastUsed && presets[lastUsed]) {
             this.loadPreset(lastUsed);
             presetSelect.value = lastUsed;
@@ -468,7 +479,7 @@ class DecentScale {
 
     loadPreset(name) {
         const preset = this.getPreset(name);
-        if (!preset) return;
+        if (!this.isValidPreset(preset)) return;
 
         document.getElementById('objectName').value = name;
         document.getElementById('lowThreshold').value = preset.lowThreshold;
@@ -476,7 +487,7 @@ class DecentScale {
         document.getElementById('highThreshold').value = preset.highThreshold;
         document.getElementById('minWeight').value = preset.minWeight;
 
-        localStorage.setItem('lastUsedPreset', name);
+        localStorage.setItem('lastUsedQCPreset', name);
     }
 
     updatePresetList() {
