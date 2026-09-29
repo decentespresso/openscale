@@ -350,6 +350,14 @@ void processWsPendingCmds() {
   if (mask & WSP_LOWPWR_ON)   { u8g2.setContrast(0); }
   if (mask & WSP_LOWPWR_OFF)  { u8g2.setContrast(255); }
 #endif
+  const uint32_t sleepCommands = WSP_SLEEP_ON | WSP_SLEEP_OFF;
+  if (mask & sleepCommands) {
+    portENTER_CRITICAL(&wsPendingMux);
+    if (wsPendingMask & sleepCommands) {
+      mask &= ~sleepCommands;
+    }
+    portEXIT_CRITICAL(&wsPendingMux);
+  }
   if (mask & WSP_SLEEP_OFF) {
     if (b_softSleep) {
       wakeScaleFromSoftSleep("remote soft wake");
