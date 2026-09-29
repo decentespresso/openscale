@@ -136,7 +136,7 @@ index 1728cdeba947f4e60f4ad6dcd4dff51b40e1579d..2988b26c98aade16a215c87fcbf449d5
      return;
    }
  #endif
-@@ -773,6 +806,126 @@ void grinderZeroRangeMenu() {
+@@ -773,5 +806,125 @@ void grinderZeroRangeMenu() {
  }
  #endif
  
@@ -262,7 +262,6 @@ index 1728cdeba947f4e60f4ad6dcd4dff51b40e1579d..2988b26c98aade16a215c87fcbf449d5
 +
  void calibrate() {
    leaveMenu();
-   b_calibration = true;
 @@ -1580,6 +1733,11 @@ void refreshMenuRows() {
    snprintf(menuGrinderZeroLabel, sizeof(menuGrinderZeroLabel),
             "Zero Range: %.1fg", grinderSettings.zeroMaxGrams);

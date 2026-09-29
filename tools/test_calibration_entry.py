@@ -20,6 +20,7 @@ int main() {
     b_calibration = false;
     i_button_cal_status = previousStage;
     i_cal_weight = 4;
+    i_calibration = 1;
     calibrate();
     assert(!b_menu && b_calibration);
     assert(i_button_cal_status == 1 && i_cal_weight == 0 && i_calibration == 0);
