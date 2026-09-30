@@ -83,6 +83,7 @@ struct UsbDecentCommandSink {
 
   void softSleepOn() {
     u8g2.setPowerSave(1);
+    b_u8g2Sleep = true;
     b_softSleep = true;
     digitalWrite(PWR_CTRL, LOW);
     digitalWrite(ACC_PWR_CTRL, LOW);

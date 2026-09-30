@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     ble = (ROOT / "include/ble.h").read_text(encoding="utf-8")
+    usb = (ROOT / "include/usbcomm.h").read_text(encoding="utf-8")
     ws = (ROOT / "include/websocket.h").read_text(encoding="utf-8")
     hds = (ROOT / "src/hds.ino").read_text(encoding="utf-8")
     parameter = (ROOT / "include/parameter.h").read_text(encoding="utf-8")
@@ -123,6 +124,8 @@ void bleWake() { @BLE_WAKE@ }
 bool wsWake() { void *client = nullptr; @WS_WAKE@ }
 void bleSleep() { @BLE_SLEEP@ }
 bool wsSleep() { void *client = nullptr; @WS_SLEEP@ }
+void usbSleep() { @USB_SLEEP@ }
+void usbWake() { @USB_WAKE@ }
 void bleDisplayOn() { @BLE_DISPLAY_ON@ }
 void bleDisplayOff() { @BLE_DISPLAY_OFF@ }
 bool wsDisplayOn() { void *client = nullptr; @WS_DISPLAY_ON@ }
@@ -289,6 +292,16 @@ int main() {
     displayOnCommand();
     dispatch();
   }
+  for (int cycle = 0; cycle < 3; ++cycle) {
+    const int wakesBefore = wakes;
+    const int refreshesBefore = adcRefreshes;
+    usbSleep();
+    assert(b_softSleep && b_u8g2Sleep && !oled && !rail && !accessory);
+    usbWake();
+    assert(!b_softSleep && rail && accessory);
+    assertDisplay(true);
+    assert(wakes == wakesBefore + 1 && adcRefreshes == refreshesBefore + 1);
+  }
   b_softSleep = true;
   supervise();
   assert(supervises == 1);
@@ -319,6 +332,8 @@ int main() {
         "WS_WAKE": block_after(sleepCommand, 'if (websocketEqualsIgnoreCase(action, "off") ||'),
         "BLE_SLEEP": block_after(ble, "void softSleepOn()"),
         "WS_SLEEP": block_after(sleepCommand, 'if (websocketEqualsIgnoreCase(action, "on"))'),
+        "USB_SLEEP": block_after(usb, "void softSleepOn()"),
+        "USB_WAKE": block_after(usb, "void softSleepOff()"),
         "BLE_DISPLAY_ON": block_after(ble, "void displayOn()"),
         "BLE_DISPLAY_OFF": block_after(ble, "void displayOff()"),
         "WS_DISPLAY_ON": block_after(displayCommand, 'if (websocketEqualsIgnoreCase(action, "on"))'),
