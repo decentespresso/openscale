@@ -12,6 +12,7 @@ def main():
     usb = (root / "include/usbcomm.h").read_text(encoding="utf-8")
     harness = r'''
 #include <cassert>
+#include <cstddef>
 #define HDS_ENABLE_ENERGY_MENU 0
 #define HDS_ENABLE_GRINDER 0
 bool b_menu = true, b_calibration = false;
