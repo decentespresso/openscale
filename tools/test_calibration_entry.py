@@ -79,7 +79,7 @@ int main() {
     executeUsbSet();
     assert(!b_menu && b_calibration);
     assert(i_button_cal_status == 1 && i_cal_weight == 0 && i_calibration == 0);
-    assert(sampledPresses == beforePress + 1);
+    assert(sampledPresses == beforePress);
   }
 
   b_menu = true;

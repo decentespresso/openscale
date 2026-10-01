@@ -654,7 +654,7 @@ void buttonSquare_Released() {
 
 void buttonSquare_Pressed() {
   recordEnergyActivity();
-  if (b_showChargingUI && i_buttonBootDelay == 0) {
+  if (b_showChargingUI && !b_calibration && i_buttonBootDelay == 0) {
     wakeFromChargingUi(BUTTON_SQUARE);
   }
   if (b_menu) {
@@ -665,11 +665,13 @@ void buttonSquare_Pressed() {
     Serial.print("i_button_cal_status:");
     Serial.println(i_button_cal_status);
   }
-  if (bleHasLiveClient() && millis() - t_shutdownFailBle < 3000 && !b_menu && millis() - t_menuExitTime > 1000) {
+  if (bleHasLiveClient() && millis() - t_shutdownFailBle < 3000 && !b_menu && !b_calibration && millis() - t_menuExitTime > 1000) {
     Serial.println("Going to sleep now by SquarePress");
     b_powerOff = true;
   }
-  startPressSampling(BUTTON_SQUARE);
+  if (!b_calibration) {
+    startPressSampling(BUTTON_SQUARE);
+  }
 }
 
 void setButtonPressConfig(int button, float min_peak, float max_net,
@@ -2360,7 +2362,7 @@ void loop() {
       grinderRuntimeTick(f_displayedValue);
 #endif
       showMenu();
-    } else if (GPIO_power_on_with == BATTERY_CHARGING) {
+    } else if (GPIO_power_on_with == BATTERY_CHARGING && !b_calibration) {
       if (b_chargingOLED) {
         if (digitalRead(BATTERY_CHARGING) == LOW && !b_calibration) {
           float perc = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
