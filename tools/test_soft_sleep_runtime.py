@@ -132,8 +132,16 @@ bool wsDisplayOn() { void *client = nullptr; @WS_DISPLAY_ON@ }
 bool wsDisplayOff() { void *client = nullptr; @WS_DISPLAY_OFF@ }
 void dispatch() { @DISPATCH@ }
 int transport = 0;
-void wakeCommand() { if (transport == 0) bleWake(); else assert(wsWake()); }
-void sleepCommand() { if (transport == 0) bleSleep(); else assert(wsSleep()); }
+void wakeCommand() {
+  if (transport == 0) bleWake();
+  else if (transport == 1) assert(wsWake());
+  else usbWake();
+}
+void sleepCommand() {
+  if (transport == 0) bleSleep();
+  else if (transport == 1) assert(wsSleep());
+  else usbSleep();
+}
 void displayOnCommand() { if (transport == 0) bleDisplayOn(); else assert(wsDisplayOn()); }
 void displayOffCommand() { if (transport == 0) bleDisplayOff(); else assert(wsDisplayOff()); }
 void sleepWakeCommands() { sleepCommand(); wakeCommand(); }
@@ -146,7 +154,7 @@ void assertDisplay(bool enabled) {
 #endif
 }
 int main() {
-  for (transport = 0; transport < 2; ++transport) {
+  for (transport = 0; transport < 3; ++transport) {
     sleepCommand();
     dispatch();
     assert(b_softSleep && !rail && !accessory);
@@ -292,12 +300,44 @@ int main() {
     displayOnCommand();
     dispatch();
   }
+  for (int olderTransport = 0; olderTransport < 3; ++olderTransport) {
+    for (int newerTransport = 0; newerTransport < 3; ++newerTransport) {
+      transport = olderTransport;
+      displayOnCommand();
+      sleepCommand();
+      dispatch();
+      const int wakesBefore = wakes;
+      sleepCommand();
+      displayOffCommand();
+      transport = newerTransport;
+      wakeCommand();
+      dispatch();
+      assert(!b_softSleep && rail && accessory && wakes == wakesBefore + 1);
+      assert(oled == !HDS_ENABLE_ENERGY_MENU);
+      assert(wsPendingMask == 0);
+      wakeCommand();
+      dispatch();
+      transport = olderTransport;
+      displayOnCommand();
+      wakeCommand();
+      transport = newerTransport;
+      sleepCommand();
+      dispatch();
+      assert(b_softSleep && !rail && !accessory);
+      assert(b_u8g2Sleep && !oled && wakes == wakesBefore + 1);
+      assert(wsPendingMask == 0);
+      wakeCommand();
+      dispatch();
+    }
+  }
   for (int cycle = 0; cycle < 3; ++cycle) {
     const int wakesBefore = wakes;
     const int refreshesBefore = adcRefreshes;
     usbSleep();
+    dispatch();
     assert(b_softSleep && b_u8g2Sleep && !oled && !rail && !accessory);
     usbWake();
+    dispatch();
     assert(!b_softSleep && rail && accessory);
     assertDisplay(true);
     assert(wakes == wakesBefore + 1 && adcRefreshes == refreshesBefore + 1);

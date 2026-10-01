@@ -71,21 +71,19 @@ def main():
     if "digitalWrite(PWR_CTRL, HIGH);" in button_handler:
         raise AssertionError("button soft wake must use wakeScaleFromSoftSleep")
 
+    usb_soft_on = method_body(USBCOMM_HEADER, "softSleepOn")
+    assert_ordered(usb_soft_on, ["remoteReplacePending(WSP_SLEEP_ON, WSP_SLEEP_OFF);"])
     usb_soft_off = method_body(USBCOMM_HEADER, "softSleepOff")
     assert_ordered(
         usb_soft_off,
         [
-            "if (b_softSleep)",
-            'wakeScaleFromSoftSleep("USB soft wake")',
-            "#if HDS_ENABLE_ENERGY_MENU",
-            "else if (!energyRuntime.explicitDisplayOff)",
-            "applyEnergyDisplayCommand(true);",
-            "#else",
-            "u8g2.setPowerSave(0);",
+            "remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);",
         ],
     )
-    if "digitalWrite(PWR_CTRL, HIGH);" in usb_soft_off:
-        raise AssertionError("USB soft wake must use wakeScaleFromSoftSleep")
+    for action in (usb_soft_on, usb_soft_off):
+        if any(direct in action for direct in
+               ("digitalWrite(", "u8g2.", "wakeScaleFromSoftSleep(", "b_softSleep =")):
+            raise AssertionError("USB soft sleep/wake must use the main-loop dispatcher")
 
     wifi_update = method_body(MENU_HEADER, "wifiUpdate")
     assert_ordered(
