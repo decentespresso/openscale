@@ -229,15 +229,17 @@ def main():
         "  }\n"
         "}",
     )
-    assert_contains(MENU_HEADER, "void calibrate() {\n  leaveMenu();")
-    assert_contains(MENU_HEADER, "pullOtaUpdate(target);\n  }\n  leaveMenu();")
+    assert_contains(MENU_HEADER, "void calibrate() {\n  calibrationReturnToMenu = b_menu;\n  b_menu = false;")
+    assert_contains(MENU_HEADER, "pullOtaUpdate(target);\n  }\n}")
     assert_contains(MENU_HEADER, "if (pullOtaTargetIsAssignedCustomBuild(target)) {\n    customBuildStart(false, false);")
     assert_contains(MENU_HEADER, "b_debug = true;\n  leaveMenu();")
     menu_contents = MENU_HEADER.read_text(encoding="utf-8")
     if menu_contents.count("markMenuRestartRequired();") != 2:
         raise AssertionError("menu.h expected restart routing for WiFi toggle and reset")
     for path in [*ROOT.glob("include/*.h"), *ROOT.glob("src/*.ino"), *ROOT.glob("src/*.cpp")]:
-        if path != PARAMETER_HEADER:
+        if path == MENU_HEADER:
+            assert path.read_text(encoding="utf-8").count("b_menu = false;") == 1
+        elif path != PARAMETER_HEADER:
             assert_not_contains(path, "b_menu = false;")
 
     websocket = WEBSOCKET_HEADER.read_text(encoding="utf-8")

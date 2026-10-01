@@ -568,6 +568,7 @@ inline void leaveMenu() {
 // Used to implement a protection period preventing unintended operations
 
 bool b_calibration = false;  //Calibration flag
+bool calibrationReturnToMenu = false;
 volatile bool b_ota = false; //wifi ota flag
 volatile bool b_pullOtaRunning = false;
 volatile std::atomic<bool> filesystemRecoveryActive{false};

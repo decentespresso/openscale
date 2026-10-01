@@ -602,7 +602,8 @@ void scaleTimer() {
 }
 
 void wakeFromChargingUi(uint8_t buttonPin) {
-  if (GPIO_power_on_with != BATTERY_CHARGING && !b_showChargingUI) {
+  if (b_menu || b_calibration ||
+      (GPIO_power_on_with != BATTERY_CHARGING && !b_showChargingUI)) {
     return;
   }
   GPIO_power_on_with = buttonPin;

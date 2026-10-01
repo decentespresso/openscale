@@ -16,6 +16,7 @@ def main():
 #define HDS_ENABLE_ENERGY_MENU 0
 #define HDS_ENABLE_GRINDER 0
 bool b_menu = true, b_calibration = false;
+bool calibrationReturnToMenu = false;
 bool b_showChargingUI = false, b_powerOff = false;
 int i_cal_weight = 4, i_button_cal_status = 0, i_calibration = 1;
 int i_buttonBootDelay = 0;
