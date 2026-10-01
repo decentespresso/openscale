@@ -1423,7 +1423,7 @@ index b0eb26b738ceb52fdd4fb7a5216f51fd3ad7b221..8855ea0ef72b55f8add6a3a588b327f6
  #endif
    ) {
      power_off(-1);
-@@ -2251,6 +2260,9 @@ void loop() {
+@@ -2251,5 +2260,8 @@ void loop() {
  #endif
  #if HDS_ENABLE_GRINDER
        grinderRuntimeTick(f_displayedValue);
@@ -1432,7 +1432,6 @@ index b0eb26b738ceb52fdd4fb7a5216f51fd3ad7b221..8855ea0ef72b55f8add6a3a588b327f6
 +      pressensorRuntimeTick(f_displayedValue, true);
  #endif
        showMenu();
-     } else if (GPIO_power_on_with == BATTERY_CHARGING) {
 @@ -2375,7 +2387,16 @@ void loop() {
          }
          pureScale();
