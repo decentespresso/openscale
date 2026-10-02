@@ -6,10 +6,11 @@ export class StateMachine {
         this.removalTimeout = null;
         this.removalTimeoutDuration = 5000;
         this.uiController = uiController;
-        this.weightStableTimeout = null;
+        this.stabilityWindow = null;
     }
 
     setCurrentState(state) {
+        this.stabilityWindow = null;
         this.currentState = state;
     }
 
@@ -46,6 +47,7 @@ export class StateMachine {
 
     handleMeasuringState(netWeight, scale) {
         if (netWeight < -SCALE_CONSTANTS.WEIGHT_THRESHOLDS.ZERO_TOLERANCE) {
+            this.stabilityWindow = null;
             console.log('Container removed - negative weight detected:', netWeight);
             this.currentState = SCALE_CONSTANTS.FSM_STATES.CONTAINER_REMOVED;
             scale.dosingPausedForContainerRemoval = true;
@@ -54,56 +56,54 @@ export class StateMachine {
             return;
         }
 
-        const isStable = this.checkWeightStability(scale.stableWeightReadings);
-        console.log("isStable=", isStable);
-        if (isStable) {
-            scale.weightIsStable = true;
+        if (Math.abs(netWeight) <= SCALE_CONSTANTS.WEIGHT_THRESHOLDS.ZERO_TOLERANCE) {
+            this.setCurrentState(SCALE_CONSTANTS.FSM_STATES.WAITING_FOR_NEXT);
+            scale.stableWeightReadings = [];
+            scale.weightIsStable = false;
+            return;
+        }
 
-            if (!this.weightStableTimeout) {
-                console.log('Weight stable - starting timeout');
-                this.weightStableTimeout = setTimeout(() => {
-                    if (!scale.doseSaved && this.checkWeightStability(scale.stableWeightReadings)) {
-                        const target = scale.dosingSettings.targetWeight;
-                        const lowThreshold = scale.dosingSettings.lowThreshold;
-                        const highThreshold = scale.dosingSettings.highThreshold;
-                        const remaining = target - netWeight;
-
-                        scale.saveDosing(netWeight);
-                        scale.doseSaved = true;
-
-                        if (netWeight >= lowThreshold && netWeight <= highThreshold) {
-                            console.log('Weight stable - success');
-                            this.uiController.updateGuidance('Target weight reached!', 'success');
-                            this.uiController.updateProgressBarColor('success');
-                            scale.playSound('pass');
-                        } else {
-                            if (netWeight < lowThreshold) {
-                                this.uiController.updateGuidance(`Failed: Under target by ${remaining.toFixed(1)}g`, 'warning');
-                                this.uiController.updateProgressBarColor('warning');
-                                console.log('Under Weight - fail');
-                                scale.playSound('fail');
-                            } else {
-                                console.log('Over Weight - fail');
-                                this.uiController.updateGuidance(`Failed: Over target by ${(-remaining).toFixed(1)}g`, 'error');
-                                this.uiController.updateProgressBarColor('error');
-                                scale.playSound('fail');
-                            }
-                        }
-
-                        this.currentState = SCALE_CONSTANTS.FSM_STATES.REMOVAL_PENDING;
-                    }
-                    this.weightStableTimeout = null;
-                }, 2500);
-            }
-        } else {
-            if (this.weightStableTimeout) {
-                clearTimeout(this.weightStableTimeout);
-                this.weightStableTimeout = null;
-            }
+        if (!this.checkWeightStability(scale.stableWeightReadings)) {
+            this.stabilityWindow = null;
             scale.weightIsStable = false;
             scale.doseSaved = false;
             this.uiController.updateGuidance('Stabilizing...', 'info');
+            return;
         }
+
+        const now = Date.now();
+        const previous = this.stabilityWindow;
+        const minimum = Math.min(previous?.minimum ?? netWeight, netWeight);
+        const maximum = Math.max(previous?.maximum ?? netWeight, netWeight);
+        if (!previous || now - previous.lastSampleAt > 1000 ||
+            now < previous.lastSampleAt || maximum - minimum > 0.4) {
+            this.stabilityWindow = {minimum: netWeight, maximum: netWeight,
+                startedAt: now, lastSampleAt: now};
+            scale.weightIsStable = false;
+            return;
+        }
+        this.stabilityWindow = {...previous, minimum, maximum, lastSampleAt: now};
+        if (now - previous.startedAt < 2500 || scale.doseSaved) return;
+
+        scale.weightIsStable = true;
+        const {targetWeight, lowThreshold, highThreshold} = scale.dosingSettings;
+        const remaining = targetWeight - netWeight;
+        scale.saveDosing(netWeight);
+        scale.doseSaved = true;
+        if (netWeight >= lowThreshold && netWeight <= highThreshold) {
+            this.uiController.updateGuidance('Target weight reached!', 'success');
+            this.uiController.updateProgressBarColor('success');
+            scale.playSound('pass');
+        } else if (netWeight < lowThreshold) {
+            this.uiController.updateGuidance(`Failed: Under target by ${remaining.toFixed(1)}g`, 'warning');
+            this.uiController.updateProgressBarColor('warning');
+            scale.playSound('fail');
+        } else {
+            this.uiController.updateGuidance(`Failed: Over target by ${(-remaining).toFixed(1)}g`, 'error');
+            this.uiController.updateProgressBarColor('error');
+            scale.playSound('fail');
+        }
+        this.setCurrentState(SCALE_CONSTANTS.FSM_STATES.REMOVAL_PENDING);
     }
 
     handleRemovalPendingState(netWeight, scale) {
