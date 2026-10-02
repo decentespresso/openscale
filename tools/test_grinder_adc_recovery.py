@@ -75,21 +75,24 @@ void handleAdsReset(uint8_t mode) { @USB_RESET@ }
 int main() {
   for (State state : {GRINDER_STATE_GRINDING, GRINDER_STATE_STOPPING,
                       GRINDER_STATE_ARMED, GRINDER_STATE_CONNECTED}) {
-    for (bool success : {false, true}) {
-      grinderRuntime.state = state;
-      grinderRuntime.resumeAfterRecovery = true;
-      connected = true;
-      offSucceeds = refreshSucceeds = success;
-      order = offAt = closeAt = powerAt = tareAt = 0;
-      recover();
+    for (const bool offSuccess : {false, true}) {
+      for (const bool refreshSuccess : {false, true}) {
+        grinderRuntime.state = state;
+        grinderRuntime.resumeAfterRecovery = true;
+        connected = true;
+        offSucceeds = offSuccess;
+        refreshSucceeds = refreshSuccess;
+        order = offAt = closeAt = powerAt = tareAt = 0;
+        recover();
 #if HDS_ENABLE_GRINDER
-      assert(offAt > 0 && offAt < closeAt && closeAt < powerAt);
-      assert(grinderRuntime.state == GRINDER_STATE_ERROR);
-      assert(!grinderRuntime.resumeAfterRecovery);
+        assert(offAt > 0 && offAt < closeAt && closeAt < powerAt);
+        assert(grinderRuntime.state == GRINDER_STATE_ERROR);
+        assert(!grinderRuntime.resumeAfterRecovery);
 #else
-      assert(offAt == 0 && closeAt == 0);
+        assert(offAt == 0 && closeAt == 0);
 #endif
-      assert(success ? tareAt > powerAt : tareAt == 0);
+        assert(refreshSuccess ? tareAt > powerAt : tareAt == 0);
+      }
     }
   }
   for (State state : {GRINDER_STATE_GRINDING, GRINDER_STATE_STOPPING,
