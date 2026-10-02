@@ -340,16 +340,14 @@ void processWsPendingCmds() {
     remoteFinishWifiUpdateDispatch();
     return;
   }
-#if HDS_ENABLE_ENERGY_MENU
-  if (mask & WSP_DISPLAY_ON)  { applyEnergyDisplayCommand(true); }
-  if (mask & WSP_DISPLAY_OFF) { applyEnergyDisplayCommand(false); }
-  if (mask & (WSP_LOWPWR_ON | WSP_LOWPWR_OFF)) { applyEnergyLowPowerCommand(); }
-#else
-  if (mask & WSP_DISPLAY_ON)  { u8g2.setPowerSave(0); }
-  if (mask & WSP_DISPLAY_OFF) { u8g2.setPowerSave(1); }
-  if (mask & WSP_LOWPWR_ON)   { u8g2.setContrast(0); }
-  if (mask & WSP_LOWPWR_OFF)  { u8g2.setContrast(255); }
-#endif
+  const uint32_t sleepCommands = WSP_SLEEP_ON | WSP_SLEEP_OFF;
+  if (mask & sleepCommands) {
+    portENTER_CRITICAL(&wsPendingMux);
+    if (wsPendingMask & sleepCommands) {
+      mask &= ~sleepCommands;
+    }
+    portEXIT_CRITICAL(&wsPendingMux);
+  }
   if (mask & WSP_SLEEP_OFF) {
     if (b_softSleep) {
       wakeScaleFromSoftSleep("remote soft wake");
@@ -357,6 +355,23 @@ void processWsPendingCmds() {
       u8g2.setPowerSave(0);
       b_u8g2Sleep = false;
     }
+  }
+#if HDS_ENABLE_ENERGY_MENU
+  if (mask & WSP_DISPLAY_ON)  { applyEnergyDisplayCommand(true); }
+  if (mask & WSP_DISPLAY_OFF) { applyEnergyDisplayCommand(false); }
+  if (mask & (WSP_LOWPWR_ON | WSP_LOWPWR_OFF)) { applyEnergyLowPowerCommand(); }
+#else
+  if (mask & WSP_DISPLAY_ON)  { u8g2.setPowerSave(0); b_u8g2Sleep = false; }
+  if (mask & WSP_DISPLAY_OFF) { u8g2.setPowerSave(1); b_u8g2Sleep = true; }
+  if (mask & WSP_LOWPWR_ON)   { u8g2.setContrast(0); }
+  if (mask & WSP_LOWPWR_OFF)  { u8g2.setContrast(255); }
+#endif
+  if (mask & WSP_SLEEP_ON) {
+    portENTER_CRITICAL(&wsPendingMux);
+    if (wsPendingMask & sleepCommands) {
+      mask &= ~WSP_SLEEP_ON;
+    }
+    portEXIT_CRITICAL(&wsPendingMux);
   }
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
   if ((mask & WSP_BLE_GYRO) && !(mask & WSP_SLEEP_ON) && !b_softSleep) {
@@ -731,18 +746,7 @@ bool handleWebsocketControlCommand(
     if (websocketEqualsIgnoreCase(action, "off") ||
         websocketEqualsIgnoreCase(action, "wake")) {
       Serial.println("Websocket soft sleep off detected.");
-#if HDS_ENABLE_ENERGY_MENU
       wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);
-#else
-      const bool wasSoftSleep = b_softSleep;
-      b_softSleep = false;
-      b_u8g2Sleep = false;
-      if (wasSoftSleep) {
-        wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON);
-      } else {
-        wsReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
-      }
-#endif
       sendWebsocketStatus(client, "ok");
       return true;
     }

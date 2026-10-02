@@ -2327,6 +2327,14 @@ void loop() {
   if (b_ota && b_softSleep) {
     wakeScaleFromSoftSleep("OTA wake");
   }
+#if HDS_FEATURE_WIFI
+  if (b_softSleep && b_wifiEnabled) {
+    wifiSupervise();
+#if !HDS_FEATURE_WEBSERVER
+    wifiConfigServerPoll();
+#endif
+  }
+#endif
   if (!b_softSleep) {
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
     if (b_gyroEnabled) {
