@@ -181,7 +181,7 @@
         },
         {
           "target": "Weigh_Save/main.js",
-          "sha256": "f13354a1812c9e08f8b8154f441a716d4c96f0916502b4d8b16b929eacda4954"
+          "sha256": "0d8ef9e028a5d62d5d2fb3099df76365ada9b3dab7f30da242c608ad4090e528"
         },
         {
           "target": "Weigh_Save/modules/export.js",
@@ -189,7 +189,7 @@
         },
         {
           "target": "Weigh_Save/modules/scale.js",
-          "sha256": "1e62729e3023cdfbdb1d0ea592425721393087432ce4654e24d2dfc17f54ef56"
+          "sha256": "85ce8ccb12bc3af553a66c86f4f64d12fb84d2cd0ff0a9938b8a45c35bf19d10"
         },
         {
           "target": "Weigh_Save/modules/timer.js",

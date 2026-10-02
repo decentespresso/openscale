@@ -13,8 +13,18 @@ export class DecentScale {
         this.stabilityThreshold = 0.2;
     }
 
+    resetMeasurementBaseline() {
+        this.lastWeight = 0;
+        this.lastWeightTime = 0;
+    }
+
     processWeight(weight) {
         this.uiController.updateWeightDisplay(weight);
+
+        if (Math.abs(weight) <= this.stabilityThreshold) {
+            this.resetMeasurementBaseline();
+            return;
+        }
 
         if (!this.timerManager || !this.timerManager.shouldTakeMeasurement()) {
             return;
