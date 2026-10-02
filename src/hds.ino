@@ -660,8 +660,7 @@ void buttonSquare_Pressed() {
   }
   if (b_menu) {
     selectMenu();
-  }
-  if (b_calibration) {
+  } else if (b_calibration) {
     recordEnergyActivity();
     i_button_cal_status++;
     Serial.print("i_button_cal_status:");
