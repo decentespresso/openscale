@@ -74,7 +74,9 @@ If NVS initialization, migration, or the final schema write fails, `storageInit(
 
 ## Browser Storage
 
-Browser `localStorage` is scoped to the browser origin, not to an individual app directory. The dosing preset manager and Quality Control Assistant both use `decentScalePresets` and `lastUsedPreset`, but they store incompatible preset shapes. Treat those names as a known collision; do not make either shape a cross-app contract.
+Browser `localStorage` is scoped to the browser origin, not to an individual app directory. The dosing preset manager uses `decentScaleDosingPresets` and `lastUsedDosingPreset`; Quality Control Assistant uses `decentScaleQCPresets` and `lastUsedQCPreset`. Each preset store contains `{version: 1, presets: {...}}`. The apps ignore unsupported versions and refuse to overwrite them.
+
+The old shared keys, `decentScalePresets` and `lastUsedPreset`, contain incompatible preset shapes. Each app reads compatible legacy presets and selections only while its own preset store is absent. Its first save copies those presets and any compatible last-used selection without changing the shared data. An existing app-specific store ends both legacy fallbacks, even when its last-used selection is missing.
 
 New browser-persisted data should use an app-specific key and a versioned object when its shape can evolve. Verify keys in implementation code: a README claim alone is not a storage contract.
 
@@ -84,6 +86,7 @@ Run the smallest relevant checks:
 
 ```sh
 python tools/test_storage_migration_contract.py
+python tools/test_preset_isolation.py
 pio run -e esp32s3
 ```
 

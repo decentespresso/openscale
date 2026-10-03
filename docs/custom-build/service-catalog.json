@@ -161,7 +161,7 @@
       "assets": [
         {
           "target": "Quality_Control_Assistant/README.md",
-          "sha256": "bb1ab492f0c82b1d5d9952d5171c75c8c0abcadba485ff9541e3fe05b97e215c"
+          "sha256": "39d64f0fa30e240a5d27ce5f3c318de3958a21796d7749da5a57dab00b086ca4"
         },
         {
           "target": "Quality_Control_Assistant/quality_control.html",
@@ -169,7 +169,7 @@
         },
         {
           "target": "Quality_Control_Assistant/quality_control.js",
-          "sha256": "c10e7babb4032729972a70d61d2ebbe7529e077e56ee33aec29f2143e2bf4fed"
+          "sha256": "bb3db22f6929d2d93224655e0062088927488c19c7979de182ec24825f97dc40"
         },
         {
           "target": "README.md",
@@ -205,7 +205,7 @@
         },
         {
           "target": "dosing_assistant/README.md",
-          "sha256": "71c3dc20a99e4b0ad7aefef2e899446f037133cbb2c829ed191246519a793f88"
+          "sha256": "1be574f44d494b50eaebe675991abac95090bb3cfdb97edd9842cdc588a1130c"
         },
         {
           "target": "dosing_assistant/dosing_assistant.html",
@@ -253,7 +253,7 @@
         },
         {
           "target": "shared/modules/presets.js",
-          "sha256": "5413c5d92c6240caba449594dda3b7a37d4a984c32f9ec98c1e067cde64c4e41"
+          "sha256": "31205f2bec1a32413e88593af58da08cb946ff085145b71d274fb0d157e4f330"
         },
         {
           "target": "shared/reconnecting-websocket.js",
