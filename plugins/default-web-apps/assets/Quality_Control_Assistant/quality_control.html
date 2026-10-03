@@ -139,6 +139,7 @@
                             class="border border-gray-300 bg-gray-50 hover:bg-gray-100 px-4 py-2 rounded-md"
                             disabled>JSON</button>
                 </div>
+                <p id="historyWarning" role="status" class="mb-4 text-red-700" hidden></p>
                 <div>
                     <ul id="weightReadings" class="max-h-72 overflow-y-auto text-gray-700"></ul>
                 </div>
@@ -147,6 +148,7 @@
     </main>
 
     <script src="../shared/reconnecting-websocket.js"></script>
+    <script src="../shared/measurement-history.js"></script>
     <script src="quality_control.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {

@@ -63,14 +63,22 @@ export class UIController {
 
     setupSoundToggle() {
         if (this.soundToggle) {
-            const savedPreference = localStorage.getItem('soundEnabled');
-            if (savedPreference !== null) {
-                this.soundToggle.checked = savedPreference === 'true';
+            try {
+                const savedPreference = localStorage.getItem('soundEnabled');
+                if (savedPreference !== null) {
+                    this.soundToggle.checked = savedPreference === 'true';
+                }
+            } catch (error) {
+                console.warn('Sound preference could not be read.', error);
             }
 
             this.soundToggle.addEventListener('change', (e) => {
                 const isEnabled = e.target.checked;
-                localStorage.setItem('soundEnabled', isEnabled);
+                try {
+                    localStorage.setItem('soundEnabled', isEnabled);
+                } catch (error) {
+                    console.warn('Sound preference could not be saved.', error);
+                }
                 if (this.scale) {
                     this.scale.updateSoundPreference(isEnabled);
                 }

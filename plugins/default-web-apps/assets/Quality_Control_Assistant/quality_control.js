@@ -5,6 +5,16 @@ class DecentScale {
         this.readingCount = 0;
         this.weightReadings = [];
         this.weightData = [];
+        this.history = new MeasurementHistory('qc', reading => reading &&
+            typeof reading.timestamp === 'string' && Number.isFinite(reading.weight) &&
+            typeof reading.result === 'string' && reading.qcSettings &&
+            ['lowThreshold', 'goalWeight', 'highThreshold', 'minWeight']
+                .every(key => Number.isFinite(reading.qcSettings[key])));
+        this.weightData = this.history.load().map((reading, index) => ({...reading, id: index + 1}));
+        this.readingCount = this.weightData.length;
+        this.weightReadings = this.weightData.map(reading =>
+            `${reading.id}. ${new Date(reading.timestamp).toLocaleString()}: ${reading.weight}g - ${reading.result.toUpperCase()}`);
+        this.displayWeightReadings();
         this.qcMode = false;
         this.qcSettings = {
             lowThreshold: 0,
@@ -409,36 +419,43 @@ class DecentScale {
             }
         };
 
-        this.savePreset(preset);
+        if (!this.savePreset(preset)) return;
         this.updatePresetList();
         alert(`Preset "${objectName}" saved successfully`);
     }
 
     savePreset(preset) {
-        const presets = this.getPresets();
-        presets[preset.name] = preset.settings;
-        localStorage.setItem('decentScalePresets', JSON.stringify(presets));
+        try {
+            const presets = this.getPresets();
+            if (!presets) throw new Error('Saved presets unavailable');
+            localStorage.setItem('decentScalePresets', JSON.stringify({...presets, [preset.name]: preset.settings}));
+            return true;
+        } catch (error) {
+            console.error('Preset could not be saved.', error);
+            alert('Preset could not be saved. Browser storage is unavailable.');
+            return false;
+        }
     }
 
     getPresets() {
-        const presetsJson = localStorage.getItem('decentScalePresets');
-        if (!presetsJson) return {};
         try {
+            const presetsJson = localStorage.getItem('decentScalePresets');
+            if (!presetsJson) return {};
             const presets = JSON.parse(presetsJson);
-            return presets && typeof presets === 'object' && !Array.isArray(presets) ? presets : {};
+            return presets && typeof presets === 'object' && !Array.isArray(presets) ? presets : null;
         } catch (error) {
-            console.error('Invalid stored presets; ignoring saved preset data.', error);
-            return {};
+            console.error('Saved presets could not be read; leaving stored data unchanged.', error);
+            return null;
         }
     }
 
     getPreset(name) {
         const presets = this.getPresets();
-        return presets[name];
+        return presets?.[name];
     }
 
     loadPresets() {
-        const presets = this.getPresets();
+        const presets = this.getPresets() ?? {};
         const presetSelect = document.getElementById('presetSelect');
 
         const savePresetOption = presetSelect.querySelector('option[value="save_preset"]');
@@ -459,10 +476,14 @@ class DecentScale {
             presetSelect.appendChild(option);
         });
 
-        const lastUsed = localStorage.getItem('lastUsedPreset');
-        if (lastUsed && presets[lastUsed]) {
-            this.loadPreset(lastUsed);
-            presetSelect.value = lastUsed;
+        try {
+            const lastUsed = localStorage.getItem('lastUsedPreset');
+            if (lastUsed && presets[lastUsed]) {
+                this.loadPreset(lastUsed);
+                presetSelect.value = lastUsed;
+            }
+        } catch (error) {
+            console.warn('Last used preset could not be read.', error);
         }
     }
 
@@ -476,7 +497,11 @@ class DecentScale {
         document.getElementById('highThreshold').value = preset.highThreshold;
         document.getElementById('minWeight').value = preset.minWeight;
 
-        localStorage.setItem('lastUsedPreset', name);
+        try {
+            localStorage.setItem('lastUsedPreset', name);
+        } catch (error) {
+            console.warn('Last used preset could not be saved.', error);
+        }
     }
 
     updatePresetList() {
@@ -518,6 +543,7 @@ class DecentScale {
         };
 
         this.weightData.push(reading);
+        this.history.append(reading);
         this.weightReadings.push(`${reading.id}. ${new Date(reading.timestamp).toLocaleString()}: ${reading.weight}g - ${result.toUpperCase()}`);
 
         console.log('Measurement saved:', reading);

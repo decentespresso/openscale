@@ -196,6 +196,7 @@
         "dosing_assistant/modules/ui-controller.js",
         "index.html",
         "shared/app.css",
+        "shared/measurement-history.js",
         "shared/modules/download-file.js",
         "shared/modules/presets.js",
         "shared/reconnecting-websocket.js",
