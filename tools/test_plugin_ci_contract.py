@@ -30,11 +30,11 @@ def main():
     stockBuild = firmwareWorkflow.split("\n  build:\n", 1)[1].split("\n  energy-build:\n", 1)[0]
     energyBuild = firmwareWorkflow.split("\n  energy-build:\n", 1)[1]
     assert firmwareWorkflow.count("pio run -e esp32s3\n") == 1
+    assert stockBuild.count("pio run -e esp32s3-grinder\n") == 1
     assert "pio run -e esp32s3-energy-menu" not in stockBuild
     assert energyBuild.count("pio run -e esp32s3-energy-menu") == 1
     assert "pio run -e esp32s3 -t buildfs" in firmwareWorkflow
-    assert "esp32s3-grinder" not in firmwareWorkflow
-    assert "name: firmware (esp32s3)" in firmwareWorkflow
+    assert "name: firmware (esp32s3, esp32s3-grinder)" in stockBuild
     assert "name: firmware (esp32s3-energy-menu)" in energyBuild
     assert read("constraints-pioarduino.txt").splitlines() == ["pioarduino==6.1.19"]
     nestedCoreConstraint = "UV_CONSTRAINT: ${{ github.workspace }}/constraints-pioarduino.txt"
