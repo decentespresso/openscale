@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 import subprocess
-import tempfile
 import tomllib
 
 import list_changed_patch_plugins as changedPlugins
@@ -119,24 +118,11 @@ def main():
     assert 'CANDIDATE_COMMIT: ${{ inputs.commit || github.sha }}' in compileCustom
     assert 'refs/tags/v3.1.14^{commit}' not in compileCustom
     assert "if: github.event_name == 'workflow_dispatch' && inputs.commit == ''" in dispatchBuild
-    with tempfile.TemporaryDirectory() as directory:
-        subprocess.run(
-            ["git", "clone", "--quiet", "--no-checkout", str(ROOT), directory],
-            check=True,
-        )
-        subprocess.run(
-            ["git", "fetch", "--quiet", "origin", "refs/remotes/origin/main"],
-            cwd=directory,
-            check=True,
-        )
-        subprocess.run(
-            ["git", "switch", "--quiet", "--detach", "FETCH_HEAD"], cwd=directory, check=True
-        )
-        subprocess.run(
-            ["git", "apply", "--check", "--whitespace=error", str(patchPath)],
-            cwd=directory,
-            check=True,
-        )
+    subprocess.run(
+        ["git", "apply", "--check", "--whitespace=error", str(patchPath)],
+        cwd=ROOT,
+        check=True,
+    )
 
     print("plugin CI contract tests passed")
 
