@@ -39,9 +39,16 @@
                 const id = Array.from(random, value => value.toString(16).padStart(8, '0')).join('');
                 const key = `${this.prefix}${String(Date.now()).padStart(13, '0')}.${id}`;
                 localStorage.setItem(key, JSON.stringify(reading));
+                this.lastWarning = null;
                 return true;
             } catch (error) {
-                this.warn('History could not be saved. Export readings before closing this tab.', error);
+                const message = 'History could not be saved. Export readings before closing this tab.';
+                const warning = global.document?.getElementById('historyWarning');
+                if (warning) {
+                    warning.textContent = message;
+                    warning.hidden = false;
+                }
+                this.warn(message, error);
                 return false;
             }
         }

@@ -165,11 +165,11 @@
         },
         {
           "target": "Quality_Control_Assistant/quality_control.html",
-          "sha256": "b8047ebcd51bd902208df758f1a87f8055bbfc9b535c24947fe3372256e416ec"
+          "sha256": "654bf35eb2deee85222ba08fe05a6d42eed7ed1151648d55e98b5453ac330c20"
         },
         {
           "target": "Quality_Control_Assistant/quality_control.js",
-          "sha256": "ea8aafdb3c2a44fe1b84e0b8527a2ee87771fc0867af9a66585542a831815322"
+          "sha256": "aef68b81ddbd5b9b058a872f3b271064862be3b4fc358517d04d95b30818d0db"
         },
         {
           "target": "README.md",
@@ -209,7 +209,7 @@
         },
         {
           "target": "dosing_assistant/dosing_assistant.html",
-          "sha256": "20e732a9a0e95b0fa765cedb58af9d54436e66658048deb458eb53badd3aa40a"
+          "sha256": "166da1ae80670b9cc7b18c2c39fe19bf2c31a3b8eeffcc8d8e7691dca0056d28"
         },
         {
           "target": "dosing_assistant/dosing_assistant.md",
@@ -237,7 +237,7 @@
         },
         {
           "target": "dosing_assistant/modules/ui-controller.js",
-          "sha256": "045cce4a569b254175ab1f3fa921c482e01ed71fd1f63c4adab846c14ec5beb2"
+          "sha256": "1364a74d5dcf1ca59204415b4c5a3ada3c03c94a3b1dafd9ab7d5e08a380c9b8"
         },
         {
           "target": "index.html",
@@ -249,7 +249,7 @@
         },
         {
           "target": "shared/measurement-history.js",
-          "sha256": "1e7e5c4ade3ffcf9ae7efe27b36bd70899807ccafb406c788bbba09b275ea3cb"
+          "sha256": "328e04f0f34d1776f25757cc9afa86cf27a123018771af1d241d6f51ffe7d8ba"
         },
         {
           "target": "shared/modules/download-file.js",
@@ -257,7 +257,7 @@
         },
         {
           "target": "shared/modules/presets.js",
-          "sha256": "89f7e025d03b77f5de0cb5f764792598947ddbee5dca1a434f9809e073b7dca4"
+          "sha256": "c00e1bb15115aa4cd0ef0a61387e2e836dac8d5f2e6c0a6eaea955a9d6524a27"
         },
         {
           "target": "shared/reconnecting-websocket.js",
