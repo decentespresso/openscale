@@ -185,7 +185,7 @@
         },
         {
           "target": "Weigh_Save/modules/export.js",
-          "sha256": "7a0a243c0aa372f7727d2726e55bc3cc47ed7a90fedefbaaaee00727f36271bc"
+          "sha256": "49a6b5b815bad0ab47d953995fceb8fca4ee4041b935d69b8ba743a554987da7"
         },
         {
           "target": "Weigh_Save/modules/scale.js",
@@ -225,7 +225,7 @@
         },
         {
           "target": "dosing_assistant/modules/export.js",
-          "sha256": "9bc045b21668a7720b871fe98d0d9f3dd697880aa5a7f9a5be3d70c45ae04400"
+          "sha256": "e501cace8354cf40d1841eb9cf84f48db379b77bf42ed59ac8d546308a8de2ab"
         },
         {
           "target": "dosing_assistant/modules/scale.js",
