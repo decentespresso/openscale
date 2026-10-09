@@ -69,6 +69,7 @@ void startWebServer() {
             request->send(403, "application/json", "{\"error\":\"origin_denied\"}");
             return;
           }
+          if (!wifiRequestDeviceAllowed(request)) return;
           const char *requested = parseDeviceNameRequest(json);
           if (requested == nullptr) {
             request->send(400, "application/json",

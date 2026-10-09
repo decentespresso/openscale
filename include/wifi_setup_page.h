@@ -63,6 +63,8 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   const status = document.getElementById('wifi-status');
   const openScale = document.getElementById('wifi-open-scale');
   let busy = false;
+  let deviceReady = false;
+  let deviceMismatch = false;
   let scannedSsid = null;
   let pendingCheck = null;
   const query = new URLSearchParams(location.search);
@@ -86,26 +88,32 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   }
 
   function setBusy(value) {
-    busy = value;
-    form.querySelectorAll('input,button').forEach(element => { element.disabled = value; });
-    scanButton.disabled = value;
-    resetButton.disabled = value;
-    networks.disabled = value || networks.options.length <= 1;
+    busy = value || !deviceReady || deviceMismatch;
+    form.querySelectorAll('input,button').forEach(element => { element.disabled = busy; });
+    scanButton.disabled = busy;
+    resetButton.disabled = busy;
+    networks.disabled = busy || networks.options.length <= 1;
     document.querySelectorAll('#name-form input,#name-form button,#name input,#name button')
-      .forEach(element => { element.disabled = value; });
-    form.setAttribute('aria-busy', String(value));
+      .forEach(element => { element.disabled = busy; });
+    form.setAttribute('aria-busy', String(busy));
   }
 
   async function request(path, body) {
     const response = await fetch(path, {
       method: body === undefined ? 'GET' : 'POST',
       cache: 'no-store',
-      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+      headers: body === undefined ? {} : {
+        'Content-Type': 'application/json', 'X-HDS-Device-ID': expectedDevice
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(4000)
     });
-    if (!response.ok) throw new Error(response.status === 409 ? 'wifi_busy' :
-      response.status === 400 ? 'wifi_credentials_invalid' : 'request_failed');
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      if (data.error === 'wifi_device_mismatch') rejectDevice();
+      throw new Error(data.error || (response.status === 409 ? 'wifi_busy' :
+        response.status === 400 ? 'wifi_credentials_invalid' : 'request_failed'));
+    }
     return response.json();
   }
 
@@ -118,8 +126,8 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     if (!ssidInput.value && data.credentials_saved) ssidInput.value = data.ssid;
   }
 
-  function matchesDevice(data) {
-    if (!expectedDevice || data.device_id === expectedDevice) return true;
+  function rejectDevice() {
+    deviceMismatch = true;
     message('This address reached a different scale. The WiFi result is not confirmed. Open the IP address shown on the original scale.', 'error');
     current.textContent = 'Different scale';
     pendingCheck = null;
@@ -127,6 +135,16 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     if (tareButton) tareButton.disabled = true;
     checkButton.hidden = true;
     if (networkDialog.open) networkDialog.close();
+  }
+
+  function matchesDevice(data) {
+    if (!deviceMismatch && /^[a-f0-9]{12}$/.test(data.device_id) &&
+        (!expectedDevice || data.device_id === expectedDevice)) {
+      expectedDevice = data.device_id;
+      form.dataset.wifiDevice = expectedDevice;
+      return true;
+    }
+    rejectDevice();
     return false;
   }
 
@@ -235,18 +253,19 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     let accepted;
     try { accepted = await request('/setup/wifi', scanned ? { ssid, pass, scanned: true } : { ssid, pass }); }
     catch (error) {
+      if (deviceMismatch) return;
       message(error.message === 'wifi_busy' || error.message === 'wifi_credentials_invalid' ?
         failureText(error.message) : 'Request not confirmed. Check the scale connection before trying again.', 'error');
       setBusy(false);
       return;
     }
+    if (!matchesDevice(accepted)) return;
     passwordInput.value = '';
     if (!Number.isInteger(accepted.operation_id) || accepted.restarting !== false) {
       message('This firmware does not support a verified direct WiFi change.', 'error');
       setBusy(false);
       return;
     }
-    expectedDevice = /^[a-f0-9]{12}$/.test(accepted.device_id) ? accepted.device_id : '';
     pendingCheck = { ...accepted, kind };
     message(kind === 'reset' ? 'Clearing settings. Reconnect to DecentScale with password 12345678.' :
       `Trying new WiFi settings for ${accepted.ssid}. If they fail, the scale will automatically return to the previous network. Previous settings stay saved until success.`);
@@ -306,7 +325,8 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     scanProgress.hidden = false;
     message('Searching for networks...');
     try {
-      await request('/setup/wifi/scan', {});
+      const accepted = await request('/setup/wifi/scan', {});
+      if (!matchesDevice(accepted)) return;
       const started = Date.now();
       while (Date.now() - started < 15000) {
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -316,6 +336,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
           if (!connectionInterrupted(error)) throw error;
           continue;
         }
+        if (!matchesDevice(data)) return;
         if (data.state === 'scanning') continue;
         if (data.state !== 'complete' || !Array.isArray(data.networks)) throw new Error('scan_failed');
         const options = data.networks.map(network => {
@@ -333,6 +354,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
       }
       throw new Error('scan_failed');
     } catch (error) {
+      if (deviceMismatch) return;
       message(error.message === 'wifi_busy' ? failureText(error.message) : 'Network search failed. You can enter a network name.', 'error');
     } finally {
       scanProgress.hidden = true;
@@ -341,15 +363,20 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     }
   });
 
-  if (linkedAttempt) {
-    setBusy(true);
-    if (tareButton) tareButton.disabled = true;
-  }
+  setBusy(false);
+  if (tareButton) tareButton.disabled = true;
+  const nameForm = document.getElementById('name-form') || document.getElementById('name');
+  if (nameForm) nameForm.addEventListener('submit', event => {
+    if (!busy) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
   request('/setup/wifi/status').then(data => {
     if (!matchesDevice(data)) return;
-    if (linkedAttempt && tareButton) tareButton.disabled = false;
+    deviceReady = true;
+    if (tareButton) tareButton.disabled = false;
     updateCurrent(data);
-    if (busy && !linkedAttempt) return;
+    setBusy(data.busy === true);
     if (linkedAttempt && data.operation_id !== linkedAttempt) {
       message('This WiFi request is no longer current. Its result is not confirmed.');
       setBusy(data.busy === true);
@@ -373,11 +400,11 @@ static const char HDS_WIFI_SETUP_PAGE[] PROGMEM = R"html(<!doctype html>
 <script src="/setup/wifi.js" defer></script></head><body>
 <h1>Half Decent Scale setup</h1><section class="wifi-setup" id="wifi-popup" aria-labelledby="wifi-title">
 <h2 id="wifi-title">WiFi</h2><p id="wifi-current" role="status">Checking connection...</p>
-<div class="wifi-network-tools"><button id="wifi-scan-button" type="button">Find networks</button><label for="wifi-networks">Nearby networks<span class="wifi-network-select"><select id="wifi-networks" disabled><option value="">Select a network</option></select><span id="wifi-scan-progress" class="wifi-scan-progress" role="status" hidden><span class="wifi-spinner" aria-hidden="true"></span>Searching...</span></span></label></div>
-<form id="wifi-form" autocomplete="off"><div class="wifi-fields"><label for="ssid">Network name<input id="ssid" autocomplete="off" autocapitalize="none" spellcheck="false" required></label><label for="password">Password<input id="password" type="password" autocomplete="off" autocapitalize="none" spellcheck="false"></label></div>
-<div class="wifi-actions"><label for="show-password"><input id="show-password" type="checkbox">Show password</label><button id="wifi-connect-button" type="submit">Connect</button></div></form>
-<p id="wifi-status" role="status" aria-live="polite" data-tone="neutral"></p><a id="wifi-open-scale" hidden></a><button id="wifi-check-result" type="button" hidden>Check WiFi result</button><button id="reset-wifi-button" type="button">Reset WiFi settings</button></section>
-<form id="name"><label for="device-name">Device name</label><input id="device-name" name="name" placeholder="hds" maxlength="24" required><button>Rename</button></form><p id="name-status" role="status"></p>
+<div class="wifi-network-tools"><button id="wifi-scan-button" type="button" disabled>Find networks</button><label for="wifi-networks">Nearby networks<span class="wifi-network-select"><select id="wifi-networks" disabled><option value="">Select a network</option></select><span id="wifi-scan-progress" class="wifi-scan-progress" role="status" hidden><span class="wifi-spinner" aria-hidden="true"></span>Searching...</span></span></label></div>
+<form id="wifi-form" autocomplete="off"><div class="wifi-fields"><label for="ssid">Network name<input id="ssid" autocomplete="off" autocapitalize="none" spellcheck="false" required disabled></label><label for="password">Password<input id="password" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" disabled></label></div>
+<div class="wifi-actions"><label for="show-password"><input id="show-password" type="checkbox" disabled>Show password</label><button id="wifi-connect-button" type="submit" disabled>Connect</button></div></form>
+<p id="wifi-status" role="status" aria-live="polite" data-tone="neutral"></p><a id="wifi-open-scale" hidden></a><button id="wifi-check-result" type="button" hidden>Check WiFi result</button><button id="reset-wifi-button" type="button" disabled>Reset WiFi settings</button></section>
+<form id="name"><label for="device-name">Device name</label><input id="device-name" name="name" placeholder="hds" maxlength="24" required disabled><button disabled>Rename</button></form><p id="name-status" role="status"></p>
 <dialog id="wifi-reset-dialog" class="wifi-setup wifi-dialog" aria-labelledby="wifi-reset-title" aria-describedby="wifi-reset-description">
 <h2 id="wifi-reset-title">Reset WiFi settings?</h2><p id="wifi-reset-description">The scale will disconnect and open DecentScale setup. Other settings stay unchanged.</p>
 <form method="dialog" class="wifi-dialog-actions"><button value="cancel" autofocus>Cancel</button><button id="wifi-reset-confirm" value="reset">Reset WiFi</button></form></dialog>
@@ -387,7 +414,9 @@ static const char HDS_WIFI_SETUP_PAGE[] PROGMEM = R"html(<!doctype html>
 <script>
 document.getElementById('name').addEventListener('submit',async event=>{
 event.preventDefault();const status=document.getElementById('name-status');
-try{const response=await fetch('/setup/name',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:document.getElementById('device-name').value})});
+if(!document.getElementById('wifi-form').dataset.wifiDevice){status.textContent='Checking scale identity...';return;}
+try{const response=await fetch('/setup/name',{method:'POST',headers:{'Content-Type':'application/json','X-HDS-Device-ID':document.getElementById('wifi-form').dataset.wifiDevice},body:JSON.stringify({name:document.getElementById('device-name').value})});
+if(response.status===409&&(await response.clone().json()).error==='wifi_device_mismatch')throw Error('This address reached a different scale. Open the original scale before renaming it.');
 if(!response.ok)throw Error(response.status===409?'Another WiFi operation is running.':'Could not save the device name.');
 const body=await response.json();status.textContent=body.restarting?`Saved as ${body.name}. Restarting.`:`Already named ${body.name}.`;
 }catch(error){status.textContent=error.message;}});

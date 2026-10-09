@@ -467,7 +467,7 @@
     <h2 id="wifi-title">WiFi</h2>
     <p id="wifi-current" role="status">Checking connection...</p>
     <div class="wifi-network-tools">
-      <button id="wifi-scan-button" type="button">Find networks</button>
+      <button id="wifi-scan-button" type="button" disabled>Find networks</button>
       <label for="wifi-networks">Nearby networks
         <span class="wifi-network-select">
           <select id="wifi-networks" disabled><option value="">Select a network</option></select>
@@ -478,26 +478,26 @@
     <form id="wifi-form" autocomplete="off">
       <div class="wifi-fields">
         <label for="ssid">Network name
-          <input type="text" id="ssid" autocomplete="off" autocapitalize="none" spellcheck="false" required />
+          <input type="text" id="ssid" autocomplete="off" autocapitalize="none" spellcheck="false" required disabled />
         </label>
         <label for="password">Password
-          <input type="password" id="password" autocomplete="off" autocapitalize="none" spellcheck="false" />
+          <input type="password" id="password" autocomplete="off" autocapitalize="none" spellcheck="false" disabled />
         </label>
       </div>
       <div class="wifi-actions">
-        <label for="show-password"><input id="show-password" type="checkbox" />Show password</label>
-        <button id="wifi-connect-button" type="submit">Connect</button>
+        <label for="show-password"><input id="show-password" type="checkbox" disabled />Show password</label>
+        <button id="wifi-connect-button" type="submit" disabled>Connect</button>
       </div>
     </form>
     <p id="wifi-status" role="status" aria-live="polite" data-tone="neutral"></p>
     <a id="wifi-open-scale" hidden></a>
     <button id="wifi-check-result" type="button" hidden>Check WiFi result</button>
-    <button id="reset-wifi-button" type="button">Reset WiFi settings</button>
+    <button id="reset-wifi-button" type="button" disabled>Reset WiFi settings</button>
     <h2>Scale Name</h2>
     <p class="hint">Sets the address the scale answers at. Default <code>hds</code> gives <code>hds.local</code>. Use a different name for each scale on your network. 1-24 characters: letters, digits, hyphens. Saving restarts the scale.</p>
           <form id="name-form">
-            <input type="text" id="device-name" placeholder="hds" maxlength="24" style="margin-right: 1rem;" />
-            <button type="submit">Rename</button>
+            <input type="text" id="device-name" placeholder="hds" maxlength="24" style="margin-right: 1rem;" disabled />
+            <button type="submit" disabled>Rename</button>
           </form>
     <p id="name-status"></p>
   </section>
@@ -566,6 +566,11 @@
     document.getElementById('name-form').addEventListener('submit', async function (e) {
       e.preventDefault();
       const status = document.getElementById('name-status');
+      const wifiForm = document.getElementById('wifi-form');
+      if (wifiForm.dataset.wifiSetup !== 'legacy' && !wifiForm.dataset.wifiDevice) {
+        status.textContent = 'Checking scale identity...';
+        return;
+      }
       status.textContent = 'Saving...';
       status.style.color = 'var(--green-dark)';
 
@@ -573,7 +578,8 @@
         const response = await fetch(`http://${window.location.host}/setup/name`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            ...(wifiForm.dataset.wifiDevice ? { 'X-HDS-Device-ID': wifiForm.dataset.wifiDevice } : {})
           },
           body: JSON.stringify({ name: deviceNameInput.value })
         });
@@ -584,6 +590,9 @@
           status.textContent = body.restarting === false
             ? `Already named ${body.name}; nothing changed.`
             : `Saved as ${body.name}. Restarting; reconnect at http://${body.name}.local`;
+        } else if (response.status === 409 && (await response.clone().json()).error === 'wifi_device_mismatch') {
+          status.textContent = 'This address reached a different scale. Open the original scale before renaming it.';
+          status.style.color = 'var(--danger)';
         } else if (response.status === 400) {
           status.textContent = 'Invalid name. Use 1-24 characters: letters, digits, or hyphens (not at the start or end).';
           status.style.color = 'var(--danger)';

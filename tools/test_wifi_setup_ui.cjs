@@ -18,16 +18,17 @@ const initialStatus = {
   busy: false, mdns_name: 'hds', mdns_available: true, device_id: 'ccba973327f0'
 };
 
-async function openPage(browser, html, viewport, legacy = false, startUrl = 'http://hds.local') {
+async function openPage(browser, html, viewport, legacy = false, startUrl = 'http://hds.local', options = {}) {
   const context = await browser.newContext({ viewport });
   const page = await context.newPage();
   let posts = [];
-  let variant = 'success';
+  let variant = options.variant || 'success';
   let scanVariant = 'success';
   let scanPolls = 0;
   let scanPosts = 0;
   let polls = 0;
   let unsupportedRequests = 0;
+  let namePosts = 0;
   let state = { ...initialStatus };
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -51,6 +52,12 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
     const json = data => route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
+    if (!legacy && request.method() === 'POST' &&
+        ['/setup/wifi', '/setup/wifi/scan', '/setup/name'].includes(pathname)) {
+      assert.equal(request.headers()['x-hds-device-id'], initialStatus.device_id);
+      if (variant === 'mutation-wrong-device') return route.fulfill({ status: 409,
+        contentType: 'application/json', body: JSON.stringify({ error: 'wifi_device_mismatch' }) });
+    }
     if (pathname === '/') return route.fulfill({ contentType: 'text/html', body: html });
     if (pathname === '/setup/wifi/continue') {
       if (variant === 'open-legacy-device') return route.fulfill({ status: 404, body: 'Not found' });
@@ -58,8 +65,11 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
         body: 'This address reached a different scale. The WiFi result is not confirmed.' });
       return route.fulfill({ contentType: 'text/html', body: '<script>location.replace("/")</script>' });
     }
-    if (pathname === '/setup/wifi.js') return route.fulfill({ status: legacy ? 404 : 200,
-      contentType: 'application/javascript', body: legacy ? '' : script });
+    if (pathname === '/setup/wifi.js') {
+      if (options.scriptDelay) await new Promise(resolve => setTimeout(resolve, options.scriptDelay));
+      return route.fulfill({ status: legacy ? 404 : 200,
+        contentType: 'application/javascript', body: legacy ? '' : script });
+    }
     if (pathname === '/setup/wifi.css') return route.fulfill({ status: legacy ? 404 : 200,
       contentType: 'text/css', body: legacy ? '' : style });
     if (['/shared/theme.js', '/shared/theme.css', '/shared/reconnecting-websocket.js',
@@ -76,16 +86,17 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
       if (request.method() === 'POST') {
         scanPosts += 1;
         scanPolls = 0;
-        return json({ operation_id: 7, restarting: false });
+        return json({ operation_id: 7, restarting: false,
+          device_id: variant === 'scan-wrong-device' ? 'ffeeddccbbaa' : initialStatus.device_id });
       }
       scanPolls += 1;
-      if (scanVariant === 'pending') return json({ state: 'scanning', networks: [] });
+      if (scanVariant === 'pending') return json({ state: 'scanning', networks: [], device_id: initialStatus.device_id });
       if (scanVariant === 'interrupted-poll' && scanPolls === 1) return route.abort('failed');
       if (scanVariant === 'timed-out-poll' && scanPolls === 1) {
         await new Promise(resolve => setTimeout(resolve, 4200));
       }
-      if (scanVariant === 'failure') return json({ state: 'failed', networks: [] });
-      return json({ state: 'complete', networks: [
+      if (scanVariant === 'failure') return json({ state: 'failed', networks: [], device_id: initialStatus.device_id });
+      return json({ state: 'complete', device_id: initialStatus.device_id, networks: [
         { ssid: 'New network', rssi: -42, secure: true },
         { ssid: ' Cafe \u200b ', rssi: -50, secure: true },
         { ssid: '<img src=x onerror=alert(1)>', rssi: -60, secure: false }
@@ -105,10 +116,17 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
         requested_ssid: data.ssid, connected: false };
       return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({
         operation_id: 9, state: 'queued', ssid: data.ssid, restarting: false,
-        mdns_name: 'hds', mdns_available: true, device_id: initialStatus.device_id
+        mdns_name: 'hds', mdns_available: true,
+        device_id: variant === 'accepted-wrong-device' ? 'ffeeddccbbaa' :
+          variant === 'accepted-missing-device' ? undefined : initialStatus.device_id
       }) });
     }
+    if (pathname === '/setup/name') {
+      namePosts += 1;
+      return json({ name: request.postDataJSON().name, restarting: false });
+    }
     if (pathname === '/setup/wifi/status') {
+      if (options.initialDelay && !state.operation_id) await new Promise(resolve => setTimeout(resolve, options.initialDelay));
       if (state.operation_id === 9) {
         polls += 1;
         if (variant === 'unreachable') return route.abort('failed');
@@ -133,13 +151,81 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
     }
     return route.fulfill({ status: 404 });
   });
-  await page.goto(startUrl);
-  await page.waitForFunction(legacy
+  await page.goto(startUrl, { waitUntil: options.scriptDelay ? 'commit' : 'load' });
+  if (options.scriptDelay) await page.waitForFunction(() => document.readyState !== 'loading');
+  if (options.waitForInitial !== false) await page.waitForFunction(legacy
     ? () => document.getElementById('wifi-form').dataset.wifiSetup === 'legacy'
     : () => document.getElementById('wifi-current').textContent.includes('Old network'));
   return { context, page, posts: () => posts, variant: value => { variant = value; },
     scanVariant: value => { scanVariant = value; }, scanPosts: () => scanPosts,
+    namePosts: () => namePosts,
     unsupportedRequests: () => unsupportedRequests, operationPolls: () => polls, errors };
+}
+
+async function runDeviceIdentity(browser, html, label, viewport) {
+  const delayed = await openPage(browser, html, viewport, false, 'http://hds.local',
+    { scriptDelay: 2500, waitForInitial: false });
+  assert.equal(await delayed.page.locator('#wifi-connect-button').isEnabled(), false);
+  assert.equal(await delayed.page.locator('#wifi-scan-button').isEnabled(), false);
+  assert.equal(await delayed.page.locator('#reset-wifi-button').isEnabled(), false);
+  assert.equal(await delayed.page.locator('#device-name').isEnabled(), false);
+  await delayed.page.locator(label === 'main' ? '#name-form' : '#name').evaluate(form => {
+    document.getElementById('device-name').value = 'scale';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  });
+  assert.equal(delayed.namePosts(), 0);
+  await delayed.page.waitForFunction(() => document.getElementById('name-status').textContent === 'Checking scale identity...');
+  await delayed.page.waitForFunction(() => document.getElementById('wifi-connect-button').disabled === false);
+  assert.equal(delayed.posts().length, 0);
+  assert.equal(delayed.namePosts(), 0);
+  await delayed.context.close();
+  const pending = await openPage(browser, html, viewport, false, 'http://hds.local',
+    { initialDelay: 1500, waitForInitial: false });
+  assert.equal(await pending.page.locator('#wifi-connect-button').isEnabled(), false);
+  assert.equal(await pending.page.locator('#wifi-scan-button').isEnabled(), false);
+  assert.equal(await pending.page.locator('#reset-wifi-button').isEnabled(), false);
+  assert.equal(await pending.page.locator('#device-name').isEnabled(), false);
+  await pending.page.locator('#wifi-form').evaluate(form => {
+    document.getElementById('ssid').value = 'New network';
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  });
+  assert.equal(pending.posts().length, 0);
+  await pending.page.waitForFunction(() => document.getElementById('wifi-connect-button').disabled === false);
+  await pending.page.locator('#device-name').fill('scale');
+  await pending.page.locator(label === 'main' ? '#name-form' : '#name').evaluate(form =>
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  await pending.page.waitForFunction(() => document.getElementById('name-status').textContent.includes('named'));
+  assert.equal(pending.namePosts(), 1);
+  pending.variant('mutation-wrong-device');
+  await pending.page.locator(label === 'main' ? '#name-form' : '#name').evaluate(form =>
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  await pending.page.waitForFunction(() => document.getElementById('name-status').textContent.includes('different scale'));
+  assert.equal(pending.namePosts(), 1);
+  await pending.context.close();
+
+  for (const variant of ['accepted-wrong-device', 'accepted-missing-device', 'mutation-wrong-device', 'scan-wrong-device']) {
+    const session = await openPage(browser, html, viewport);
+    const { page } = session;
+    session.variant(variant);
+    if (variant === 'scan-wrong-device') await page.locator('#wifi-scan-button').click();
+    else {
+      await page.locator('#ssid').fill('New network');
+      await page.locator('#password').fill('password');
+      await page.locator('#wifi-connect-button').click();
+    }
+    await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('different scale'));
+    assert.equal(await page.locator('#wifi-form').getAttribute('data-wifi-device'), initialStatus.device_id);
+    assert.equal(await page.locator('#wifi-network-dialog').isVisible(), false);
+    assert.equal(await page.locator('#wifi-connect-button').isEnabled(), false);
+    assert.equal(await page.locator('#wifi-scan-button').isEnabled(), false);
+    assert.equal(await page.locator('#device-name').isEnabled(), false);
+    assert.equal(await page.locator('#wifi-open-scale').isVisible(), false);
+    assert.equal(session.operationPolls(), 0);
+    if (variant === 'mutation-wrong-device') assert.equal(session.posts().length, 0);
+    assert.deepEqual(session.errors, []);
+    await session.context.close();
+  }
+  console.log(`${label} ${viewport.width}px: identity pinned before writes, guarded mutations, mismatched accepted replies and scans rejected`);
 }
 
 async function confirmNetwork(page, ssid) {
@@ -512,6 +598,8 @@ async function runLegacy(browser, viewport) {
       await runLegacy(browser, viewport);
       await runResultNavigation(browser, mainPage, 'main', viewport);
       await runResultNavigation(browser, inlinePage, 'inline', viewport);
+      await runDeviceIdentity(browser, mainPage, 'main', viewport);
+      await runDeviceIdentity(browser, inlinePage, 'inline', viewport);
     }
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

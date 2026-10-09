@@ -25,7 +25,10 @@ def main():
         assert f'"{path}"' in routes, path
     assert "wifiSendJson(request, 202, response)" in routes
     assert 'response["restarting"] = false' in routes
-    assert routes.count('response["device_id"] = wifiSetupDeviceId();') == 2
+    assert routes.count('response["device_id"] = wifiSetupDeviceId();') == 3
+    assert routes.count('if (!wifiRequestDeviceAllowed(request)) return;') == 2
+    assert 'if (!wifiRequestDeviceAllowed(request)) return;' in server
+    assert 'request->getHeader("X-HDS-Device-ID")->value() == wifiSetupDeviceId()' in routes
     assert 'request->getParam("wifi_device")->value() != wifiSetupDeviceId()' in routes
     assert "remoteQueueResetAt" not in routes
     assert "saveCredentials" not in routes
@@ -42,10 +45,10 @@ def main():
     assert "portENTER_CRITICAL(&wifiSetupMux)" in worker
     assert "wifiGotIpGeneration != wifiSetupRuntime.ipBaseline" in worker
     assert "WiFi.SSID() == ssid" in worker
-    assert "connectionGeneration = wifiDisconnectGeneration" in worker
+    assert "connectionGeneration = wifiDisconnectGeneration + wifiGotIpGeneration" in worker
     assert "!wifiOperationReserved && !b_ota && !wifiWorkerStopRequested" in worker
     assert "memcpy((void *)&wifiPendingRequest, &empty, sizeof(empty))" in worker
-    assert "request.command != WifiSetupCommand::Scan) wifiSetupRuntime.recoveryApAt = 0" in worker
+    assert "request.command != WifiSetupCommand::Scan) wifiSetupRuntime.recoveryApAt = 0" not in worker
     assert "!wifiSetupBusy() && millis() - wifiSetupRuntime.recoveryApAt >= 600000" in worker
     assert "wifiExecuteSwitchAction(wifiSetupRuntime.change.restore(now, wifiSetupRuntime.change.error))" in worker
     assert "scanned && !wifiScannedSsid(ssid.c_str(), ssid.size())" in routes

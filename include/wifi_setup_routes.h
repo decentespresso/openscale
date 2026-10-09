@@ -25,6 +25,13 @@ static bool wifiRequestOriginAllowed(AsyncWebServerRequest *request) {
   return origin == "http://" + host;
 }
 
+static bool wifiRequestDeviceAllowed(AsyncWebServerRequest *request) {
+  if (!request->hasHeader("X-HDS-Device-ID") ||
+      request->getHeader("X-HDS-Device-ID")->value() == wifiSetupDeviceId()) return true;
+  request->send(409, "application/json", "{\"error\":\"wifi_device_mismatch\"}");
+  return false;
+}
+
 static void wifiSendJson(AsyncWebServerRequest *request, int code, JsonDocument &json) {
   AsyncResponseStream *response = request->beginResponseStream("application/json");
   response->setCode(code);
@@ -80,6 +87,7 @@ void registerWifiSetupRoutes(AsyncWebServer &server) {
           request->send(403, "application/json", "{\"error\":\"origin_denied\"}");
           return;
         }
+        if (!wifiRequestDeviceAllowed(request)) return;
         WifiCredentials credentials;
         bool reset = false;
         if (!parseWifiSetupCredentials(json, credentials, reset)) {
@@ -102,6 +110,7 @@ void registerWifiSetupRoutes(AsyncWebServer &server) {
       request->send(403, "application/json", "{\"error\":\"origin_denied\"}");
       return;
     }
+    if (!wifiRequestDeviceAllowed(request)) return;
     uint32_t id;
     if (!wifiQueueSetup(WifiSetupCommand::Scan, {}, id)) {
       request->send(409, "application/json", "{\"error\":\"wifi_busy\"}");
@@ -113,6 +122,7 @@ void registerWifiSetupRoutes(AsyncWebServer &server) {
   server.on("/setup/wifi/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
     const WifiScanResult scan = wifiReadScanResult();
     JsonDocument response;
+    response["device_id"] = wifiSetupDeviceId();
     response["state"] = scan.state == WifiScanState::Running ? "scanning" :
                         scan.state == WifiScanState::Complete ? "complete" :
                         scan.state == WifiScanState::Failed ? "failed" : "idle";

@@ -1,4 +1,5 @@
 #include <limits.h>
+#include <initializer_list>
 #include <string.h>
 #include <unity.h>
 #include "wifi_credentials.h"
@@ -174,6 +175,21 @@ void testTimeoutWorksAcrossMillisRollover() {
   TEST_ASSERT_EQUAL_INT((int)WifiSwitchAction::AccessPoint, (int)change.tick(9999, false));
 }
 
+void testLateConnectionCannotBeatDeadline() {
+  for (const auto phase : {WifiSwitchPhase::Connecting, WifiSwitchPhase::Restoring}) {
+    for (const unsigned long elapsed : {20000ul, 20001ul}) {
+      WifiSwitch change;
+      change.phase = phase;
+      change.hasPrevious = true;
+      change.startedAt = 1000;
+      const auto expected = phase == WifiSwitchPhase::Connecting
+                                ? WifiSwitchAction::Restore : WifiSwitchAction::AccessPoint;
+      TEST_ASSERT_EQUAL_INT((int)expected, (int)change.tick(1000 + elapsed, true));
+      TEST_ASSERT_NOT_EQUAL((int)WifiSwitchPhase::Verifying, (int)change.phase);
+    }
+  }
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(testUnicodeEdgesAreRemoved);
@@ -190,5 +206,6 @@ int main() {
   RUN_TEST(testReconnectedLinkCannotCompleteStabilityCheck);
   RUN_TEST(testUnavailablePreviousNetworkOpensSetup);
   RUN_TEST(testTimeoutWorksAcrossMillisRollover);
+  RUN_TEST(testLateConnectionCannotBeatDeadline);
   return UNITY_END();
 }

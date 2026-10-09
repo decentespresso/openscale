@@ -13,6 +13,8 @@ def main():
     reset = block_after((ROOT / "include/menu.h").read_text(encoding="utf-8"), "void resetWifi() {")
     save = block_after((ROOT / "src/wifi_setup.cpp").read_text(encoding="utf-8"),
                        "bool saveCredentials(const String &ssid, const String &pass) {")
+    device = block_after((ROOT / "include/wifi_setup_routes.h").read_text(encoding="utf-8"),
+                         "static bool wifiRequestDeviceAllowed(AsyncWebServerRequest *request) {")
     source = r'''
 #include <cassert>
 #include <cstdint>
@@ -146,6 +148,32 @@ int t_actionMessageDelay = 0, restartRequests = 0, menuMessages = 0;
 void menuActionMessageChanged() { ++menuMessages; }
 void markMenuRestartRequired() { ++restartRequests; }
 void resetWifi() { @RESET@ }
+String wifiSetupDeviceId() { return "111111111111"; }
+struct Header {
+  String text;
+  String value() const { return text; }
+};
+struct AsyncWebServerRequest {
+  std::map<String, Header> headers;
+  int responseCode = 0;
+  String responseBody;
+  bool hasHeader(const char *name) const { return headers.count(name) != 0; }
+  const Header *getHeader(const char *name) const { return &headers.at(name); }
+  void send(int code, const char *, const char *body) { responseCode = code; responseBody = body; }
+};
+static bool wifiRequestDeviceAllowed(AsyncWebServerRequest *request) { @DEVICE@ }
+
+void testDeviceMutationGuard() {
+  AsyncWebServerRequest request;
+  assert(wifiRequestDeviceAllowed(&request));
+  request.headers["X-HDS-Device-ID"] = Header{"111111111111"};
+  assert(wifiRequestDeviceAllowed(&request) && request.responseCode == 0);
+  for (const char *value : {"222222222222", "", "11111111111", "111111111111 "}) {
+    request.headers["X-HDS-Device-ID"] = Header{value};
+    assert(!wifiRequestDeviceAllowed(&request) && request.responseCode == 409);
+    assert(request.responseBody == "{\"error\":\"wifi_device_mismatch\"}");
+  }
+}
 
 void seedCredentials(bool legacyOnly) {
   strings = {{"ssid", "Old network"}, {"pass", "old pass"}, {"mdns_name", "scale"}};
@@ -317,13 +345,76 @@ void testRepeatedUnavailableSavedNetworkRecovery() {
   assert(apStarts == 3 && stationStarts == 5);
 }
 
+void testFailedHttpResetKeepsRecoveryTimer() {
+  seedCredentials(false);
+  wifiSetupRuntime = {};
+  wifiSetupRuntime.change.phase = WifiSwitchPhase::Failed;
+  wifiSetupRuntime.recoveryApAt = clockMs;
+  WiFi.currentMode = WIFI_AP;
+  const unsigned long recoveryAt = clockMs;
+  const int before = stationStarts;
+  failedWrites = 1;
+  uint32_t id;
+  assert(wifiQueueSetup(WifiSetupCommand::Reset, {}, id));
+  clockMs += 500;
+  wifiProcessSetup();
+  assert(wifiSetupRuntime.change.error == WifiSetupError::Storage);
+  assert(wifiSetupRuntime.recoveryApAt == recoveryAt);
+  assertPreviousCredentials();
+  clockMs = recoveryAt + 600000;
+  wifiProcessSetup();
+  assert(stationStarts == before + 1 && WiFi.currentMode == WIFI_STA);
+  assert(wifiSetupRuntime.change.phase == WifiSwitchPhase::Restoring);
+  clockMs += 20000;
+  wifiProcessSetup();
+  assert(!wifiSetupBusy() && WiFi.currentMode == WIFI_AP);
+  assert(wifiQueueSetup(WifiSetupCommand::Reset, {}, id));
+  clockMs += 500;
+  wifiProcessSetup();
+  assert(!params.hasCredentials() && wifiSetupRuntime.recoveryApAt == 0);
+}
+
+void testDhcpRecoveryInvalidatesStability() {
+  seedCredentials(false);
+  wifiSetupRuntime = {};
+  WifiCredentials candidate;
+  strcpy(candidate.ssid, "New network");
+  strcpy(candidate.pass, "new pass");
+  uint32_t id;
+  assert(wifiQueueSetup(WifiSetupCommand::Switch, candidate, id));
+  wifiProcessSetup();
+  clockMs += 500;
+  wifiProcessSetup();
+  WiFi.stationStatus = WL_CONNECTED;
+  WiFi.ip.value = 1;
+  wifiGotIpGeneration = wifiGotIpGeneration + 1;
+  wifiProcessSetup();
+  assert(wifiSetupRuntime.change.phase == WifiSwitchPhase::Verifying);
+  clockMs += 2999;
+  WiFi.stationStatus = 0;
+  WiFi.ip.value = 0;
+  WiFi.stationStatus = WL_CONNECTED;
+  WiFi.ip.value = 2;
+  wifiGotIpGeneration = wifiGotIpGeneration + 1;
+  clockMs += 1;
+  wifiProcessSetup();
+  assert(wifiSetupRuntime.change.phase == WifiSwitchPhase::Restoring);
+  assertPreviousCredentials();
+  clockMs += 20000;
+  wifiProcessSetup();
+  assert(!wifiSetupBusy() && WiFi.currentMode == WIFI_AP);
+}
+
 int main() {
+  testDeviceMutationGuard();
   testCredentialResetFailures();
   testScannedSsidVerification();
   testRepeatedUnavailableSavedNetworkRecovery();
   testFailedOledResetPreservesActiveSwitch();
+  testFailedHttpResetKeepsRecoveryTimer();
+  testDhcpRecoveryInvalidatesStability();
 }
-'''.replace("@RESET@", reset).replace("@SAVE@", save)
+'''.replace("@RESET@", reset).replace("@SAVE@", save).replace("@DEVICE@", device)
     compiler = shutil.which("g++")
     assert compiler, "g++ is required"
     with tempfile.TemporaryDirectory() as directory:

@@ -75,4 +75,5 @@
   resetDialog.addEventListener('close', () => {
     if (resetDialog.returnValue === 'reset') save('', '');
   });
+  setBusy(false);
 })();

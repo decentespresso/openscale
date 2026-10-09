@@ -179,7 +179,7 @@ static WifiSetupError wifiConnectionFailure() {
 static bool wifiFreshConnection(const char *ssid, uint32_t &connectionGeneration) {
   portENTER_CRITICAL(&wifiSetupMux);
   const bool freshIp = wifiGotIpGeneration != wifiSetupRuntime.ipBaseline;
-  connectionGeneration = wifiDisconnectGeneration;
+  connectionGeneration = wifiDisconnectGeneration + wifiGotIpGeneration;
   portEXIT_CRITICAL(&wifiSetupMux);
   return freshIp && WiFi.status() == WL_CONNECTED && (uint32_t)WiFi.localIP() != 0 &&
          WiFi.SSID() == ssid;
@@ -221,7 +221,6 @@ void wifiProcessSetup() {
     wifiSetupRuntime.operationId = request.operationId;
     memcpy(wifiSetupRuntime.requestedSsid, request.credentials.ssid,
            sizeof(wifiSetupRuntime.requestedSsid));
-    if (request.command != WifiSetupCommand::Scan) wifiSetupRuntime.recoveryApAt = 0;
     wifiSetupRuntime.change = {};
     if (request.command == WifiSetupCommand::Scan) {
       wifiBeginScan();
@@ -229,9 +228,13 @@ void wifiProcessSetup() {
       const bool saved = params.saveCredentials("", "");
       wifiSetupRuntime.change.phase = saved ? WifiSwitchPhase::Succeeded : WifiSwitchPhase::Failed;
       wifiSetupRuntime.change.error = saved ? WifiSetupError::None : WifiSetupError::Storage;
-      if (saved) setupAP();
+      if (saved) {
+        wifiSetupRuntime.recoveryApAt = 0;
+        setupAP();
+      }
       wifiFinishSetup();
     } else {
+      wifiSetupRuntime.recoveryApAt = 0;
       wifiSetupRuntime.candidate = request.credentials;
       wifiSetupRuntime.change.phase = WifiSwitchPhase::Queued;
       wifiSetupRuntime.change.startedAt = request.queuedAt;

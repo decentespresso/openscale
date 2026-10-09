@@ -51,12 +51,11 @@ struct WifiSwitch {
         }
         break;
       case WifiSwitchPhase::Connecting:
+        if (now - startedAt >= 20000) return restore(now, failure);
         if (connected) {
           phase = WifiSwitchPhase::Verifying;
           startedAt = now;
           connectionGeneration = generation;
-        } else if (now - startedAt >= 20000) {
-          return restore(now, failure);
         }
         break;
       case WifiSwitchPhase::Verifying:
@@ -67,11 +66,11 @@ struct WifiSwitch {
         }
         break;
       case WifiSwitchPhase::Restoring:
-        if (connected) phase = WifiSwitchPhase::Failed;
-        else if (now - startedAt >= 20000) {
+        if (now - startedAt >= 20000) {
           phase = WifiSwitchPhase::Failed;
           return WifiSwitchAction::AccessPoint;
         }
+        if (connected) phase = WifiSwitchPhase::Failed;
         break;
       default:
         break;
