@@ -482,12 +482,12 @@ void showStatus() {
 
 #if HDS_FEATURE_WIFI
 void resetWifi() {
-  saveCredentials("", "");
-  actionMessage = "WiFi Reset";
-  actionMessage2 = "Restart on exit";
+  const bool saved = saveCredentials("", "");
+  actionMessage = saved ? "WiFi Reset" : "WiFi Reset Failed";
+  actionMessage2 = saved ? "Restart on exit" : "Storage error";
   menuActionMessageChanged();
   t_actionMessageDelay = 1000;
-  markMenuRestartRequired();
+  if (saved) markMenuRestartRequired();
 }
 #endif
 

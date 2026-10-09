@@ -68,6 +68,17 @@ WifiScanResult wifiReadScanResult() {
   return result;
 }
 
+bool wifiScannedSsid(const char *ssid, size_t length) {
+  if (ssid == nullptr || length == 0 || length > 32) return false;
+  const WifiScanResult scan = wifiReadScanResult();
+  if (scan.state != WifiScanState::Complete) return false;
+  for (uint8_t index = 0; index < scan.count; ++index) {
+    if (strlen(scan.networks[index].ssid) == length &&
+        memcmp(scan.networks[index].ssid, ssid, length) == 0) return true;
+  }
+  return false;
+}
+
 bool wifiSetupBusy() {
   portENTER_CRITICAL(&wifiSetupMux);
   const bool busy = wifiOperationReserved;
@@ -244,9 +255,11 @@ void wifiProcessSetup() {
     if (!wifiSetupRuntime.change.busy()) wifiFinishSetup();
   }
   if (wifiSetupRuntime.recoveryApAt != 0 && params.hasCredentials() &&
-      !wifiSetupBusy() && millis() - wifiSetupRuntime.recoveryApAt >= 600000) {
+      !wifiSetupBusy() && millis() - wifiSetupRuntime.recoveryApAt >= 600000 &&
+      wifiReserveExternalOperation()) {
     wifiSetupRuntime.recoveryApAt = 0;
-    wifiStartStation(params.getSSID().c_str(), params.getPass().c_str());
+    wifiSetupRuntime.change.hasPrevious = true;
+    wifiExecuteSwitchAction(wifiSetupRuntime.change.restore(now, wifiSetupRuntime.change.error));
   }
 }
 

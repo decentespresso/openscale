@@ -30,6 +30,30 @@ void testInteriorCharactersAndCaseArePreserved() {
   TEST_ASSERT_EQUAL_STRING("a\xe2\x80\x8d" "b", output.ssid);
 }
 
+void testScannedCredentialsPreserveExactEdges() {
+  WifiCredentials output;
+  const char *ssid = " Cafe \xe2\x80\x8b";
+  const char *pass = " pass word \xef\xbb\xbf";
+  TEST_ASSERT_TRUE(wifiNormalizeCredentials(ssid, strlen(ssid), pass, strlen(pass), output, false));
+  TEST_ASSERT_EQUAL_STRING(ssid, output.ssid);
+  TEST_ASSERT_EQUAL_STRING(pass, output.pass);
+  TEST_ASSERT_TRUE(wifiNormalizeCredentials("Cafe ", 5, "short   ", 8, output, false));
+  TEST_ASSERT_EQUAL_STRING("short   ", output.pass);
+  TEST_ASSERT_FALSE(normalize("Cafe ", "short   ", output));
+}
+
+void testScannedCredentialsStillRejectInvalidInputs() {
+  WifiCredentials output;
+  TEST_ASSERT_FALSE(wifiNormalizeCredentials("Cafe\t", 5, "password", 8, output, false));
+  TEST_ASSERT_FALSE(wifiNormalizeCredentials("Cafe", 4, "password\r", 9, output, false));
+  TEST_ASSERT_FALSE(wifiNormalizeCredentials("bad\xc0\xaf", 5, "", 0, output, false));
+  const char embedded[] = {'n', 0, 'x'};
+  TEST_ASSERT_FALSE(wifiNormalizeCredentials(embedded, sizeof(embedded), "", 0, output, false));
+  const char *oversized = "12345678901234567890123456789012 ";
+  TEST_ASSERT_FALSE(wifiNormalizeCredentials(oversized, strlen(oversized), "", 0, output, false));
+  TEST_ASSERT_TRUE(normalize(oversized, "", output));
+}
+
 void testEmptyAndInvisibleSsidAreInvalid() {
   WifiCredentials output;
   TEST_ASSERT_FALSE(normalize("", "", output));
@@ -154,6 +178,8 @@ int main() {
   UNITY_BEGIN();
   RUN_TEST(testUnicodeEdgesAreRemoved);
   RUN_TEST(testInteriorCharactersAndCaseArePreserved);
+  RUN_TEST(testScannedCredentialsPreserveExactEdges);
+  RUN_TEST(testScannedCredentialsStillRejectInvalidInputs);
   RUN_TEST(testEmptyAndInvisibleSsidAreInvalid);
   RUN_TEST(testInvalidUtf8AndControlsAreRejected);
   RUN_TEST(testByteLengthBoundaries);

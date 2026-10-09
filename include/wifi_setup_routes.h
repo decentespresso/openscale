@@ -31,13 +31,16 @@ static bool parseWifiSetupCredentials(JsonVariant &json, WifiCredentials &creden
                                       bool &reset) {
   JsonObject object = json.as<JsonObject>();
   if (object.isNull() || !object["ssid"].is<const char *>() ||
-      (!object["pass"].isNull() && !object["pass"].is<const char *>())) return false;
+      (!object["pass"].isNull() && !object["pass"].is<const char *>()) ||
+      (!object["scanned"].isNull() && !object["scanned"].is<bool>())) return false;
   const JsonString ssid = object["ssid"].as<JsonString>();
   const JsonString pass = object["pass"].as<JsonString>();
   const char *password = pass.c_str() != nullptr ? pass.c_str() : "";
+  const bool scanned = object["scanned"] | false;
+  if (scanned && !wifiScannedSsid(ssid.c_str(), ssid.size())) return false;
   reset = ssid.size() == 0 && pass.size() == 0;
   return reset || wifiNormalizeCredentials(ssid.c_str(), ssid.size(), password,
-                                           pass.size(), credentials);
+                                           pass.size(), credentials, !scanned);
 }
 
 static void wifiSendAccepted(AsyncWebServerRequest *request, uint32_t id,

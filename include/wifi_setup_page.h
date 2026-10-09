@@ -58,6 +58,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   const status = document.getElementById('wifi-status');
   const reconnect = document.getElementById('wifi-reconnect');
   let busy = false;
+  let scannedSsid = null;
   let deviceName = 'hds';
   let mdnsAvailable = false;
   const linkedAttempt = Number(new URLSearchParams(location.search).get('wifi_attempt')) || 0;
@@ -185,13 +186,13 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     setBusy(false);
   }
 
-  async function changeWifi(ssid, pass, kind) {
+  async function changeWifi(ssid, pass, kind, scanned = false) {
     if (busy) return;
     setBusy(true);
     reconnect.hidden = true;
     message(kind === 'reset' ? 'Clearing WiFi settings...' : 'Submitting WiFi connection test...');
     let accepted;
-    try { accepted = await request('/setup/wifi', { ssid, pass }); }
+    try { accepted = await request('/setup/wifi', scanned ? { ssid, pass, scanned: true } : { ssid, pass }); }
     catch (error) {
       message(error.message === 'wifi_busy' || error.message === 'wifi_credentials_invalid' ?
         failureText(error.message) : 'Request not confirmed. Check the scale connection before trying again.', 'error');
@@ -214,8 +215,9 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
 
   form.addEventListener('submit', event => {
     event.preventDefault();
-    const ssid = trimEdge(ssidInput.value);
-    const pass = trimEdge(passwordInput.value);
+    const scanned = scannedSsid !== null && ssidInput.value === scannedSsid;
+    const ssid = scanned ? ssidInput.value : trimEdge(ssidInput.value);
+    const pass = scanned ? passwordInput.value : trimEdge(passwordInput.value);
     if (!ssid || bytes(ssid) > 32 || invalidText(ssid) || invalidText(pass) ||
         !(pass.length === 0 || (bytes(pass) >= 8 && bytes(pass) <= 63) || /^[a-f0-9]{64}$/i.test(pass))) {
       message(failureText('wifi_credentials_invalid'), 'error');
@@ -223,14 +225,19 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     }
     ssidInput.value = ssid;
     passwordInput.value = pass;
-    changeWifi(ssid, pass, 'switch');
+    changeWifi(ssid, pass, 'switch', scanned);
   });
 
   showPassword.addEventListener('change', () => {
     passwordInput.type = showPassword.checked ? 'text' : 'password';
   });
   networks.addEventListener('change', () => {
+    scannedSsid = networks.value || null;
     if (networks.value) { ssidInput.value = networks.value; passwordInput.focus(); }
+  });
+  ssidInput.addEventListener('input', () => {
+    scannedSsid = null;
+    networks.value = '';
   });
   resetButton.addEventListener('click', () => {
     if (busy || resetDialog.open) return;
@@ -244,6 +251,8 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   scanButton.addEventListener('click', async () => {
     if (busy) return;
     setBusy(true);
+    scannedSsid = null;
+    networks.replaceChildren();
     networks.hidden = true;
     scanProgress.hidden = false;
     message('Searching for networks...');

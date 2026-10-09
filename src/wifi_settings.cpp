@@ -53,18 +53,25 @@ bool WiFiParams::saveCredentials(const String &newSsid, const String &newPass) {
         (preferences.getBytes("credentials", &previous, sizeof(previous)) == sizeof(previous) &&
          wifiCredentialRecordValid(previous));
     if (!previousValid) previous = {};
+    if (!hadRecord && ssid.length() <= 32 && pass.length() <= 64) {
+      memcpy(previous.ssid, ssid.c_str(), ssid.length() + 1);
+      memcpy(previous.pass, pass.c_str(), pass.length() + 1);
+    }
     WifiCredentials stored;
     saved =
         preferences.putBytes("credentials", &record, sizeof(record)) == sizeof(record) &&
         preferences.getBytes("credentials", &stored, sizeof(stored)) == sizeof(stored) &&
         memcmp(&record, &stored, sizeof(record)) == 0;
-    if (!saved) {
-      if (hadRecord) preferences.putBytes("credentials", &previous, sizeof(previous));
-      else preferences.remove("credentials");
+    const bool clearingLegacy = saved && newSsid.length() == 0;
+    if (clearingLegacy) {
+      const bool ssidRemoved = !preferences.isKey(wifiSSIDKey) || preferences.remove(wifiSSIDKey);
+      const bool passRemoved = !preferences.isKey(wifiPassKey) || preferences.remove(wifiPassKey);
+      saved = ssidRemoved && passRemoved &&
+              !preferences.isKey(wifiSSIDKey) && !preferences.isKey(wifiPassKey);
     }
-    if (saved && newSsid.length() == 0) {
-      preferences.remove(wifiSSIDKey);
-      preferences.remove(wifiPassKey);
+    if (!saved) {
+      if (hadRecord || clearingLegacy) preferences.putBytes("credentials", &previous, sizeof(previous));
+      else preferences.remove("credentials");
     }
     preferences.end();
   }

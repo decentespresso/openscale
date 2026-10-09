@@ -81,6 +81,7 @@ bool wifiReserveExternalOperation();
 void wifiReleaseExternalOperation();
 WifiSetupStatus wifiReadSetupStatus();
 WifiScanResult wifiReadScanResult();
+bool wifiScannedSsid(const char *ssid, size_t length);
 void wifiProcessSetup();
 void wifiCancelSetup();
 void wifiPublishSetupStatus();

@@ -45,6 +45,10 @@ def main():
     assert "memcpy((void *)&wifiPendingRequest, &empty, sizeof(empty))" in worker
     assert "request.command != WifiSetupCommand::Scan) wifiSetupRuntime.recoveryApAt = 0" in worker
     assert "!wifiSetupBusy() && millis() - wifiSetupRuntime.recoveryApAt >= 600000" in worker
+    assert "wifiExecuteSwitchAction(wifiSetupRuntime.change.restore(now, wifiSetupRuntime.change.error))" in worker
+    assert "scanned && !wifiScannedSsid(ssid.c_str(), ssid.size())" in routes
+    assert 'object["scanned"].is<bool>()' in routes
+    assert "pass.size(), credentials, !scanned" in routes
     assert 'if (url == "/ota/start")' in server
     assert "(wifiSetupBusy() || b_ota)" in server
     assert 'url == "/setup/wifi/scan" && request->method() == HTTP_POST' in server
@@ -66,6 +70,8 @@ def main():
     assert 'memcmp(&record, &stored, sizeof(record)) == 0' in settings
     assert settings.index("memcmp(&record, &stored") < settings.index("ssid = newSsid")
     assert "preferences.clear()" not in settings
+    assert "saved = ssidRemoved && passRemoved" in settings
+    assert "!preferences.isKey(wifiSSIDKey) && !preferences.isKey(wifiPassKey)" in settings
     for element in ("wifi-form", "wifi-networks", "wifi-scan-button", "show-password",
                     "wifi-scan-progress", "wifi-reset-dialog"):
         assert f'id="{element}"' in script

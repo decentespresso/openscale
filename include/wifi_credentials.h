@@ -52,7 +52,7 @@ inline bool wifiEdgeCharacter(uint32_t value) {
 }
 
 inline bool wifiNormalizeField(const char *text, size_t length, char *output,
-                                size_t capacity) {
+                                size_t capacity, bool trimEdges = true) {
   if (text == nullptr || output == nullptr || capacity == 0) return false;
   size_t start = length;
   size_t end = 0;
@@ -61,7 +61,7 @@ inline bool wifiNormalizeField(const char *text, size_t length, char *output,
     const size_t before = offset;
     uint32_t value;
     if (!wifiReadCodePoint(text, length, offset, value) || value == 0) return false;
-    if (!wifiEdgeCharacter(value)) {
+    if (!trimEdges || !wifiEdgeCharacter(value)) {
       if (start == length) start = before;
       end = offset;
     }
@@ -93,11 +93,11 @@ inline bool wifiPasswordValid(const char *pass) {
 
 inline bool wifiNormalizeCredentials(const char *ssid, size_t ssidLength,
                                      const char *pass, size_t passLength,
-                                     WifiCredentials &output) {
+                                     WifiCredentials &output, bool trimEdges = true) {
   WifiCredentials normalized;
-  if (!wifiNormalizeField(ssid, ssidLength, normalized.ssid, sizeof(normalized.ssid)) ||
+  if (!wifiNormalizeField(ssid, ssidLength, normalized.ssid, sizeof(normalized.ssid), trimEdges) ||
       normalized.ssid[0] == 0 ||
-      !wifiNormalizeField(pass, passLength, normalized.pass, sizeof(normalized.pass)) ||
+      !wifiNormalizeField(pass, passLength, normalized.pass, sizeof(normalized.pass), trimEdges) ||
       !wifiPasswordValid(normalized.pass)) return false;
   output = normalized;
   return true;

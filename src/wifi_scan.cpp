@@ -28,7 +28,7 @@ void wifiProcessScan() {
     const String ssid = WiFi.SSID(index);
     char checked[33];
     if (ssid.length() == 0 || ssid.length() > 32 ||
-        !wifiNormalizeField(ssid.c_str(), ssid.length(), checked, sizeof(checked))) continue;
+        !wifiNormalizeField(ssid.c_str(), ssid.length(), checked, sizeof(checked), false)) continue;
     WifiScanNetwork network;
     ssid.toCharArray(network.ssid, sizeof(network.ssid));
     network.rssi = WiFi.RSSI(index);
