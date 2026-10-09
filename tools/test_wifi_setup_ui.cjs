@@ -150,6 +150,7 @@ async function run(browser, html, label, viewport) {
   const session = await openPage(browser, html, viewport);
   const { page } = session;
   assert.equal(await page.locator('#wifi-form').getAttribute('data-wifi-setup'), 'verified');
+  assert.equal(await page.locator('#wifi-check-result').isVisible(), false);
   session.scanVariant('pending');
   const beforeScan = await page.locator('#wifi-networks').evaluate(element => {
     const rect = element.getBoundingClientRect();
@@ -221,6 +222,7 @@ async function run(browser, html, label, viewport) {
   await page.getByRole('button', { name: 'Check WiFi result' }).click();
   await confirmNetwork(page, 'New network');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
+  assert.equal(await page.locator('#wifi-check-result').isVisible(), false);
   assert.deepEqual(session.posts(), [{ ssid: 'New network', pass: 'pass word' }]);
   assert.equal(await page.locator('#password').inputValue(), '');
   assert.equal(await page.evaluate(() => localStorage.length), 0);
@@ -379,6 +381,7 @@ async function runNetworkHandoff(browser, html, label, viewport) {
 async function runLegacy(browser, viewport) {
   const session = await openPage(browser, mainPage, viewport, true);
   const { page } = session;
+  assert.equal(await page.locator('#wifi-check-result').isVisible(), false);
   assert.equal(await page.locator('.wifi-network-tools').isVisible(), false);
   assert.equal(await page.locator('#wifi-current').textContent(), 'Connection status unavailable');
   await page.locator('#show-password').check();

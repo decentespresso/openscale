@@ -271,7 +271,7 @@
         },
         {
           "target": "shared/wifi-legacy.css",
-          "sha256": "8e5bdfc3e3ac0846947ef0a03af1c758aa2a35ee7392e7d76023fe94467e44db"
+          "sha256": "30e2783edabc2b716d9f90f9712ab6ea52c194a3e0b6f563520a1d6a12e43dfd"
         },
         {
           "target": "shared/wifi-legacy.js",

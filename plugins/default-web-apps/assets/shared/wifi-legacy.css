@@ -26,7 +26,7 @@
 .wifi-setup #wifi-status[data-tone=success]{color:var(--green-dark,#118544)}
 .wifi-setup #wifi-status[data-tone=neutral]{color:var(--wifi-muted)}
 .wifi-setup #wifi-network-ssid{overflow-wrap:anywhere;unicode-bidi:plaintext}
-.wifi-setup [hidden]{display:none}
+.wifi-setup [hidden]{display:none!important}
 .wifi-dialog{box-sizing:border-box;width:min(92vw,460px);max-height:90vh;border:1px solid var(--wifi-border);border-radius:8px;padding:18px;background:var(--surface,#fff)}
 .wifi-dialog::backdrop{background:rgba(12,25,20,.7)}
 .wifi-dialog h2{margin:0 0 12px;font-size:18px;line-height:1.25}
