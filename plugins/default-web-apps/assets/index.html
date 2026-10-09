@@ -8,6 +8,8 @@
   <title>Half Decent Scale</title>
   <script src="shared/theme.js?v=1"></script>
   <link rel="stylesheet" href="shared/theme.css?v=1">
+  <link rel="stylesheet" href="/setup/wifi.css" />
+  <script src="/setup/wifi.js" defer></script>
   <style>
     :root {
       --radius-sm: 6px;
@@ -460,15 +462,35 @@
     </ul>
   </section>
 
-  <div id="wifi-popup" class="weight-display">
-    <h2>Setup WiFi</h2>
-          <form id="wifi-form">
-            <input type="text" id="ssid" placeholder="WiFi SSID" required style="margin-right: 1rem;" />
-            <input type="password" id="password" placeholder="WiFi Password" style="margin-right: 1rem;" />
-            <button type="submit">Connect</button>
-          </form>
-          <button id="reset-wifi-button">Reset WiFi settings</button>
-    <p id="wifi-status"></p>
+  <section id="wifi-popup" class="section wifi-setup" aria-labelledby="wifi-title">
+    <h2 id="wifi-title">WiFi</h2>
+    <p id="wifi-current" role="status">Checking connection...</p>
+    <div class="wifi-network-tools">
+      <button id="wifi-scan-button" type="button">Find networks</button>
+      <label for="wifi-networks">Nearby networks
+        <span class="wifi-network-select">
+          <select id="wifi-networks" disabled><option value="">Select a network</option></select>
+          <span id="wifi-scan-progress" class="wifi-scan-progress" role="status" hidden><span class="wifi-spinner" aria-hidden="true"></span>Searching...</span>
+        </span>
+      </label>
+    </div>
+    <form id="wifi-form" autocomplete="off">
+      <div class="wifi-fields">
+        <label for="ssid">Network name
+          <input type="text" id="ssid" autocomplete="off" autocapitalize="none" spellcheck="false" required />
+        </label>
+        <label for="password">Password
+          <input type="password" id="password" autocomplete="off" autocapitalize="none" spellcheck="false" />
+        </label>
+      </div>
+      <div class="wifi-actions">
+        <label for="show-password"><input id="show-password" type="checkbox" />Show password</label>
+        <button id="wifi-connect-button" type="submit">Connect</button>
+      </div>
+    </form>
+    <p id="wifi-status" role="status" aria-live="polite" data-tone="neutral"></p>
+    <a id="wifi-reconnect" hidden></a>
+    <button id="reset-wifi-button" type="button">Reset WiFi settings</button>
     <h2>Scale Name</h2>
     <p class="hint">Sets the address the scale answers at. Default <code>hds</code> gives <code>hds.local</code>. Use a different name for each scale on your network. 1-24 characters: letters, digits, hyphens. Saving restarts the scale.</p>
           <form id="name-form">
@@ -476,7 +498,16 @@
             <button type="submit">Rename</button>
           </form>
     <p id="name-status"></p>
-  </div>
+  </section>
+
+  <dialog id="wifi-reset-dialog" class="wifi-setup wifi-reset-dialog" aria-labelledby="wifi-reset-title" aria-describedby="wifi-reset-description">
+    <h2 id="wifi-reset-title">Reset WiFi settings?</h2>
+    <p id="wifi-reset-description">The scale will disconnect and open DecentScale setup. Other settings stay unchanged.</p>
+    <form method="dialog" class="wifi-dialog-actions">
+      <button value="cancel" autofocus>Cancel</button>
+      <button id="wifi-reset-confirm" value="reset">Reset WiFi</button>
+    </form>
+  </dialog>
 
   <section class="section" aria-labelledby="links-title">
     <h2 id="links-title">Other useful links</h2>
@@ -510,36 +541,6 @@
     }
 
     addPluginApps().catch(() => {});
-
-    // WiFi form submission
-    document.getElementById('wifi-form').addEventListener('submit', async function (e) {
-      e.preventDefault();
-      const ssid = document.getElementById('ssid').value;
-      const pass = document.getElementById('password').value;
-      const status = document.getElementById('wifi-status');
-      status.textContent = 'Connecting...';
-      status.style.color = 'var(--green-dark)';
-
-      try {
-        const response = await fetch(`http://${window.location.host}/setup/wifi`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ ssid, pass })
-        });
-
-        if (response.ok) {
-          status.textContent = 'WiFi setup request sent successfully! Please restart the scale';
-        } else {
-          status.textContent = 'Failed to send WiFi setup request.';
-          status.style.color = 'var(--danger)';
-        }
-      } catch (err) {
-        status.textContent = 'Error connecting to server.';
-        status.style.color = 'var(--danger)';
-      }
-    });
 
     // Scale rename. The device normalizes the value (trim + lowercase) and
     // answers with what it stored, then restarts to apply the new hostname.
@@ -693,30 +694,6 @@
       connectionStatus.style.color = 'var(--muted)';
     });
 
-    document.getElementById('reset-wifi-button').addEventListener('click', async function (e) {
-
-      const status = document.getElementById('wifi-status');
-      try {
-        const response = await fetch(`http://${window.location.host}/setup/wifi`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ 'ssid': '' })
-        });
-
-        if (response.ok) {
-          status.textContent = 'WiFi reset request sent successfully! Please restart the scale';
-          status.style.color = 'var(--green-dark)';
-        } else {
-          status.textContent = 'Failed to send WiFi reset request.';
-          status.style.color = 'var(--danger)';
-        }
-      } catch (err) {
-        status.textContent = 'Error connecting to server.';
-        status.style.color = 'var(--danger)';
-      }
-    })
   </script>
 </body>
 </html>

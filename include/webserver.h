@@ -17,31 +17,17 @@
 #endif
 #include <WiFi.h>
 #include <string.h>
+#include "wifi_setup_page.h"
+#include "wifi_setup_routes.h"
 
 static AsyncWebServer server(80);
 #if HDS_FEATURE_WEBSOCKET
 static AsyncWebSocket websocket("/snapshot");
 #endif
 
-static const char HDS_WIFI_SETUP_PAGE[] PROGMEM = R"html(<!doctype html>
-<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OpenScale setup</title><style>body{font:16px sans-serif;max-width:30rem;margin:2rem auto;padding:0 1rem}label,input,button{display:block;width:100%;box-sizing:border-box;margin:.5rem 0}input,button{padding:.7rem}</style>
-<h1>OpenScale setup</h1>
-<form id="wifi"><label>WiFi name<input name="ssid" required></label><label>Password<input name="pass" type="password"></label><button>Save WiFi</button></form>
-<form id="name"><label>Device name<input name="name" required></label><button>Save name</button></form>
-<p id="status"></p><script>
-const send=(path,data)=>fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>{if(!r.ok)throw Error(r.status);return 'Saved. Restarting.'});
-document.getElementById('wifi').onsubmit=e=>{e.preventDefault();send('/setup/wifi',Object.fromEntries(new FormData(e.currentTarget))).then(show).catch(show)};
-document.getElementById('name').onsubmit=e=>{e.preventDefault();send('/setup/name',Object.fromEntries(new FormData(e.currentTarget))).then(show).catch(show)};
-const show=value=>document.getElementById('status').textContent=value;
-</script></html>)html";
-
 static const unsigned long HTTP_MIN_INTERVAL_WHILE_STREAMING_MS = 200;
 static const int HTTP_STREAMING_BURST = 24;
 static const unsigned long HTTP_PAGELOAD_BURST_RESET_MS = 1500;
-static const size_t WIFI_SETUP_MAX_JSON_BYTES = 256;
-static const size_t WIFI_SETUP_MAX_SSID_BYTES = 32;
-static const size_t WIFI_SETUP_MAX_PASS_BYTES = 64;
 static const size_t NAME_SETUP_MAX_JSON_BYTES = 128;
 static const unsigned long WIFI_SETUP_RESTART_DELAY_MS = 500;
 static const char *LITTLEFS_CACHE_CONTROL =
@@ -49,24 +35,6 @@ static const char *LITTLEFS_CACHE_CONTROL =
 
 static bool httpIsPageLoadRequest(const String &url) {
   return url == "/" || url.endsWith(".html");
-}
-
-static bool parseWifiSetupCredentials(JsonVariant &json, String &ssid, String &pass) {
-  JsonObject jsonObj = json.as<JsonObject>();
-  if (jsonObj.isNull()) {
-    return false;
-  }
-  if (!jsonObj["ssid"].is<const char *>()) {
-    return false;
-  }
-  if (jsonObj["pass"] != NULL && !jsonObj["pass"].is<const char *>()) {
-    return false;
-  }
-
-  ssid = jsonObj["ssid"].as<String>();
-  pass = jsonObj["pass"].is<const char *>() ? jsonObj["pass"].as<String>() : "";
-  return ssid.length() <= WIFI_SETUP_MAX_SSID_BYTES &&
-         pass.length() <= WIFI_SETUP_MAX_PASS_BYTES;
 }
 
 static const char *parseDeviceNameRequest(JsonVariant &json) {
@@ -87,29 +55,20 @@ void startWebServer() {
 #endif
   static bool handlersRegistered = false;
   if (!handlersRegistered) {
-    AsyncCallbackJsonWebHandler *wifiHandler = new AsyncCallbackJsonWebHandler(
-        "/setup/wifi", [](AsyncWebServerRequest *request, JsonVariant &json) {
-          String ssid;
-          String pass;
-          if (!parseWifiSetupCredentials(json, ssid, pass)) {
-            request->send(400);
-            return;
-          }
-
-          if (!saveCredentialsForRestart(ssid, pass)) {
-            request->send(500, "application/json",
-                          "{\"error\":\"wifi_credentials_save_failed\"}");
-            return;
-          }
-          Serial.println("new ssid saved");
-          request->send(200);
-          remoteQueueResetAt(millis() + WIFI_SETUP_RESTART_DELAY_MS);
-        });
-    wifiHandler->setMaxContentLength(WIFI_SETUP_MAX_JSON_BYTES);
-    server.addHandler(wifiHandler);
+    registerWifiSetupRoutes(server);
+    server.on("/setup/wifi.js", HTTP_GET, [](AsyncWebServerRequest *request) {
+      request->send(200, "application/javascript", HDS_WIFI_SETUP_SCRIPT);
+    });
+    server.on("/setup/wifi.css", HTTP_GET, [](AsyncWebServerRequest *request) {
+      request->send(200, "text/css", HDS_WIFI_SETUP_STYLE);
+    });
 
     AsyncCallbackJsonWebHandler *nameHandler = new AsyncCallbackJsonWebHandler(
         "/setup/name", [](AsyncWebServerRequest *request, JsonVariant &json) {
+          if (!wifiRequestOriginAllowed(request)) {
+            request->send(403, "application/json", "{\"error\":\"origin_denied\"}");
+            return;
+          }
           const char *requested = parseDeviceNameRequest(json);
           if (requested == nullptr) {
             request->send(400, "application/json",
@@ -125,7 +84,12 @@ void startWebServer() {
           }
 
           char body[MDNS_NAME_BUFFER_BYTES + 40];
+          if (!wifiReserveExternalOperation()) {
+            request->send(409, "application/json", "{\"error\":\"wifi_busy\"}");
+            return;
+          }
           if (strcmp(normalized, wifiDeviceName()) == 0) {
+            wifiReleaseExternalOperation();
             snprintf(body, sizeof(body),
                      "{\"name\":\"%s\",\"restarting\":false}", normalized);
             request->send(200, "application/json", body);
@@ -134,6 +98,7 @@ void startWebServer() {
 
           char stored[MDNS_NAME_BUFFER_BYTES] = {0};
           if (!saveDeviceNameForRestart(normalized, stored, sizeof(stored))) {
+            wifiReleaseExternalOperation();
             request->send(500, "application/json",
                           "{\"error\":\"device_name_save_failed\"}");
             return;
@@ -168,6 +133,14 @@ void startWebServer() {
 
     server.addMiddleware([](AsyncWebServerRequest *request, ArMiddlewareNext next) {
       const String &url = request->url();
+      const bool activeOtaUpload = b_ota && !b_pullOtaRunning && url == "/ota/upload";
+      if (!activeOtaUpload && (wifiSetupBusy() || b_ota) &&
+          (url == "/setup/name" || url == "/setup/wifi" ||
+           (url == "/setup/wifi/scan" && request->method() == HTTP_POST) ||
+           url == "/update" || url.startsWith("/ota/"))) {
+        request->send(409, "application/json", "{\"error\":\"wifi_busy\"}");
+        return;
+      }
 #if HDS_FEATURE_PULL_OTA
       if (b_pullOtaRunning && (url == "/update" || url.startsWith("/ota/"))) {
         request->send(409, "text/plain", "pull OTA in progress");
@@ -198,6 +171,19 @@ void startWebServer() {
         return;
       }
 #if HDS_FEATURE_ELEGANT_OTA
+      if (url == "/ota/start") {
+        if (!wifiRequestOriginAllowed(request)) {
+          request->send(403, "application/json", "{\"error\":\"origin_denied\"}");
+          return;
+        }
+        if (!wifiReserveExternalOperation()) {
+          request->send(409, "application/json", "{\"error\":\"wifi_busy\"}");
+          return;
+        }
+        next();
+        if (!b_ota) wifiReleaseExternalOperation();
+        return;
+      }
       if (url.startsWith("/ota/")) {
         next();
         return;

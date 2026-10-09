@@ -56,6 +56,8 @@ Light Sleep boosts CPU performance briefly after a button wake. `serviceScaleBut
 
 ## WiFi And BLE
 
+The WiFi initialization task stays alive as the WiFi worker. Only that task runs `wifiSupervise()`; calls from the main loop remain harmless. `wifi_setup_control.cpp` handles bounded requests and status snapshots; `wifi_scan.cpp` handles scans. Shared fields live in `include/parameter.h` behind `wifiSetupMux`. `wifiRadioMutex` serializes the worker with synchronous shutdown and OLED credential reset. Network callbacks record events without taking either blocking mutex. The worker must keep running while an OLED status page blocks the main loop. Connection tests use STA-only mode; a failed test restores the previous network or opens the existing setup AP.
+
 WiFi and BLE share the 2.4 GHz radio. Keep Arduino-ESP32 default modem sleep. Do not call `WiFi.setSleep(false)`.
 
 Disabling WiFi sleep while BLE is connected can cause packet loss, duplicate pings, and multi-second HTTP stalls.

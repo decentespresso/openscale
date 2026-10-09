@@ -1,5 +1,5 @@
 {
-  "catalog_revision": "88803f7d532ac74d47624e2c5d6450c195ef5d742ec82abf4dc8153cd8ebad74",
+  "catalog_revision": "40bec4bce8f31de46b6698ee3e39eefc61798ce7459a64020ddb783fb65d5d4e",
   "custom_ota_signing_key_generation": 1,
   "firmware_refs": [
     "v3.1.14",
@@ -12,8 +12,10 @@
       "id": "wifi",
       "name": "WiFi",
       "description": "Wireless networking with inline configuration support.",
-      "tooltip": "Provides WiFi and a minimal setup server for network and device-name configuration.",
-      "requires": [],
+      "tooltip": "Provides WiFi and the embedded web server used to configure the network and device name.",
+      "requires": [
+        "webserver"
+      ],
       "firmware_refs": [
         "v3.1.14",
         "v3.1.14-preview.3",

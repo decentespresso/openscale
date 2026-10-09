@@ -23,7 +23,7 @@ DEFAULT_FIRMWARE_VERSION_PATTERN = re.compile(
 )
 FIRMWARE_REFS = ("v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main")
 FEATURES = {
-    "wifi": ("HDS_FEATURE_WIFI", (), FIRMWARE_REFS),
+    "wifi": ("HDS_FEATURE_WIFI", ("webserver",), FIRMWARE_REFS),
     "mdns": ("HDS_FEATURE_MDNS", ("wifi",), FIRMWARE_REFS),
     "webserver": ("HDS_FEATURE_WEBSERVER", ("wifi",), FIRMWARE_REFS),
     "websocket": ("HDS_FEATURE_WEBSOCKET", ("wifi", "webserver"), FIRMWARE_REFS),
@@ -37,7 +37,7 @@ FEATURE_PRESENTATION = {
     "wifi": (
         "WiFi",
         "Wireless networking with inline configuration support.",
-        "Provides WiFi and a minimal setup server for network and device-name configuration.",
+        "Provides WiFi and the embedded web server used to configure the network and device name.",
     ),
     "mdns": (
         "mDNS",

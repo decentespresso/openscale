@@ -125,3 +125,7 @@ The scale advertises `<name>.local` and `_decentscale._tcp` with `path=/snapshot
 `stopWifi()` withdraws the registration through `MDNS.end()` before the radio goes down. That call is what emits the DNS-SD goodbye, and every deliberate teardown -- remote or USB reset, rename and wifi-setup reboots, deep sleep -- routes through it. Skipping it leaves the instance in resolver caches for the PTR TTL (75 min by convention against 2 min for SRV/A), which browses as a service that never resolves. Withdrawal is best effort: the goodbye is one unacknowledged multicast, and crashes, flat batteries, and unplugs send nothing.
 
 If no WiFi credentials are stored, `setupAP()` in `src/wifi_setup.cpp` starts provisioning mode. `README.md` contains the user-facing connection details.
+
+`POST /setup/wifi` queues a direct connection test and returns HTTP 202 with `operation_id` and `restarting:false`; it no longer restarts the scale. `GET /setup/wifi/status` reports the matching result without a password. `POST /setup/wifi/scan` starts a bounded asynchronous scan; `GET /setup/wifi/scan` returns up to twenty deduplicated networks. Both web pages load the firmware-served `/setup/wifi.js` and `/setup/wifi.css`, including WiFi-only builds without LittleFS. Run `pio test -e native` and `python tools/test_wifi_setup_contract.py` when changing this flow.
+
+WiFi-only custom builds retain `webserver` to use the same verified setup endpoints without LittleFS. The previous socket-based setup server is removed.

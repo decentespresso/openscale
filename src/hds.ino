@@ -29,8 +29,6 @@ void waitForEnergyMainLoopWork();
 #endif
 #if HDS_FEATURE_WEBSERVER
 #include "webserver.h"
-#elif HDS_FEATURE_WIFI
-#include "wifi_config_server.h"
 #endif
 #include "websocket.h"
 #if HDS_FEATURE_ELEGANT_OTA
@@ -825,24 +823,38 @@ void button_init() {
 
 #if HDS_FEATURE_WIFI
 void _wifi_init(void *args) {
-  b_wifiEnabled = true;
-  setupWifi();
+  wifiWorkerStarted();
+  bool transportsStarted = false;
+  for (;;) {
+    if (!transportsStarted || (!b_wifiEnabled && wifiWorkerNeedsStart())) {
+      setupWifi();
+      if (b_wifiEnabled) {
 #if HDS_FEATURE_ELEGANT_OTA
-  wifiOta();
+        wifiOta();
 #endif
 #if HDS_FEATURE_WEBSOCKET
-  setupWebsocketEvents();
+        setupWebsocketEvents();
 #endif
 #if HDS_FEATURE_WEBSERVER
-  startWebServer();
+        startWebServer();
 #endif
-  vTaskDelete(NULL);
+        transportsStarted = true;
+      }
+    }
+    wifiSupervise();
+    vTaskDelay(pdMS_TO_TICKS(WIFI_SUPERVISE_INTERVAL_MS));
+  }
 }
 void wifi_init() {
   if (!b_wifiOnBoot) {
     return;
   }
-  xTaskCreate(_wifi_init, "Wifi Init Task", configMINIMAL_STACK_SIZE + 2048, NULL, 0, NULL);
+  if (!wifiRequestWorkerStart()) return;
+  if (xTaskCreate(_wifi_init, "Wifi Init Task", configMINIMAL_STACK_SIZE + 6144,
+                  NULL, 0, NULL) != pdPASS) {
+    wifiWorkerStartFailed();
+    Serial.println("WiFi worker startup failed");
+  }
 }
 #endif
 
@@ -2330,9 +2342,6 @@ void loop() {
 #if HDS_FEATURE_WIFI
   if (b_softSleep && b_wifiEnabled) {
     wifiSupervise();
-#if !HDS_FEATURE_WEBSERVER
-    wifiConfigServerPoll();
-#endif
   }
 #endif
   if (!b_softSleep) {
@@ -2362,9 +2371,6 @@ void loop() {
 #if HDS_FEATURE_WIFI
       if (b_wifiEnabled) {
         wifiSupervise();
-#if !HDS_FEATURE_WEBSERVER
-        wifiConfigServerPoll();
-#endif
       }
 #endif
 #if HDS_ENABLE_GRINDER
@@ -2411,9 +2417,6 @@ void loop() {
 #if HDS_FEATURE_WIFI
         if (b_wifiEnabled) {
           wifiSupervise();
-#if !HDS_FEATURE_WEBSERVER
-          wifiConfigServerPoll();
-#endif
 #if HDS_FEATURE_ELEGANT_OTA
           ElegantOTA.loop();
           processOtaDisplayUpdate();

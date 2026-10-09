@@ -1,7 +1,7 @@
 {
   "schema": 2,
   "custom_ota_signing_key_generation": 1,
-  "catalog_revision": "88803f7d532ac74d47624e2c5d6450c195ef5d742ec82abf4dc8153cd8ebad74",
+  "catalog_revision": "40bec4bce8f31de46b6698ee3e39eefc61798ce7459a64020ddb783fb65d5d4e",
   "firmware_refs": [
     "v3.1.14",
     "v3.1.14-preview.3",
@@ -41,7 +41,9 @@
   },
   "features": {
     "wifi": {
-      "requires": [],
+      "requires": [
+        "webserver"
+      ],
       "firmware_refs": [
         "v3.1.14",
         "v3.1.14-preview.3",
@@ -241,7 +243,7 @@
         },
         {
           "target": "index.html",
-          "sha256": "d9d8afc865c62124add30ff3237c2c7f607551bc758cbf028435533456c44df4"
+          "sha256": "7f25ee4d7aedaab8d2dd626f8c5be55007f70f6e57a0c2fdf746c4ee09904097"
         },
         {
           "target": "shared/app.css",

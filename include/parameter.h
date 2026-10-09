@@ -7,6 +7,29 @@
 #include <math.h>
 #include <mutex>
 #include "calibration_validation.h"
+#if HDS_FEATURE_WIFI
+#include "wifi_setup.h"
+
+portMUX_TYPE wifiSetupMux = portMUX_INITIALIZER_UNLOCKED;
+StaticSemaphore_t wifiRadioMutexStorage;
+StaticSemaphore_t wifiSettingsMutexStorage;
+SemaphoreHandle_t wifiRadioMutex = nullptr;
+SemaphoreHandle_t wifiSettingsMutex = nullptr;
+volatile TaskHandle_t wifiWorkerTask = nullptr;
+volatile bool wifiWorkerStarting = false;
+volatile bool wifiWorkerStartRequested = false;
+volatile bool wifiWorkerStopRequested = false;
+volatile bool wifiOperationReserved = false;
+volatile WifiSetupRequest wifiPendingRequest;
+volatile WifiSetupStatus wifiSetupStatus;
+volatile WifiScanResult wifiScanResult;
+volatile uint32_t wifiGotIpGeneration = 0;
+volatile uint32_t wifiDisconnectGeneration = 0;
+volatile uint16_t wifiDisconnectReason = 0;
+volatile bool wifiStaAssociated = false;
+WifiSetupRuntime wifiSetupRuntime;
+#endif
+
 #include "auto_off_activity.h"
 #include "energy_runtime_policy.h"
 #include "pull_ota_target.h"

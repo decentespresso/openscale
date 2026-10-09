@@ -1704,6 +1704,7 @@ void pullOtaUpdateTask(void *args) {
     pullOtaFail("OTA runtime pause failed");
     b_ota = false;
     b_pullOtaRunning = false;
+    wifiReleaseExternalOperation();
     vTaskDelete(NULL);
     return;
   }
@@ -1715,12 +1716,17 @@ void pullOtaUpdateTask(void *args) {
     if (filesystemRecoveryActive.load()) pullOtaResumeFilesystemServices();
     b_ota = false;
     b_pullOtaRunning = false;
+    wifiReleaseExternalOperation();
   }
   vTaskDelete(NULL);
 }
 
 void pullOtaUpdate(const PullOtaTargetVersion &target) {
   if (b_pullOtaRunning || b_ota) {
+    return;
+  }
+  if (!wifiReserveExternalOperation()) {
+    pullOtaFail("WiFi busy", "Try again later");
     return;
   }
   setOtaRuntimePaused(false);
@@ -1737,6 +1743,7 @@ void pullOtaUpdate(const PullOtaTargetVersion &target) {
   if (started != pdPASS) {
     b_pullOtaRunning = false;
     b_ota = false;
+    wifiReleaseExternalOperation();
     pullOtaFail("OTA task failed");
   }
 }
