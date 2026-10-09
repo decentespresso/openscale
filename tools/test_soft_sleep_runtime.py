@@ -30,7 +30,7 @@ def main():
 bool b_softSleep = false, b_u8g2Sleep = false, b_wifiEnabled = true;
 bool b_ota = false, b_powerOff = false, pendingOtaDispatching = false;
 bool rail = true, accessory = true, oled = true;
-int wakes = 0, sleeps = 0, supervises = 0, polls = 0, adcRefreshes = 0, outputResets = 0;
+int wakes = 0, sleeps = 0, supervises = 0, adcRefreshes = 0, outputResets = 0;
 constexpr int PWR_CTRL = 3, ACC_PWR_CTRL = 14, LOW = 0, HIGH = 1;
 uint32_t wsPendingMask = 0;
 uint8_t pendingSamplesInUse = 0;
@@ -119,7 +119,6 @@ bool refreshScaleDatasetAfterDiscontinuity(const char*) {
 void resetScaleOutputAfterAdcDiscontinuity() { ++outputResets; }
 bool wakeScaleFromSoftSleep(const char *context) { @WAKE_HELPER@ }
 void wifiSupervise() { ++supervises; }
-void wifiConfigServerPoll() { ++polls; }
 void bleWake() { @BLE_WAKE@ }
 bool wsWake() { void *client = nullptr; @WS_WAKE@ }
 void bleSleep() { @BLE_SLEEP@ }
@@ -345,16 +344,13 @@ int main() {
   b_softSleep = true;
   supervise();
   assert(supervises == 1);
-  assert(polls == (HDS_FEATURE_WEBSERVER ? 0 : 1));
   b_wifiEnabled = false;
   supervise();
   assert(supervises == 1);
-  assert(polls == (HDS_FEATURE_WEBSERVER ? 0 : 1));
   b_wifiEnabled = true;
   b_softSleep = false;
   supervise();
   assert(supervises == 1);
-  assert(polls == (HDS_FEATURE_WEBSERVER ? 0 : 1));
 }
 '''
     replacements = {
