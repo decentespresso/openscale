@@ -20,11 +20,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     ws.addEventListener('close', () => {
+        scale.stopDosing();
         ui.updateStatus('WebSocket Disconnected');
         console.log('WebSocket disconnected');
     });
 
     ws.addEventListener('error', () => {
+        scale.stopDosing();
         ui.updateStatus('WebSocket Error');
         console.log('WebSocket error');
     });
