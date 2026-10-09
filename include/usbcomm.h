@@ -699,6 +699,12 @@ void handleAdsReset(uint8_t mode) {
   Serial.print("ADS reset mode 0x0");
   Serial.println(mode);
 
+#if HDS_ENABLE_GRINDER
+  if (grinderSettings.enabled && grinderRuntime.state != GRINDER_STATE_ERROR &&
+      grinderRuntime.state != GRINDER_STATE_DISABLED) {
+    grinderEnterError("ADS reset");
+  }
+#endif
   scale.powerDown();
   delay(500);
   scale.powerUp();
