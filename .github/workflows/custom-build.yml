@@ -36,7 +36,7 @@ on:
       plugins:
         description: Comma-separated plugin IDs
         required: false
-        default: default-web-apps
+        default: default-web-apps,quality-control-assistant
       builder_ref:
         description: Trusted builder ref supplied by the build service
         required: false
