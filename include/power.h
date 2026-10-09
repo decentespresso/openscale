@@ -39,9 +39,6 @@ static void stopWifiConfigServer();
 void beforeDeepSleepFlush();
 #endif
 
-const int windowSize = 1000;
-float batteryLevels[windowSize];
-int readIndex = 0;
 const float showFullBatteryAboveVoltage = 4.1;
 const float showEmptyBatteryBelowVoltage = 3.4;
 
