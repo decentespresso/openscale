@@ -55,6 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('toggleTimer')?.addEventListener('click', () => {
+        scale.resetMeasurementBaseline();
         ui.toggleTimer();
     });
 
