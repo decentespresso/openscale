@@ -13,7 +13,7 @@ Do not reconstruct the active settings layout from the old address declarations 
 | Store | Owner | Purpose |
 | --- | --- | --- |
 | NVS `hds` | `include/storage.h` | Scale settings and their schema version. |
-| NVS `wifi` | `src/wifi_setup.cpp` | WiFi SSID and password, plus the `mdns_name` device name (default `hds`). |
+| NVS `wifi` | `src/wifi_settings.cpp` | WiFi SSID and password, plus the `mdns_name` device name (default `hds`). |
 | NVS `ota_fs` | `include/pull_ota.h` | Pending staged LittleFS metadata. |
 | NVS `ota_verify` | `include/ota_rollback.h` | OTA boot-verification attempt count. |
 | NVS `ota_recovery` | `include/filesystem_recovery.h` | Persisted filesystem-free recovery state. |
@@ -23,7 +23,11 @@ Do not reconstruct the active settings layout from the old address declarations 
 
 Keep these namespaces independent. A settings reset or migration must not clear WiFi credentials or OTA recovery state unless that behavior is explicitly requested.
 
-The device name lives in `wifi`, not `hds`, so renaming a scale never touches the settings schema or its migration. No shipped path clears it: `WiFiParams::reset()` would (it drops the whole `wifi` namespace) but has no callers, and the web UI's "Reset WiFi settings" button posts `{"ssid":""}`, which clears credentials only and leaves the name in place. Values are normalized and validated by `include/mdns_name.h` before they reach NVS, and a stored value that fails validation falls back to the default at boot.
+The device name lives in `wifi`, not `hds`, so renaming a scale never touches the settings schema or its migration. Reset WiFi posts `{"ssid":""}` and clears credentials only. Name values are normalized and validated by `include/mdns_name.h`; invalid stored names fall back to the default at boot.
+
+New WiFi credentials use the `credentials` blob: version byte `1`, a 33-byte terminated SSID buffer, and a 65-byte terminated password buffer. `WiFiParams` reads the old `ssid` and `pass` keys only when the blob is absent. It does not trim existing stored values. A network-change candidate stays in RAM until the worker observes a fresh DHCP address and three seconds of stability. The worker writes and verifies the complete blob before updating its active credentials. Reset writes an empty credential record and verifies removal of both legacy keys; incomplete clearing reports failure and restores the previous credential blob. It never clears the namespace. Downgrading to firmware that only knows the legacy keys does not recover a newly saved network.
+
+Manual WiFi input trims Unicode whitespace and invisible characters at both edges. Selecting a scan result preserves the byte-exact SSID and password, including meaningful edge spaces. The firmware permits this only when the submitted SSID exactly matches its latest completed scan; UTF-8, control-character, and byte-length validation still applies. A failed scan clears the browser's old choices. Recovery AP retries the saved network after ten minutes, with a 20-second deadline before reopening the AP if that retry fails.
 
 ## HDS Schema Version 1
 

@@ -1,7 +1,7 @@
 {
   "schema": 2,
   "custom_ota_signing_key_generation": 1,
-  "catalog_revision": "88803f7d532ac74d47624e2c5d6450c195ef5d742ec82abf4dc8153cd8ebad74",
+  "catalog_revision": "40bec4bce8f31de46b6698ee3e39eefc61798ce7459a64020ddb783fb65d5d4e",
   "firmware_refs": [
     "v3.1.14",
     "v3.1.14-preview.3",
@@ -41,7 +41,9 @@
   },
   "features": {
     "wifi": {
-      "requires": [],
+      "requires": [
+        "webserver"
+      ],
       "firmware_refs": [
         "v3.1.14",
         "v3.1.14-preview.3",
@@ -241,7 +243,7 @@
         },
         {
           "target": "index.html",
-          "sha256": "d9d8afc865c62124add30ff3237c2c7f607551bc758cbf028435533456c44df4"
+          "sha256": "d220aed07a8713de6b15ea73af4efc8647f83e85b70234b10133fd9c359bd1a7"
         },
         {
           "target": "shared/app.css",
@@ -270,6 +272,14 @@
         {
           "target": "shared/theme.js",
           "sha256": "c45fdfdd150b5cabc50e13257fee963fd8275fe4f1965a4084c7d2e306116705"
+        },
+        {
+          "target": "shared/wifi-legacy.css",
+          "sha256": "57f4c0b12bbfba35904725c9e9be7ed5589dcc4a2c5b36bcdd8966b3ec6ff812"
+        },
+        {
+          "target": "shared/wifi-legacy.js",
+          "sha256": "f4eb0d285a0bdae02461250d3812a3f8dc4106634a6b7e4b6f7a09c01c91b341"
         }
       ]
     },

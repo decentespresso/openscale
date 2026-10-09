@@ -18,6 +18,7 @@ def main():
     recovery = (ROOT / "include/filesystem_recovery.h").read_text(encoding="utf-8")
     rollback = (ROOT / "include/ota_rollback.h").read_text(encoding="utf-8")
     web = (ROOT / "include/webserver.h").read_text(encoding="utf-8")
+    setupPage = (ROOT / "include/wifi_setup_page.h").read_text(encoding="utf-8")
     custom = (ROOT / "include/custom_build_ota.h").read_text(encoding="utf-8")
     setup = (ROOT / "src/hds.ino").read_text(encoding="utf-8")
     loader = function_body(ota, "bool pullOtaLoadPendingLittleFs(")
@@ -268,31 +269,61 @@ int main() {
         subprocess.run([compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror", str(cpp), "-o", str(binary)], check=True)
         subprocess.run([str(binary)], check=True)
     print("filesystem recovery runtime tests passed")
-    script = web.split("<script>", 1)[1].split("</script>", 1)[0]
+    inlinePage = setupPage.split('R"html(', 1)[1].split(')html";', 1)[0]
+    assert '<script src="/setup/wifi.js" defer></script>' in inlinePage
+    script = inlinePage.split("<script>", 1)[1].split("</script>", 1)[0]
     subprocess.run(["node", "-e", r'''
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const forms = {wifi: {data: {ssid: 'network', pass: 'secret'}}, name: {data: {name: 'scale'}}, status: {}};
+const elements = {
+  name: {addEventListener(type, handler) { assert.equal(type, 'submit'); this.submit = handler; }},
+  'wifi-form': {dataset: {}},
+  'device-name': {value: 'scale'},
+  'name-status': {}
+};
 const calls = [];
-let ok = true;
+let responseStatus = 200;
+let responseError = '';
+let restarting = true;
+let interrupted = false;
 vm.runInNewContext(process.argv[1], {
-  document: {getElementById: id => forms[id]},
-  name: '', status: '',
-  FormData: class { constructor(form) { return Object.entries(form.data); } },
-  fetch: async (path, options) => { calls.push([path, JSON.parse(options.body)]); return {ok, status: 500}; }
+  document: {getElementById: id => elements[id]},
+  fetch: async (path, options) => {
+    calls.push([path, options.method, options.headers['Content-Type'],
+      options.headers['X-HDS-Device-ID'], JSON.parse(options.body)]);
+    if (interrupted) throw Error('Connection interrupted');
+    return {ok: responseStatus === 200, status: responseStatus,
+      json: async () => ({name: 'scale', restarting, error: responseError}),
+      clone() { return this; }};
+  }
 });
 (async () => {
-  for (const id of ['wifi', 'name']) {
-    forms[id].onsubmit({preventDefault() {}, currentTarget: forms[id]});
-    await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(calls.at(-1), ['/setup/' + id, forms[id].data]);
-    assert.equal(forms.status.textContent, 'Saved. Restarting.');
+  const submit = () => elements.name.submit({preventDefault() {}});
+  await submit();
+  assert.equal(calls.length, 0);
+  assert.equal(elements['name-status'].textContent, 'Checking scale identity...');
+  elements['wifi-form'].dataset = {wifiDevice: '111111111111'};
+  await submit();
+  assert.deepEqual(calls.at(-1), ['/setup/name', 'POST', 'application/json',
+    '111111111111', {name: 'scale'}]);
+  assert.equal(elements['name-status'].textContent, 'Saved as scale. Restarting.');
+  restarting = false;
+  await submit();
+  assert.equal(elements['name-status'].textContent, 'Already named scale.');
+  for (const [status, error, message] of [
+    [409, 'wifi_busy', 'Another WiFi operation is running.'],
+    [409, 'wifi_device_mismatch', 'This address reached a different scale. Open the original scale before renaming it.'],
+    [500, 'device_name_save_failed', 'Could not save the device name.']
+  ]) {
+    responseStatus = status;
+    responseError = error;
+    await submit();
+    assert.equal(elements['name-status'].textContent, message);
   }
-  ok = false;
-  forms.wifi.onsubmit({preventDefault() {}, currentTarget: forms.wifi});
-  await new Promise(resolve => setImmediate(resolve));
-  assert.match(String(forms.status.textContent), /500/);
-  console.log('fallback HTTP page form tests passed');
+  interrupted = true;
+  await submit();
+  assert.equal(elements['name-status'].textContent, 'Connection interrupted');
+  console.log('fallback HTTP page rename tests passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
 ''', script], check=True)
 

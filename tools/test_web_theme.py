@@ -185,8 +185,8 @@ def main():
     assert "background: var(--canvas)" in appCss
     assert ".bg-purple-400 {\n  background-color: var(--green);" in appCss
     assert ".dosing-settings {" in appCss and ".assistant-form-grid {" in appCss
-    webserver = (ROOT / "include/webserver.h").read_text(encoding="utf-8")
-    inlinePage = webserver.split("HDS_WIFI_SETUP_PAGE[]", 1)[1].split(")html\";", 1)[0]
+    setupPage = (ROOT / "include/wifi_setup_page.h").read_text(encoding="utf-8")
+    inlinePage = setupPage.split('R"html(', 1)[1].split(')html";', 1)[0]
     assert "theme.css" not in inlinePage and "theme.js" not in inlinePage
     assert "`docs/AI_WEB_UI_NOTES.md`" in (ROOT / "docs/AI_REPO_MAP.md").read_text(encoding="utf-8")
 

@@ -83,6 +83,7 @@ void processOtaDisplayUpdate() {
   } else {
     snprintf(buffer, sizeof(buffer), "OTA update failed");
     b_ota = false;
+    wifiReleaseExternalOperation();
   }
 
 #if HDS_ENABLE_ENERGY_MENU
