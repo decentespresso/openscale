@@ -370,8 +370,8 @@ void wifiSupervise() {
 bool saveCredentials(const String &ssid, const String &pass) {
   wifiInitLocks();
   xSemaphoreTake(wifiRadioMutex, portMAX_DELAY);
-  wifiCancelSetup();
   const bool saved = params.saveCredentials(ssid, pass);
+  if (saved) wifiCancelSetup();
   wifiPublishSetupStatus();
   xSemaphoreGive(wifiRadioMutex);
   return saved;

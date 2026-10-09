@@ -202,7 +202,9 @@
         "shared/modules/presets.js",
         "shared/reconnecting-websocket.js",
         "shared/theme.css",
-        "shared/theme.js"
+        "shared/theme.js",
+        "shared/wifi-legacy.css",
+        "shared/wifi-legacy.js"
       ],
       "default": true
     },

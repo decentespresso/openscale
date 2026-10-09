@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     reset = block_after((ROOT / "include/menu.h").read_text(encoding="utf-8"), "void resetWifi() {")
+    save = block_after((ROOT / "src/wifi_setup.cpp").read_text(encoding="utf-8"),
+                       "bool saveCredentials(const String &ssid, const String &pass) {")
     source = r'''
 #include <cassert>
 #include <cstdint>
@@ -138,7 +140,7 @@ void setupAP() { ++apStarts; WiFi.currentMode = WIFI_AP; WiFi.stationStatus = 0;
 #include "wifi_settings.cpp"
 #include "wifi_setup_control.cpp"
 #include "wifi_scan.cpp"
-bool saveCredentials(const String &ssid, const String &pass) { return params.saveCredentials(ssid, pass); }
+bool saveCredentials(const String &ssid, const String &pass) { @SAVE@ }
 String actionMessage, actionMessage2;
 int t_actionMessageDelay = 0, restartRequests = 0, menuMessages = 0;
 void menuActionMessageChanged() { ++menuMessages; }
@@ -222,6 +224,43 @@ void testScannedSsidVerification() {
   wifiProcessSetup();
 }
 
+void testFailedOledResetPreservesActiveSwitch() {
+  seedCredentials(false);
+  wifiSetupRuntime = {};
+  restartRequests = 0;
+  WifiCredentials candidate;
+  strcpy(candidate.ssid, "New network");
+  strcpy(candidate.pass, "new pass");
+  uint32_t id;
+  assert(wifiQueueSetup(WifiSetupCommand::Switch, candidate, id));
+  wifiProcessSetup();
+  clockMs += 500;
+  wifiProcessSetup();
+  WiFi.stationStatus = WL_CONNECTED;
+  WiFi.ip.value = 1;
+  wifiGotIpGeneration = wifiGotIpGeneration + 1;
+  wifiProcessSetup();
+  assert(wifiSetupRuntime.change.phase == WifiSwitchPhase::Verifying);
+  const unsigned long verificationAt = wifiSetupRuntime.change.startedAt;
+  failedWrites = 1;
+  resetWifi();
+  assert(actionMessage == "WiFi Reset Failed" && restartRequests == 0);
+  assert(wifiSetupBusy() && wifiSetupRuntime.change.phase == WifiSwitchPhase::Verifying);
+  assert(wifiSetupRuntime.operationId == id && wifiSetupRuntime.change.startedAt == verificationAt);
+  assert(strcmp(wifiSetupRuntime.candidate.ssid, "New network") == 0);
+  assertPreviousCredentials();
+  clockMs += 3000;
+  wifiProcessSetup();
+  assert(!wifiSetupBusy() && wifiSetupRuntime.change.phase == WifiSwitchPhase::Succeeded);
+  assert(params.getSSID() == "New network" && WiFi.stationSsid == "New network");
+  WiFiParams reloaded;
+  reloaded.init();
+  assert(reloaded.getSSID() == "New network");
+  resetWifi();
+  assert(actionMessage == "WiFi Reset" && restartRequests == 1);
+  assert(!params.hasCredentials());
+}
+
 void testRepeatedUnavailableSavedNetworkRecovery() {
   seedCredentials(false);
   wifiSetupRuntime = {};
@@ -282,8 +321,9 @@ int main() {
   testCredentialResetFailures();
   testScannedSsidVerification();
   testRepeatedUnavailableSavedNetworkRecovery();
+  testFailedOledResetPreservesActiveSwitch();
 }
-'''.replace("@RESET@", reset)
+'''.replace("@RESET@", reset).replace("@SAVE@", save)
     compiler = shutil.which("g++")
     assert compiler, "g++ is required"
     with tempfile.TemporaryDirectory() as directory:

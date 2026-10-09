@@ -84,6 +84,12 @@ def main():
     assert "resetDialog.showModal()" in script
     assert "resetDialog.returnValue === 'reset'" in script
     assert 'src="/setup/wifi.js"' in index
+    assert 'src="shared/wifi-legacy.js" defer' in index
+    assert "form.dataset.wifiSetup = 'verified'" in script
+    assert read("plugins/default-web-apps/assets/shared/wifi-legacy.css").strip() == \
+        script.split('R"css(', 1)[1].split(')css";', 1)[0].strip()
+    resetSave = radio[radio.index("bool saveCredentials(const String &ssid, const String &pass) {"):]
+    assert resetSave.index("params.saveCredentials(ssid, pass)") < resetSave.index("if (saved) wifiCancelSetup()")
     print("WiFi setup contracts passed")
 
 

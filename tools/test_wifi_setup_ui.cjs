@@ -18,7 +18,7 @@ const initialStatus = {
   busy: false, mdns_name: 'hds', mdns_available: true
 };
 
-async function openPage(browser, html, viewport) {
+async function openPage(browser, html, viewport, legacy = false) {
   const context = await browser.newContext({ viewport });
   const page = await context.newPage();
   let posts = [];
@@ -27,6 +27,7 @@ async function openPage(browser, html, viewport) {
   let scanPolls = 0;
   let scanPosts = 0;
   let polls = 0;
+  let unsupportedRequests = 0;
   let state = { ...initialStatus };
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -51,13 +52,20 @@ async function openPage(browser, html, viewport) {
     const pathname = new URL(request.url()).pathname;
     const json = data => route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
     if (pathname === '/') return route.fulfill({ contentType: 'text/html', body: html });
-    if (pathname === '/setup/wifi.js') return route.fulfill({ contentType: 'application/javascript', body: script });
-    if (pathname === '/setup/wifi.css') return route.fulfill({ contentType: 'text/css', body: style });
-    if (['/shared/theme.js', '/shared/theme.css', '/shared/reconnecting-websocket.js'].includes(pathname)) {
+    if (pathname === '/setup/wifi.js') return route.fulfill({ status: legacy ? 404 : 200,
+      contentType: 'application/javascript', body: legacy ? '' : script });
+    if (pathname === '/setup/wifi.css') return route.fulfill({ status: legacy ? 404 : 200,
+      contentType: 'text/css', body: legacy ? '' : style });
+    if (['/shared/theme.js', '/shared/theme.css', '/shared/reconnecting-websocket.js',
+      '/shared/wifi-legacy.js', '/shared/wifi-legacy.css'].includes(pathname)) {
       return route.fulfill({ contentType: pathname.endsWith('.css') ? 'text/css' : 'application/javascript',
         body: fs.readFileSync(path.join(root, 'plugins/default-web-apps/assets', pathname.slice(1)), 'utf8') });
     }
     if (pathname === '/webapps.json') return json({ schema: 1, apps: [] });
+    if (legacy && ['/setup/wifi/scan', '/setup/wifi/status'].includes(pathname)) {
+      unsupportedRequests += 1;
+      return route.fulfill({ status: 404 });
+    }
     if (pathname === '/setup/wifi/scan') {
       if (request.method() === 'POST') {
         scanPosts += 1;
@@ -80,6 +88,12 @@ async function openPage(browser, html, viewport) {
     if (pathname === '/setup/wifi' && request.method() === 'POST') {
       const data = request.postDataJSON();
       posts = [...posts, data];
+      if (legacy) {
+        if (variant === 'interrupted') return route.abort('failed');
+        if (variant === 'failure') return route.fulfill({ status: 500,
+          contentType: 'application/json', body: JSON.stringify({ error: 'wifi_credentials_save_failed' }) });
+        return route.fulfill({ status: variant === 'accepted' ? 202 : 200, body: '' });
+      }
       polls = 0;
       state = { ...initialStatus, operation_id: 9, state: 'testing', busy: true,
         requested_ssid: data.ssid, connected: false };
@@ -108,14 +122,18 @@ async function openPage(browser, html, viewport) {
     return route.fulfill({ status: 404 });
   });
   await page.goto('http://hds.local');
-  await page.waitForFunction(() => document.getElementById('wifi-current').textContent.includes('Old network'));
+  await page.waitForFunction(legacy
+    ? () => document.getElementById('wifi-form').dataset.wifiSetup === 'legacy'
+    : () => document.getElementById('wifi-current').textContent.includes('Old network'));
   return { context, page, posts: () => posts, variant: value => { variant = value; },
-    scanVariant: value => { scanVariant = value; }, scanPosts: () => scanPosts, errors };
+    scanVariant: value => { scanVariant = value; }, scanPosts: () => scanPosts,
+    unsupportedRequests: () => unsupportedRequests, errors };
 }
 
 async function run(browser, html, label, viewport) {
   const session = await openPage(browser, html, viewport);
   const { page } = session;
+  assert.equal(await page.locator('#wifi-form').getAttribute('data-wifi-setup'), 'verified');
   session.scanVariant('pending');
   const beforeScan = await page.locator('#wifi-networks').evaluate(element => {
     const rect = element.getBoundingClientRect();
@@ -282,12 +300,98 @@ async function run(browser, html, label, viewport) {
   console.log(`${label} ${viewport.width}px: spinner, scan recovery, trim, validation, duplicate submission, fallback, interruptions, reset dialog and layout passed`);
 }
 
+async function runLegacy(browser, viewport) {
+  const session = await openPage(browser, mainPage, viewport, true);
+  const { page } = session;
+  assert.equal(await page.locator('.wifi-network-tools').isVisible(), false);
+  assert.equal(await page.locator('#wifi-current').textContent(), 'Connection status unavailable');
+  await page.locator('#show-password').check();
+  assert.equal(await page.locator('#password').getAttribute('type'), 'text');
+  await page.locator('#show-password').uncheck();
+  assert.equal(await page.locator('#password').getAttribute('type'), 'password');
+  for (const [ssid, pass] of [[' \u200b ', 'password'], ['\u00e9'.repeat(17), 'password'],
+    ['Network', 'short'], ['Network', 'pass\u0000word']]) {
+    await page.locator('#ssid').fill(ssid);
+    await page.locator('#password').fill(pass);
+    await page.locator('#wifi-form').evaluate(form =>
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    await page.waitForFunction(() => document.getElementById('wifi-status').dataset.tone === 'error');
+    assert.equal(session.posts().length, 0);
+  }
+  await page.locator('#ssid').fill(' \u00a0\u200bNew network\ufeff ');
+  await page.locator('#password').fill('\u0085\u2060 pass word \u00a0');
+  await page.locator('#wifi-form').evaluate(form => {
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  });
+  await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('Settings saved'));
+  assert.deepEqual(session.posts(), [{ ssid: 'New network', pass: 'pass word' }]);
+  assert.match(await page.locator('#wifi-status').textContent(), /restarting.*not confirmed/);
+  assert.notEqual(await page.locator('#wifi-status').getAttribute('data-tone'), 'success');
+  assert.equal(await page.locator('#password').inputValue(), '');
+  assert.equal(await page.locator('#wifi-connect-button').isEnabled(), false);
+  assert.equal(await page.locator('#reset-wifi-button').isEnabled(), false);
+  assert.equal(await page.locator('#name-form button').isEnabled(), false);
+  assert.equal(await page.evaluate(() => localStorage.length), 0);
+
+  const reload = async () => {
+    await page.reload();
+    await page.waitForFunction(() => document.getElementById('wifi-form').dataset.wifiSetup === 'legacy');
+  };
+  for (const variant of ['failure', 'interrupted', 'accepted']) {
+    await reload();
+    session.variant(variant);
+    await page.locator('#ssid').fill('<img src=x onerror=alert(1)>');
+    await page.locator('#password').fill('password');
+    await page.getByRole('button', { name: 'Connect', exact: true }).click();
+    await page.waitForFunction(() => document.getElementById('wifi-status').textContent !== 'Saving WiFi settings...');
+    assert.equal(await page.locator('#wifi-popup img').count(), 0);
+    assert.notEqual(await page.locator('#wifi-status').getAttribute('data-tone'), 'success');
+    assert.equal(await page.locator('#wifi-connect-button').isEnabled(), variant !== 'accepted');
+    assert.match(await page.locator('#wifi-status').textContent(), variant === 'failure'
+      ? /could not be saved/ : /not confirmed/);
+  }
+
+  await reload();
+  session.variant('success');
+  const beforeReset = session.posts().length;
+  await page.getByRole('button', { name: 'Reset WiFi settings' }).click();
+  assert.equal(await page.getByRole('dialog').isVisible(), true);
+  assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Cancel');
+  await page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-legacy-confirm-${viewport.width}.png`) });
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  assert.equal(await page.getByRole('dialog').isVisible(), false);
+  assert.equal(session.posts().length, beforeReset);
+  await page.getByRole('button', { name: 'Reset WiFi settings' }).click();
+  await page.keyboard.press('Escape');
+  assert.equal(await page.getByRole('dialog').isVisible(), false);
+  assert.equal(session.posts().length, beforeReset);
+  await page.getByRole('button', { name: 'Reset WiFi settings' }).click();
+  await page.getByRole('button', { name: 'Reset WiFi', exact: true }).click();
+  await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('Settings cleared'));
+  assert.deepEqual(session.posts().at(-1), { ssid: '', pass: '' });
+  assert.match(await page.locator('#wifi-status').textContent(), /restarting in DecentScale/);
+
+  await reload();
+  await page.locator('#wifi-popup').scrollIntoViewIfNeeded();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  const resetGap = await page.locator('#reset-wifi-button').evaluate(button =>
+    button.nextElementSibling.getBoundingClientRect().top - button.getBoundingClientRect().bottom);
+  assert(resetGap >= 24, `Legacy reset button gap is only ${resetGap}px`);
+  await page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-legacy-${viewport.width}.png`) });
+  assert.equal(session.unsupportedRequests(), 0);
+  assert.deepEqual(session.errors, []);
+  await session.context.close();
+  console.log(`legacy ${viewport.width}px: connect, trim, validation, password visibility, duplicate submission, HTTP errors, interruptions, reset dialog and fallback styling passed`);
+}
+
 (async () => {
   const browser = await chromium.launch({ headless: true });
   try {
     for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
       await run(browser, mainPage, 'main', viewport);
       await run(browser, inlinePage, 'inline', viewport);
+      await runLegacy(browser, viewport);
     }
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

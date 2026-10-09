@@ -46,6 +46,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
 (() => {
   const form = document.getElementById('wifi-form');
   if (!form) return;
+  form.dataset.wifiSetup = 'verified';
   const ssidInput = document.getElementById('ssid');
   const passwordInput = document.getElementById('password');
   const scanButton = document.getElementById('wifi-scan-button');
