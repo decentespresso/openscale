@@ -26,7 +26,7 @@ Experience the app in action! It requires a **Chrome or Edge browser (version 70
     * Timestamp
     * Final weight and overall result (Pass/Fail)
     * Detailed breakdown of each stage's target, actual weight, and individual result.
-* **Local Data Storage:** All logged dosing sessions persist locally in your browser's cache.
+* **Local Data Storage:** Completed readings are saved in this browser's local storage and restored on reload at the same origin. Clearing site data, private-browsing restrictions, or storage limits can remove or prevent persistence. Export important readings; a storage warning means the current readings must be exported before closing the tab.
 * **Flexible Data Export:** Easily download your collected dosing data in:
     * **CSV (Comma Separated Values):** Great for spreadsheet analysis.
     * **JSON (JavaScript Object Notation):** Ideal for programmatic use or integration with other systems.
@@ -74,7 +74,7 @@ The `dosing_assistant` application is built upon sophisticated browser APIs and 
 * **Command Queue:** A robust command queue ensures reliable communication with the scale, preventing commands from being dropped or interfering with each other.
 * **Local Storage for Presets & Data:**
     * Dosing uses `decentScaleDosingPresets` with `{version: 1, presets: {...}}` and `lastUsedDosingPreset`. Before the first save, it reads compatible legacy entries and selections from `decentScalePresets` and `lastUsedPreset`. Saving copies them into the Dosing namespace without changing the legacy data or QC presets. Once the Dosing store exists, the app stops consulting either shared key. It ignores unsupported store versions and refuses to overwrite them.
-    * Dosing history is also saved locally for later retrieval and export.
+    * Dosing history uses append-only `hds.dosing.history.v1.*` keys, one per reading, so simultaneous tabs do not overwrite each other's history. Reload combines saved readings and numbers the displayed rows. No measurement history existed to migrate from earlier versions.
 
 ---
 

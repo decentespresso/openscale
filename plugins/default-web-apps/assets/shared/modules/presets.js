@@ -69,20 +69,26 @@ export class PresetManager {
             alert('Please enter finite numeric dosing settings');
             return false;
         }
-        const presets = this.readPresets();
-        if (presets === null) {
-            alert('Stored dosing presets are invalid or unsupported; they have not been overwritten');
+        try {
+            const presets = this.readPresets();
+            if (presets === null) {
+                alert('Preset could not be saved. Stored dosing presets are invalid or unsupported; they have not been overwritten');
+                return false;
+            }
+            const lastUsed = this.getLastUsedPreset();
+            if (lastUsed && Object.hasOwn(presets, lastUsed)) {
+                localStorage.setItem('lastUsedDosingPreset', lastUsed);
+            }
+            localStorage.setItem('decentScaleDosingPresets', JSON.stringify({
+                version: 1,
+                presets: {...presets, [preset.name]: preset}
+            }));
+            return true;
+        } catch (error) {
+            console.error('Preset could not be saved.', error);
+            alert('Preset could not be saved. Browser storage is unavailable.');
             return false;
         }
-        const lastUsed = this.getLastUsedPreset();
-        if (lastUsed && Object.hasOwn(presets, lastUsed)) {
-            localStorage.setItem('lastUsedDosingPreset', lastUsed);
-        }
-        localStorage.setItem('decentScaleDosingPresets', JSON.stringify({
-            version: 1,
-            presets: {...presets, [preset.name]: preset}
-        }));
-        return true;
     }
 
     isValidPreset(preset) {
@@ -95,20 +101,20 @@ export class PresetManager {
     }
 
     readPresets() {
-        const storedPresetsJson = localStorage.getItem('decentScaleDosingPresets');
-        const presetsJson = storedPresetsJson ?? localStorage.getItem('decentScalePresets');
-        if (presetsJson === null) return {};
         try {
+            const storedPresetsJson = localStorage.getItem('decentScaleDosingPresets');
+            const presetsJson = storedPresetsJson ?? localStorage.getItem('decentScalePresets');
+            if (presetsJson === null) return {};
             const data = JSON.parse(presetsJson);
             if (storedPresetsJson !== null && data?.version !== 1) return null;
             const presets = storedPresetsJson === null ? data : data.presets;
             if (!presets || typeof presets !== 'object' || Array.isArray(presets)) {
-                return storedPresetsJson === null ? {} : null;
+                return null;
             }
             return Object.fromEntries(Object.entries(presets).filter(([, preset]) => this.isValidPreset(preset)));
         } catch (error) {
-            console.error('Invalid stored presets; ignoring saved preset data.', error);
-            return storedPresetsJson === null ? {} : null;
+            console.error('Saved presets could not be read; leaving stored data unchanged.', error);
+            return null;
         }
     }
 
@@ -130,16 +136,20 @@ export class PresetManager {
         document.getElementById('targetWeight').value = preset.settings.targetWeight;
         document.getElementById('lowThreshold').value = preset.settings.lowThreshold;
         document.getElementById('highThreshold').value = preset.settings.highThreshold;
-        localStorage.setItem('lastUsedDosingPreset', name);
+        try {
+            localStorage.setItem('lastUsedDosingPreset', name);
+        } catch (error) {
+            console.warn('Last used preset could not be saved.', error);
+        }
     }
 
     getPreset(name) {
         const presets = this.getPresets();
-        return presets[name];
+        return presets?.[name];
     }
 
     loadPresets() {
-        const presets = this.getPresets();
+        const presets = this.getPresets() ?? {};
         const presetSelect = document.getElementById('presetSelect');
 
         if (!presetSelect) {
@@ -158,10 +168,14 @@ export class PresetManager {
             presetSelect.appendChild(option);
         });
 
-        const lastUsed = this.getLastUsedPreset();
-        if (lastUsed && Object.hasOwn(presets, lastUsed)) {
-            this.loadPreset(lastUsed);
-            presetSelect.value = lastUsed;
+        try {
+            const lastUsed = this.getLastUsedPreset();
+            if (lastUsed && Object.hasOwn(presets, lastUsed)) {
+                this.loadPreset(lastUsed);
+                presetSelect.value = lastUsed;
+            }
+        } catch (error) {
+            console.warn('Last used preset could not be read.', error);
         }
     }
 

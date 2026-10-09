@@ -5,6 +5,16 @@ class DecentScale {
         this.readingCount = 0;
         this.weightReadings = [];
         this.weightData = [];
+        this.history = new MeasurementHistory('qc', reading => reading &&
+            typeof reading.timestamp === 'string' && Number.isFinite(reading.weight) &&
+            typeof reading.result === 'string' && reading.qcSettings &&
+            ['lowThreshold', 'goalWeight', 'highThreshold', 'minWeight']
+                .every(key => Number.isFinite(reading.qcSettings[key])));
+        this.weightData = this.history.load().map((reading, index) => ({...reading, id: index + 1}));
+        this.readingCount = this.weightData.length;
+        this.weightReadings = this.weightData.map(reading =>
+            `${reading.id}. ${new Date(reading.timestamp).toLocaleString()}: ${reading.weight}g - ${reading.result.toUpperCase()}`);
+        this.displayWeightReadings();
         this.qcMode = false;
         this.qcSettings = {
             lowThreshold: 0,
@@ -419,20 +429,26 @@ class DecentScale {
             alert('Please enter finite numeric QC settings');
             return false;
         }
-        const presets = this.readPresets();
-        if (presets === null) {
-            alert('Stored QC presets are invalid or unsupported; they have not been overwritten');
+        try {
+            const presets = this.readPresets();
+            if (presets === null) {
+                alert('Preset could not be saved. Stored QC presets are invalid or unsupported; they have not been overwritten');
+                return false;
+            }
+            const lastUsed = this.getLastUsedPreset();
+            if (lastUsed && Object.hasOwn(presets, lastUsed)) {
+                localStorage.setItem('lastUsedQCPreset', lastUsed);
+            }
+            localStorage.setItem('decentScaleQCPresets', JSON.stringify({
+                version: 1,
+                presets: {...presets, [preset.name]: preset.settings}
+            }));
+            return true;
+        } catch (error) {
+            console.error('Preset could not be saved.', error);
+            alert('Preset could not be saved. Browser storage is unavailable.');
             return false;
         }
-        const lastUsed = this.getLastUsedPreset();
-        if (lastUsed && Object.hasOwn(presets, lastUsed)) {
-            localStorage.setItem('lastUsedQCPreset', lastUsed);
-        }
-        localStorage.setItem('decentScaleQCPresets', JSON.stringify({
-            version: 1,
-            presets: {...presets, [preset.name]: preset.settings}
-        }));
-        return true;
     }
 
     isValidPreset(preset) {
@@ -445,20 +461,20 @@ class DecentScale {
     }
 
     readPresets() {
-        const storedPresetsJson = localStorage.getItem('decentScaleQCPresets');
-        const presetsJson = storedPresetsJson ?? localStorage.getItem('decentScalePresets');
-        if (presetsJson === null) return {};
         try {
+            const storedPresetsJson = localStorage.getItem('decentScaleQCPresets');
+            const presetsJson = storedPresetsJson ?? localStorage.getItem('decentScalePresets');
+            if (presetsJson === null) return {};
             const data = JSON.parse(presetsJson);
             if (storedPresetsJson !== null && data?.version !== 1) return null;
             const presets = storedPresetsJson === null ? data : data.presets;
             if (!presets || typeof presets !== 'object' || Array.isArray(presets)) {
-                return storedPresetsJson === null ? {} : null;
+                return null;
             }
             return Object.fromEntries(Object.entries(presets).filter(([, preset]) => this.isValidPreset(preset)));
         } catch (error) {
-            console.error('Invalid stored presets; ignoring saved preset data.', error);
-            return storedPresetsJson === null ? {} : null;
+            console.error('Saved presets could not be read; leaving stored data unchanged.', error);
+            return null;
         }
     }
 
@@ -469,11 +485,11 @@ class DecentScale {
 
     getPreset(name) {
         const presets = this.getPresets();
-        return presets[name];
+        return presets?.[name];
     }
 
     loadPresets() {
-        const presets = this.getPresets();
+        const presets = this.getPresets() ?? {};
         const presetSelect = document.getElementById('presetSelect');
 
         const savePresetOption = presetSelect.querySelector('option[value="save_preset"]');
@@ -494,10 +510,14 @@ class DecentScale {
             presetSelect.appendChild(option);
         });
 
-        const lastUsed = this.getLastUsedPreset();
-        if (lastUsed && Object.hasOwn(presets, lastUsed)) {
-            this.loadPreset(lastUsed);
-            presetSelect.value = lastUsed;
+        try {
+            const lastUsed = this.getLastUsedPreset();
+            if (lastUsed && Object.hasOwn(presets, lastUsed)) {
+                this.loadPreset(lastUsed);
+                presetSelect.value = lastUsed;
+            }
+        } catch (error) {
+            console.warn('Last used preset could not be read.', error);
         }
     }
 
@@ -511,7 +531,11 @@ class DecentScale {
         document.getElementById('highThreshold').value = preset.highThreshold;
         document.getElementById('minWeight').value = preset.minWeight;
 
-        localStorage.setItem('lastUsedQCPreset', name);
+        try {
+            localStorage.setItem('lastUsedQCPreset', name);
+        } catch (error) {
+            console.warn('Last used preset could not be saved.', error);
+        }
     }
 
     updatePresetList() {
@@ -553,6 +577,7 @@ class DecentScale {
         };
 
         this.weightData.push(reading);
+        this.history.append(reading);
         this.weightReadings.push(`${reading.id}. ${new Date(reading.timestamp).toLocaleString()}: ${reading.weight}g - ${result.toUpperCase()}`);
 
         console.log('Measurement saved:', reading);

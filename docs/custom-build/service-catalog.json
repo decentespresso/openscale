@@ -161,15 +161,15 @@
       "assets": [
         {
           "target": "Quality_Control_Assistant/README.md",
-          "sha256": "39d64f0fa30e240a5d27ce5f3c318de3958a21796d7749da5a57dab00b086ca4"
+          "sha256": "bc418898ab27593f80eb130e8ca122d955bba096765a19c0a13e553130eb04ff"
         },
         {
           "target": "Quality_Control_Assistant/quality_control.html",
-          "sha256": "8b5fb4c0aaddb07ea5a8cb9a598597f8c3360fe60183d463e19cd927502ec93a"
+          "sha256": "654bf35eb2deee85222ba08fe05a6d42eed7ed1151648d55e98b5453ac330c20"
         },
         {
           "target": "Quality_Control_Assistant/quality_control.js",
-          "sha256": "bb3db22f6929d2d93224655e0062088927488c19c7979de182ec24825f97dc40"
+          "sha256": "6d42988434521928610307c2ae29496bb3305c26ff27cee0752785c780aebe18"
         },
         {
           "target": "README.md",
@@ -205,11 +205,11 @@
         },
         {
           "target": "dosing_assistant/README.md",
-          "sha256": "1be574f44d494b50eaebe675991abac95090bb3cfdb97edd9842cdc588a1130c"
+          "sha256": "e3509438fa2a2c0ba8de9de38c18c44944b62528659d4179f828fc1b50f23e6c"
         },
         {
           "target": "dosing_assistant/dosing_assistant.html",
-          "sha256": "20e732a9a0e95b0fa765cedb58af9d54436e66658048deb458eb53badd3aa40a"
+          "sha256": "166da1ae80670b9cc7b18c2c39fe19bf2c31a3b8eeffcc8d8e7691dca0056d28"
         },
         {
           "target": "dosing_assistant/dosing_assistant.md",
@@ -229,7 +229,7 @@
         },
         {
           "target": "dosing_assistant/modules/scale.js",
-          "sha256": "222b50b91921245e6495f9f661663c7de4b8a914ab0ef8af0672cdf317ccdb7f"
+          "sha256": "ce06167026588ab1fd9dde70dc3a576576f125cd8e66ecac6242a6221d9f5acf"
         },
         {
           "target": "dosing_assistant/modules/state-machine.js",
@@ -237,7 +237,7 @@
         },
         {
           "target": "dosing_assistant/modules/ui-controller.js",
-          "sha256": "045cce4a569b254175ab1f3fa921c482e01ed71fd1f63c4adab846c14ec5beb2"
+          "sha256": "1364a74d5dcf1ca59204415b4c5a3ada3c03c94a3b1dafd9ab7d5e08a380c9b8"
         },
         {
           "target": "index.html",
@@ -248,12 +248,16 @@
           "sha256": "cf8c8c83cc20bdc33f7ca203cebe5b0708c2ee63134722a00a23cd8cdd01c897"
         },
         {
+          "target": "shared/measurement-history.js",
+          "sha256": "328e04f0f34d1776f25757cc9afa86cf27a123018771af1d241d6f51ffe7d8ba"
+        },
+        {
           "target": "shared/modules/download-file.js",
           "sha256": "2fdf7bbaf8279fa506d531bee04efa12819702fab33ef5ee6d10337ab2463d05"
         },
         {
           "target": "shared/modules/presets.js",
-          "sha256": "31205f2bec1a32413e88593af58da08cb946ff085145b71d274fb0d157e4f330"
+          "sha256": "c9f248e7bafaef3f826b05b13a0919c7997463371d96a1fc063802f739151199"
         },
         {
           "target": "shared/reconnecting-websocket.js",

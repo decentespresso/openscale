@@ -1,6 +1,7 @@
 import { SCALE_CONSTANTS } from './constants.js';
 import { DataExport } from './export.js';
 import { downloadFile } from '../../shared/modules/download-file.js';
+import '../../shared/measurement-history.js';
 
 export class DecentScale {
     constructor(uiController, stateMachine) {
@@ -24,6 +25,15 @@ export class DecentScale {
         this.soundplayed = false;
         this.soundEnabled = true;
         this.ws = null;
+        this.history = new MeasurementHistory('dosing', reading => reading &&
+            typeof reading.timestamp === 'string' && typeof reading.weight === 'string' &&
+            Number.isFinite(Number(reading.weight)) && typeof reading.status === 'string' &&
+            ['target', 'lowThreshold', 'highThreshold'].every(key => Number.isFinite(reading[key])));
+        this.weightData = this.history.load().map((reading, index) => ({...reading, readings: index + 1}));
+        this.readingCount = this.weightData.length;
+        this.weightReadings = this.weightData.map(reading =>
+            `${reading.readings}. ${reading.timestamp}: ${reading.weight}g / ${reading.target}g - ${reading.status}`);
+        this.uiController.displayWeightReadings(this.weightReadings);
     }
 
     tare() {
@@ -200,6 +210,7 @@ export class DecentScale {
         };
 
         this.weightData.push(reading);
+        this.history.append(reading);
         this.weightReadings.push(
             `${this.readingCount}. ${reading.timestamp}: ${reading.weight}g / ${reading.target}g - ${reading.status}`
         );
