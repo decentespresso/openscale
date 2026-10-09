@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 import subprocess
-import tempfile
 import tomllib
 
 import list_changed_patch_plugins as changedPlugins
@@ -31,11 +30,11 @@ def main():
     stockBuild = firmwareWorkflow.split("\n  build:\n", 1)[1].split("\n  energy-build:\n", 1)[0]
     energyBuild = firmwareWorkflow.split("\n  energy-build:\n", 1)[1]
     assert firmwareWorkflow.count("pio run -e esp32s3\n") == 1
+    assert stockBuild.count("pio run -e esp32s3-grinder\n") == 1
     assert "pio run -e esp32s3-energy-menu" not in stockBuild
     assert energyBuild.count("pio run -e esp32s3-energy-menu") == 1
     assert "pio run -e esp32s3 -t buildfs" in firmwareWorkflow
-    assert "esp32s3-grinder" not in firmwareWorkflow
-    assert "name: firmware (esp32s3)" in firmwareWorkflow
+    assert "name: firmware (esp32s3, esp32s3-grinder)" in stockBuild
     assert "name: firmware (esp32s3-energy-menu)" in energyBuild
     assert read("constraints-pioarduino.txt").splitlines() == ["pioarduino==6.1.19"]
     nestedCoreConstraint = "UV_CONSTRAINT: ${{ github.workspace }}/constraints-pioarduino.txt"
@@ -119,24 +118,11 @@ def main():
     assert 'CANDIDATE_COMMIT: ${{ inputs.commit || github.sha }}' in compileCustom
     assert 'refs/tags/v3.1.14^{commit}' not in compileCustom
     assert "if: github.event_name == 'workflow_dispatch' && inputs.commit == ''" in dispatchBuild
-    with tempfile.TemporaryDirectory() as directory:
-        subprocess.run(
-            ["git", "clone", "--quiet", "--no-checkout", str(ROOT), directory],
-            check=True,
-        )
-        subprocess.run(
-            ["git", "fetch", "--quiet", "origin", "refs/remotes/origin/main"],
-            cwd=directory,
-            check=True,
-        )
-        subprocess.run(
-            ["git", "switch", "--quiet", "--detach", "FETCH_HEAD"], cwd=directory, check=True
-        )
-        subprocess.run(
-            ["git", "apply", "--check", "--whitespace=error", str(patchPath)],
-            cwd=directory,
-            check=True,
-        )
+    subprocess.run(
+        ["git", "apply", "--check", "--whitespace=error", str(patchPath)],
+        cwd=ROOT,
+        check=True,
+    )
 
     print("plugin CI contract tests passed")
 

@@ -161,7 +161,7 @@
       "assets": [
         {
           "target": "Quality_Control_Assistant/README.md",
-          "sha256": "6df55fccac058034fd1d715a2bb878dfc5d7b10e1d74b4d4e9f95ca30ebf82dd"
+          "sha256": "bc418898ab27593f80eb130e8ca122d955bba096765a19c0a13e553130eb04ff"
         },
         {
           "target": "Quality_Control_Assistant/quality_control.html",
@@ -169,7 +169,7 @@
         },
         {
           "target": "Quality_Control_Assistant/quality_control.js",
-          "sha256": "aef68b81ddbd5b9b058a872f3b271064862be3b4fc358517d04d95b30818d0db"
+          "sha256": "6d42988434521928610307c2ae29496bb3305c26ff27cee0752785c780aebe18"
         },
         {
           "target": "README.md",
@@ -181,15 +181,15 @@
         },
         {
           "target": "Weigh_Save/main.js",
-          "sha256": "f13354a1812c9e08f8b8154f441a716d4c96f0916502b4d8b16b929eacda4954"
+          "sha256": "0d8ef9e028a5d62d5d2fb3099df76365ada9b3dab7f30da242c608ad4090e528"
         },
         {
           "target": "Weigh_Save/modules/export.js",
-          "sha256": "7a0a243c0aa372f7727d2726e55bc3cc47ed7a90fedefbaaaee00727f36271bc"
+          "sha256": "49a6b5b815bad0ab47d953995fceb8fca4ee4041b935d69b8ba743a554987da7"
         },
         {
           "target": "Weigh_Save/modules/scale.js",
-          "sha256": "1e62729e3023cdfbdb1d0ea592425721393087432ce4654e24d2dfc17f54ef56"
+          "sha256": "85ce8ccb12bc3af553a66c86f4f64d12fb84d2cd0ff0a9938b8a45c35bf19d10"
         },
         {
           "target": "Weigh_Save/modules/timer.js",
@@ -205,7 +205,7 @@
         },
         {
           "target": "dosing_assistant/README.md",
-          "sha256": "cfe0c98400347fba539be465f7244d176e68cab4b8979641f74e143e108ef588"
+          "sha256": "e3509438fa2a2c0ba8de9de38c18c44944b62528659d4179f828fc1b50f23e6c"
         },
         {
           "target": "dosing_assistant/dosing_assistant.html",
@@ -217,7 +217,7 @@
         },
         {
           "target": "dosing_assistant/main.js",
-          "sha256": "ea97ded784ae50f310ecfb5180b81495a87a511257b765cee5166e858034426f"
+          "sha256": "c4063b6f7c464144bb65a788b1cc18476aea489fb4fdc9c38e1f97dfc9a1ed8b"
         },
         {
           "target": "dosing_assistant/modules/constants.js",
@@ -225,15 +225,15 @@
         },
         {
           "target": "dosing_assistant/modules/export.js",
-          "sha256": "9bc045b21668a7720b871fe98d0d9f3dd697880aa5a7f9a5be3d70c45ae04400"
+          "sha256": "e501cace8354cf40d1841eb9cf84f48db379b77bf42ed59ac8d546308a8de2ab"
         },
         {
           "target": "dosing_assistant/modules/scale.js",
-          "sha256": "3ddcc952a019726b523194d858ab4fdcd25728a670768348a537d008bc68500e"
+          "sha256": "ce06167026588ab1fd9dde70dc3a576576f125cd8e66ecac6242a6221d9f5acf"
         },
         {
           "target": "dosing_assistant/modules/state-machine.js",
-          "sha256": "e460b0b0589842b5b9feb1cd1d77c253a1cbe375a2b7e60b496a8703e3870163"
+          "sha256": "212db756f7a1f34360e0b0a6f189a0aeafc2a6257bb7a801c69f85efe44bf431"
         },
         {
           "target": "dosing_assistant/modules/ui-controller.js",
@@ -241,7 +241,7 @@
         },
         {
           "target": "index.html",
-          "sha256": "e022c1d20f455aa94d9163d66e192f9b9034eef98e8b957955cf36950c37d8bc"
+          "sha256": "d9d8afc865c62124add30ff3237c2c7f607551bc758cbf028435533456c44df4"
         },
         {
           "target": "shared/app.css",
@@ -257,7 +257,7 @@
         },
         {
           "target": "shared/modules/presets.js",
-          "sha256": "c00e1bb15115aa4cd0ef0a61387e2e836dac8d5f2e6c0a6eaea955a9d6524a27"
+          "sha256": "c9f248e7bafaef3f826b05b13a0919c7997463371d96a1fc063802f739151199"
         },
         {
           "target": "shared/reconnecting-websocket.js",
@@ -320,16 +320,16 @@
       },
       "patches": {
         "main": {
-          "sha256": "e873624cbdae73d844d6c77dcf4d03001e35c4406fbee3ae0b3cf8c5d6b0db6c"
+          "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"
         },
         "v3.1.14": {
-          "sha256": "e873624cbdae73d844d6c77dcf4d03001e35c4406fbee3ae0b3cf8c5d6b0db6c"
+          "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"
         },
         "v3.1.14-preview.3": {
-          "sha256": "e873624cbdae73d844d6c77dcf4d03001e35c4406fbee3ae0b3cf8c5d6b0db6c"
+          "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"
         },
         "v3.1.14-preview.4": {
-          "sha256": "e873624cbdae73d844d6c77dcf4d03001e35c4406fbee3ae0b3cf8c5d6b0db6c"
+          "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"
         }
       },
       "assets": []

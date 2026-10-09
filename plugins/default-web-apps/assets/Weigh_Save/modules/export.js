@@ -7,7 +7,7 @@ export class DataExport {
                 reading.timestamp,
                 reading.weight,
                 reading.elapsedTime
-            ].join(','))
+            ].map(value => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','))
         ].join('\n');
 
         return {

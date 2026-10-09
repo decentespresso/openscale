@@ -415,24 +415,20 @@ class EnergyLightSleepContractTests(unittest.TestCase):
             (FIRMWARE, "ulTaskNotifyTake(pdTRUE, waitTicks);"),
             (PARAMETER, "EnergyIdleState energyIdle"),
             (SHUTDOWN, "esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);"),
-            (BLE, "remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);"),
-            (WEBSOCKET, "wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);"),
             (GYRO, "double readGyroZPhysical()"),
         ]:
             self.assert_guarded(source, text)
 
     def test_stock_transport_gyro_and_power_paths_are_preserved(self):
-        ble_energy, ble_stock = energy_and_stock_branches(body(BLE, "void softSleepOff()"))
-        self.assertNotIn("b_softSleep = false", ble_energy)
-        self.assertIn("const bool wasSoftSleep = b_softSleep", ble_stock)
-        self.assertIn("remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF)", ble_stock)
+        ble_wake = body(BLE, "void softSleepOff()")
+        self.assertNotIn("b_softSleep = false", ble_wake)
+        self.assertIn("remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF)", ble_wake)
 
         ws_start = WEBSOCKET.index('Serial.println("Websocket soft sleep off detected.");')
         ws_end = WEBSOCKET.index('sendWebsocketStatus(client, "ok");', ws_start)
-        ws_energy, ws_stock = energy_and_stock_branches(WEBSOCKET[ws_start:ws_end])
-        self.assertNotIn("b_softSleep = false", ws_energy)
-        self.assertIn("const bool wasSoftSleep = b_softSleep", ws_stock)
-        self.assertIn("wsReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF)", ws_stock)
+        ws_wake = WEBSOCKET[ws_start:ws_end]
+        self.assertNotIn("b_softSleep = false", ws_wake)
+        self.assertIn("wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF)", ws_wake)
 
         self.assertEqual(2, GYRO.count("#else\ndouble gyro_z()"))
 

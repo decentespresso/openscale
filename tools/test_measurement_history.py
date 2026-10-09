@@ -17,6 +17,7 @@ const assets = process.argv[1];
 
 function page(relativeHtml) {
   const html = fs.readFileSync(path.join(assets, relativeHtml), 'utf8');
+  let now = Date.now();
   const warnings = [];
   const downloads = [];
   const sockets = [];
@@ -67,6 +68,7 @@ function page(relativeHtml) {
     setItem(key, value) { if (failWrite) throw new Error('Quota'); storage.set(key, String(value)); }
   };
   const context = vm.createContext({
+    Date: class extends Date { static now() { return now; } },
     console: {log() {}, error() {}, warn() {}},
     crypto: require('node:crypto').webcrypto,
     alert(message) { warnings.push(message); },
@@ -84,7 +86,7 @@ function page(relativeHtml) {
       constructor() { this.handlers = new Map(); this.readyState = 1; sockets.push(this); }
       addEventListener(name, callback) { this.handlers.set(name, callback); }
       send() {}
-      weight(grams) { this.handlers.get('message')({data: JSON.stringify({grams})}); }
+      weight(grams) { now += 500; this.handlers.get('message')({data: JSON.stringify({grams})}); }
     }
   });
   Object.defineProperty(context, 'localStorage', {
@@ -200,32 +202,31 @@ async function checkExports(app, expected) {
   assert.equal((await dosing()).scale.weightData.length, 4);
   assert.equal(storage.get('hds.dosing.history.v1.broken'), '{');
   assert.equal(storage.get('hds.dosing.history.v1.wrong-schema'), '{"weight":null}');
-  for (const mode of ['reads', 'access', 'lastUsedPreset']) {
+  for (const mode of ['reads', 'access', 'lastUsedPreset', 'lastUsedDosingPreset', 'lastUsedQCPreset']) {
     failRead = mode === 'reads';
     denyAccess = mode === 'access';
-    deniedKey = mode === 'lastUsedPreset' ? mode : null;
+    deniedKey = mode.startsWith('lastUsed') ? mode : null;
     failWrite = true;
     const app = page('dosing_assistant/dosing_assistant.html');
     await app.load(path.join(assets, 'dosing_assistant/main.js'));
     app.document.dispatch('DOMContentLoaded');
     assert.equal(app.sockets.length, 1);
     const previous = app.elements.get('weightReadings').children.length;
-    if (mode !== 'lastUsedPreset') assert.equal(previous, 0);
+    if (mode === 'reads' || mode === 'access') assert.equal(previous, 0);
     const sound = app.elements.get('soundEnabled');
     sound.checked = false;
     sound.dispatch('change');
     app.sockets[0].weight(0);
     app.elements.get('dosingToggleButton').click();
     app.elements.get('setContainerWeightButton').click();
-    app.sockets[0].weight(30);
-    app.sockets[0].weight(30);
+    for (let index = 0; index < 7; ++index) app.sockets[0].weight(30);
     for (const callback of app.timers) callback();
     assert(app.elements.get('weight').textContent.includes('30.0'));
     await checkExports(app, previous + 1);
     const qcApp = qc();
     assert.equal(qcApp.sockets.length, 1);
     const qcPrevious = qcApp.scale.weightData.length;
-    if (mode !== 'lastUsedPreset') assert.equal(qcPrevious, 0);
+    if (mode === 'reads' || mode === 'access') assert.equal(qcPrevious, 0);
     qcApp.scale.qcMode = true;
     qcApp.sockets[0].weight(10);
     qcApp.sockets[0].weight(10);
@@ -260,12 +261,26 @@ async function checkExports(app, expected) {
   sound.dispatch('change');
   assert.equal(first.scale.soundEnabled, false);
   failWrite = false;
-  const savedPresets = storage.get('decentScalePresets');
+  const savedDosingPresets = storage.get('decentScaleDosingPresets');
+  const savedQCPresets = storage.get('decentScaleQCPresets');
   failRead = true;
   assert.equal(presets.savePreset(dosingPreset), false);
   assert.equal(quality.scale.savePreset(qcPreset), false);
-  assert.equal(storage.get('decentScalePresets'), savedPresets);
+  assert.equal(storage.get('decentScaleDosingPresets'), savedDosingPresets);
+  assert.equal(storage.get('decentScaleQCPresets'), savedQCPresets);
   failRead = false;
+  for (const [manager, preset, key] of [
+    [presets, dosingPreset, 'decentScaleDosingPresets'],
+    [quality.scale, qcPreset, 'decentScaleQCPresets']
+  ]) {
+    for (const invalid of ['{', 'null', '[]']) {
+      storage.set(key, invalid);
+      assert.doesNotThrow(() => manager.loadPresets());
+      assert.equal(manager.savePreset(preset), false);
+      assert.equal(storage.get(key), invalid);
+    }
+    storage.delete(key);
+  }
   for (const invalid of ['{', 'null', '[]']) {
     storage.set('decentScalePresets', invalid);
     assert.doesNotThrow(() => presets.loadPresets());

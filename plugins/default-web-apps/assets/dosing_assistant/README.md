@@ -73,7 +73,7 @@ The `dosing_assistant` application is built upon sophisticated browser APIs and 
 * **Weight Stability & Target Detection:** The app constantly monitors the weight stream, determining stability (`checkWeightStability`) and checking if each stage's target weight is met within its defined thresholds (`lowThreshold`, `highThreshold`).
 * **Command Queue:** A robust command queue ensures reliable communication with the scale, preventing commands from being dropped or interfering with each other.
 * **Local Storage for Presets & Data:**
-    * Dosing presets are stored in `localStorage` under keys like `'decentScaleDosingPresets'`, ensuring user configurations persist.
+    * Dosing uses `decentScaleDosingPresets` with `{version: 1, presets: {...}}` and `lastUsedDosingPreset`. Before the first save, it reads compatible legacy entries and selections from `decentScalePresets` and `lastUsedPreset`. Saving copies them into the Dosing namespace without changing the legacy data or QC presets. Once the Dosing store exists, the app stops consulting either shared key. It ignores unsupported store versions and refuses to overwrite them.
     * Dosing history uses append-only `hds.dosing.history.v1.*` keys, one per reading, so simultaneous tabs do not overwrite each other's history. Reload combines saved readings and numbers the displayed rows. No measurement history existed to migrate from earlier versions.
 
 ---

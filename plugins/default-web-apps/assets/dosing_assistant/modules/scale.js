@@ -130,6 +130,10 @@ export class DecentScale {
     stopDosing(manualStop = true) {
         this.dosingMode = false;
         this.currentProgress = 0;
+        this.stableWeightReadings = [];
+        this.weightIsStable = false;
+        this.doseSaved = false;
+        this.stateMachine.setCurrentState(SCALE_CONSTANTS.FSM_STATES.WAITING_FOR_NEXT);
 
         if (manualStop) {
             this.dosingPausedForContainerRemoval = false;

@@ -178,7 +178,7 @@ def main():
     dashboard = (ROOT / "plugins/default-web-apps/assets/index.html").read_text(encoding="utf-8")
     runtimeColors = re.findall(r"\.style\.color\s*=\s*(['\"])(.*?)\1", dashboard)
     assert {color for _, color in runtimeColors} <= {
-        "var(--green-dark)", "var(--danger)", "var(--muted)"
+        "", "var(--green-dark)", "var(--danger)", "var(--muted)"
     }
 
     appCss = (TARGET / "app.css").read_text(encoding="utf-8")

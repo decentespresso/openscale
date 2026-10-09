@@ -835,7 +835,10 @@ void grinderZeroRangeMenu() {
 #endif
 
 void calibrate() {
-  leaveMenu();
+  calibrationReturnToMenu = b_menu;
+  b_menu = false;
+  i_cal_weight = 0;
+  i_button_cal_status = 1;
   b_calibration = true;
   i_calibration = 0;
 }
@@ -890,13 +893,15 @@ void calibrationRestoreSampleWindow() {
 }
 
 void calibrationFinish(bool returnToMenu) {
+  const bool restoreMenu = returnToMenu || calibrationReturnToMenu;
+  calibrationReturnToMenu = false;
   i_button_cal_status = 0;
   b_calibration = false;
   b_calibrationZeroCaptured = false;
   clearPendingAutomaticTareState();
   consumeScaleTareStatus();
   calibrationRestoreSampleWindow();
-  if (returnToMenu) {
+  if (restoreMenu) {
     b_menu = true;
     invalidateMenuFrame();
   }
@@ -1470,7 +1475,6 @@ void wifiUpdate(const PullOtaTargetVersion &target) {
   } else {
     pullOtaUpdate(target);
   }
-  leaveMenu();
 }
 
 void wifiUpdate() {

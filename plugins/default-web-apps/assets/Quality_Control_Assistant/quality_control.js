@@ -425,10 +425,24 @@ class DecentScale {
     }
 
     savePreset(preset) {
+        if (!this.isValidPreset(preset?.settings)) {
+            alert('Please enter finite numeric QC settings');
+            return false;
+        }
         try {
-            const presets = this.getPresets();
-            if (!presets) throw new Error('Saved presets unavailable');
-            localStorage.setItem('decentScalePresets', JSON.stringify({...presets, [preset.name]: preset.settings}));
+            const presets = this.readPresets();
+            if (presets === null) {
+                alert('Preset could not be saved. Stored QC presets are invalid or unsupported; they have not been overwritten');
+                return false;
+            }
+            const lastUsed = this.getLastUsedPreset();
+            if (lastUsed && Object.hasOwn(presets, lastUsed)) {
+                localStorage.setItem('lastUsedQCPreset', lastUsed);
+            }
+            localStorage.setItem('decentScaleQCPresets', JSON.stringify({
+                version: 1,
+                presets: {...presets, [preset.name]: preset.settings}
+            }));
             return true;
         } catch (error) {
             console.error('Preset could not be saved.', error);
@@ -437,16 +451,36 @@ class DecentScale {
         }
     }
 
+    isValidPreset(preset) {
+        return preset && ['goalWeight', 'lowThreshold', 'highThreshold', 'minWeight']
+            .every(key => Number.isFinite(preset[key]));
+    }
+
     getPresets() {
+        return this.readPresets() ?? {};
+    }
+
+    readPresets() {
         try {
-            const presetsJson = localStorage.getItem('decentScalePresets');
-            if (!presetsJson) return {};
-            const presets = JSON.parse(presetsJson);
-            return presets && typeof presets === 'object' && !Array.isArray(presets) ? presets : null;
+            const storedPresetsJson = localStorage.getItem('decentScaleQCPresets');
+            const presetsJson = storedPresetsJson ?? localStorage.getItem('decentScalePresets');
+            if (presetsJson === null) return {};
+            const data = JSON.parse(presetsJson);
+            if (storedPresetsJson !== null && data?.version !== 1) return null;
+            const presets = storedPresetsJson === null ? data : data.presets;
+            if (!presets || typeof presets !== 'object' || Array.isArray(presets)) {
+                return null;
+            }
+            return Object.fromEntries(Object.entries(presets).filter(([, preset]) => this.isValidPreset(preset)));
         } catch (error) {
             console.error('Saved presets could not be read; leaving stored data unchanged.', error);
             return null;
         }
+    }
+
+    getLastUsedPreset() {
+        return localStorage.getItem('lastUsedQCPreset') ??
+            (localStorage.getItem('decentScaleQCPresets') === null ? localStorage.getItem('lastUsedPreset') : null);
     }
 
     getPreset(name) {
@@ -477,8 +511,8 @@ class DecentScale {
         });
 
         try {
-            const lastUsed = localStorage.getItem('lastUsedPreset');
-            if (lastUsed && presets[lastUsed]) {
+            const lastUsed = this.getLastUsedPreset();
+            if (lastUsed && Object.hasOwn(presets, lastUsed)) {
                 this.loadPreset(lastUsed);
                 presetSelect.value = lastUsed;
             }
@@ -489,7 +523,7 @@ class DecentScale {
 
     loadPreset(name) {
         const preset = this.getPreset(name);
-        if (!preset) return;
+        if (!this.isValidPreset(preset)) return;
 
         document.getElementById('objectName').value = name;
         document.getElementById('lowThreshold').value = preset.lowThreshold;
@@ -498,7 +532,7 @@ class DecentScale {
         document.getElementById('minWeight').value = preset.minWeight;
 
         try {
-            localStorage.setItem('lastUsedPreset', name);
+            localStorage.setItem('lastUsedQCPreset', name);
         } catch (error) {
             console.warn('Last used preset could not be saved.', error);
         }

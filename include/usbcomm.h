@@ -82,27 +82,11 @@ struct UsbDecentCommandSink {
   }
 
   void softSleepOn() {
-    u8g2.setPowerSave(1);
-    b_softSleep = true;
-    digitalWrite(PWR_CTRL, LOW);
-    digitalWrite(ACC_PWR_CTRL, LOW);
-#if HDS_ENABLE_ENERGY_MENU
-    refreshEnergyIdleWakeForRuntimeState();
-#endif
+    remoteReplacePending(WSP_SLEEP_ON, WSP_SLEEP_OFF);
   }
 
   void softSleepOff() {
-    if (b_softSleep) {
-      wakeScaleFromSoftSleep("USB soft wake");
-#if HDS_ENABLE_ENERGY_MENU
-    } else if (!energyRuntime.explicitDisplayOff) {
-      applyEnergyDisplayCommand(true);
-#else
-    } else {
-      u8g2.setPowerSave(0);
-      b_u8g2Sleep = false;
-#endif
-    }
+    remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);
   }
 
   void timerStart() {
@@ -715,6 +699,12 @@ void handleAdsReset(uint8_t mode) {
   Serial.print("ADS reset mode 0x0");
   Serial.println(mode);
 
+#if HDS_ENABLE_GRINDER
+  if (grinderSettings.enabled && grinderRuntime.state != GRINDER_STATE_ERROR &&
+      grinderRuntime.state != GRINDER_STATE_DISABLED) {
+    grinderEnterError("ADS reset");
+  }
+#endif
   scale.powerDown();
   delay(500);
   scale.powerUp();
