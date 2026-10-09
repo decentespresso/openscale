@@ -21,10 +21,12 @@ def main():
     assert '"wifi": ("HDS_FEATURE_WIFI", ("webserver",)' in read("tools/configure_custom_build.py")
     assert "HDS_FEATURE_WIFI requires HDS_FEATURE_WEBSERVER" in read("include/hds_features.h")
     assert "wifi_config_server.h" not in read("src/hds.ino")
-    for path in ("/setup/wifi", "/setup/wifi/status", "/setup/wifi/scan"):
+    for path in ("/setup/wifi", "/setup/wifi/status", "/setup/wifi/scan", "/setup/wifi/continue"):
         assert f'"{path}"' in routes, path
     assert "wifiSendJson(request, 202, response)" in routes
     assert 'response["restarting"] = false' in routes
+    assert routes.count('response["device_id"] = wifiSetupDeviceId();') == 2
+    assert 'request->getParam("wifi_device")->value() != wifiSetupDeviceId()' in routes
     assert "remoteQueueResetAt" not in routes
     assert "saveCredentials" not in routes
     assert "wifiNormalizeCredentials" in routes
@@ -73,7 +75,7 @@ def main():
     assert "saved = ssidRemoved && passRemoved" in settings
     assert "!preferences.isKey(wifiSSIDKey) && !preferences.isKey(wifiPassKey)" in settings
     for element in ("wifi-form", "wifi-networks", "wifi-scan-button", "show-password",
-                    "wifi-scan-progress", "wifi-reset-dialog"):
+                    "wifi-scan-progress", "wifi-reset-dialog", "wifi-network-dialog", "wifi-check-result"):
         assert f'id="{element}"' in script
         assert f'id="{element}"' in index
     assert "localStorage" not in script
@@ -83,6 +85,11 @@ def main():
     assert "confirm(" not in script
     assert "resetDialog.showModal()" in script
     assert "resetDialog.returnValue === 'reset'" in script
+    assert "networkDialog.returnValue === 'continue'" in script
+    assert "data.device_id === expectedDevice" in script
+    assert "url.searchParams.set('wifi_device', expectedDevice)" in script
+    assert "showReconnect" not in script
+    assert "wifi-reconnect" not in script and "wifi-reconnect" not in index
     assert 'src="/setup/wifi.js"' in index
     assert 'src="shared/wifi-legacy.js" defer' in index
     assert "form.dataset.wifiSetup = 'verified'" in script

@@ -3,6 +3,12 @@
 
 #include "wifi_setup.h"
 
+static String wifiSetupDeviceId() {
+  char id[13];
+  snprintf(id, sizeof(id), "%012llx", (unsigned long long)ESP.getEfuseMac());
+  return String(id);
+}
+
 static bool wifiRequestOriginAllowed(AsyncWebServerRequest *request) {
   if (request->hasHeader("Sec-Fetch-Site") &&
       request->getHeader("Sec-Fetch-Site")->value() == "cross-site") return false;
@@ -47,6 +53,7 @@ static void wifiSendAccepted(AsyncWebServerRequest *request, uint32_t id,
                              const char *ssid) {
   JsonDocument response;
   response["operation_id"] = id;
+  response["device_id"] = wifiSetupDeviceId();
   response["state"] = "queued";
   response["ssid"] = ssid;
   response["mdns_name"] = wifiDeviceName();
@@ -56,6 +63,16 @@ static void wifiSendAccepted(AsyncWebServerRequest *request, uint32_t id,
 }
 
 void registerWifiSetupRoutes(AsyncWebServer &server) {
+  server.on("/setup/wifi/continue", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!request->hasParam("wifi_device") ||
+        request->getParam("wifi_device")->value() != wifiSetupDeviceId()) {
+      request->send(409, "text/plain", "This address reached a different scale. The WiFi result is not confirmed. Open the IP address shown on the original scale.");
+      return;
+    }
+    AsyncWebServerResponse *response = request->beginResponse(200, "text/html", HDS_WIFI_SETUP_PAGE);
+    response->addHeader("Cache-Control", "no-store");
+    request->send(response);
+  });
   auto *handler = new AsyncCallbackJsonWebHandler(
       "/setup/wifi", [](AsyncWebServerRequest *request, JsonVariant &json) {
         if (!wifiRequestOriginAllowed(request)) {
@@ -112,6 +129,7 @@ void registerWifiSetupRoutes(AsyncWebServer &server) {
     const WifiSetupStatus status = wifiReadSetupStatus();
     JsonDocument response;
     response["operation_id"] = status.operationId;
+    response["device_id"] = wifiSetupDeviceId();
     response["state"] = wifiSetupPhaseName(status.phase);
     response["error"] = wifiSetupErrorName(status.error);
     response["requested_ssid"] = status.requestedSsid;

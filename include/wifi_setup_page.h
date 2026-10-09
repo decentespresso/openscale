@@ -21,20 +21,20 @@ static const char HDS_WIFI_SETUP_STYLE[] PROGMEM = R"css(
 .wifi-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:12px}
 .wifi-actions label{display:flex;align-items:center;font-weight:400;margin-right:auto}
 .wifi-setup #show-password{width:18px;height:18px;padding:0;margin:0;accent-color:#0b7180}
-.wifi-setup #wifi-connect-button{background:#0b7180;color:#fff;border-color:#0b7180;min-width:128px}
-.wifi-setup #wifi-connect-button:hover{background:#09616e;border-color:#09616e}
+.wifi-setup #wifi-connect-button,.wifi-setup #wifi-network-continue,.wifi-setup #wifi-check-result{background:#0b7180;color:#fff;border-color:#0b7180;min-width:128px}
+.wifi-setup #wifi-connect-button:hover,.wifi-setup #wifi-network-continue:hover,.wifi-setup #wifi-check-result:hover{background:#09616e;border-color:#09616e}
 .wifi-setup #reset-wifi-button{display:block;margin:16px 0 32px;color:var(--danger,#b42318);min-width:0}
 .wifi-setup #wifi-current,.wifi-setup #wifi-status{min-height:1.5em;overflow-wrap:anywhere;unicode-bidi:plaintext;font-size:14px;line-height:1.5}
 .wifi-setup #wifi-current{color:var(--wifi-muted)}
 .wifi-setup #wifi-status[data-tone=error]{color:var(--danger,#b42318)}
 .wifi-setup #wifi-status[data-tone=success]{color:var(--green-dark,#118544)}
 .wifi-setup #wifi-status[data-tone=neutral]{color:var(--wifi-muted)}
-.wifi-setup #wifi-reconnect{display:block;overflow-wrap:anywhere;margin:8px 0;font-size:14px}
+.wifi-setup #wifi-network-ssid{overflow-wrap:anywhere;unicode-bidi:plaintext}
 .wifi-setup [hidden]{display:none}
-.wifi-reset-dialog{box-sizing:border-box;width:min(92vw,460px);max-height:90vh;border:1px solid var(--wifi-border);border-radius:8px;padding:18px;background:var(--surface,#fff)}
-.wifi-reset-dialog::backdrop{background:rgba(12,25,20,.7)}
-.wifi-reset-dialog h2{margin:0 0 12px;font-size:18px;line-height:1.25}
-.wifi-reset-dialog p{margin:0 0 18px;font-size:14px;line-height:1.5}
+.wifi-dialog{box-sizing:border-box;width:min(92vw,460px);max-height:90vh;border:1px solid var(--wifi-border);border-radius:8px;padding:18px;background:var(--surface,#fff)}
+.wifi-dialog::backdrop{background:rgba(12,25,20,.7)}
+.wifi-dialog h2{margin:0 0 12px;font-size:18px;line-height:1.25}
+.wifi-dialog p{margin:0 0 18px;font-size:14px;line-height:1.5}
 .wifi-dialog-actions{display:flex;justify-content:flex-end;gap:10px}
 .wifi-dialog-actions button{flex:1}
 .wifi-setup #wifi-reset-confirm{background:#b42318;color:#fff;border-color:#b42318}
@@ -54,15 +54,19 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   const scanProgress = document.getElementById('wifi-scan-progress');
   const resetButton = document.getElementById('reset-wifi-button');
   const resetDialog = document.getElementById('wifi-reset-dialog');
+  const networkDialog = document.getElementById('wifi-network-dialog');
+  const checkButton = document.getElementById('wifi-check-result');
+  const tareButton = document.getElementById('tare-button');
   const showPassword = document.getElementById('show-password');
   const current = document.getElementById('wifi-current');
   const status = document.getElementById('wifi-status');
-  const reconnect = document.getElementById('wifi-reconnect');
   let busy = false;
   let scannedSsid = null;
-  let deviceName = 'hds';
-  let mdnsAvailable = false;
-  const linkedAttempt = Number(new URLSearchParams(location.search).get('wifi_attempt')) || 0;
+  let pendingCheck = null;
+  const query = new URLSearchParams(location.search);
+  const linkedAttempt = Number(query.get('wifi_attempt')) || 0;
+  let expectedDevice = query.get('wifi_device') || '';
+  if (!/^[a-f0-9]{12}$/.test(expectedDevice)) expectedDevice = '';
 
   const trimEdge = value => value.replace(/^[\s\u0085\p{Default_Ignorable_Code_Point}]+|[\s\u0085\p{Default_Ignorable_Code_Point}]+$/gu, '');
   const bytes = value => new TextEncoder().encode(value).length;
@@ -104,25 +108,57 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   const connectionInterrupted = error => ['TimeoutError', 'AbortError', 'TypeError'].includes(error.name);
 
   function updateCurrent(data) {
-    if (/^[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$/.test(data.mdns_name)) deviceName = data.mdns_name;
-    mdnsAvailable = data.mdns_available === true;
     current.textContent = data.access_point ? `Setup network: DecentScale | ${data.ip}` :
       data.connected ? `Connected: ${data.ssid} | ${data.ip}` :
       data.credentials_saved ? `Reconnecting: ${data.ssid}` : 'No WiFi network saved';
     if (!ssidInput.value && data.credentials_saved) ssidInput.value = data.ssid;
   }
 
-  function showReconnect(id, ip) {
-    if (!mdnsAvailable && !ip) {
-      reconnect.hidden = true;
-      return;
+  function matchesDevice(data) {
+    if (!expectedDevice || data.device_id === expectedDevice) return true;
+    message('This address reached a different scale. The WiFi result is not confirmed. Open the IP address shown on the original scale.', 'error');
+    current.textContent = 'Different scale';
+    pendingCheck = null;
+    setBusy(true);
+    if (tareButton) tareButton.disabled = true;
+    checkButton.hidden = true;
+    if (networkDialog.open) networkDialog.close();
+    return false;
+  }
+
+  function showNetworkDialog() {
+    if (!pendingCheck || networkDialog.open) return;
+    document.getElementById('wifi-network-ssid').textContent = pendingCheck.kind === 'reset'
+      ? 'DecentScale' : pendingCheck.ssid;
+    document.getElementById('wifi-network-recovery').textContent = pendingCheck.kind === 'reset'
+      ? 'Setup password: 12345678. The scale will use 192.168.1.1.'
+      : 'If the scale cannot connect, it returns to the previous network. You can check recovery from that network instead.';
+    networkDialog.returnValue = '';
+    networkDialog.showModal();
+  }
+
+  async function continueCheck() {
+    const operation = pendingCheck;
+    if (!operation) return;
+    setBusy(true);
+    checkButton.hidden = true;
+    message('Checking the scale...');
+    try {
+      const data = await request('/setup/wifi/status');
+      if (!matchesDevice(data)) return;
+    } catch (error) {
+      const hostname = operation.mdns_available && /^[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$/.test(operation.mdns_name)
+        ? `${operation.mdns_name}.local` : '';
+      const host = operation.kind === 'reset' ? '192.168.1.1' : hostname;
+      if (connectionInterrupted(error) && host && host !== location.hostname && expectedDevice) {
+        const url = new URL(`http://${host}/setup/wifi/continue`);
+        url.searchParams.set('wifi_attempt', String(operation.operation_id));
+        url.searchParams.set('wifi_device', expectedDevice);
+        location.assign(url.href);
+        return;
+      }
     }
-    const host = ip || `${deviceName}.local`;
-    const url = new URL(`http://${host}`);
-    if (id) url.searchParams.set('wifi_attempt', String(id));
-    reconnect.href = url.href;
-    reconnect.textContent = `Open scale at ${url.host}`;
-    reconnect.hidden = false;
+    await waitForOperation(operation.operation_id, operation.kind);
   }
 
   function failureText(error) {
@@ -151,22 +187,23 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
           'Contact with the scale was lost. If the new WiFi settings fail, it will try the previous network automatically. Waiting for the result...');
         continue;
       }
+      if (!matchesDevice(data)) return;
       updateCurrent(data);
       if (data.operation_id !== id) {
         message('This WiFi request is no longer current. Its result is not confirmed.');
+        pendingCheck = null;
         setBusy(data.busy === true);
         return;
       }
       if (data.state === 'succeeded') {
         if (kind === 'reset' && data.access_point && !data.credentials_saved) {
           message('WiFi settings cleared. Setup network: DecentScale.', 'success');
-          showReconnect(0, data.ip);
         } else if (data.connected && data.ssid === data.requested_ssid && data.credentials_saved) {
           message(`Connected to ${data.ssid}. WiFi settings saved.`, 'success');
-          showReconnect(id, data.ip);
         } else {
           message('The connection result is not confirmed.');
         }
+        pendingCheck = null;
         setBusy(false);
         return;
       }
@@ -175,7 +212,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
           data.access_point ? `${data.credentials_saved ? 'The previous network is unavailable. ' : ''}Connect to DecentScale (password 12345678), then open 192.168.1.1.` :
           'Your previous WiFi settings were kept.';
         message(`${failureText(data.error)} ${recovery}`, 'error');
-        if (data.connected || data.access_point) showReconnect(id, data.ip);
+        pendingCheck = null;
         setBusy(false);
         return;
       }
@@ -183,14 +220,15 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
       message(data.state === 'restoring' ? 'The new WiFi settings did not work. Reconnecting to the previous network...' :
         data.state === 'verifying' ? 'Connected with the new settings. Checking the connection...' : 'Testing the new WiFi settings...');
     }
-    message('Could not confirm the result. Check which WiFi the scale is on, then open the link below. If the new settings fail, the scale will try the previous network automatically.');
+    message('Could not confirm the result. Check which WiFi the scale is on, then check again. If its IP address changed, open the address shown on the scale. Failed settings restore the previous network automatically.');
+    checkButton.hidden = !pendingCheck;
     setBusy(false);
   }
 
   async function changeWifi(ssid, pass, kind, scanned = false) {
     if (busy) return;
     setBusy(true);
-    reconnect.hidden = true;
+    checkButton.hidden = true;
     message(kind === 'reset' ? 'Clearing WiFi settings...' : 'Submitting WiFi connection test...');
     let accepted;
     try { accepted = await request('/setup/wifi', scanned ? { ssid, pass, scanned: true } : { ssid, pass }); }
@@ -206,12 +244,11 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
       setBusy(false);
       return;
     }
-    if (/^[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$/.test(accepted.mdns_name)) deviceName = accepted.mdns_name;
-    mdnsAvailable = accepted.mdns_available === true;
-    showReconnect(accepted.operation_id, kind === 'reset' ? '192.168.1.1' : undefined);
+    expectedDevice = /^[a-f0-9]{12}$/.test(accepted.device_id) ? accepted.device_id : '';
+    pendingCheck = { ...accepted, kind };
     message(kind === 'reset' ? 'Clearing settings. Reconnect to DecentScale with password 12345678.' :
       `Trying new WiFi settings for ${accepted.ssid}. If they fail, the scale will automatically return to the previous network. Previous settings stay saved until success.`);
-    await waitForOperation(accepted.operation_id, kind);
+    showNetworkDialog();
   }
 
   form.addEventListener('submit', event => {
@@ -247,6 +284,15 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   });
   resetDialog.addEventListener('close', () => {
     if (resetDialog.returnValue === 'reset') changeWifi('', '', 'reset');
+  });
+  checkButton.addEventListener('click', showNetworkDialog);
+  networkDialog.addEventListener('close', () => {
+    if (!pendingCheck) return;
+    if (networkDialog.returnValue === 'continue') continueCheck();
+    else {
+      message('The WiFi operation continues on the scale. Its result is not confirmed. Check again when this phone or computer is on the scale\'s network.');
+      checkButton.hidden = false;
+    }
   });
 
   scanButton.addEventListener('click', async () => {
@@ -293,18 +339,28 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     }
   });
 
+  if (linkedAttempt) {
+    setBusy(true);
+    if (tareButton) tareButton.disabled = true;
+  }
   request('/setup/wifi/status').then(data => {
+    if (!matchesDevice(data)) return;
+    if (linkedAttempt && tareButton) tareButton.disabled = false;
     updateCurrent(data);
-    if (busy) return;
+    if (busy && !linkedAttempt) return;
     if (linkedAttempt && data.operation_id !== linkedAttempt) {
       message('This WiFi request is no longer current. Its result is not confirmed.');
+      setBusy(data.busy === true);
     }
     if ((linkedAttempt && data.operation_id === linkedAttempt) || data.busy) {
       setBusy(true);
       waitForOperation(data.operation_id, linkedAttempt && !data.requested_ssid ? 'reset' :
         linkedAttempt ? 'switch' : 'remote');
     }
-  }).catch(() => { current.textContent = 'Connection status unavailable'; });
+  }).catch(() => {
+    current.textContent = 'Connection status unavailable';
+    if (linkedAttempt) message('Could not reach the scale. The WiFi result is not confirmed. Check the network and the IP address shown on the scale.');
+  });
 })();
 )js";
 
@@ -318,11 +374,14 @@ static const char HDS_WIFI_SETUP_PAGE[] PROGMEM = R"html(<!doctype html>
 <div class="wifi-network-tools"><button id="wifi-scan-button" type="button">Find networks</button><label for="wifi-networks">Nearby networks<span class="wifi-network-select"><select id="wifi-networks" disabled><option value="">Select a network</option></select><span id="wifi-scan-progress" class="wifi-scan-progress" role="status" hidden><span class="wifi-spinner" aria-hidden="true"></span>Searching...</span></span></label></div>
 <form id="wifi-form" autocomplete="off"><div class="wifi-fields"><label for="ssid">Network name<input id="ssid" autocomplete="off" autocapitalize="none" spellcheck="false" required></label><label for="password">Password<input id="password" type="password" autocomplete="off" autocapitalize="none" spellcheck="false"></label></div>
 <div class="wifi-actions"><label for="show-password"><input id="show-password" type="checkbox">Show password</label><button id="wifi-connect-button" type="submit">Connect</button></div></form>
-<p id="wifi-status" role="status" aria-live="polite" data-tone="neutral"></p><a id="wifi-reconnect" hidden></a><button id="reset-wifi-button" type="button">Reset WiFi settings</button></section>
+<p id="wifi-status" role="status" aria-live="polite" data-tone="neutral"></p><button id="wifi-check-result" type="button" hidden>Check WiFi result</button><button id="reset-wifi-button" type="button">Reset WiFi settings</button></section>
 <form id="name"><label for="device-name">Device name</label><input id="device-name" name="name" placeholder="hds" maxlength="24" required><button>Rename</button></form><p id="name-status" role="status"></p>
-<dialog id="wifi-reset-dialog" class="wifi-setup wifi-reset-dialog" aria-labelledby="wifi-reset-title" aria-describedby="wifi-reset-description">
+<dialog id="wifi-reset-dialog" class="wifi-setup wifi-dialog" aria-labelledby="wifi-reset-title" aria-describedby="wifi-reset-description">
 <h2 id="wifi-reset-title">Reset WiFi settings?</h2><p id="wifi-reset-description">The scale will disconnect and open DecentScale setup. Other settings stay unchanged.</p>
 <form method="dialog" class="wifi-dialog-actions"><button value="cancel" autofocus>Cancel</button><button id="wifi-reset-confirm" value="reset">Reset WiFi</button></form></dialog>
+<dialog id="wifi-network-dialog" class="wifi-setup wifi-dialog" aria-labelledby="wifi-network-title" aria-describedby="wifi-network-description wifi-network-recovery">
+<h2 id="wifi-network-title">Check your WiFi network</h2><p id="wifi-network-description">Is this phone or computer connected to <strong id="wifi-network-ssid"></strong>? Once it is, continue to check the scale.</p><p id="wifi-network-recovery"></p>
+<form method="dialog" class="wifi-dialog-actions"><button value="later">Check later</button><button id="wifi-network-continue" value="continue" autofocus>Continue</button></form></dialog>
 <script>
 document.getElementById('name').addEventListener('submit',async event=>{
 event.preventDefault();const status=document.getElementById('name-status');
