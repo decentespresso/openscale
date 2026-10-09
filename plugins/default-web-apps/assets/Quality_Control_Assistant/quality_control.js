@@ -409,27 +409,62 @@ class DecentScale {
             }
         };
 
-        this.savePreset(preset);
+        if (!this.savePreset(preset)) return;
         this.updatePresetList();
         alert(`Preset "${objectName}" saved successfully`);
     }
 
     savePreset(preset) {
-        const presets = this.getPresets();
-        presets[preset.name] = preset.settings;
-        localStorage.setItem('decentScalePresets', JSON.stringify(presets));
+        if (!this.isValidPreset(preset?.settings)) {
+            alert('Please enter finite numeric QC settings');
+            return false;
+        }
+        const presets = this.readPresets();
+        if (presets === null) {
+            alert('Stored QC presets are invalid or unsupported; they have not been overwritten');
+            return false;
+        }
+        const lastUsed = this.getLastUsedPreset();
+        if (lastUsed && Object.hasOwn(presets, lastUsed)) {
+            localStorage.setItem('lastUsedQCPreset', lastUsed);
+        }
+        localStorage.setItem('decentScaleQCPresets', JSON.stringify({
+            version: 1,
+            presets: {...presets, [preset.name]: preset.settings}
+        }));
+        return true;
+    }
+
+    isValidPreset(preset) {
+        return preset && ['goalWeight', 'lowThreshold', 'highThreshold', 'minWeight']
+            .every(key => Number.isFinite(preset[key]));
     }
 
     getPresets() {
-        const presetsJson = localStorage.getItem('decentScalePresets');
-        if (!presetsJson) return {};
+        return this.readPresets() ?? {};
+    }
+
+    readPresets() {
+        const storedPresetsJson = localStorage.getItem('decentScaleQCPresets');
+        const presetsJson = storedPresetsJson ?? localStorage.getItem('decentScalePresets');
+        if (presetsJson === null) return {};
         try {
-            const presets = JSON.parse(presetsJson);
-            return presets && typeof presets === 'object' && !Array.isArray(presets) ? presets : {};
+            const data = JSON.parse(presetsJson);
+            if (storedPresetsJson !== null && data?.version !== 1) return null;
+            const presets = storedPresetsJson === null ? data : data.presets;
+            if (!presets || typeof presets !== 'object' || Array.isArray(presets)) {
+                return storedPresetsJson === null ? {} : null;
+            }
+            return Object.fromEntries(Object.entries(presets).filter(([, preset]) => this.isValidPreset(preset)));
         } catch (error) {
             console.error('Invalid stored presets; ignoring saved preset data.', error);
-            return {};
+            return storedPresetsJson === null ? {} : null;
         }
+    }
+
+    getLastUsedPreset() {
+        return localStorage.getItem('lastUsedQCPreset') ??
+            (localStorage.getItem('decentScaleQCPresets') === null ? localStorage.getItem('lastUsedPreset') : null);
     }
 
     getPreset(name) {
@@ -459,8 +494,8 @@ class DecentScale {
             presetSelect.appendChild(option);
         });
 
-        const lastUsed = localStorage.getItem('lastUsedPreset');
-        if (lastUsed && presets[lastUsed]) {
+        const lastUsed = this.getLastUsedPreset();
+        if (lastUsed && Object.hasOwn(presets, lastUsed)) {
             this.loadPreset(lastUsed);
             presetSelect.value = lastUsed;
         }
@@ -468,7 +503,7 @@ class DecentScale {
 
     loadPreset(name) {
         const preset = this.getPreset(name);
-        if (!preset) return;
+        if (!this.isValidPreset(preset)) return;
 
         document.getElementById('objectName').value = name;
         document.getElementById('lowThreshold').value = preset.lowThreshold;
@@ -476,7 +511,7 @@ class DecentScale {
         document.getElementById('highThreshold').value = preset.highThreshold;
         document.getElementById('minWeight').value = preset.minWeight;
 
-        localStorage.setItem('lastUsedPreset', name);
+        localStorage.setItem('lastUsedQCPreset', name);
     }
 
     updatePresetList() {

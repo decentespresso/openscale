@@ -58,35 +58,70 @@ export class PresetManager {
         };
 
         console.log('Saving preset with settings:', preset);
-        this.savePreset(preset);
+        if (!this.savePreset(preset)) return;
         this.updatePresetList();
         console.log('Preset saved successfully:', preset);
         alert(`Object "${objectName}" saved successfully`);
     }
 
     savePreset(preset) {
-        const presets = this.getPresets();
-        presets[preset.name] = preset;
-        localStorage.setItem('decentScalePresets', JSON.stringify(presets));
+        if (!this.isValidPreset(preset)) {
+            alert('Please enter finite numeric dosing settings');
+            return false;
+        }
+        const presets = this.readPresets();
+        if (presets === null) {
+            alert('Stored dosing presets are invalid or unsupported; they have not been overwritten');
+            return false;
+        }
+        const lastUsed = this.getLastUsedPreset();
+        if (lastUsed && Object.hasOwn(presets, lastUsed)) {
+            localStorage.setItem('lastUsedDosingPreset', lastUsed);
+        }
+        localStorage.setItem('decentScaleDosingPresets', JSON.stringify({
+            version: 1,
+            presets: {...presets, [preset.name]: preset}
+        }));
+        return true;
+    }
+
+    isValidPreset(preset) {
+        return preset?.settings && ['targetWeight', 'highThreshold', 'lowThreshold']
+            .every(key => Number.isFinite(preset.settings[key]));
     }
 
     getPresets() {
-        const presetsJson = localStorage.getItem('decentScalePresets');
-        if (!presetsJson) return {};
+        return this.readPresets() ?? {};
+    }
+
+    readPresets() {
+        const storedPresetsJson = localStorage.getItem('decentScaleDosingPresets');
+        const presetsJson = storedPresetsJson ?? localStorage.getItem('decentScalePresets');
+        if (presetsJson === null) return {};
         try {
-            const presets = JSON.parse(presetsJson);
-            return presets && typeof presets === 'object' && !Array.isArray(presets) ? presets : {};
+            const data = JSON.parse(presetsJson);
+            if (storedPresetsJson !== null && data?.version !== 1) return null;
+            const presets = storedPresetsJson === null ? data : data.presets;
+            if (!presets || typeof presets !== 'object' || Array.isArray(presets)) {
+                return storedPresetsJson === null ? {} : null;
+            }
+            return Object.fromEntries(Object.entries(presets).filter(([, preset]) => this.isValidPreset(preset)));
         } catch (error) {
             console.error('Invalid stored presets; ignoring saved preset data.', error);
-            return {};
+            return storedPresetsJson === null ? {} : null;
         }
+    }
+
+    getLastUsedPreset() {
+        return localStorage.getItem('lastUsedDosingPreset') ??
+            (localStorage.getItem('decentScaleDosingPresets') === null ? localStorage.getItem('lastUsedPreset') : null);
     }
 
     loadPreset(name) {
         console.log('loadPreset function called with name:', name);
         const preset = this.getPreset(name);
 
-        if (!preset || !preset.settings) {
+        if (!this.isValidPreset(preset)) {
             console.warn(`Preset "${name}" not found or has invalid settings.`);
             return;
         }
@@ -95,7 +130,7 @@ export class PresetManager {
         document.getElementById('targetWeight').value = preset.settings.targetWeight;
         document.getElementById('lowThreshold').value = preset.settings.lowThreshold;
         document.getElementById('highThreshold').value = preset.settings.highThreshold;
-        localStorage.setItem('lastUsedPreset', name);
+        localStorage.setItem('lastUsedDosingPreset', name);
     }
 
     getPreset(name) {
@@ -123,8 +158,8 @@ export class PresetManager {
             presetSelect.appendChild(option);
         });
 
-        const lastUsed = localStorage.getItem('lastUsedPreset');
-        if (lastUsed && presets[lastUsed]) {
+        const lastUsed = this.getLastUsedPreset();
+        if (lastUsed && Object.hasOwn(presets, lastUsed)) {
             this.loadPreset(lastUsed);
             presetSelect.value = lastUsed;
         }
