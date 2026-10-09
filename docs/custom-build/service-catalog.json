@@ -243,7 +243,7 @@
         },
         {
           "target": "index.html",
-          "sha256": "ea2fe0845521c0443a3f766842f37c0ce16abac616dc18adaeec5def63211a29"
+          "sha256": "452817285d901e75bc38c7c50f91ce9a7791064bbf336a78bdd97acdcbd3ae6a"
         },
         {
           "target": "shared/app.css",
@@ -271,7 +271,7 @@
         },
         {
           "target": "shared/wifi-legacy.css",
-          "sha256": "30e2783edabc2b716d9f90f9712ab6ea52c194a3e0b6f563520a1d6a12e43dfd"
+          "sha256": "57f4c0b12bbfba35904725c9e9be7ed5589dcc4a2c5b36bcdd8966b3ec6ff812"
         },
         {
           "target": "shared/wifi-legacy.js",

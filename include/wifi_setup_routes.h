@@ -69,7 +69,8 @@ void registerWifiSetupRoutes(AsyncWebServer &server) {
       request->send(409, "text/plain", "This address reached a different scale. The WiFi result is not confirmed. Open the IP address shown on the original scale.");
       return;
     }
-    AsyncWebServerResponse *response = request->beginResponse(200, "text/html", HDS_WIFI_SETUP_PAGE);
+    AsyncWebServerResponse *response = request->beginResponse(302, "text/plain", "");
+    response->addHeader("Location", "/");
     response->addHeader("Cache-Control", "no-store");
     request->send(response);
   });

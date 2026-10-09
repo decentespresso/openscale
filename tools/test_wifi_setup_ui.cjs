@@ -47,16 +47,16 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
       wifi_mode: 'sta', grams: 0
     })));
   });
-  await context.route(/^http:\/\/(?:hds\.local|192\.168\.50\.30)\//, async route => {
+  await context.route(/^http:\/\/(?:hds\.local|192\.168\.50\.30|192\.168\.60\.40)\//, async route => {
     const request = route.request();
     const pathname = new URL(request.url()).pathname;
     const json = data => route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
     if (pathname === '/') return route.fulfill({ contentType: 'text/html', body: html });
     if (pathname === '/setup/wifi/continue') {
-      if (variant === 'handoff-legacy-device') return route.fulfill({ status: 404, body: 'Not found' });
-      if (variant === 'handoff-wrong-device') return route.fulfill({ status: 409,
+      if (variant === 'open-legacy-device') return route.fulfill({ status: 404, body: 'Not found' });
+      if (variant === 'open-wrong-device' || new URL(request.url()).searchParams.get('wifi_device') !== initialStatus.device_id) return route.fulfill({ status: 409,
         body: 'This address reached a different scale. The WiFi result is not confirmed.' });
-      return route.fulfill({ contentType: 'text/html', body: inlinePage });
+      return route.fulfill({ contentType: 'text/html', body: '<script>location.replace("/")</script>' });
     }
     if (pathname === '/setup/wifi.js') return route.fulfill({ status: legacy ? 404 : 200,
       contentType: 'application/javascript', body: legacy ? '' : script });
@@ -111,8 +111,8 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
     if (pathname === '/setup/wifi/status') {
       if (state.operation_id === 9) {
         polls += 1;
-        if (variant.startsWith('handoff') && new URL(request.url()).hostname === '192.168.50.30') return route.abort('failed');
-        if (variant === 'handoff-wrong-device' || variant === 'wrong-device') return json({
+        if (variant === 'unreachable') return route.abort('failed');
+        if (variant === 'wrong-device') return json({
           ...state, state: 'succeeded', device_id: 'ffeeddccbbaa', connected: true, busy: false });
         if (variant.startsWith('interrupted') && polls <= 2) return route.abort('failed');
         if (variant === 'wrong-id') return json({ ...initialStatus, operation_id: 123, state: 'succeeded' });
@@ -124,6 +124,9 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
             state: 'succeeded', connected: false, credentials_saved: false,
             access_point: true, ssid: '', ip: '192.168.1.1', busy: false } : { ...state,
             state: 'succeeded', connected: true, ssid: state.requested_ssid, busy: false };
+          if (['new-ip', 'open-wrong-device', 'open-legacy-device'].includes(variant)) state = { ...state, ip: '192.168.60.40' };
+          if (variant === 'bad-ip') state = { ...state, ip: 'javascript:alert(1)' };
+          if (variant === 'success-error') state = { ...state, error: 'dhcp_timeout' };
         }
       }
       return json(state);
@@ -151,6 +154,7 @@ async function run(browser, html, label, viewport) {
   const { page } = session;
   assert.equal(await page.locator('#wifi-form').getAttribute('data-wifi-setup'), 'verified');
   assert.equal(await page.locator('#wifi-check-result').isVisible(), false);
+  assert.equal(await page.locator('#wifi-open-scale').isVisible(), false);
   session.scanVariant('pending');
   const beforeScan = await page.locator('#wifi-networks').evaluate(element => {
     const rect = element.getBoundingClientRect();
@@ -223,6 +227,7 @@ async function run(browser, html, label, viewport) {
   await confirmNetwork(page, 'New network');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
   assert.equal(await page.locator('#wifi-check-result').isVisible(), false);
+  assert.equal(await page.locator('#wifi-open-scale').isVisible(), true);
   assert.deepEqual(session.posts(), [{ ssid: 'New network', pass: 'pass word' }]);
   assert.equal(await page.locator('#password').inputValue(), '');
   assert.equal(await page.evaluate(() => localStorage.length), 0);
@@ -255,7 +260,7 @@ async function run(browser, html, label, viewport) {
     document.getElementById('wifi-current').textContent === 'Waiting for the scale to reconnect');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('Back on Old network.'));
   assert.match(await page.locator('#wifi-status').textContent(), /password was not accepted.*previous WiFi settings were kept/);
-  assert.equal(await page.locator('#wifi-reconnect').count(), 0);
+  assert.equal(await page.locator('#wifi-open-scale').isVisible(), false);
   await page.locator('#wifi-popup').scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-restored-${label}-${viewport.width}.png`) });
 
@@ -265,6 +270,7 @@ async function run(browser, html, label, viewport) {
   await confirmNetwork(page, 'Wrong password network');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('The previous network is unavailable'));
   assert.match(await page.locator('#wifi-status').textContent(), /Connect to DecentScale \(password 12345678\), then open 192\.168\.1\.1/);
+  assert.equal(await page.locator('#wifi-open-scale').isVisible(), false);
 
   session.variant('interrupted');
   await page.locator('#ssid').fill('New network');
@@ -281,6 +287,7 @@ async function run(browser, html, label, viewport) {
   await confirmNetwork(page, 'New network');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('no longer current'));
   assert.notEqual(await page.locator('#wifi-status').getAttribute('data-tone'), 'success');
+  assert.equal(await page.locator('#wifi-open-scale').isVisible(), false);
 
   const beforeReset = session.posts().length;
   await page.getByRole('button', { name: 'Reset WiFi settings' }).click();
@@ -346,28 +353,59 @@ async function run(browser, html, label, viewport) {
   console.log(`${label} ${viewport.width}px: spinner, scan recovery, trim, validation, duplicate submission, fallback, interruptions, reset dialog and layout passed`);
 }
 
-async function runNetworkHandoff(browser, html, label, viewport) {
-  for (const variant of ['handoff', 'handoff-wrong-device', 'handoff-legacy-device']) {
+async function runResultNavigation(browser, html, label, viewport) {
+  for (const variant of ['new-ip', 'interrupted-failure', 'unreachable', 'wrong-device', 'bad-ip', 'success-error', 'open-wrong-device', 'open-legacy-device']) {
     const session = await openPage(browser, html, viewport, false, 'http://192.168.50.30');
     const { page } = session;
-    session.variant(variant);
+    const originalUrl = page.url();
+    session.variant('unreachable');
     await page.locator('#ssid').fill('<img src=x onerror=alert(1)>');
     await page.getByRole('button', { name: 'Connect', exact: true }).click();
     await page.locator('#wifi-network-dialog').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#wifi-network-dialog img').count(), 0);
     assert.equal(session.operationPolls(), 0);
-    assert.equal(new URL(page.url()).hostname, '192.168.50.30');
+    assert.equal(await page.locator('#wifi-open-scale').isVisible(), false);
+    assert.equal(page.url(), originalUrl);
     await confirmNetwork(page, '<img src=x onerror=alert(1)>');
-    await page.waitForURL(/hds\.local\/setup\/wifi\/continue\?.+wifi_device=/);
-    const url = new URL(page.url());
-    assert.equal(url.searchParams.get('wifi_attempt'), '9');
-    assert.equal(url.searchParams.get('wifi_device'), initialStatus.device_id);
-    assert.equal(url.searchParams.has('pass'), false);
-    if (variant === 'handoff') {
-      await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
-      assert.equal(await page.locator('#wifi-connect-button').isEnabled(), true);
+    await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('Waiting for the result'));
+    assert.equal(page.url(), originalUrl);
+    assert.equal(await page.locator('#wifi-open-scale').isVisible(), false);
+    if (variant === 'unreachable') {
+      await page.evaluate(() => {
+        const now = Date.now;
+        Date.now = () => now() + 61000;
+      });
+      await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('Could not confirm'));
+      assert.equal(await page.locator('#wifi-check-result').isVisible(), true);
     } else {
-      assert.match(await page.locator('body').textContent(), variant === 'handoff-wrong-device'
+      session.variant(variant);
+      await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved') ||
+        document.getElementById('wifi-status').textContent.includes('Back on Old network') ||
+        document.getElementById('wifi-status').textContent.includes('different scale') ||
+        document.getElementById('wifi-status').textContent.includes('result is not confirmed'));
+    }
+    assert.equal(page.url(), originalUrl);
+    const succeeded = ['new-ip', 'open-wrong-device', 'open-legacy-device'].includes(variant);
+    assert.equal(await page.locator('#wifi-open-scale').isVisible(), succeeded);
+    if (succeeded) {
+      const url = new URL(await page.locator('#wifi-open-scale').getAttribute('href'));
+      assert.equal(url.hostname, '192.168.60.40');
+      assert.equal(url.pathname, '/setup/wifi/continue');
+      assert.equal(url.searchParams.get('wifi_device'), initialStatus.device_id);
+      assert.equal(url.searchParams.has('pass'), false);
+      await page.locator('#wifi-popup').scrollIntoViewIfNeeded();
+      await page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-verified-address-${label}-${viewport.width}.png`) });
+      await page.locator('#wifi-open-scale').click();
+    } else {
+      assert.equal(await page.locator('#wifi-open-scale').getAttribute('href'), null);
+    }
+    if (variant === 'new-ip') {
+      await page.waitForURL('http://192.168.60.40/');
+      assert.equal(await page.locator('#tare-button').count(), label === 'main' ? 1 : 0);
+      await page.waitForFunction(() => document.getElementById('wifi-current').textContent.includes('Connected: <img src=x onerror=alert(1)>'));
+      assert.equal(await page.locator('#wifi-connect-button').isEnabled(), true);
+    } else if (succeeded) {
+      assert.match(await page.locator('body').textContent(), variant === 'open-wrong-device'
         ? /different scale.*not confirmed/ : /Not found/);
       assert.equal(await page.locator('#wifi-connect-button').count(), 0);
     }
@@ -375,13 +413,14 @@ async function runNetworkHandoff(browser, html, label, viewport) {
     assert.deepEqual(session.errors, []);
     await session.context.close();
   }
-  console.log(`${label} ${viewport.width}px: network-confirmed address handoff, safe SSID text, and wrong-scale protection passed`);
+  console.log(`${label} ${viewport.width}px: no navigation on interruptions/failure, verified-only IP links, dashboard preservation, and wrong-scale protection passed`);
 }
 
 async function runLegacy(browser, viewport) {
   const session = await openPage(browser, mainPage, viewport, true);
   const { page } = session;
   assert.equal(await page.locator('#wifi-check-result').isVisible(), false);
+  assert.equal(await page.locator('#wifi-open-scale').isVisible(), false);
   assert.equal(await page.locator('.wifi-network-tools').isVisible(), false);
   assert.equal(await page.locator('#wifi-current').textContent(), 'Connection status unavailable');
   await page.locator('#show-password').check();
@@ -471,8 +510,8 @@ async function runLegacy(browser, viewport) {
       await run(browser, mainPage, 'main', viewport);
       await run(browser, inlinePage, 'inline', viewport);
       await runLegacy(browser, viewport);
-      await runNetworkHandoff(browser, mainPage, 'main', viewport);
-      await runNetworkHandoff(browser, inlinePage, 'inline', viewport);
+      await runResultNavigation(browser, mainPage, 'main', viewport);
+      await runResultNavigation(browser, inlinePage, 'inline', viewport);
     }
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

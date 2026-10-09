@@ -29,6 +29,7 @@ static const char HDS_WIFI_SETUP_STYLE[] PROGMEM = R"css(
 .wifi-setup #wifi-status[data-tone=error]{color:var(--danger,#b42318)}
 .wifi-setup #wifi-status[data-tone=success]{color:var(--green-dark,#118544)}
 .wifi-setup #wifi-status[data-tone=neutral]{color:var(--wifi-muted)}
+.wifi-setup #wifi-open-scale{display:block;overflow-wrap:anywhere;margin:8px 0;font-size:14px}
 .wifi-setup #wifi-network-ssid{overflow-wrap:anywhere;unicode-bidi:plaintext}
 .wifi-setup [hidden]{display:none!important}
 .wifi-dialog{box-sizing:border-box;width:min(92vw,460px);max-height:90vh;border:1px solid var(--wifi-border);border-radius:8px;padding:18px;background:var(--surface,#fff)}
@@ -60,6 +61,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   const showPassword = document.getElementById('show-password');
   const current = document.getElementById('wifi-current');
   const status = document.getElementById('wifi-status');
+  const openScale = document.getElementById('wifi-open-scale');
   let busy = false;
   let scannedSsid = null;
   let pendingCheck = null;
@@ -77,6 +79,8 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     });
 
   function message(text, tone = 'neutral') {
+    openScale.hidden = true;
+    openScale.removeAttribute('href');
     status.textContent = text;
     status.dataset.tone = tone;
   }
@@ -143,22 +147,18 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     setBusy(true);
     checkButton.hidden = true;
     message('Checking the scale...');
-    try {
-      const data = await request('/setup/wifi/status');
-      if (!matchesDevice(data)) return;
-    } catch (error) {
-      const hostname = operation.mdns_available && /^[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$/.test(operation.mdns_name)
-        ? `${operation.mdns_name}.local` : '';
-      const host = operation.kind === 'reset' ? '192.168.1.1' : hostname;
-      if (connectionInterrupted(error) && host && host !== location.hostname && expectedDevice) {
-        const url = new URL(`http://${host}/setup/wifi/continue`);
-        url.searchParams.set('wifi_attempt', String(operation.operation_id));
-        url.searchParams.set('wifi_device', expectedDevice);
-        location.assign(url.href);
-        return;
-      }
-    }
     await waitForOperation(operation.operation_id, operation.kind);
+  }
+
+  function showVerifiedAddress(data) {
+    if (!expectedDevice || data.device_id !== expectedDevice ||
+        typeof data.ip !== 'string' || !/^(?:\d{1,3}\.){3}\d{1,3}$/.test(data.ip) ||
+        data.ip === '0.0.0.0' || data.ip.split('.').some(part => Number(part) > 255 || String(Number(part)) !== part)) return;
+    const url = new URL(`http://${data.ip}/setup/wifi/continue`);
+    url.searchParams.set('wifi_device', expectedDevice);
+    openScale.href = url.href;
+    openScale.textContent = `Open scale at ${data.ip}`;
+    openScale.hidden = false;
   }
 
   function failureText(error) {
@@ -196,10 +196,12 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
         return;
       }
       if (data.state === 'succeeded') {
-        if (kind === 'reset' && data.access_point && !data.credentials_saved) {
+        if (!data.error && kind === 'reset' && data.access_point && !data.credentials_saved) {
           message('WiFi settings cleared. Setup network: DecentScale.', 'success');
-        } else if (data.connected && data.ssid === data.requested_ssid && data.credentials_saved) {
+          showVerifiedAddress(data);
+        } else if (!data.error && data.connected && data.ssid === data.requested_ssid && data.credentials_saved) {
           message(`Connected to ${data.ssid}. WiFi settings saved.`, 'success');
+          showVerifiedAddress(data);
         } else {
           message('The connection result is not confirmed.');
         }
@@ -374,7 +376,7 @@ static const char HDS_WIFI_SETUP_PAGE[] PROGMEM = R"html(<!doctype html>
 <div class="wifi-network-tools"><button id="wifi-scan-button" type="button">Find networks</button><label for="wifi-networks">Nearby networks<span class="wifi-network-select"><select id="wifi-networks" disabled><option value="">Select a network</option></select><span id="wifi-scan-progress" class="wifi-scan-progress" role="status" hidden><span class="wifi-spinner" aria-hidden="true"></span>Searching...</span></span></label></div>
 <form id="wifi-form" autocomplete="off"><div class="wifi-fields"><label for="ssid">Network name<input id="ssid" autocomplete="off" autocapitalize="none" spellcheck="false" required></label><label for="password">Password<input id="password" type="password" autocomplete="off" autocapitalize="none" spellcheck="false"></label></div>
 <div class="wifi-actions"><label for="show-password"><input id="show-password" type="checkbox">Show password</label><button id="wifi-connect-button" type="submit">Connect</button></div></form>
-<p id="wifi-status" role="status" aria-live="polite" data-tone="neutral"></p><button id="wifi-check-result" type="button" hidden>Check WiFi result</button><button id="reset-wifi-button" type="button">Reset WiFi settings</button></section>
+<p id="wifi-status" role="status" aria-live="polite" data-tone="neutral"></p><a id="wifi-open-scale" hidden></a><button id="wifi-check-result" type="button" hidden>Check WiFi result</button><button id="reset-wifi-button" type="button">Reset WiFi settings</button></section>
 <form id="name"><label for="device-name">Device name</label><input id="device-name" name="name" placeholder="hds" maxlength="24" required><button>Rename</button></form><p id="name-status" role="status"></p>
 <dialog id="wifi-reset-dialog" class="wifi-setup wifi-dialog" aria-labelledby="wifi-reset-title" aria-describedby="wifi-reset-description">
 <h2 id="wifi-reset-title">Reset WiFi settings?</h2><p id="wifi-reset-description">The scale will disconnect and open DecentScale setup. Other settings stay unchanged.</p>

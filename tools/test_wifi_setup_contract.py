@@ -75,7 +75,7 @@ def main():
     assert "saved = ssidRemoved && passRemoved" in settings
     assert "!preferences.isKey(wifiSSIDKey) && !preferences.isKey(wifiPassKey)" in settings
     for element in ("wifi-form", "wifi-networks", "wifi-scan-button", "show-password",
-                    "wifi-scan-progress", "wifi-reset-dialog", "wifi-network-dialog", "wifi-check-result"):
+                    "wifi-scan-progress", "wifi-reset-dialog", "wifi-network-dialog", "wifi-check-result", "wifi-open-scale"):
         assert f'id="{element}"' in script
         assert f'id="{element}"' in index
     assert "localStorage" not in script
@@ -88,6 +88,8 @@ def main():
     assert "networkDialog.returnValue === 'continue'" in script
     assert "data.device_id === expectedDevice" in script
     assert "url.searchParams.set('wifi_device', expectedDevice)" in script
+    assert "location.assign" not in script
+    assert 'response->addHeader("Location", "/")' in routes
     assert "showReconnect" not in script
     assert "wifi-reconnect" not in script and "wifi-reconnect" not in index
     assert 'src="/setup/wifi.js"' in index
