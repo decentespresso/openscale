@@ -78,7 +78,9 @@ def main():
     assert "HDS_OTA_TASK_STACK_BYTES = 24576" in pull_ota
     current_hash = function_body(pull_ota, "String pullOtaCurrentCombinationHash()")
     assert "HDS_CUSTOM_BUILD_COMBINATION_HASH" in current_hash
+    assert 'return pullOtaShaLooksValid(combinationHash) ? combinationHash : "";' in current_hash
     run = function_body(header, "void customBuildRun(bool interactive = true)")
+    assert "pullOtaCompareVersions" not in run
     assert "if (interactive) customBuildPairScale(true);" in run
     assert 'else customBuildShowStatus("Custom Build", "Pair scale first");' in run
     assert "if (interactive && !customBuildConfirmInstall(manifest, assignment.combinationHash)) return;" in run
