@@ -97,9 +97,12 @@ struct Preferences {
     return strings.count(key) ? strings.at(key) : String(fallback);
   }
   size_t getString(const char *key, char *output, size_t capacity) {
-    const String value = getString(key, "");
-    value.toCharArray(output, capacity);
-    return value.size();
+    if (failedReadKey == key || !strings.count(key)) return 0;
+    const String &value = strings.at(key);
+    const size_t length = value.size() + 1;
+    if (length > capacity) return 0;
+    memcpy(output, value.c_str(), length);
+    return length;
   }
   size_t putString(const char *key, const char *value) {
     if (failAfterWrites >= 0 && storageWrites >= failAfterWrites) return 0;
@@ -341,6 +344,23 @@ void testLegacyPreparationRequiresBlobRemoval() {
     WiFiParams reloaded;
     reloaded.init();
     assert(reloaded.getSSID() == "Stable network" && reloaded.getPass() == "stable password");
+  }
+}
+
+void testLegacyCredentialSentinelCollision() {
+  for (const char *key : {"ssid", "pass"}) {
+    seedCredentials(true);
+    strings[key] = "\x01";
+    params = WiFiParams{};
+    params.init();
+    strings[key] = "Stale value";
+    failedReadKey = key;
+    assert(!params.prepareLegacyDowngrade());
+    assert(blobs.count("credentials"));
+    failedReadKey.clear();
+    assert(params.prepareLegacyDowngrade());
+    assert(!blobs.count("credentials"));
+    assert(strings.at(key) == "\x01");
   }
 }
 
@@ -704,6 +724,7 @@ int main() {
   testCredentialWriteFailures();
   testLegacyCredentialReadFailures();
   testLegacyPreparationRequiresBlobRemoval();
+  testLegacyCredentialSentinelCollision();
   testInterruptedCredentialWrites();
   testInterruptedCredentialReset();
   testFailedCredentialRestoreBlocksDowngrade();

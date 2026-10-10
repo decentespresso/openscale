@@ -92,13 +92,15 @@ commit. No tag or release dispatch is authorized at the current boundary.
 No source-version bump, public custom-build selection/default change, protocol
 change, service staging, or security-policy change is included.
 
-The requested GPT-6.1 Sol xhigh reviewer identified two issues in the first fix:
+The requested GPT-6.1 Sol xhigh reviewer identified three verification issues:
 legacy read errors could resemble a valid empty password, and a failed blob
-presence query could skip removal. Regression checks reproduced both before
-their fixes. Verification now uses a nonempty error sentinel for legacy reads,
-and downgrade preparation always requires verified anchoring and actual blob
-removal. The reviewer independently reran the runtime harness and found no
-additional PR blockers.
+presence query could skip removal. A further probe found that the initial read
+error sentinel could collide with a retained legacy control-byte SSID. Regression
+checks reproduced each before its fix. Legacy verification now uses bounded
+buffer reads, exact returned lengths including terminators, and exact bytes.
+Downgrade preparation always requires verified anchoring and actual blob removal.
+The reviewer confirmed the final correction, independently reran the runtime
+harness, and found no additional findings. Fresh CI for this correction is pending.
 
 The reviewer also confirmed a pre-existing empty-reset limitation: false-negative
 legacy presence queries can leave one legacy key behind. The authoritative empty
@@ -118,7 +120,8 @@ Physical power-loss and concurrency validation remain outstanding.
 | CI release-ready | Passed in the candidate run |
 | Initial fix CI (`dd10c0c78922873c6706f858b052b538d1b8e9d9`) | [Firmware](https://github.com/decentespresso/openscale/actions/runs/38042636180), [custom](https://github.com/decentespresso/openscale/actions/runs/38042636167), and [OTA contracts](https://github.com/decentespresso/openscale/actions/runs/38042636122) passed; these runs do not cover subsequent reviewer fixes |
 | Reviewer fixes | Nine focused Wi-Fi/OTA/custom-reporting/docs checks passed, including expanded runtime independently confirmed by reviewer; fresh CI pending |
-| Reviewer fixes: firmware/filesystem | Standard builds passed; RAM 57,972 bytes, firmware usage 1,722,381 bytes; firmware SHA-256 unchanged by filesystem generation |
+| First reviewer fixes: firmware/filesystem | Standard builds passed; RAM 57,972 bytes, firmware usage 1,722,381 bytes; firmware SHA-256 unchanged by filesystem generation; predates the final collision correction |
+| Sentinel-collision regression | Failed against `72de92508fe58550798d49c32e2db58221aade9c`; bounded-read correction and all nine focused checks passed locally |
 | Existing local Wi-Fi runtime harness | Passed before adding the missing downgrade check |
 | Original candidate downgrade regression | Failed with RTK and again with raw diagnostics |
 | Authorized fix: Python checks | All 63 existing `tools/test_*.py` scripts passed, including expanded credential/OTA regressions |
@@ -129,6 +132,8 @@ Physical power-loss and concurrency validation remain outstanding.
 | COM5 discovery | USB-SERIAL CH340K, VID:PID `1A86:7522`, USB location `1-7` |
 | COM5 scale identity | User confirmed intended test scale and USB recovery; esptool identified ESP32-S3 v0.2, MAC `cc:ba:97:33:27:f0`, 16 MB flash; running firmware/settings still need inspection |
 | COM5 original-flash backup | Read-only capture completed: 16,777,216 bytes, SHA-256 `6021bbc28dc7c3a211cbf323b1e710c445d2e02738b0855dba26bf4eed9043d6`; ignored storage with protected ACL, never uploaded |
+| COM5 partition layout | Backup partition table matches candidate byte-for-byte; firmware still uses only the existing 8 MB layout despite 16 MB physical flash |
+| COM5 read-only scale diagnostic | `adsd info` succeeded after backup reset; 10.04 SPS, calibration factor 917.94, calibration status `ok`, not invalid; no settings changed |
 | COM5 flashing and NVS | No flash, erase, credential reset, calibration write, or pairing mutation |
 
 The CI rows distinguish the original candidate, the initial fix, and later
@@ -145,7 +150,7 @@ Unsigned local image hashes, not release assets or a signed evidence digest:
 | --- | --- |
 | Standard firmware, before and after filesystem generation | `ac74ba31a9c0b523c4de8337a2630dcdc6dceeaa363fb578969858b140df117e` |
 | Standard LittleFS | `98d71330da9869165029c5462f532efd5f036215cfbf248e7d8419cd97c9009a` |
-| Standard firmware after reviewer fixes, before and after filesystem generation | `2435128af154ced71c901cb0b0c52799b08a07b09d0c3af499191ce7abea3cf5` |
+| Standard firmware after first reviewer fixes, before and after filesystem generation; predates collision correction | `2435128af154ced71c901cb0b0c52799b08a07b09d0c3af499191ce7abea3cf5` |
 
 The remaining isolated-core
 firmware/filesystem matrix, candidate custom profiles, Pressensor/grinder

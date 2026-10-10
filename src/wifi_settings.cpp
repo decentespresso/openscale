@@ -23,9 +23,13 @@ static bool wifiLegacyCredentialsMatch(Preferences &preferences,
   if (record.ssid[0] == 0) {
     return !preferences.isKey(wifiSSIDKey) && !preferences.isKey(wifiPassKey);
   }
-  return preferences.isKey(wifiSSIDKey) && preferences.isKey(wifiPassKey) &&
-         preferences.getString(wifiSSIDKey, "\x01") == record.ssid &&
-         preferences.getString(wifiPassKey, "\x01") == record.pass;
+  WifiCredentials stored;
+  const size_t ssidSize = strlen(record.ssid) + 1;
+  const size_t passSize = strlen(record.pass) + 1;
+  return preferences.getString(wifiSSIDKey, stored.ssid, sizeof(stored.ssid)) == ssidSize &&
+         memcmp(record.ssid, stored.ssid, ssidSize) == 0 &&
+         preferences.getString(wifiPassKey, stored.pass, sizeof(stored.pass)) == passSize &&
+         memcmp(record.pass, stored.pass, passSize) == 0;
 }
 
 static bool wifiWriteLegacyCredentials(Preferences &preferences,
