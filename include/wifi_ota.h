@@ -52,8 +52,8 @@ void processElegantOtaTimeout() {
     return;
   }
 
-  const unsigned long now = millis();
   portENTER_CRITICAL(&otaDisplayMux);
+  const unsigned long now = millis();
   const unsigned long activityAt = otaActivityAt;
   portEXIT_CRITICAL(&otaDisplayMux);
   if (now - activityAt < OTA_ACTIVITY_TIMEOUT_MS) {
