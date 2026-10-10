@@ -25,7 +25,9 @@ Keep these namespaces independent. A settings reset or migration must not clear 
 
 The device name lives in `wifi`, not `hds`, so renaming a scale never touches the settings schema or its migration. Reset WiFi posts `{"ssid":""}` and clears credentials only. Name values are normalized and validated by `include/mdns_name.h`; invalid stored names fall back to the default at boot.
 
-New WiFi credentials use the `credentials` blob: version byte `1`, a 33-byte terminated SSID buffer, and a 65-byte terminated password buffer. `WiFiParams` reads the old `ssid` and `pass` keys only when the blob is absent. It does not trim existing stored values. A network-change candidate stays in RAM until the worker observes a fresh DHCP address and three seconds of stability. The worker writes and verifies the complete blob before updating its active credentials. Reset writes an empty credential record and verifies removal of both legacy keys; incomplete clearing reports failure and restores the previous credential blob. It never clears the namespace. Downgrading to firmware that only knows the legacy keys does not recover a newly saved network.
+New WiFi credentials use the `credentials` blob: version byte `1`, a 33-byte terminated SSID buffer, and a 65-byte terminated password buffer. `WiFiParams` reads the old `ssid` and `pass` keys only when the blob is absent. It does not trim existing stored values. A network-change candidate stays in RAM until the worker observes a fresh DHCP address and three seconds of stability. Before modifying legacy keys, the worker ensures that the previous active credentials have a verified blob. It writes and reads back the legacy pair before committing the new blob and updating its active credentials. An interrupted write therefore leaves a complete previous or new blob; startup repairs the legacy pair from that blob. A failed save attempts to restore both stores and reports failure, including a separate diagnostic if restoration fails. Reset verifies removal of both legacy keys before committing an empty blob. It never clears the namespace or touches calibration, pairing, or device-name keys.
+
+Signed OTA calls `prepareLegacyDowngrade()` when the target or known rollback firmware predates `3.1.15`. The storage owner verifies or repairs the legacy pair and removes the blob only after verification. A storage failure cancels installation before pending LittleFS state or firmware writes. The surviving legacy pair supports rollback to the running firmware, and allows a later upgrade to read credentials changed by `v3.1.14`. The two legacy strings are not atomic; this guarantee relies on the verified OTA gate. A raw USB or firmware-upload downgrade bypasses it: after changing credentials on older firmware, a remaining blob can still override those changes on re-upgrade. Validate those unmanaged paths separately; do not claim arbitrary downgrade round-trip compatibility.
 
 Manual WiFi input trims Unicode whitespace and invisible characters at both edges. Selecting a scan result preserves the byte-exact SSID and password, including meaningful edge spaces. The firmware permits this only when the submitted SSID exactly matches its latest completed scan; UTF-8, control-character, and byte-length validation still applies. A failed scan clears the browser's old choices. Recovery AP retries the saved network after ten minutes, with a 20-second deadline before reopening the AP if that retry fails.
 
@@ -90,6 +92,9 @@ Run the smallest relevant checks:
 
 ```sh
 python tools/test_storage_migration_contract.py
+python tools/test_wifi_setup_runtime.py
+python tools/test_wifi_setup_contract.py
+python tools/test_pull_ota_contract.py
 python tools/test_preset_isolation.py
 pio run -e esp32s3
 ```

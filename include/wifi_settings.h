@@ -19,6 +19,7 @@ public:
   }
   bool hasCredentials() const { return ssid.length() != 0; }
   bool saveCredentials(const String &ssid, const String &pass);
+  bool prepareLegacyDowngrade();
   bool saveMdnsNameForRestart(const char *name, char *stored, size_t storedSize);
   void init();
 };

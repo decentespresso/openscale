@@ -21,11 +21,15 @@ def main():
 #include <cstdint>
 #include <string>
 #include <vector>
+#include "pull_ota_version.h"
 using String = std::string;
 struct CustomBuildAssignment {};
-struct PullOtaManifest { int firmware = 0; struct { bool present = true; } littlefs; int forwardRecoveryVersion = 0; };
-const int HDS_OTA_FORWARD_RECOVERY_VERSION = 1;
+struct PullOtaManifest { String version = "3.1.15"; int firmware = 0; struct { bool present = true; } littlefs; int forwardRecoveryVersion = 0; };
 bool b_ota, storeOk, streamOk;
+struct { bool ready = true; bool prepareLegacyDowngrade() { return ready; } } params;
+int pullOtaCompareVersions(const String &left, const String &right) {
+  return pullOtaCompareVersionPrefixes(left.c_str(), right.c_str());
+}
 const int U_FLASH = 0;
 struct PullOtaPendingLittleFs {
   bool restore = false;
@@ -73,6 +77,7 @@ void reset() {
   paired = network = clockReady = pending = verified = true;
   succeeds = false;
   storeOk = streamOk = true;
+  params.ready = true;
   reports = failedReports = retries = 0;
   identity = String(64, 'a');
   reported.clear();
@@ -85,6 +90,12 @@ void reset() {
     source += "bool pullOtaResumePendingLittleFs() {" + resume + "}\n"
     source += r'''
 int main() {
+  reset();
+  PullOtaManifest legacy;
+  legacy.version = "3.1.14";
+  params.ready = false;
+  assert(!pullOtaInstall(legacy, {}, String(64, 'b'), identity));
+  assert(events.empty() && reports == 0);
   for (int capability : {0, 1, 2}) {
     reset();
     PullOtaManifest target, missingRollback;
@@ -161,7 +172,8 @@ int main() {
         cpp = path / "report.cpp"
         binary = path / "report.exe"
         cpp.write_text(source, encoding="utf-8")
-        subprocess.run([compiler, "-std=c++17", str(cpp), "-o", str(binary)], check=True)
+        subprocess.run([compiler, "-std=c++17", "-I", str(ROOT / "include"),
+                        str(cpp), "-o", str(binary)], check=True)
         subprocess.run([str(binary)], check=True)
     print("custom build reporting runtime tests passed")
 

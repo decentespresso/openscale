@@ -206,6 +206,10 @@ def main():
     install = contents[contents.index("bool pullOtaInstall("):contents.index("bool pullOtaVerifyPendingLittleFs(")]
     assert install.index('pullOtaFail("Recovery unsupported"') < install.index("pullOtaStorePendingLittleFs(")
     assert "manifest.forwardRecoveryVersion != HDS_OTA_FORWARD_RECOVERY_VERSION" in install
+    assert 'pullOtaCompareVersions(manifest.version, "3.1.15") < 0' in install
+    assert 'pullOtaCompareVersions(rollbackManifest.version, "3.1.15") < 0' in install
+    assert install.index("!params.prepareLegacyDowngrade()") < install.index("pullOtaStorePendingLittleFs(")
+    assert install.index('pullOtaFail("WiFi storage failed"') < install.index("pullOtaStreamAsset(")
     if "pullOtaPickRelease(catalog, selection, &selectedCatalogIndex)" not in interactive:
         raise AssertionError("the interactive picker must remain on the no-target path")
     if "pullOtaConfirmInstall(manifest)" not in interactive:
