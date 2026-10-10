@@ -61,6 +61,8 @@ String failedRemoval;
 bool pretendRemoval = false;
 int failedWrites = 0;
 String failedWriteKey;
+String failedReadKey;
+String failedPresenceKey;
 bool pretendWrite = false;
 struct PowerLoss {};
 int storageWrites = 0, interruptAfterWrite = 0;
@@ -71,7 +73,9 @@ void storageWriteCompleted() {
 }
 struct Preferences {
   bool begin(const char *name, bool) { assert(strcmp(name, "wifi") == 0); return true; }
-  bool isKey(const char *key) { return strings.count(key) || blobs.count(key); }
+  bool isKey(const char *key) {
+    return failedPresenceKey != key && (strings.count(key) || blobs.count(key));
+  }
   size_t getBytesLength(const char *key) { return blobs.count(key) ? blobs.at(key).size() : 0; }
   size_t getBytes(const char *key, void *output, size_t capacity) {
     if (!blobs.count(key) || blobs.at(key).size() > capacity) return 0;
@@ -89,6 +93,7 @@ struct Preferences {
     return length;
   }
   String getString(const char *key, const char *fallback) {
+    if (failedReadKey == key) return String(fallback);
     return strings.count(key) ? strings.at(key) : String(fallback);
   }
   size_t getString(const char *key, char *output, size_t capacity) {
@@ -233,6 +238,8 @@ void seedCredentials(bool legacyOnly, bool empty = false) {
   pretendRemoval = false;
   failedWrites = 0;
   failedWriteKey.clear();
+  failedReadKey.clear();
+  failedPresenceKey.clear();
   pretendWrite = false;
   interruptAfterWrite = 0;
   failAfterWrites = -1;
@@ -301,6 +308,39 @@ void testCredentialWriteFailures() {
         assert(strings.at("ssid") == "Old network" && strings.at("pass") == "old pass");
       }
     }
+  }
+}
+
+void testLegacyCredentialReadFailures() {
+  for (const char *key : {"ssid", "pass"}) {
+    for (const char *password : {"", "network password"}) {
+      seedCredentials(false);
+      assert(params.saveCredentials("Network", password));
+      strings[key] = "Stale value";
+      failedReadKey = key;
+      assert(!params.prepareLegacyDowngrade());
+      assert(blobs.count("credentials"));
+      assert(!params.saveCredentials("Other network", ""));
+      assert(params.getSSID() == "Network" && params.getPass() == password);
+      failedReadKey.clear();
+      assert(params.prepareLegacyDowngrade());
+      assert(!blobs.count("credentials"));
+      assert(strings.at("ssid") == "Network" && strings.at("pass") == password);
+    }
+  }
+}
+
+void testLegacyPreparationRequiresBlobRemoval() {
+  for (const bool legacyOnly : {false, true}) {
+    seedCredentials(legacyOnly);
+    failedPresenceKey = "credentials";
+    assert(params.prepareLegacyDowngrade());
+    assert(!blobs.count("credentials"));
+    strings["ssid"] = "Stable network";
+    strings["pass"] = "stable password";
+    WiFiParams reloaded;
+    reloaded.init();
+    assert(reloaded.getSSID() == "Stable network" && reloaded.getPass() == "stable password");
   }
 }
 
@@ -662,6 +702,8 @@ int main() {
   testCredentialsSurviveStableDowngrade();
   testFreshProvisioningAndOpenNetwork();
   testCredentialWriteFailures();
+  testLegacyCredentialReadFailures();
+  testLegacyPreparationRequiresBlobRemoval();
   testInterruptedCredentialWrites();
   testInterruptedCredentialReset();
   testFailedCredentialRestoreBlocksDowngrade();

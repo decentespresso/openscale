@@ -24,8 +24,8 @@ static bool wifiLegacyCredentialsMatch(Preferences &preferences,
     return !preferences.isKey(wifiSSIDKey) && !preferences.isKey(wifiPassKey);
   }
   return preferences.isKey(wifiSSIDKey) && preferences.isKey(wifiPassKey) &&
-         preferences.getString(wifiSSIDKey, "") == record.ssid &&
-         preferences.getString(wifiPassKey, "") == record.pass;
+         preferences.getString(wifiSSIDKey, "\x01") == record.ssid &&
+         preferences.getString(wifiPassKey, "\x01") == record.pass;
 }
 
 static bool wifiWriteLegacyCredentials(Preferences &preferences,
@@ -130,15 +130,10 @@ bool WiFiParams::prepareLegacyDowngrade() {
   Preferences preferences;
   bool prepared = preferences.begin(wifiPrefsKey, false);
   if (prepared) {
-    if (preferences.isKey("credentials") ||
-        !wifiLegacyCredentialsMatch(preferences, record)) {
-      prepared = (wifiCredentialRecordMatches(preferences, record) ||
-                  wifiWriteCredentialRecord(preferences, record)) &&
-                 wifiWriteLegacyCredentials(preferences, record);
-      if (prepared) {
-        prepared = preferences.remove("credentials") && !preferences.isKey("credentials");
-      }
-    }
+    prepared = (wifiCredentialRecordMatches(preferences, record) ||
+                wifiWriteCredentialRecord(preferences, record)) &&
+               wifiWriteLegacyCredentials(preferences, record) &&
+               preferences.remove("credentials") && !preferences.isKey("credentials");
     preferences.end();
   }
   xSemaphoreGive(wifiSettingsMutex);
