@@ -156,6 +156,12 @@ A request is refused when the target is absent from the verified catalog, incomp
 
 An eligible downgrade is accepted, matching picker behavior.
 
+Before pending LittleFS state or firmware writes, `pullOtaInstall()` prepares
+legacy WiFi credentials if the target or known rollback version predates
+`3.1.15`. Verification failure cancels installation. See
+`docs/AI_STORAGE_NOTES.md` for the storage ordering and unmanaged USB/upload
+downgrade limitations.
+
 A pending staged LittleFS transaction takes priority: `pullOtaRunUpdate()` resumes it and ignores the target.
 
 The client contributes a version number and no other input. Asset URLs, sizes, and hashes all come from the scale's own signature-verified fetch.

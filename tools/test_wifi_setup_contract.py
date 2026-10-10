@@ -69,14 +69,16 @@ def main():
     assert "wifiCancelSetup();" in radio
     assert "WiFi.setSleep(false)" not in radio
     assert "downSince == 0 && now - wifiSetupRuntime.stationStartedAt < 20000" in radio
-    assert 'putString(wifiSSIDKey' not in settings
-    assert 'putString(wifiPassKey' not in settings
+    assert 'putString(wifiSSIDKey, record.ssid)' in settings
+    assert 'putString(wifiPassKey, record.pass)' in settings
     assert 'putBytes("credentials", &record, sizeof(record))' in settings
     assert 'memcmp(&record, &stored, sizeof(record)) == 0' in settings
     assert settings.index("memcmp(&record, &stored") < settings.index("ssid = newSsid")
     assert "preferences.clear()" not in settings
-    assert "saved = ssidRemoved && passRemoved" in settings
+    assert "return ssidRemoved && passRemoved && wifiLegacyCredentialsMatch" in settings
     assert "!preferences.isKey(wifiSSIDKey) && !preferences.isKey(wifiPassKey)" in settings
+    assert "WiFiParams::prepareLegacyDowngrade()" in settings
+    assert 'preferences.remove("credentials") && !preferences.isKey("credentials")' in settings
     for element in ("wifi-form", "wifi-networks", "wifi-scan-button", "show-password",
                     "wifi-scan-progress", "wifi-reset-dialog", "wifi-network-dialog", "wifi-check-result", "wifi-open-scale"):
         assert f'id="{element}"' in script

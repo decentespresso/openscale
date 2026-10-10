@@ -4,6 +4,47 @@
 #include "wifi_setup.h"
 #include "wifi_settings.h"
 
+static bool wifiCredentialRecordMatches(Preferences &preferences,
+                                        const WifiCredentials &record) {
+  WifiCredentials stored;
+  return preferences.getBytesLength("credentials") == sizeof(stored) &&
+         preferences.getBytes("credentials", &stored, sizeof(stored)) == sizeof(stored) &&
+         memcmp(&record, &stored, sizeof(record)) == 0;
+}
+
+static bool wifiWriteCredentialRecord(Preferences &preferences,
+                                      const WifiCredentials &record) {
+  return preferences.putBytes("credentials", &record, sizeof(record)) == sizeof(record) &&
+         wifiCredentialRecordMatches(preferences, record);
+}
+
+static bool wifiLegacyCredentialsMatch(Preferences &preferences,
+                                      const WifiCredentials &record) {
+  if (record.ssid[0] == 0) {
+    return !preferences.isKey(wifiSSIDKey) && !preferences.isKey(wifiPassKey);
+  }
+  WifiCredentials stored;
+  const size_t ssidSize = strlen(record.ssid) + 1;
+  const size_t passSize = strlen(record.pass) + 1;
+  return preferences.getString(wifiSSIDKey, stored.ssid, sizeof(stored.ssid)) == ssidSize &&
+         memcmp(record.ssid, stored.ssid, ssidSize) == 0 &&
+         preferences.getString(wifiPassKey, stored.pass, sizeof(stored.pass)) == passSize &&
+         memcmp(record.pass, stored.pass, passSize) == 0;
+}
+
+static bool wifiWriteLegacyCredentials(Preferences &preferences,
+                                      const WifiCredentials &record) {
+  if (wifiLegacyCredentialsMatch(preferences, record)) return true;
+  if (record.ssid[0] == 0) {
+    const bool ssidRemoved = !preferences.isKey(wifiSSIDKey) || preferences.remove(wifiSSIDKey);
+    const bool passRemoved = !preferences.isKey(wifiPassKey) || preferences.remove(wifiPassKey);
+    return ssidRemoved && passRemoved && wifiLegacyCredentialsMatch(preferences, record);
+  }
+  preferences.putString(wifiSSIDKey, record.ssid);
+  preferences.putString(wifiPassKey, record.pass);
+  return wifiLegacyCredentialsMatch(preferences, record);
+}
+
 void WiFiParams::init() {
   wifiInitLocks();
   xSemaphoreTake(wifiSettingsMutex, portMAX_DELAY);
@@ -16,6 +57,9 @@ void WiFiParams::init() {
           wifiCredentialRecordValid(record)) {
         ssid = record.ssid;
         pass = record.pass;
+        if (!wifiWriteLegacyCredentials(preferences, record)) {
+          Serial.println("[prefs] WiFi legacy credential repair failed");
+        }
       } else if (!preferences.isKey("credentials")) {
         ssid = preferences.getString(wifiSSIDKey, "");
         pass = preferences.getString(wifiPassKey, "");
@@ -37,7 +81,8 @@ void WiFiParams::init() {
 bool WiFiParams::saveCredentials(const String &newSsid, const String &newPass) {
   init();
   xSemaphoreTake(wifiSettingsMutex, portMAX_DELAY);
-  if (!initialized || newSsid.length() > 32 || newPass.length() > 64) {
+  if (!initialized || newSsid.length() > 32 || newPass.length() > 64 ||
+      ssid.length() > 32 || pass.length() > 64) {
     xSemaphoreGive(wifiSettingsMutex);
     return false;
   }
@@ -48,30 +93,21 @@ bool WiFiParams::saveCredentials(const String &newSsid, const String &newPass) {
   bool saved = preferences.begin(wifiPrefsKey, false);
   if (saved) {
     WifiCredentials previous;
-    const bool hadRecord = preferences.isKey("credentials");
-    const bool previousValid = !hadRecord ||
-        (preferences.getBytes("credentials", &previous, sizeof(previous)) == sizeof(previous) &&
-         wifiCredentialRecordValid(previous));
-    if (!previousValid) previous = {};
-    if (!hadRecord && ssid.length() <= 32 && pass.length() <= 64) {
-      memcpy(previous.ssid, ssid.c_str(), ssid.length() + 1);
-      memcpy(previous.pass, pass.c_str(), pass.length() + 1);
-    }
-    WifiCredentials stored;
-    saved =
-        preferences.putBytes("credentials", &record, sizeof(record)) == sizeof(record) &&
-        preferences.getBytes("credentials", &stored, sizeof(stored)) == sizeof(stored) &&
-        memcmp(&record, &stored, sizeof(record)) == 0;
-    const bool clearingLegacy = saved && newSsid.length() == 0;
-    if (clearingLegacy) {
-      const bool ssidRemoved = !preferences.isKey(wifiSSIDKey) || preferences.remove(wifiSSIDKey);
-      const bool passRemoved = !preferences.isKey(wifiPassKey) || preferences.remove(wifiPassKey);
-      saved = ssidRemoved && passRemoved &&
-              !preferences.isKey(wifiSSIDKey) && !preferences.isKey(wifiPassKey);
-    }
-    if (!saved) {
-      if (hadRecord || clearingLegacy) preferences.putBytes("credentials", &previous, sizeof(previous));
-      else preferences.remove("credentials");
+    memcpy(previous.ssid, ssid.c_str(), ssid.length() + 1);
+    memcpy(previous.pass, pass.c_str(), pass.length() + 1);
+    saved = wifiCredentialRecordMatches(preferences, previous) ||
+            wifiWriteCredentialRecord(preferences, previous);
+    if (saved) {
+      saved = wifiWriteLegacyCredentials(preferences, record) &&
+              wifiWriteCredentialRecord(preferences, record);
+      if (!saved) {
+        const bool recordRestored = wifiCredentialRecordMatches(preferences, previous) ||
+                                    wifiWriteCredentialRecord(preferences, previous);
+        const bool legacyRestored = wifiWriteLegacyCredentials(preferences, previous);
+        if (!recordRestored || !legacyRestored) {
+          Serial.println("[prefs] WiFi credential restore failed");
+        }
+      }
     }
     preferences.end();
   }
@@ -83,6 +119,29 @@ bool WiFiParams::saveCredentials(const String &newSsid, const String &newPass) {
   }
   xSemaphoreGive(wifiSettingsMutex);
   return saved;
+}
+
+bool WiFiParams::prepareLegacyDowngrade() {
+  init();
+  xSemaphoreTake(wifiSettingsMutex, portMAX_DELAY);
+  if (!initialized || ssid.length() > 32 || pass.length() > 64) {
+    xSemaphoreGive(wifiSettingsMutex);
+    return false;
+  }
+  WifiCredentials record;
+  memcpy(record.ssid, ssid.c_str(), ssid.length() + 1);
+  memcpy(record.pass, pass.c_str(), pass.length() + 1);
+  Preferences preferences;
+  bool prepared = preferences.begin(wifiPrefsKey, false);
+  if (prepared) {
+    prepared = (wifiCredentialRecordMatches(preferences, record) ||
+                wifiWriteCredentialRecord(preferences, record)) &&
+               wifiWriteLegacyCredentials(preferences, record) &&
+               preferences.remove("credentials") && !preferences.isKey("credentials");
+    preferences.end();
+  }
+  xSemaphoreGive(wifiSettingsMutex);
+  return prepared;
 }
 
 bool WiFiParams::saveMdnsNameForRestart(const char *name, char *stored,

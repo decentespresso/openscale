@@ -13,6 +13,7 @@
 #include "webserver.h"
 #endif
 #include "wifi_setup.h"
+#include "wifi_settings.h"
 #if __has_include("ota_public_key.h")
 #include "ota_public_key.h"
 #endif
@@ -1449,6 +1450,12 @@ bool pullOtaInstall(
   if (!rollbackManifest.littlefs.present &&
       manifest.forwardRecoveryVersion != HDS_OTA_FORWARD_RECOVERY_VERSION) {
     return pullOtaFail("Recovery unsupported", "Choose newer build");
+  }
+  if ((pullOtaCompareVersions(manifest.version, "3.1.15") < 0 ||
+       (rollbackManifest.version.length() > 0 &&
+        pullOtaCompareVersions(rollbackManifest.version, "3.1.15") < 0)) &&
+      !params.prepareLegacyDowngrade()) {
+    return pullOtaFail("WiFi storage failed", "Update cancelled");
   }
   b_ota = true;
   if (!pullOtaStorePendingLittleFs(
