@@ -76,8 +76,18 @@ void registerWifiSetupRoutes(AsyncWebServer &server) {
       request->send(409, "text/plain", "This address reached a different scale. The WiFi result is not confirmed. Open the IP address shown on the original scale.");
       return;
     }
+    String location = "/?wifi_device=" + wifiSetupDeviceId();
+    if (request->hasParam("wifi_attempt")) {
+      const String attempt = request->getParam("wifi_attempt")->value();
+      const uint32_t id = strtoul(attempt.c_str(), nullptr, 10);
+      if (id == 0 || String(id) != attempt || id != wifiReadSetupStatus().operationId) {
+        request->send(409, "text/plain", "This WiFi request is no longer current. Its result is not confirmed.");
+        return;
+      }
+      location += "&wifi_attempt=" + attempt;
+    }
     AsyncWebServerResponse *response = request->beginResponse(302, "text/plain", "");
-    response->addHeader("Location", "/");
+    response->addHeader("Location", location);
     response->addHeader("Cache-Control", "no-store");
     request->send(response);
   });

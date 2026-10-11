@@ -80,7 +80,7 @@ def main():
     assert "WiFiParams::prepareLegacyDowngrade()" in settings
     assert 'preferences.remove("credentials") && !preferences.isKey("credentials")' in settings
     for element in ("wifi-form", "wifi-networks", "wifi-scan-button", "show-password",
-                    "wifi-scan-progress", "wifi-reset-dialog", "wifi-network-dialog", "wifi-check-result", "wifi-open-scale"):
+                    "wifi-scan-progress", "wifi-reset-dialog", "wifi-network-dialog", "wifi-network-address", "wifi-check-result", "wifi-open-scale"):
         assert f'id="{element}"' in script
         assert f'id="{element}"' in index
     assert "localStorage" not in script
@@ -90,11 +90,14 @@ def main():
     assert "confirm(" not in script
     assert "resetDialog.showModal()" in script
     assert "resetDialog.returnValue === 'reset'" in script
-    assert "networkDialog.returnValue === 'continue'" in script
+    assert "networkDialog.returnValue === 'checking'" in script
+    assert "window.open(url.href, '_blank', 'noopener,noreferrer')" in script
+    assert "url.searchParams.set('wifi_attempt', id)" in script
     assert "data.device_id === expectedDevice" in script
     assert "url.searchParams.set('wifi_device', expectedDevice)" in script
     assert "location.assign" not in script
-    assert 'response->addHeader("Location", "/")' in routes
+    assert 'response->addHeader("Location", location)' in routes
+    assert 'String(id) != attempt || id != wifiReadSetupStatus().operationId' in routes
     assert "showReconnect" not in script
     assert "wifi-reconnect" not in script and "wifi-reconnect" not in index
     assert 'src="/setup/wifi.js"' in index

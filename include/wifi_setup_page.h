@@ -36,8 +36,10 @@ static const char HDS_WIFI_SETUP_STYLE[] PROGMEM = R"css(
 .wifi-dialog::backdrop{background:rgba(12,25,20,.7)}
 .wifi-dialog h2{margin:0 0 12px;font-size:18px;line-height:1.25}
 .wifi-dialog p{margin:0 0 18px;font-size:14px;line-height:1.5}
+.wifi-dialog .wifi-address{margin-bottom:18px}
 .wifi-dialog-actions{display:flex;justify-content:flex-end;gap:10px}
-.wifi-dialog-actions button{flex:1}
+.wifi-dialog-actions button{flex:1;font-size:14px;white-space:nowrap}
+@media(max-width:360px){.wifi-dialog-actions{flex-direction:column}}
 .wifi-setup #wifi-reset-confirm{background:#b42318;color:#fff;border-color:#b42318}
 .wifi-setup #wifi-reset-confirm:hover{background:#922118;border-color:#922118}
 @media(max-width:520px){.wifi-fields,.wifi-network-tools{grid-template-columns:minmax(0,1fr)}.wifi-setup button{width:100%}.wifi-actions{align-items:stretch}.wifi-actions label{width:100%}.wifi-setup #show-password{width:18px}}
@@ -56,6 +58,22 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   const resetButton = document.getElementById('reset-wifi-button');
   const resetDialog = document.getElementById('wifi-reset-dialog');
   const networkDialog = document.getElementById('wifi-network-dialog');
+  const networkContinue = document.getElementById('wifi-network-continue');
+  networkContinue.type = 'button';
+  networkContinue.textContent = 'Check connection';
+  const networkAddress = document.getElementById('wifi-network-address') || document.createElement('input');
+  if (!networkAddress.isConnected) {
+    const label = document.createElement('label');
+    label.className = 'wifi-address';
+    label.htmlFor = 'wifi-network-address';
+    label.textContent = 'Scale IP address (if the hostname is unavailable)';
+    networkAddress.id = 'wifi-network-address';
+    networkAddress.inputMode = 'decimal';
+    networkAddress.autocomplete = 'off';
+    networkAddress.placeholder = 'IP shown on the scale';
+    label.append(networkAddress);
+    networkDialog.insertBefore(label, networkDialog.querySelector('form'));
+  }
   const checkButton = document.getElementById('wifi-check-result');
   const tareButton = document.getElementById('tare-button');
   const showPassword = document.getElementById('show-password');
@@ -67,6 +85,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   let deviceMismatch = false;
   let scannedSsid = null;
   let pendingCheck = null;
+  let connectedSsid = '';
   const query = new URLSearchParams(location.search);
   const linkedAttempt = Number(query.get('wifi_attempt')) || 0;
   let expectedDevice = query.get('wifi_device') || '';
@@ -120,6 +139,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   const connectionInterrupted = error => ['TimeoutError', 'AbortError', 'TypeError'].includes(error.name);
 
   function updateCurrent(data) {
+    connectedSsid = data.connected && !data.access_point ? data.ssid : '';
     current.textContent = data.access_point ? `Setup network: DecentScale | ${data.ip}` :
       data.connected ? `Connected: ${data.ssid} | ${data.ip}` :
       data.credentials_saved ? `Reconnecting: ${data.ssid}` : 'No WiFi network saved';
@@ -150,11 +170,18 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
 
   function showNetworkDialog() {
     if (!pendingCheck || networkDialog.open) return;
-    document.getElementById('wifi-network-ssid').textContent = pendingCheck.kind === 'reset'
+    document.getElementById('wifi-network-title').textContent = 'WiFi change started';
+    const ssid = document.getElementById('wifi-network-ssid');
+    ssid.textContent = pendingCheck.kind === 'reset'
       ? 'DecentScale' : pendingCheck.ssid;
+    document.getElementById('wifi-network-description').replaceChildren(
+      document.createTextNode('The scale is trying to join '), ssid,
+      document.createTextNode('. Connect this phone or computer to that network, then check the connection.'));
     document.getElementById('wifi-network-recovery').textContent = pendingCheck.kind === 'reset'
       ? 'Setup password: 12345678. The scale will use 192.168.1.1.'
-      : 'If the scale cannot connect, it returns to the previous network. You can check recovery from that network instead.';
+      : 'If the scale cannot connect, it returns to the previous network. Reconnect this phone or computer to that network, then check again.';
+    networkAddress.value = '';
+    networkAddress.setCustomValidity('');
     networkDialog.returnValue = '';
     networkDialog.showModal();
   }
@@ -162,18 +189,43 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   async function continueCheck() {
     const operation = pendingCheck;
     if (!operation) return;
+    const address = networkAddress.value.trim();
+    const hostname = operation.mdns_available &&
+      /^[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$/.test(operation.mdns_name)
+      ? `${operation.mdns_name}.local` : operation.kind === 'reset' ? '192.168.1.1' : '';
+    const host = address || (operation.sameNetwork ? location.hostname : hostname);
+    networkAddress.setCustomValidity(address && !validIp(address)
+      ? 'Enter the IPv4 address shown on the scale.' : !host
+        ? 'Enter the IP address shown on the scale.' : '');
+    if (!networkAddress.reportValidity()) return;
+    const url = operationUrl(host, operation.operation_id);
+    if (url.origin !== location.origin) {
+      window.open(url.href, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (networkDialog.open) networkDialog.close('checking');
     setBusy(true);
     checkButton.hidden = true;
     message('Checking the scale...');
     await waitForOperation(operation.operation_id, operation.kind);
   }
 
+  function validIp(ip) {
+    return typeof ip === 'string' && /^(?:\d{1,3}\.){3}\d{1,3}$/.test(ip) &&
+      ip !== '0.0.0.0' && ip.split('.').every(part => Number(part) <= 255 && String(Number(part)) === part);
+  }
+
+  function operationUrl(host, id) {
+    const url = new URL(`http://${host}/setup/wifi/continue`);
+    url.searchParams.set('wifi_device', expectedDevice);
+    url.searchParams.set('wifi_attempt', id);
+    return url;
+  }
+
   function showVerifiedAddress(data) {
     if (!expectedDevice || data.device_id !== expectedDevice ||
-        typeof data.ip !== 'string' || !/^(?:\d{1,3}\.){3}\d{1,3}$/.test(data.ip) ||
-        data.ip === '0.0.0.0' || data.ip.split('.').some(part => Number(part) > 255 || String(Number(part)) !== part)) return;
-    const url = new URL(`http://${data.ip}/setup/wifi/continue`);
-    url.searchParams.set('wifi_device', expectedDevice);
+        !validIp(data.ip)) return;
+    const url = operationUrl(data.ip, data.operation_id);
     openScale.href = url.href;
     openScale.textContent = `Open scale at ${data.ip}`;
     openScale.hidden = false;
@@ -266,10 +318,13 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
       setBusy(false);
       return;
     }
-    pendingCheck = { ...accepted, kind };
+    pendingCheck = { ...accepted, kind, sameNetwork: kind === 'switch' && accepted.ssid === connectedSsid };
     message(kind === 'reset' ? 'Clearing settings. Reconnect to DecentScale with password 12345678.' :
       `Trying new WiFi settings for ${accepted.ssid}. If they fail, the scale will automatically return to the previous network. Previous settings stay saved until success.`);
-    showNetworkDialog();
+    if (pendingCheck.sameNetwork) {
+      networkAddress.value = '';
+      continueCheck();
+    } else showNetworkDialog();
   }
 
   form.addEventListener('submit', event => {
@@ -307,13 +362,11 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     if (resetDialog.returnValue === 'reset') changeWifi('', '', 'reset');
   });
   checkButton.addEventListener('click', showNetworkDialog);
+  networkContinue.addEventListener('click', continueCheck);
   networkDialog.addEventListener('close', () => {
-    if (!pendingCheck) return;
-    if (networkDialog.returnValue === 'continue') continueCheck();
-    else {
-      message('The WiFi operation continues on the scale. Its result is not confirmed. Check again when this phone or computer is on the scale\'s network.');
-      checkButton.hidden = false;
-    }
+    if (!pendingCheck || networkDialog.returnValue === 'checking') return;
+    message('The WiFi operation continues on the scale. Its result is not confirmed. Check again when this phone or computer is on the scale\'s network.');
+    checkButton.hidden = false;
   });
 
   scanButton.addEventListener('click', async () => {
@@ -382,9 +435,10 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
       setBusy(data.busy === true);
     }
     if ((linkedAttempt && data.operation_id === linkedAttempt) || data.busy) {
+      const kind = linkedAttempt && !data.requested_ssid ? 'reset' : linkedAttempt ? 'switch' : 'remote';
+      pendingCheck = { ...data, ssid: data.requested_ssid, kind, sameNetwork: true };
       setBusy(true);
-      waitForOperation(data.operation_id, linkedAttempt && !data.requested_ssid ? 'reset' :
-        linkedAttempt ? 'switch' : 'remote');
+      waitForOperation(data.operation_id, kind);
     }
   }).catch(() => {
     current.textContent = 'Connection status unavailable';
@@ -409,8 +463,9 @@ static const char HDS_WIFI_SETUP_PAGE[] PROGMEM = R"html(<!doctype html>
 <h2 id="wifi-reset-title">Reset WiFi settings?</h2><p id="wifi-reset-description">The scale will disconnect and open DecentScale setup. Other settings stay unchanged.</p>
 <form method="dialog" class="wifi-dialog-actions"><button value="cancel" autofocus>Cancel</button><button id="wifi-reset-confirm" value="reset">Reset WiFi</button></form></dialog>
 <dialog id="wifi-network-dialog" class="wifi-setup wifi-dialog" aria-labelledby="wifi-network-title" aria-describedby="wifi-network-description wifi-network-recovery">
-<h2 id="wifi-network-title">Check your WiFi network</h2><p id="wifi-network-description">Is this phone or computer connected to <strong id="wifi-network-ssid"></strong>? Once it is, continue to check the scale.</p><p id="wifi-network-recovery"></p>
-<form method="dialog" class="wifi-dialog-actions"><button value="later">Check later</button><button id="wifi-network-continue" value="continue" autofocus>Continue</button></form></dialog>
+<h2 id="wifi-network-title">WiFi change started</h2><p id="wifi-network-description">The scale is trying to join <strong id="wifi-network-ssid"></strong>. Connect this phone or computer to that network, then check the connection.</p><p id="wifi-network-recovery"></p>
+<label class="wifi-address" for="wifi-network-address">Scale IP address (if the hostname is unavailable)<input id="wifi-network-address" inputmode="decimal" autocomplete="off" placeholder="IP shown on the scale"></label>
+<form method="dialog" class="wifi-dialog-actions"><button value="later">Check later</button><button id="wifi-network-continue" type="button" autofocus>Check connection</button></form></dialog>
 <script>
 document.getElementById('name').addEventListener('submit',async event=>{
 event.preventDefault();const status=document.getElementById('name-status');

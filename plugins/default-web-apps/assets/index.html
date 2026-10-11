@@ -512,12 +512,15 @@
   </dialog>
 
   <dialog id="wifi-network-dialog" class="wifi-setup wifi-dialog" aria-labelledby="wifi-network-title" aria-describedby="wifi-network-description wifi-network-recovery">
-    <h2 id="wifi-network-title">Check your WiFi network</h2>
-    <p id="wifi-network-description">Is this phone or computer connected to <strong id="wifi-network-ssid"></strong>? Once it is, continue to check the scale.</p>
+    <h2 id="wifi-network-title">WiFi change started</h2>
+    <p id="wifi-network-description">The scale is trying to join <strong id="wifi-network-ssid"></strong>. Connect this phone or computer to that network, then check the connection.</p>
     <p id="wifi-network-recovery"></p>
+    <label class="wifi-address" for="wifi-network-address">Scale IP address (if the hostname is unavailable)
+      <input id="wifi-network-address" inputmode="decimal" autocomplete="off" placeholder="IP shown on the scale">
+    </label>
     <form method="dialog" class="wifi-dialog-actions">
       <button value="later">Check later</button>
-      <button id="wifi-network-continue" value="continue" autofocus>Continue</button>
+      <button id="wifi-network-continue" type="button" autofocus>Check connection</button>
     </form>
   </dialog>
 

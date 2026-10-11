@@ -63,7 +63,9 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
       if (variant === 'open-legacy-device') return route.fulfill({ status: 404, body: 'Not found' });
       if (variant === 'open-wrong-device' || new URL(request.url()).searchParams.get('wifi_device') !== initialStatus.device_id) return route.fulfill({ status: 409,
         body: 'This address reached a different scale. The WiFi result is not confirmed.' });
-      return route.fulfill({ contentType: 'text/html', body: '<script>location.replace("/")</script>' });
+      const query = new URL(request.url()).search;
+      return route.fulfill({ contentType: 'text/html',
+        body: `<script>location.replace(${JSON.stringify(`/${query}`)})</script>` });
     }
     if (pathname === '/setup/wifi.js') {
       if (options.scriptDelay) await new Promise(resolve => setTimeout(resolve, options.scriptDelay));
@@ -232,7 +234,7 @@ async function confirmNetwork(page, ssid) {
   await page.locator('#wifi-network-dialog').waitFor({ state: 'visible' });
   assert.equal(await page.locator('#wifi-network-ssid').textContent(), ssid);
   assert.notEqual(await page.locator('#wifi-status').getAttribute('data-tone'), 'success');
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.getByRole('button', { name: 'Check connection', exact: true }).click();
 }
 
 async function run(browser, html, label, viewport) {
@@ -297,7 +299,7 @@ async function run(browser, html, label, viewport) {
   });
   await page.locator('#wifi-network-dialog').waitFor({ state: 'visible' });
   assert.equal(session.operationPolls(), 0);
-  assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Continue');
+  assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Check connection');
   await page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-network-${label}-${viewport.width}.png`) });
   await page.getByRole('button', { name: 'Check later', exact: true }).click();
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('operation continues'));
@@ -370,7 +372,7 @@ async function run(browser, html, label, viewport) {
   session.variant('wrong-id');
   await page.locator('#password').fill('password');
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
-  await confirmNetwork(page, 'New network');
+  assert.equal(await page.locator('#wifi-network-dialog').isVisible(), false);
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('no longer current'));
   assert.notEqual(await page.locator('#wifi-status').getAttribute('data-tone'), 'success');
   assert.equal(await page.locator('#wifi-open-scale').isVisible(), false);
@@ -441,7 +443,7 @@ async function run(browser, html, label, viewport) {
 
 async function runResultNavigation(browser, html, label, viewport) {
   for (const variant of ['new-ip', 'interrupted-failure', 'unreachable', 'wrong-device', 'bad-ip', 'success-error', 'open-wrong-device', 'open-legacy-device']) {
-    const session = await openPage(browser, html, viewport, false, 'http://192.168.50.30');
+    const session = await openPage(browser, html, viewport);
     const { page } = session;
     const originalUrl = page.url();
     session.variant('unreachable');
@@ -486,9 +488,10 @@ async function runResultNavigation(browser, html, label, viewport) {
       assert.equal(await page.locator('#wifi-open-scale').getAttribute('href'), null);
     }
     if (variant === 'new-ip') {
-      await page.waitForURL('http://192.168.60.40/');
+      await page.waitForURL(`http://192.168.60.40/?wifi_device=${initialStatus.device_id}&wifi_attempt=9`);
       assert.equal(await page.locator('#tare-button').count(), label === 'main' ? 1 : 0);
       await page.waitForFunction(() => document.getElementById('wifi-current').textContent.includes('Connected: <img src=x onerror=alert(1)>'));
+      await page.waitForFunction(() => !document.getElementById('wifi-connect-button').disabled);
       assert.equal(await page.locator('#wifi-connect-button').isEnabled(), true);
     } else if (succeeded) {
       assert.match(await page.locator('body').textContent(), variant === 'open-wrong-device'
