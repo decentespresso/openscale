@@ -136,7 +136,7 @@ void startWebServer() {
       const String &url = request->url();
       const bool activeOtaUpload = b_ota && !b_pullOtaRunning && url == "/ota/upload";
       if (!activeOtaUpload && (wifiSetupBusy() || b_ota) &&
-          (url == "/setup/name" || url == "/setup/wifi" ||
+          (url == "/setup/name" || url == "/setup/wifi" || url == "/setup/wifi/activate" ||
            (url == "/setup/wifi/scan" && request->method() == HTTP_POST) ||
            url == "/update" || url.startsWith("/ota/"))) {
         request->send(409, "application/json", "{\"error\":\"wifi_busy\"}");

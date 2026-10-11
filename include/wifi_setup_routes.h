@@ -45,7 +45,8 @@ static bool parseWifiSetupCredentials(JsonVariant &json, WifiCredentials &creden
   JsonObject object = json.as<JsonObject>();
   if (object.isNull() || !object["ssid"].is<const char *>() ||
       (!object["pass"].isNull() && !object["pass"].is<const char *>()) ||
-      (!object["scanned"].isNull() && !object["scanned"].is<bool>())) return false;
+      (!object["scanned"].isNull() && !object["scanned"].is<bool>()) ||
+      (!object["test_only"].isNull() && !object["test_only"].is<bool>())) return false;
   const JsonString ssid = object["ssid"].as<JsonString>();
   const JsonString pass = object["pass"].as<JsonString>();
   const char *password = pass.c_str() != nullptr ? pass.c_str() : "";
@@ -57,7 +58,7 @@ static bool parseWifiSetupCredentials(JsonVariant &json, WifiCredentials &creden
 }
 
 static void wifiSendAccepted(AsyncWebServerRequest *request, uint32_t id,
-                             const char *ssid) {
+                             const char *ssid, bool testOnly = false) {
   JsonDocument response;
   response["operation_id"] = id;
   response["device_id"] = wifiSetupDeviceId();
@@ -66,6 +67,7 @@ static void wifiSendAccepted(AsyncWebServerRequest *request, uint32_t id,
   response["mdns_name"] = wifiDeviceName();
   response["mdns_available"] = HDS_FEATURE_MDNS != 0;
   response["restarting"] = false;
+  response["test_only"] = testOnly;
   wifiSendJson(request, 202, response);
 }
 
@@ -76,8 +78,18 @@ void registerWifiSetupRoutes(AsyncWebServer &server) {
       request->send(409, "text/plain", "This address reached a different scale. The WiFi result is not confirmed. Open the IP address shown on the original scale.");
       return;
     }
+    String location = "/?wifi_device=" + wifiSetupDeviceId();
+    if (request->hasParam("wifi_attempt")) {
+      const String attempt = request->getParam("wifi_attempt")->value();
+      const uint32_t id = strtoul(attempt.c_str(), nullptr, 10);
+      if (id == 0 || String(id) != attempt || id != wifiReadSetupStatus().operationId) {
+        request->send(409, "text/plain", "This WiFi request is no longer current. Its result is not confirmed.");
+        return;
+      }
+      location += "&wifi_attempt=" + attempt;
+    }
     AsyncWebServerResponse *response = request->beginResponse(302, "text/plain", "");
-    response->addHeader("Location", "/");
+    response->addHeader("Location", location);
     response->addHeader("Cache-Control", "no-store");
     request->send(response);
   });
@@ -95,15 +107,40 @@ void registerWifiSetupRoutes(AsyncWebServer &server) {
           return;
         }
         uint32_t id;
-        const WifiSetupCommand command = reset ? WifiSetupCommand::Reset : WifiSetupCommand::Switch;
+        const bool testOnly = !reset && (json["test_only"] | false);
+        const WifiSetupCommand command = reset ? WifiSetupCommand::Reset :
+                                         testOnly ? WifiSetupCommand::Test : WifiSetupCommand::Switch;
         if (!wifiQueueSetup(command, credentials, id)) {
           request->send(409, "application/json", "{\"error\":\"wifi_busy\"}");
           return;
         }
-        wifiSendAccepted(request, id, credentials.ssid);
+        wifiSendAccepted(request, id, credentials.ssid, testOnly);
       });
   handler->setMethod(HTTP_POST);
   handler->setMaxContentLength(1024);
+
+  auto *activation = new AsyncCallbackJsonWebHandler(
+      "/setup/wifi/activate", [](AsyncWebServerRequest *request, JsonVariant &json) {
+        if (!wifiRequestOriginAllowed(request)) {
+          request->send(403, "application/json", "{\"error\":\"origin_denied\"}");
+          return;
+        }
+        if (!wifiRequestDeviceAllowed(request)) return;
+        if (!json["operation_id"].is<uint32_t>() || json["operation_id"].as<uint32_t>() == 0) {
+          request->send(400, "application/json", "{\"error\":\"wifi_operation_invalid\"}");
+          return;
+        }
+        const uint32_t id = json["operation_id"].as<uint32_t>();
+        const WifiSetupStatus status = wifiReadSetupStatus();
+        if (!wifiQueueActivation(id)) {
+          request->send(409, "application/json", "{\"error\":\"wifi_operation_not_ready\"}");
+          return;
+        }
+        wifiSendAccepted(request, id, status.requestedSsid);
+      });
+  activation->setMethod(HTTP_POST);
+  activation->setMaxContentLength(128);
+  server.addHandler(activation);
 
   server.on("/setup/wifi/scan", HTTP_POST, [](AsyncWebServerRequest *request) {
     if (!wifiRequestOriginAllowed(request)) {
@@ -146,6 +183,7 @@ void registerWifiSetupRoutes(AsyncWebServer &server) {
     response["requested_ssid"] = status.requestedSsid;
     response["ssid"] = status.ssid;
     response["ip"] = status.ip;
+    response["tested_ip"] = status.testedIp;
     response["connected"] = status.connected;
     response["access_point"] = status.accessPoint;
     response["credentials_saved"] = status.credentialsSaved;

@@ -190,6 +190,45 @@ void testLateConnectionCannotBeatDeadline() {
   }
 }
 
+void testSuccessfulTestReturnsWithoutSaving() {
+  WifiSwitch change;
+  change.testOnly = true;
+  change.hasPrevious = true;
+  change.phase = WifiSwitchPhase::Connecting;
+  change.tick(1000, true);
+  TEST_ASSERT_EQUAL_INT((int)WifiSwitchAction::Restore, (int)change.tick(4000, true));
+  TEST_ASSERT_EQUAL_INT((int)WifiSwitchPhase::Returning, (int)change.phase);
+  TEST_ASSERT_TRUE(change.busy());
+  change.tick(5000, true);
+  TEST_ASSERT_EQUAL_INT((int)WifiSwitchPhase::Ready, (int)change.phase);
+  TEST_ASSERT_FALSE(change.busy());
+  TEST_ASSERT_EQUAL_INT((int)WifiSetupError::None, (int)change.error);
+}
+
+void testProvisioningTestReturnsToSetup() {
+  for (const bool hasPrevious : {false, true}) {
+    WifiSwitch change;
+    change.testOnly = true;
+    change.returnToAp = true;
+    change.hasPrevious = hasPrevious;
+    change.phase = WifiSwitchPhase::Connecting;
+    change.tick(1000, true);
+    TEST_ASSERT_EQUAL_INT((int)WifiSwitchAction::AccessPoint, (int)change.tick(4000, true));
+    change.tick(5000, true);
+    TEST_ASSERT_EQUAL_INT((int)WifiSwitchPhase::Ready, (int)change.phase);
+  }
+}
+
+void testUnavailableReturnDoesNotReportSuccess() {
+  WifiSwitch change;
+  change.testOnly = true;
+  change.hasPrevious = true;
+  change.phase = WifiSwitchPhase::Returning;
+  TEST_ASSERT_EQUAL_INT((int)WifiSwitchAction::AccessPoint, (int)change.tick(20000, true));
+  TEST_ASSERT_EQUAL_INT((int)WifiSwitchPhase::Failed, (int)change.phase);
+  TEST_ASSERT_EQUAL_INT((int)WifiSetupError::Timeout, (int)change.error);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(testUnicodeEdgesAreRemoved);
@@ -207,5 +246,8 @@ int main() {
   RUN_TEST(testUnavailablePreviousNetworkOpensSetup);
   RUN_TEST(testTimeoutWorksAcrossMillisRollover);
   RUN_TEST(testLateConnectionCannotBeatDeadline);
+  RUN_TEST(testSuccessfulTestReturnsWithoutSaving);
+  RUN_TEST(testProvisioningTestReturnsToSetup);
+  RUN_TEST(testUnavailableReturnDoesNotReportSuccess);
   return UNITY_END();
 }

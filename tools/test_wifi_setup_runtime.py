@@ -718,7 +718,10 @@ void testDhcpRecoveryInvalidatesStability() {
   assert(!wifiSetupBusy() && WiFi.currentMode == WIFI_AP);
 }
 
+#include "test_wifi_handoff_runtime.h"
+
 int main() {
+  testWifiHandoffRuntime();
   testCredentialsSurviveStableDowngrade();
   testFreshProvisioningAndOpenNetwork();
   testCredentialWriteFailures();
@@ -749,10 +752,10 @@ int main() {
         cpp, binary = root / "wifi.cpp", root / "wifi.exe"
         cpp.write_text(source, encoding="utf-8")
         subprocess.run([compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror", "-I", str(root),
-                        "-I", str(ROOT / "include"), "-I", str(ROOT / "src"),
+                        "-I", str(ROOT / "include"), "-I", str(ROOT / "src"), "-I", str(ROOT / "tools"),
                         str(cpp), "-o", str(binary)], check=True)
         subprocess.run([str(binary)], check=True)
-    print("WiFi AP retry, scan verification, credential persistence, and OLED reset runtime tests passed")
+    print("WiFi test-return-activate, expiry, OTA exclusion, rollback, AP retry, scan, credential persistence, and OLED reset tests passed")
 
 
 if __name__ == "__main__":

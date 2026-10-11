@@ -23,7 +23,7 @@ void wifiSupervise();
 
 constexpr unsigned long WIFI_SUPERVISE_INTERVAL_MS = 250;
 
-enum class WifiSetupCommand : uint8_t { None, Switch, Scan, Reset };
+enum class WifiSetupCommand : uint8_t { None, Switch, Test, Activate, Scan, Reset };
 enum class WifiScanState : uint8_t { Idle, Running, Complete, Failed };
 
 struct WifiSetupRequest {
@@ -40,6 +40,7 @@ struct WifiSetupStatus {
   char requestedSsid[33] = {};
   char ssid[33] = {};
   char ip[16] = {};
+  char testedIp[16] = {};
   bool connected = false;
   bool credentialsSaved = false;
   bool accessPoint = false;
@@ -62,6 +63,7 @@ struct WifiSetupRuntime {
   WifiCredentials candidate;
   uint32_t operationId = 0;
   char requestedSsid[33] = {};
+  char testedIp[16] = {};
   uint32_t ipBaseline = 0;
   unsigned long stationStartedAt = 0;
   unsigned long recoveryApAt = 0;
@@ -76,6 +78,7 @@ void wifiWorkerStartFailed();
 bool wifiWorkerNeedsStart();
 bool wifiQueueSetup(WifiSetupCommand command, const WifiCredentials &credentials,
                    uint32_t &operationId);
+bool wifiQueueActivation(uint32_t operationId);
 bool wifiSetupBusy();
 bool wifiReserveExternalOperation();
 void wifiReleaseExternalOperation();

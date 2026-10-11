@@ -30,6 +30,7 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
   let unsupportedRequests = 0;
   let namePosts = 0;
   let state = { ...initialStatus };
+  let testOnly = false;
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('dialog', async dialog => {
@@ -63,7 +64,9 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
       if (variant === 'open-legacy-device') return route.fulfill({ status: 404, body: 'Not found' });
       if (variant === 'open-wrong-device' || new URL(request.url()).searchParams.get('wifi_device') !== initialStatus.device_id) return route.fulfill({ status: 409,
         body: 'This address reached a different scale. The WiFi result is not confirmed.' });
-      return route.fulfill({ contentType: 'text/html', body: '<script>location.replace("/")</script>' });
+      const query = new URL(request.url()).search;
+      return route.fulfill({ contentType: 'text/html',
+        body: `<script>location.replace(${JSON.stringify(`/${query}`)})</script>` });
     }
     if (pathname === '/setup/wifi.js') {
       if (options.scriptDelay) await new Promise(resolve => setTimeout(resolve, options.scriptDelay));
@@ -102,6 +105,15 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
         { ssid: '<img src=x onerror=alert(1)>', rssi: -60, secure: false }
       ] });
     }
+    if (pathname === '/setup/wifi/activate' && request.method() === 'POST') {
+      assert.equal(request.headers()['x-hds-device-id'], initialStatus.device_id);
+      assert.deepEqual(request.postDataJSON(), { operation_id: 9 });
+      assert.equal(state.state, 'ready');
+      testOnly = false;
+      polls = 0;
+      state = { ...state, state: 'testing', busy: true };
+      return json({ operation_id: 9, device_id: initialStatus.device_id, restarting: false });
+    }
     if (pathname === '/setup/wifi' && request.method() === 'POST') {
       const data = request.postDataJSON();
       posts = [...posts, data];
@@ -112,11 +124,13 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
         return route.fulfill({ status: variant === 'accepted' ? 202 : 200, body: '' });
       }
       polls = 0;
+      testOnly = data.test_only === true;
       state = { ...initialStatus, operation_id: 9, state: 'testing', busy: true,
         requested_ssid: data.ssid, connected: false };
       return route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({
         operation_id: 9, state: 'queued', ssid: data.ssid, restarting: false,
         mdns_name: 'hds', mdns_available: true,
+        test_only: testOnly,
         device_id: variant === 'accepted-wrong-device' ? 'ffeeddccbbaa' :
           variant === 'accepted-missing-device' ? undefined : initialStatus.device_id
       }) });
@@ -132,7 +146,7 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
         if (variant === 'unreachable') return route.abort('failed');
         if (variant === 'wrong-device') return json({
           ...state, state: 'succeeded', device_id: 'ffeeddccbbaa', connected: true, busy: false });
-        if (variant.startsWith('interrupted') && polls <= 2) return route.abort('failed');
+        if (variant.startsWith('interrupted') && polls <= 10) return route.abort('failed');
         if (variant === 'wrong-id') return json({ ...initialStatus, operation_id: 123, state: 'succeeded' });
         if (polls >= 2) {
           state = ['failure', 'interrupted-failure', 'ap-failure'].includes(variant) ? {
@@ -145,6 +159,8 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
           if (['new-ip', 'open-wrong-device', 'open-legacy-device'].includes(variant)) state = { ...state, ip: '192.168.60.40' };
           if (variant === 'bad-ip') state = { ...state, ip: 'javascript:alert(1)' };
           if (variant === 'success-error') state = { ...state, error: 'dhcp_timeout' };
+          if (testOnly && state.state === 'succeeded') state = { ...state,
+            state: 'ready', tested_ip: state.ip, ssid: initialStatus.ssid, ip: initialStatus.ip };
         }
       }
       return json(state);
@@ -215,7 +231,7 @@ async function runDeviceIdentity(browser, html, label, viewport) {
     }
     await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('different scale'));
     assert.equal(await page.locator('#wifi-form').getAttribute('data-wifi-device'), initialStatus.device_id);
-    assert.equal(await page.locator('#wifi-network-dialog').isVisible(), false);
+    assert.equal(await page.locator('#wifi-network-dialog').isVisible(), variant !== 'scan-wrong-device');
     assert.equal(await page.locator('#wifi-connect-button').isEnabled(), false);
     assert.equal(await page.locator('#wifi-scan-button').isEnabled(), false);
     assert.equal(await page.locator('#device-name').isEnabled(), false);
@@ -229,10 +245,14 @@ async function runDeviceIdentity(browser, html, label, viewport) {
 }
 
 async function confirmNetwork(page, ssid) {
-  await page.locator('#wifi-network-dialog').waitFor({ state: 'visible' });
-  assert.equal(await page.locator('#wifi-network-ssid').textContent(), ssid);
-  assert.notEqual(await page.locator('#wifi-status').getAttribute('data-tone'), 'success');
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved') ||
+    document.getElementById('wifi-status').textContent.includes('WiFi settings cleared'));
+  if (ssid !== 'DecentScale') assert.match(await page.locator('#wifi-current').textContent(), /Connected:/);
+  if (await page.locator('#wifi-network-dialog').isVisible()) {
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.waitForFunction(() => document.getElementById('wifi-operation-view').hidden);
+  }
+  assert.equal(await page.locator('#wifi-network-dialog').isVisible(), false);
 }
 
 async function run(browser, html, label, viewport) {
@@ -254,7 +274,7 @@ async function run(browser, html, label, viewport) {
     return { width: rect.width, height: rect.height, top: rect.top + scrollY };
   });
   assert.deepEqual(whileScanning, beforeScan);
-  assert.equal(await page.locator('.wifi-spinner').evaluate(element =>
+  assert.equal(await page.locator('#wifi-scan-progress .wifi-spinner').evaluate(element =>
     getComputedStyle(element).animationName), 'wifi-spin');
   await page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-scanning-${label}-${viewport.width}.png`) });
   session.scanVariant('success');
@@ -295,26 +315,13 @@ async function run(browser, html, label, viewport) {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   });
-  await page.locator('#wifi-network-dialog').waitFor({ state: 'visible' });
-  assert.equal(session.operationPolls(), 0);
-  assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Continue');
-  await page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-network-${label}-${viewport.width}.png`) });
-  await page.getByRole('button', { name: 'Check later', exact: true }).click();
-  await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('operation continues'));
-  assert.match(await page.locator('#wifi-status').textContent(), /operation continues.*not confirmed/);
-  assert.equal(await page.locator('#wifi-connect-button').isEnabled(), false);
-  assert.equal(session.posts().length, 1);
-  await page.getByRole('button', { name: 'Check WiFi result' }).click();
-  await page.keyboard.press('Escape');
-  assert.equal(await page.locator('#wifi-network-dialog').isVisible(), false);
-  await page.locator('#wifi-check-result').waitFor({ state: 'visible' });
-  assert.equal(session.operationPolls(), 0);
-  await page.getByRole('button', { name: 'Check WiFi result' }).click();
   await confirmNetwork(page, 'New network');
+  assert.equal(session.context.pages().length, 1);
+  assert(session.operationPolls() > 0);
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
   assert.equal(await page.locator('#wifi-check-result').isVisible(), false);
   assert.equal(await page.locator('#wifi-open-scale').isVisible(), true);
-  assert.deepEqual(session.posts(), [{ ssid: 'New network', pass: 'pass word' }]);
+  assert.deepEqual(session.posts(), [{ ssid: 'New network', pass: 'pass word', test_only: true }]);
   assert.equal(await page.locator('#password').inputValue(), '');
   assert.equal(await page.evaluate(() => localStorage.length), 0);
 
@@ -329,19 +336,18 @@ async function run(browser, html, label, viewport) {
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
   await confirmNetwork(page, ' Cafe \u200b ');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
-  assert.deepEqual(session.posts().at(-1), { ssid: ' Cafe \u200b ', pass: ' pass word \ufeff ', scanned: true });
+  assert.deepEqual(session.posts().at(-1), { ssid: ' Cafe \u200b ', pass: ' pass word \ufeff ', scanned: true, test_only: true });
   await page.locator('#ssid').fill(' Cafe \u200b ');
   await page.locator('#password').fill(' pass word \ufeff ');
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
   await confirmNetwork(page, 'Cafe');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
-  assert.deepEqual(session.posts().at(-1), { ssid: 'Cafe', pass: 'pass word' });
+  assert.deepEqual(session.posts().at(-1), { ssid: 'Cafe', pass: 'pass word', test_only: true });
 
   session.variant('interrupted-failure');
   await page.locator('#ssid').fill('Wrong password network');
   await page.locator('#password').fill('password');
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
-  await confirmNetwork(page, 'Wrong password network');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('Waiting for the result') &&
     document.getElementById('wifi-current').textContent === 'Waiting for the scale to reconnect');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('Back on Old network.'));
@@ -349,32 +355,34 @@ async function run(browser, html, label, viewport) {
   assert.equal(await page.locator('#wifi-open-scale').isVisible(), false);
   await page.locator('#wifi-popup').scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-restored-${label}-${viewport.width}.png`) });
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
 
   session.variant('ap-failure');
   await page.locator('#password').fill('password');
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
-  await confirmNetwork(page, 'Wrong password network');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('The previous network is unavailable'));
   assert.match(await page.locator('#wifi-status').textContent(), /Connect to DecentScale \(password 12345678\), then open 192\.168\.1\.1/);
   assert.equal(await page.locator('#wifi-open-scale').isVisible(), false);
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
 
   session.variant('interrupted');
   await page.locator('#ssid').fill('New network');
   await page.locator('#password').fill('password');
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
-  await confirmNetwork(page, 'New network');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('Waiting for the result'));
   assert.notEqual(await page.locator('#wifi-status').getAttribute('data-tone'), 'success');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
 
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
   session.variant('wrong-id');
   await page.locator('#password').fill('password');
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
-  await confirmNetwork(page, 'New network');
+  assert.equal(await page.locator('#wifi-network-dialog').isVisible(), true);
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('no longer current'));
   assert.notEqual(await page.locator('#wifi-status').getAttribute('data-tone'), 'success');
   assert.equal(await page.locator('#wifi-open-scale').isVisible(), false);
 
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
   const beforeReset = session.posts().length;
   await page.getByRole('button', { name: 'Reset WiFi settings' }).click();
   assert.equal(await page.getByRole('dialog').isVisible(), true);
@@ -441,18 +449,15 @@ async function run(browser, html, label, viewport) {
 
 async function runResultNavigation(browser, html, label, viewport) {
   for (const variant of ['new-ip', 'interrupted-failure', 'unreachable', 'wrong-device', 'bad-ip', 'success-error', 'open-wrong-device', 'open-legacy-device']) {
-    const session = await openPage(browser, html, viewport, false, 'http://192.168.50.30');
+    const session = await openPage(browser, html, viewport);
     const { page } = session;
     const originalUrl = page.url();
     session.variant('unreachable');
     await page.locator('#ssid').fill('<img src=x onerror=alert(1)>');
     await page.getByRole('button', { name: 'Connect', exact: true }).click();
-    await page.locator('#wifi-network-dialog').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#wifi-network-dialog img').count(), 0);
-    assert.equal(session.operationPolls(), 0);
+    assert.equal(await page.locator('#wifi-network-dialog').isVisible(), true);
     assert.equal(await page.locator('#wifi-open-scale').isVisible(), false);
     assert.equal(page.url(), originalUrl);
-    await confirmNetwork(page, '<img src=x onerror=alert(1)>');
     await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('Waiting for the result'));
     assert.equal(page.url(), originalUrl);
     assert.equal(await page.locator('#wifi-open-scale').isVisible(), false);
@@ -462,7 +467,7 @@ async function runResultNavigation(browser, html, label, viewport) {
         Date.now = () => now() + 61000;
       });
       await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('Could not confirm'));
-      assert.equal(await page.locator('#wifi-check-result').isVisible(), true);
+      assert.equal(await page.locator('#wifi-check-result').isVisible(), false);
     } else {
       session.variant(variant);
       await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved') ||
@@ -486,16 +491,17 @@ async function runResultNavigation(browser, html, label, viewport) {
       assert.equal(await page.locator('#wifi-open-scale').getAttribute('href'), null);
     }
     if (variant === 'new-ip') {
-      await page.waitForURL('http://192.168.60.40/');
+      await page.waitForURL(`http://192.168.60.40/?wifi_device=${initialStatus.device_id}&wifi_attempt=9`);
       assert.equal(await page.locator('#tare-button').count(), label === 'main' ? 1 : 0);
       await page.waitForFunction(() => document.getElementById('wifi-current').textContent.includes('Connected: <img src=x onerror=alert(1)>'));
+      await page.waitForFunction(() => !document.getElementById('wifi-connect-button').disabled);
       assert.equal(await page.locator('#wifi-connect-button').isEnabled(), true);
     } else if (succeeded) {
       assert.match(await page.locator('body').textContent(), variant === 'open-wrong-device'
         ? /different scale.*not confirmed/ : /Not found/);
       assert.equal(await page.locator('#wifi-connect-button').count(), 0);
     }
-    assert.deepEqual(session.posts(), [{ ssid: '<img src=x onerror=alert(1)>', pass: '' }]);
+    assert.deepEqual(session.posts(), [{ ssid: '<img src=x onerror=alert(1)>', pass: '', test_only: true }]);
     assert.deepEqual(session.errors, []);
     await session.context.close();
   }
