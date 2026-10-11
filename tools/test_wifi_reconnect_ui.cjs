@@ -145,12 +145,11 @@ async function submit(page, ssid = 'New network') {
 
 async function openCheckDialog(page) {
   await page.waitForFunction(() => document.getElementById('password').value === '');
-  assert.equal(await page.locator('#wifi-network-dialog').isVisible(), false);
   await page.waitForFunction(() => !document.getElementById('wifi-open-scale').hidden ||
     !document.getElementById('wifi-check-result').hidden);
   const link = await page.locator('#wifi-check-result').isVisible() ? '#wifi-check-result' : '#wifi-open-scale';
   await page.locator(link).waitFor({ state: 'visible' });
-  assert.equal(await page.locator('#wifi-network-dialog').isVisible(), false);
+  assert.equal(await page.locator('#wifi-network-continue').isVisible(), false);
   const originalUrl = page.url();
   const views = page.context().pages().length;
   await page.locator(link).click();
@@ -160,7 +159,7 @@ async function openCheckDialog(page) {
 }
 
 async function openDestination(session, ip) {
-  if (!await session.page.locator('#wifi-network-dialog').isVisible()) await openCheckDialog(session.page);
+  if (await session.page.locator('#wifi-network-dialog').getAttribute('data-view') !== 'instructions') await openCheckDialog(session.page);
   if (ip !== undefined) await session.page.locator('#wifi-network-address').fill(ip);
   await session.page.getByRole('button', { name: 'Continue', exact: true }).click();
   return session.page;
@@ -178,7 +177,8 @@ async function checkHandoffs(browser, html, label, viewport) {
       await session.page.waitForFunction(() => document.getElementById('password').value === '');
       assert.equal(await session.page.locator('#wifi-open-scale').isVisible(), false);
       assert.equal(await session.page.locator('#wifi-check-result').isVisible(), false);
-      assert.equal(await session.page.locator('#wifi-network-dialog').isVisible(), false);
+      assert.equal(await session.page.locator('#wifi-network-dialog').isVisible(), true);
+      assert.equal(await session.page.locator('#wifi-operation-view .wifi-spinner').isVisible(), true);
       assert.match(await session.page.locator('#wifi-current').textContent(), /Checking connection to/);
       assert.equal(session.activations().length, 0);
       session.releaseTest();
@@ -296,7 +296,7 @@ async function checkRejectedTests(browser, html, viewport) {
         document.getElementById('wifi-status').textContent.includes('could not start'));
       assert.equal(await session.page.locator('#wifi-open-scale').isVisible(), false);
       assert.equal(await session.page.locator('#wifi-check-result').isVisible(), false);
-      assert.equal(await session.page.locator('#wifi-network-dialog').isVisible(), false);
+      assert.equal(await session.page.locator('#wifi-network-dialog').isVisible(), true);
       assert.equal(session.activations().length, variant === 'activation-rejected' ? 1 : 0);
       assert.equal(session.context.pages().length, 1);
       assert.deepEqual(session.errors, []);
@@ -324,7 +324,7 @@ async function checkSameNetworkAndRecovery(browser, html, viewport) {
   try {
     await submit(session.page, 'Old network');
     await session.page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
-    assert.equal(await session.page.locator('#wifi-network-dialog').isVisible(), false);
+    assert.equal(await session.page.locator('#wifi-network-dialog').isVisible(), true);
     assert.equal(session.context.pages().length, 1);
     assert.equal(session.posts().length, 1);
   } finally { await session.context.close(); }
@@ -336,7 +336,7 @@ async function checkSameNetworkAndRecovery(browser, html, viewport) {
     assert.equal(recovery.posts().length, 1);
     assert.equal(recovery.activations().length, 0);
     assert.equal(await recovery.page.locator('#wifi-open-scale').isVisible(), false);
-    assert.equal(await recovery.page.locator('#wifi-network-dialog').isVisible(), false);
+    assert.equal(await recovery.page.locator('#wifi-network-dialog').isVisible(), true);
     assert.equal(await recovery.page.locator('#wifi-status').getAttribute('data-tone'), 'error');
   } finally { await recovery.context.close(); }
   const reset = await openSource(browser, html, viewport, { mdns: false });
@@ -353,10 +353,78 @@ async function checkSameNetworkAndRecovery(browser, html, viewport) {
   } finally { await reset.context.close(); }
 }
 
+async function checkProgressPopup(browser, html, label, viewport) {
+  const session = await openSource(browser, html, viewport, { holdTest: true });
+  try {
+    await submit(session.page);
+    await session.page.waitForFunction(() => document.getElementById('password').value === '');
+    assert.equal(await session.page.locator('dialog[open]').count(), 1);
+    assert.equal(await session.page.locator('#wifi-network-dialog').getAttribute('data-view'), 'operation');
+    assert.equal(await session.page.locator('#wifi-operation-view .wifi-spinner').isVisible(), true);
+    assert.equal(await session.page.locator('#wifi-operation-view #wifi-status').isVisible(), true);
+    assert.equal(await session.page.locator('#wifi-network-continue').isVisible(), false);
+    assert.equal(await session.page.locator('#wifi-open-scale').isVisible(), false);
+    assert.equal(await session.page.locator('#wifi-retry').isVisible(), false);
+    await session.page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-progress-${label}-${viewport.width}.png`) });
+    session.releaseTest();
+    await session.page.locator('#wifi-open-scale').waitFor({ state: 'visible' });
+    assert.equal(await session.page.locator('#wifi-operation-view .wifi-spinner').isVisible(), false);
+    assert.equal(await session.page.locator('#wifi-operation-view #wifi-open-scale').isVisible(), true);
+    assert.equal(await session.page.locator('dialog[open]').count(), 1);
+    await session.page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-progress-success-${label}-${viewport.width}.png`) });
+    await openCheckDialog(session.page);
+    assert.equal(await session.page.locator('dialog[open]').count(), 1);
+    assert.equal(await session.page.locator('#wifi-operation-view').isVisible(), false);
+    assert.equal(await session.page.locator('#wifi-network-target').inputValue(), 'ip');
+    assert.equal(await session.page.locator('#wifi-network-address').inputValue(), '192.168.60.40');
+    await session.page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-progress-instructions-${label}-${viewport.width}.png`) });
+    await openDestination(session);
+    await session.page.waitForFunction(() => document.getElementById('wifi-status')?.textContent.includes('WiFi settings saved'));
+    assert.equal(await session.page.locator('dialog[open]').count(), 0);
+    assert.equal(session.context.pages().length, 1);
+    assert.equal(session.posts().length, 1);
+    assert.equal(session.activations().length, 1);
+    assert.deepEqual(session.errors, []);
+  } finally { await session.context.close(); }
+  const failure = await openSource(browser, html, viewport, { variant: 'rollback' });
+  try {
+    await submit(failure.page);
+    await failure.page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('Back on Old network'));
+    assert.equal(await failure.page.locator('#wifi-operation-view #wifi-status').getAttribute('data-tone'), 'error');
+    assert.equal(await failure.page.locator('#wifi-operation-view .wifi-spinner').isVisible(), false);
+    assert.equal(await failure.page.locator('#wifi-open-scale').isVisible(), false);
+    assert.equal(await failure.page.locator('#wifi-retry').isEnabled(), true);
+    await failure.page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-progress-failure-${label}-${viewport.width}.png`) });
+    await failure.page.getByRole('button', { name: 'Retry', exact: true }).click();
+    assert.equal(await failure.page.locator('dialog[open]').count(), 0);
+    assert.equal(await failure.page.locator('#password').inputValue(), '');
+    assert.equal(await failure.page.evaluate(() => document.activeElement.id), 'password');
+    assert.equal(failure.posts().length, 1);
+    failure.variant('success');
+    await failure.page.locator('#password').fill('pass word');
+    await failure.page.getByRole('button', { name: 'Connect', exact: true }).click();
+    await failure.page.locator('#wifi-open-scale').waitFor({ state: 'visible' });
+    await failure.page.getByRole('button', { name: 'Close', exact: true }).click();
+    await failure.page.locator('#wifi-popup #wifi-open-scale').waitFor({ state: 'visible' });
+    assert.equal(await failure.page.locator('#wifi-popup #wifi-open-scale').isVisible(), true);
+    assert.equal(failure.posts().length, 2);
+    assert.deepEqual(failure.errors, []);
+  } finally { await failure.context.close(); }
+}
+
 (async () => {
   fs.mkdirSync(path.join(root, '.pio.nosync'), { recursive: true });
   const browser = await chromium.launch({ headless: true });
   try {
+    if (process.argv.includes('--popup-only')) {
+      for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }, { width: 320, height: 568 }]) {
+        for (const [label, html] of Object.entries(pages)) {
+          await checkProgressPopup(browser, html, label, viewport);
+          console.log(`${label} ${viewport.width}px: progress, success, same-popup instructions, failure, retry and close passed`);
+        }
+      }
+      return;
+    }
     for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }, { width: 320, height: 568 }]) {
       for (const [label, html] of Object.entries(pages)) {
         await checkHandoffs(browser, html, label, viewport);

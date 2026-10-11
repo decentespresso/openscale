@@ -93,6 +93,30 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   const current = document.getElementById('wifi-current');
   const status = document.getElementById('wifi-status');
   const openScale = document.getElementById('wifi-open-scale');
+  const networkDetails = Array.from(networkDialog.children).filter(element => element.id !== 'wifi-network-title');
+  const operationView = document.createElement('div');
+  operationView.id = 'wifi-operation-view';
+  operationView.hidden = true;
+  const operationProgress = document.createElement('p');
+  operationProgress.style.textAlign = 'center';
+  const operationSpinner = document.createElement('span');
+  operationSpinner.className = 'wifi-spinner';
+  operationSpinner.style.display = 'inline-block';
+  operationSpinner.setAttribute('aria-hidden', 'true');
+  operationProgress.append(operationSpinner);
+  const operationActions = document.createElement('div');
+  operationActions.className = 'wifi-dialog-actions';
+  const retryButton = document.createElement('button');
+  retryButton.id = 'wifi-retry';
+  retryButton.type = 'button';
+  retryButton.textContent = 'Retry';
+  const closeButton = document.createElement('button');
+  closeButton.type = 'button';
+  closeButton.textContent = 'Close';
+  closeButton.autofocus = true;
+  operationActions.append(retryButton, closeButton);
+  operationView.append(operationProgress, operationActions);
+  networkDialog.append(operationView);
   let busy = false;
   let deviceReady = false;
   let deviceMismatch = false;
@@ -122,7 +146,29 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     }
     status.textContent = text;
     status.dataset.tone = tone;
+    updateOperationDialog();
     if (linkedAttempt) status.scrollIntoView({ block: 'center' });
+  }
+
+  function updateOperationDialog() {
+    if (operationView.hidden) return;
+    const waiting = busy && !pendingCheck?.handoff && status.dataset.tone !== 'error';
+    operationSpinner.hidden = !waiting;
+    retryButton.hidden = waiting || pendingCheck?.handoff || status.dataset.tone === 'success' || deviceMismatch;
+    retryButton.disabled = busy;
+    document.getElementById('wifi-network-title').textContent = waiting ? 'Connecting WiFi' :
+      pendingCheck?.handoff ? 'Connection test succeeded' : 'WiFi result';
+  }
+
+  function showOperationDialog() {
+    networkDialog.dataset.view = 'operation';
+    networkDialog.setAttribute('aria-describedby', 'wifi-status');
+    operationView.hidden = false;
+    networkDetails.forEach(element => { element.hidden = true; });
+    operationActions.before(status, openScale);
+    networkDialog.returnValue = '';
+    updateOperationDialog();
+    if (!networkDialog.open) networkDialog.showModal();
   }
 
   function setBusy(value) {
@@ -134,6 +180,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     document.querySelectorAll('#name-form input,#name-form button,#name input,#name button')
       .forEach(element => { element.disabled = busy; });
     form.setAttribute('aria-busy', String(busy));
+    updateOperationDialog();
   }
 
   async function request(path, body) {
@@ -173,7 +220,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     setBusy(true);
     if (tareButton) tareButton.disabled = true;
     checkButton.hidden = true;
-    if (networkDialog.open) networkDialog.close();
+    if (networkDialog.open && networkDialog.dataset.view !== 'operation') networkDialog.close();
   }
 
   function matchesDevice(data) {
@@ -188,7 +235,12 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   }
 
   function showNetworkDialog() {
-    if (!pendingCheck || networkDialog.open) return;
+    if (!pendingCheck || (networkDialog.open && networkDialog.dataset.view !== 'operation')) return;
+    operationView.hidden = true;
+    networkDetails.forEach(element => { element.hidden = false; });
+    checkButton.before(status, openScale);
+    networkDialog.dataset.view = 'instructions';
+    networkDialog.setAttribute('aria-describedby', 'wifi-network-description wifi-network-recovery');
     document.getElementById('wifi-network-title').textContent = pendingCheck.handoff
       ? 'Connection test succeeded' : 'WiFi change started';
     const ssid = document.getElementById('wifi-network-ssid');
@@ -209,7 +261,8 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
       validIp(pendingCheck.tested_ip) ? pendingCheck.tested_ip : '';
     updateNetworkTarget();
     networkDialog.returnValue = '';
-    networkDialog.showModal();
+    if (!networkDialog.open) networkDialog.showModal();
+    networkContinue.focus();
   }
 
   function continueCheck() {
@@ -264,7 +317,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   function finishOperation(data) {
     pendingCheck = null;
     checkButton.hidden = true;
-    if (networkDialog.open) networkDialog.close('checking');
+    if (networkDialog.open && networkDialog.dataset.view !== 'operation') networkDialog.close('checking');
     setBusy(data.busy === true);
   }
 
@@ -377,7 +430,8 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
       if (pendingCheck?.handoff) continue;
       message(data.state === 'returning' ? 'Connection test succeeded. Returning to the original network to report the result...' :
         data.state === 'restoring' ? 'The new WiFi settings did not work. Reconnecting to the previous network...' :
-        data.state === 'verifying' ? 'Connected with the new settings. Checking the connection...' : 'Testing the new WiFi settings...');
+        data.state === 'verifying' ? 'Connected with the new settings. Checking the connection...' :
+          pendingCheck?.testOnly ? 'Testing the new network. Stay on the original network; the scale will return to report the result.' : 'Testing the new WiFi settings...');
     }
     message(pendingCheck?.handoff
       ? `Connection test succeeded for ${pendingCheck.ssid}. The final switch is not confirmed here. Open the scale link and join that network to verify it. Failed settings restore the previous network automatically.`
@@ -392,6 +446,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     pendingCheck = null;
     checkButton.hidden = true;
     message(kind === 'reset' ? 'Clearing WiFi settings...' : 'Submitting WiFi connection test...');
+    if (kind === 'switch') showOperationDialog();
     let accepted;
     const testOnly = kind === 'switch' && ssid !== connectedSsid;
     const credentials = { ssid, pass, ...(scanned ? { scanned: true } : {}), ...(testOnly ? { test_only: true } : {}) };
@@ -460,12 +515,23 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   });
   networkTarget.addEventListener('change', updateNetworkTarget);
   networkContinue.addEventListener('click', continueCheck);
+  closeButton.addEventListener('click', () => networkDialog.close());
+  retryButton.addEventListener('click', () => {
+    networkDialog.close('retry');
+    passwordInput.focus();
+  });
   openScale.addEventListener('click', event => {
     if (!pendingCheck?.handoff) return;
     event.preventDefault();
     showNetworkDialog();
   });
   networkDialog.addEventListener('close', () => {
+    const wasOperation = networkDialog.dataset.view === 'operation';
+    checkButton.before(status, openScale);
+    operationView.hidden = true;
+    networkDetails.forEach(element => { element.hidden = false; });
+    delete networkDialog.dataset.view;
+    if (wasOperation) return;
     if (!pendingCheck || networkDialog.returnValue === 'checking') return;
     message(pendingCheck.handoff
       ? `Connection test succeeded for ${pendingCheck.ssid}. The final switch continues on the scale. Open the scale link when you are ready to join that network.`
