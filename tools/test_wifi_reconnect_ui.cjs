@@ -19,7 +19,10 @@ const deviceId = 'ccba973327f0';
 async function openSource(browser, html, viewport, options = {}) {
   const context = await browser.newContext({ viewport });
   const page = await context.newPage();
-  const servedHtml = options.previousMarkup ? html.replace(/<label class="wifi-address"[\s\S]*?<\/label>/, '')
+  const previousHtml = html.replace(/<label class="wifi-address" for="wifi-network-target"[\s\S]*?<\/label>/, '');
+  const servedHtml = options.previousMarkup ? (options.previousMarkup === 'with-address' ? previousHtml
+    .replace('Scale IP address', 'Scale IP address (if the hostname is unavailable)') :
+    previousHtml.replace(/<label class="wifi-address" for="wifi-network-address"[\s\S]*?<\/label>/, ''))
     .replace('id="wifi-network-continue" type="button" autofocus>Continue',
       'id="wifi-network-continue" value="continue" autofocus>Check connection')
     .replace('<a id="wifi-check-result" href="#wifi-network-dialog" aria-haspopup="dialog" aria-controls="wifi-network-dialog" hidden>Check connection</a>',
@@ -55,11 +58,12 @@ async function openSource(browser, html, viewport, options = {}) {
   await context.routeWebSocket('**/snapshot', socket => {
     socket.onMessage(() => socket.send(JSON.stringify({ type: 'status', mdns_name: 'hds' })));
   });
-  await context.route(/^http:\/\/(?:hds\.local|192\.168\.50\.30|192\.168\.60\.4[01]|192\.168\.1\.1)\//, async route => {
+  await context.route(/^http:\/\/(?:hds\.local|kitchen-scale\.local|192\.168\.50\.30|192\.168\.60\.4[01]|192\.168\.1\.1)\//, async route => {
     const request = route.request();
     const url = new URL(request.url());
     const json = data => route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
     if (variant === 'hostname-unavailable' && url.hostname === 'hds.local') return route.abort('failed');
+    if (activated && /^192\.168\.60\./.test(url.hostname) && url.hostname !== status.ip) return route.abort('failed');
     if (url.pathname === '/setup/wifi/continue') {
       if (variant === 'wrong-device' || url.searchParams.get('wifi_device') !== deviceId) {
         return route.fulfill({ status: 409, body: 'This address reached a different scale. The WiFi result is not confirmed.' });
@@ -155,17 +159,19 @@ async function openCheckDialog(page) {
   assert.equal(page.context().pages().length, views);
 }
 
-async function openDestination(session, ip = '') {
+async function openDestination(session, ip) {
   if (!await session.page.locator('#wifi-network-dialog').isVisible()) await openCheckDialog(session.page);
-  await session.page.locator('#wifi-network-address').fill(ip);
+  if (ip !== undefined) await session.page.locator('#wifi-network-address').fill(ip);
   await session.page.getByRole('button', { name: 'Continue', exact: true }).click();
   return session.page;
 }
 
 async function checkHandoffs(browser, html, label, viewport) {
   for (const options of [{}, { provisioning: true }, { mdns: false }, { variant: 'activation-interrupted' },
-    { finalIp: '192.168.60.41' }, { variant: 'hostname-unavailable' },
-    { mdnsName: 'bad/name' }, { previousMarkup: true }]) {
+    { finalIp: '192.168.60.41' }, { finalIp: '192.168.60.41', useHostname: true },
+    { useHostname: true }, { useHostname: true, mdnsName: 'kitchen-scale' },
+    { variant: 'hostname-unavailable' }, { mdnsName: 'bad/name' }, { previousMarkup: true },
+    { previousMarkup: 'with-address' }]) {
     const session = await openSource(browser, html, viewport, { ...options, holdTest: true });
     try {
       await submit(session.page);
@@ -179,15 +185,31 @@ async function checkHandoffs(browser, html, label, viewport) {
       await session.page.locator('#wifi-open-scale').waitFor({ state: 'visible' });
       await session.page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-handoff-ready-${label}-${viewport.width}.png`) });
       await openCheckDialog(session.page);
-      assert.match(await session.page.locator('#wifi-open-scale').getAttribute('href'), /\/setup\/wifi\/continue\?/);
+      const link = new URL(await session.page.locator('#wifi-open-scale').getAttribute('href'));
+      assert.equal(link.hostname, '192.168.60.40');
+      assert.equal(link.pathname, '/setup/wifi/continue');
       assert.match(await session.page.locator('#wifi-network-title').textContent(), /test succeeded/);
+      assert.equal(await session.page.locator('#wifi-network-target').inputValue(), 'ip');
+      assert.equal(await session.page.locator('#wifi-network-address').inputValue(), '192.168.60.40');
+      assert.equal(await session.page.locator('#wifi-network-address').isEnabled(), true);
+      assert.match(await session.page.locator('#wifi-network-address').evaluate(input => input.parentElement.textContent), /^Scale IP address\s*$/);
+      assert.equal(await session.page.locator('#wifi-network-target option').count(), 2);
+      const hostnameEnabled = options.mdns !== false && options.mdnsName !== 'bad/name';
+      assert.equal(await session.page.locator('#wifi-network-target option[value="hostname"]').evaluate(option => !option.disabled), hostnameEnabled);
+      assert.equal(await session.page.locator('#wifi-network-target option[value="hostname"]').textContent(),
+        hostnameEnabled ? `Hostname (${options.mdnsName || 'hds'}.local)` : 'Hostname');
       assert.equal(session.posts().length, 1);
       assert.equal(session.activations().length, 1);
       assert.equal(await session.page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      assert.equal(await session.page.locator('#wifi-network-title').evaluate(element => {
+        const title = element.getBoundingClientRect();
+        const dialog = element.closest('dialog').getBoundingClientRect();
+        return title.top >= dialog.top && title.bottom <= dialog.bottom;
+      }), true, 'The dialog title must not be clipped');
       assert.equal(await session.page.locator('#wifi-network-dialog button').evaluateAll(buttons =>
         buttons.every(button => button.scrollWidth <= button.clientWidth && button.scrollHeight <= button.clientHeight)), true);
       await session.page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-handoff-${label}-${viewport.width}.png`) });
-      for (const ip of ['javascript:alert(1)', '192.168.60.999', '192.168.060.40', '0.0.0.0']) {
+      for (const ip of ['', 'javascript:alert(1)', '192.168.60.999', '192.168.060.40', '0.0.0.0']) {
         const count = session.context.pages().length;
         const originalUrl = session.page.url();
         await session.page.locator('#wifi-network-address').fill(ip);
@@ -196,7 +218,19 @@ async function checkHandoffs(browser, html, label, viewport) {
         assert.equal(session.page.url(), originalUrl);
         assert.equal(await session.page.locator('#wifi-network-address').evaluate(input => input.checkValidity()), false);
       }
-      const ip = options.mdns === false || options.variant || options.mdnsName ? '192.168.60.40' : '';
+      if (options.useHostname) {
+        await session.page.locator('#wifi-network-target').selectOption('hostname');
+        assert.equal(await session.page.locator('#wifi-network-address').isVisible(), false);
+        assert.equal(await session.page.locator('#wifi-network-address').isEnabled(), false);
+        await session.page.locator('#wifi-network-target').selectOption('ip');
+        assert.equal(await session.page.locator('#wifi-network-address').isVisible(), true);
+        assert.equal(await session.page.locator('#wifi-network-address').isEnabled(), true);
+        await session.page.locator('#wifi-network-target').selectOption('hostname');
+        await session.page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-handoff-hostname-${label}-${viewport.width}.png`) });
+      } else {
+        await session.page.locator('#wifi-network-address').fill('192.168.60.40');
+      }
+      const ip = options.useHostname ? undefined : options.finalIp;
       const destination = await openDestination(session, ip);
       await destination.waitForFunction(() => document.getElementById('wifi-status')?.textContent.includes('WiFi settings saved')).catch(async error => {
         console.error({ options, url: destination.url(), body: await destination.locator('body').textContent(),
@@ -210,7 +244,7 @@ async function checkHandoffs(browser, html, label, viewport) {
         return rect.top >= 0 && rect.bottom <= innerHeight && element.contains(front);
       }), true, 'The verified handoff result must be visible and unobstructed');
       const url = new URL(destination.url());
-      assert.equal(url.hostname, ip || 'hds.local');
+      assert.equal(url.hostname, options.useHostname ? `${options.mdnsName || 'hds'}.local` : ip || '192.168.60.40');
       assert.equal(url.searchParams.get('wifi_device'), deviceId);
       assert.equal(url.searchParams.get('wifi_attempt'), '4294967295');
       assert.deepEqual([...url.searchParams.keys()].sort(), ['wifi_attempt', 'wifi_device']);
@@ -220,6 +254,9 @@ async function checkHandoffs(browser, html, label, viewport) {
       assert.equal(session.context.pages().length, 1);
       assert.equal(await session.page.locator('#wifi-network-dialog').isVisible(), false);
       assert.equal(await session.page.locator('#wifi-check-result').isVisible(), false);
+      if (options.variant === 'hostname-unavailable') {
+        assert.equal(session.failures().some(request => new URL(request.url).hostname === 'hds.local'), false);
+      }
       assert.deepEqual(session.errors, []);
     } finally { await session.context.close(); }
   }
@@ -306,6 +343,9 @@ async function checkSameNetworkAndRecovery(browser, html, viewport) {
   try {
     await reset.page.getByRole('button', { name: 'Reset WiFi settings', exact: true }).click();
     await reset.page.getByRole('button', { name: 'Reset WiFi', exact: true }).click();
+    await openCheckDialog(reset.page);
+    assert.equal(await reset.page.locator('#wifi-network-target').inputValue(), 'ip');
+    assert.equal(await reset.page.locator('#wifi-network-address').inputValue(), '192.168.1.1');
     const destination = await openDestination(reset);
     await destination.waitForFunction(() => document.getElementById('wifi-status')?.textContent.includes('WiFi settings cleared'));
     assert.equal(new URL(destination.url()).hostname, '192.168.1.1');
@@ -323,7 +363,7 @@ async function checkSameNetworkAndRecovery(browser, html, viewport) {
         await checkRejectedResults(browser, html, viewport);
         await checkRejectedTests(browser, html, viewport);
         await checkSameNetworkAndRecovery(browser, html, viewport);
-        console.log(`${label} ${viewport.width}px: changed-origin hostname/IP handoff, identity/operation guards, provisioning, rollback and reset passed`);
+        console.log(`${label} ${viewport.width}px: IP-default and explicit hostname handoff, editable DHCP address, identity/operation guards, provisioning, rollback and reset passed`);
       }
     }
   } finally { await browser.close(); }

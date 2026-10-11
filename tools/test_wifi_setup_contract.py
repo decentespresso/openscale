@@ -80,7 +80,7 @@ def main():
     assert "WiFiParams::prepareLegacyDowngrade()" in settings
     assert 'preferences.remove("credentials") && !preferences.isKey("credentials")' in settings
     for element in ("wifi-form", "wifi-networks", "wifi-scan-button", "show-password",
-                    "wifi-scan-progress", "wifi-reset-dialog", "wifi-network-dialog", "wifi-network-address", "wifi-check-result", "wifi-open-scale"):
+                    "wifi-scan-progress", "wifi-reset-dialog", "wifi-network-dialog", "wifi-network-target", "wifi-network-address", "wifi-check-result", "wifi-open-scale"):
         assert f'id="{element}"' in script
         assert f'id="{element}"' in index
     assert "localStorage" not in script

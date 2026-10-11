@@ -515,7 +515,10 @@
     <h2 id="wifi-network-title">WiFi change started</h2>
     <p id="wifi-network-description">The scale is trying to join <strong id="wifi-network-ssid"></strong>. Connect this phone or computer to that network, then select Continue.</p>
     <p id="wifi-network-recovery"></p>
-    <label class="wifi-address" for="wifi-network-address">Scale IP address (if the hostname is unavailable)
+    <label class="wifi-address" for="wifi-network-target">Open using
+      <select id="wifi-network-target"><option value="ip">IP address</option><option value="hostname">Hostname</option></select>
+    </label>
+    <label class="wifi-address" for="wifi-network-address">Scale IP address
       <input id="wifi-network-address" inputmode="decimal" autocomplete="off" placeholder="IP shown on the scale">
     </label>
     <form method="dialog" class="wifi-dialog-actions">

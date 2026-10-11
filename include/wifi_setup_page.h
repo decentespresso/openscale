@@ -66,13 +66,25 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     const label = document.createElement('label');
     label.className = 'wifi-address';
     label.htmlFor = 'wifi-network-address';
-    label.textContent = 'Scale IP address (if the hostname is unavailable)';
+    label.textContent = 'Scale IP address';
     networkAddress.id = 'wifi-network-address';
     networkAddress.inputMode = 'decimal';
     networkAddress.autocomplete = 'off';
     networkAddress.placeholder = 'IP shown on the scale';
     label.append(networkAddress);
     networkDialog.insertBefore(label, networkDialog.querySelector('form'));
+  }
+  networkAddress.parentElement.firstChild.textContent = 'Scale IP address';
+  const networkTarget = document.getElementById('wifi-network-target') || document.createElement('select');
+  if (!networkTarget.isConnected) {
+    const label = document.createElement('label');
+    label.className = 'wifi-address';
+    label.htmlFor = 'wifi-network-target';
+    label.textContent = 'Open using';
+    networkTarget.id = 'wifi-network-target';
+    networkTarget.append(new Option('IP address', 'ip'), new Option('Hostname', 'hostname'));
+    label.append(networkTarget);
+    networkDialog.insertBefore(label, networkAddress.parentElement);
   }
   const checkButton = document.getElementById('wifi-check-result');
   checkButton.textContent = 'Check connection';
@@ -187,9 +199,15 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
       document.createTextNode('. Connect this phone or computer to that network, then select Continue.'));
     document.getElementById('wifi-network-recovery').textContent = pendingCheck.kind === 'reset'
       ? 'Setup password: 12345678. The scale will use 192.168.1.1.'
-      : 'If the scale cannot connect, it returns to the previous network. Reconnect this phone or computer to that network, then check again.';
-    networkAddress.value = '';
-    networkAddress.setCustomValidity('');
+      : 'If the switch fails, the scale returns to the previous network. If its IP changes, use the address on the scale.';
+    const hostname = operationHostname(pendingCheck);
+    const hostnameOption = networkTarget.querySelector('[value="hostname"]');
+    hostnameOption.textContent = hostname ? `Hostname (${hostname})` : 'Hostname';
+    hostnameOption.disabled = !hostname;
+    networkTarget.value = 'ip';
+    networkAddress.value = pendingCheck.kind === 'reset' ? '192.168.1.1' :
+      validIp(pendingCheck.tested_ip) ? pendingCheck.tested_ip : '';
+    updateNetworkTarget();
     networkDialog.returnValue = '';
     networkDialog.showModal();
   }
@@ -197,18 +215,29 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   function continueCheck() {
     const operation = pendingCheck;
     if (!operation) return;
-    const address = networkAddress.value.trim();
-    const hostname = operation.mdns_available &&
-      /^[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$/.test(operation.mdns_name)
-      ? `${operation.mdns_name}.local` : operation.kind === 'reset' ? '192.168.1.1' : '';
-    const host = address || hostname || (validIp(operation.tested_ip) ? operation.tested_ip : '');
-    networkAddress.setCustomValidity(address && !validIp(address)
-      ? 'Enter the IPv4 address shown on the scale.' : !host
-        ? 'Enter the IP address shown on the scale.' : '');
-    if (!networkAddress.reportValidity()) return;
+    const usingHostname = networkTarget.value === 'hostname';
+    const host = usingHostname ? operationHostname(operation) : networkAddress.value.trim();
+    networkTarget.setCustomValidity(usingHostname && !host ? 'Select IP address.' : '');
+    networkAddress.setCustomValidity(!usingHostname && !validIp(host)
+      ? 'Enter the IPv4 address shown on the scale.' : '');
+    if (!networkTarget.reportValidity() || !networkAddress.reportValidity()) return;
     const url = operationUrl(host, operation.operation_id);
     if (networkDialog.open) networkDialog.close('checking');
     location.assign(url.href);
+  }
+
+  function updateNetworkTarget() {
+    const usingHostname = networkTarget.value === 'hostname';
+    networkAddress.parentElement.hidden = usingHostname;
+    networkAddress.disabled = usingHostname;
+    networkTarget.setCustomValidity('');
+    networkAddress.setCustomValidity('');
+  }
+
+  function operationHostname(operation) {
+    return operation.mdns_available &&
+      /^[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$/.test(operation.mdns_name)
+      ? `${operation.mdns_name}.local` : '';
   }
 
   function validIp(ip) {
@@ -266,11 +295,8 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
       }
       message(`Connection test succeeded for ${data.requested_ssid}, but the final switch request was not confirmed. Open the scale link to check the result.`);
     }
-    const hostname = data.mdns_available &&
-      /^[a-z0-9](?:[a-z0-9-]{0,22}[a-z0-9])?$/.test(data.mdns_name)
-      ? `${data.mdns_name}.local` : data.tested_ip;
-    openScale.href = operationUrl(hostname, data.operation_id).href;
-    openScale.textContent = `Open scale at http://${hostname}`;
+    openScale.href = operationUrl(data.tested_ip, data.operation_id).href;
+    openScale.textContent = `Open scale at http://${data.tested_ip}`;
     openScale.setAttribute('aria-haspopup', 'dialog');
     openScale.setAttribute('aria-controls', 'wifi-network-dialog');
     openScale.hidden = false;
@@ -432,6 +458,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     event.preventDefault();
     showNetworkDialog();
   });
+  networkTarget.addEventListener('change', updateNetworkTarget);
   networkContinue.addEventListener('click', continueCheck);
   openScale.addEventListener('click', event => {
     if (!pendingCheck?.handoff) return;
@@ -542,7 +569,8 @@ static const char HDS_WIFI_SETUP_PAGE[] PROGMEM = R"html(<!doctype html>
 <form method="dialog" class="wifi-dialog-actions"><button value="cancel" autofocus>Cancel</button><button id="wifi-reset-confirm" value="reset">Reset WiFi</button></form></dialog>
 <dialog id="wifi-network-dialog" class="wifi-setup wifi-dialog" aria-labelledby="wifi-network-title" aria-describedby="wifi-network-description wifi-network-recovery">
 <h2 id="wifi-network-title">WiFi change started</h2><p id="wifi-network-description">The scale is trying to join <strong id="wifi-network-ssid"></strong>. Connect this phone or computer to that network, then select Continue.</p><p id="wifi-network-recovery"></p>
-<label class="wifi-address" for="wifi-network-address">Scale IP address (if the hostname is unavailable)<input id="wifi-network-address" inputmode="decimal" autocomplete="off" placeholder="IP shown on the scale"></label>
+<label class="wifi-address" for="wifi-network-target">Open using<select id="wifi-network-target"><option value="ip">IP address</option><option value="hostname">Hostname</option></select></label>
+<label class="wifi-address" for="wifi-network-address">Scale IP address<input id="wifi-network-address" inputmode="decimal" autocomplete="off" placeholder="IP shown on the scale"></label>
 <form method="dialog" class="wifi-dialog-actions"><button value="later">Check later</button><button id="wifi-network-continue" type="button" autofocus>Continue</button></form></dialog>
 <script>
 document.getElementById('name').addEventListener('submit',async event=>{
