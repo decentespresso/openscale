@@ -307,7 +307,9 @@ void wifiProcessSetup() {
       now - wifiSetupRuntime.change.startedAt >= 120000) {
     wifiSetupRuntime.change.phase = WifiSwitchPhase::Failed;
     wifiSetupRuntime.change.error = WifiSetupError::Aborted;
-    wifiFinishSetup();
+    wifiSetupRuntime.candidate = {};
+    wifiSetupRuntime.testedIp[0] = 0;
+    wifiPublishSetupStatus();
   }
   if (wifiSetupRuntime.recoveryApAt != 0 && params.hasCredentials() &&
       !wifiSetupBusy() && millis() - wifiSetupRuntime.recoveryApAt >= 600000 &&

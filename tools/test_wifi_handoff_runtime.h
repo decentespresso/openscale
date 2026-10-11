@@ -95,6 +95,15 @@ void testWifiHandoffRuntime() {
       wifiCancelSetup();
     } else assert(wifiSetupRuntime.candidate.ssid[0] == 0);
   }
+  prepareHandoffTest();
+  assert(wifiReserveExternalOperation());
+  clockMs += 120000;
+  wifiProcessSetup();
+  assert(wifiReadSetupStatus().phase == WifiSwitchPhase::Failed);
+  assert(wifiSetupRuntime.candidate.ssid[0] == 0);
+  assertPreviousCredentials();
+  assert(wifiSetupBusy());
+  wifiReleaseExternalOperation();
   const uint32_t id = prepareHandoffTest();
   assert(wifiQueueActivation(id));
   clockMs += 120000;

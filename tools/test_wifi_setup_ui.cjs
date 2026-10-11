@@ -250,7 +250,7 @@ async function confirmNetwork(page, ssid) {
   if (ssid !== 'DecentScale') assert.match(await page.locator('#wifi-current').textContent(), /Connected:/);
   if (await page.locator('#wifi-network-dialog').isVisible()) {
     await page.getByRole('button', { name: 'Close', exact: true }).click();
-    await page.locator('#wifi-operation-view').waitFor({ state: 'hidden' });
+    await page.waitForFunction(() => document.getElementById('wifi-operation-view').hidden);
   }
   assert.equal(await page.locator('#wifi-network-dialog').isVisible(), false);
 }
