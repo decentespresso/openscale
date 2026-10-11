@@ -119,7 +119,7 @@ async function openSource(browser, html, viewport, options = {}) {
       if (status.operation_id && variant === 'stale-trial') return json({ ...status, operation_id: 123 });
       if (status.operation_id && variant === 'unreachable') return route.abort('failed');
       if (status.test_only && !activated) return json({ ...status,
-        state: testReady ? 'ready' : 'testing', ssid: options.provisioning ? '' : 'Old network',
+        state: testReady ? 'ready' : options.testState || 'testing', ssid: options.provisioning ? '' : 'Old network',
         ip: sourceHost, connected: !options.provisioning, access_point: options.provisioning === true,
         credentials_saved: !options.provisioning, busy: !testReady,
         tested_ip: variant === 'bad-tested-ip' ? 'javascript:alert(1)' : '192.168.60.40' });
@@ -353,6 +353,28 @@ async function checkSameNetworkAndRecovery(browser, html, viewport) {
   } finally { await reset.context.close(); }
 }
 
+async function checkReloadedTests(browser, html, viewport) {
+  for (const testState of ['testing', 'verifying', 'returning']) {
+    const session = await openSource(browser, html, viewport, { holdTest: true, testState });
+    try {
+      await submit(session.page);
+      await session.page.waitForFunction(() => document.getElementById('password').value === '');
+      await session.page.reload();
+      await session.page.waitForFunction(() => document.getElementById('wifi-status').textContent.length > 0);
+      assert.equal(await session.page.locator('#wifi-connect-button').isEnabled(), false);
+      assert.equal(session.activations().length, 0);
+      session.releaseTest();
+      await session.page.locator('#wifi-open-scale').waitFor({ state: 'visible' });
+      assert.equal(session.posts().length, 1);
+      assert.equal(session.activations().length, 1);
+      await openDestination(session);
+      await session.page.waitForFunction(() => document.getElementById('wifi-status')?.textContent.includes('WiFi settings saved'));
+      assert.equal(await session.page.locator('#wifi-connect-button').isEnabled(), true);
+      assert.deepEqual(session.errors, []);
+    } finally { await session.context.close(); }
+  }
+}
+
 async function checkProgressPopup(browser, html, label, viewport) {
   const session = await openSource(browser, html, viewport, { holdTest: true });
   try {
@@ -431,6 +453,7 @@ async function checkProgressPopup(browser, html, label, viewport) {
         await checkRejectedResults(browser, html, viewport);
         await checkRejectedTests(browser, html, viewport);
         await checkSameNetworkAndRecovery(browser, html, viewport);
+        await checkReloadedTests(browser, html, viewport);
         console.log(`${label} ${viewport.width}px: IP-default and explicit hostname handoff, editable DHCP address, identity/operation guards, provisioning, rollback and reset passed`);
       }
     }

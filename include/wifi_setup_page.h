@@ -401,7 +401,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
         return;
       }
       if (data.state === 'ready') {
-        if (!pendingCheck?.testOnly || pendingCheck.handoff || !await acknowledgeTest(data)) return;
+        if (pendingCheck?.handoff || !await acknowledgeTest(data)) return;
         started = Date.now();
         continue;
       }

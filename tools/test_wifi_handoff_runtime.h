@@ -69,6 +69,11 @@ void testWifiHandoffRuntime() {
     reloaded.init();
     assert(reloaded.getSSID() == "New network" && reloaded.getPass() == "new pass");
     assert(!wifiQueueActivation(id));
+    const int completedStationStarts = stationStarts;
+    clockMs += 600000;
+    wifiProcessSetup();
+    assert(stationStarts == completedStationStarts);
+    assert(wifiReadSetupStatus().phase == WifiSwitchPhase::Succeeded);
   }
   for (const bool storageFailure : {false, true}) {
     activateHandoff(prepareHandoffTest());

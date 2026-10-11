@@ -242,6 +242,7 @@ void wifiProcessSetup() {
     if (wifiSetupRuntime.change.phase == WifiSwitchPhase::Ready &&
         request.operationId == wifiSetupRuntime.operationId &&
         now - wifiSetupRuntime.change.startedAt < 120000) {
+      wifiSetupRuntime.recoveryApAt = 0;
       wifiSetupRuntime.change = {};
       wifiSetupRuntime.change.phase = WifiSwitchPhase::Queued;
       wifiSetupRuntime.change.startedAt = request.queuedAt;
