@@ -264,13 +264,39 @@ void setupWifi() {
   xSemaphoreGive(wifiRadioMutex);
 }
 
+static void wifiReconnectSavedNetwork(unsigned long now) {
+  static unsigned long downSince = 0;
+  static unsigned long lastAttempt = 0;
+  static unsigned long backoffMs = 0;
+  if (!b_wifiEnabled || !g_wifiInitDone || !params.hasCredentials() ||
+      WiFi.status() == WL_CONNECTED || WiFi.getMode() != WIFI_STA ||
+      (!b_ota && wifiSetupBusy())) {
+    downSince = 0;
+    backoffMs = 0;
+    return;
+  }
+  if (downSince == 0 && now - wifiSetupRuntime.stationStartedAt < 20000) return;
+  if (downSince == 0) {
+    downSince = now;
+    backoffMs = 5000;
+    lastAttempt = now - backoffMs;
+    Serial.printf("[wifi] link down @%lu status=%d\n", now, (int)WiFi.status());
+  }
+  if (now - lastAttempt >= backoffMs) {
+    g_wifiReconnects++;
+    lastAttempt = now;
+    Serial.printf("[wifi] down %lums (status=%d) -> reconnect #%lu backoff=%lums heap=%lu\n",
+                  now - downSince, (int)WiFi.status(), (unsigned long)g_wifiReconnects,
+                  backoffMs, (unsigned long)ESP.getFreeHeap());
+    wifiStartStation(params.getSSID().c_str(), params.getPass().c_str());
+    backoffMs = backoffMs < 60000 ? backoffMs * 2 : 60000;
+  }
+}
+
 void wifiSupervise() {
   if (xTaskGetCurrentTaskHandle() != wifiWorkerTask) return;
   static unsigned long lastRun = 0;
   static unsigned long lastLog = 0;
-  static unsigned long downSince = 0;
-  static unsigned long lastAttempt = 0;
-  static unsigned long backoffMs = 0;
   static unsigned long lowHeapSince = 0;
   static unsigned long lastDeferLog = 0;
   unsigned long now = millis();
@@ -279,13 +305,8 @@ void wifiSupervise() {
   }
   lastRun = now;
   xSemaphoreTake(wifiRadioMutex, portMAX_DELAY);
-  if (!b_wifiEnabled) {
-    downSince = 0;
-    backoffMs = 0;
-    xSemaphoreGive(wifiRadioMutex);
-    return;
-  }
-  if (b_ota) {
+  if (!b_wifiEnabled || b_ota) {
+    wifiReconnectSavedNetwork(now);
     xSemaphoreGive(wifiRadioMutex);
     return;
   }
@@ -339,31 +360,7 @@ void wifiSupervise() {
                   (unsigned long)g_wifiDisconnects, (unsigned long)g_wifiReconnects);
   }
 
-  if (g_wifiInitDone && params.hasCredentials() && !up &&
-      WiFi.getMode() == WIFI_STA && !wifiSetupBusy()) {
-    if (downSince == 0 && now - wifiSetupRuntime.stationStartedAt < 20000) {
-      xSemaphoreGive(wifiRadioMutex);
-      return;
-    }
-    if (downSince == 0) {
-      downSince = now;
-      backoffMs = 5000;
-      lastAttempt = now - backoffMs;
-      Serial.printf("[wifi] link down @%lu status=%d\n", now, (int)WiFi.status());
-    }
-    if (now - lastAttempt >= backoffMs) {
-      g_wifiReconnects++;
-      lastAttempt = now;
-      Serial.printf("[wifi] down %lums (status=%d) -> reconnect #%lu backoff=%lums heap=%lu\n",
-                    now - downSince, (int)WiFi.status(), (unsigned long)g_wifiReconnects,
-                    backoffMs, (unsigned long)ESP.getFreeHeap());
-      wifiStartStation(params.getSSID().c_str(), params.getPass().c_str());
-      backoffMs = backoffMs < 60000 ? backoffMs * 2 : 60000;
-    }
-  } else {
-    downSince = 0;
-    backoffMs = 0;
-  }
+  wifiReconnectSavedNetwork(now);
   xSemaphoreGive(wifiRadioMutex);
 }
 

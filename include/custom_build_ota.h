@@ -476,12 +476,17 @@ void customBuildTask(void *args) {
     if (filesystemRecoveryActive.load()) pullOtaResumeFilesystemServices();
     b_ota = false;
     b_pullOtaRunning = false;
+    wifiReleaseExternalOperation();
   }
   vTaskDelete(NULL);
 }
 
 void customBuildStart(bool relink, bool interactive = true) {
   if (b_pullOtaRunning || b_ota) return;
+  if (!wifiReserveExternalOperation()) {
+    pullOtaFail("WiFi busy", "Try again later");
+    return;
+  }
   setOtaRuntimePaused(false);
   b_pullOtaRunning = true;
   b_ota = true;
@@ -495,6 +500,7 @@ void customBuildStart(bool relink, bool interactive = true) {
   if (started != pdPASS) {
     b_pullOtaRunning = false;
     b_ota = false;
+    wifiReleaseExternalOperation();
     pullOtaFail("OTA task failed");
   }
 }
