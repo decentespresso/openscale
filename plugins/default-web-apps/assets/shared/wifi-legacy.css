@@ -4,7 +4,7 @@
 .wifi-setup input,.wifi-setup select{width:100%}
 .wifi-setup button{cursor:pointer;font-weight:600}
 .wifi-setup button:disabled,.wifi-setup select:disabled{cursor:default;opacity:.55}
-.wifi-setup input:focus-visible,.wifi-setup select:focus-visible,.wifi-setup button:focus-visible{outline:2px solid #0b7180;outline-offset:2px}
+.wifi-setup input:focus-visible,.wifi-setup select:focus-visible,.wifi-setup button:focus-visible,.wifi-setup #wifi-check-result:focus-visible{outline:2px solid #0b7180;outline-offset:2px}
 .wifi-setup #wifi-form{display:block;max-width:760px}
 .wifi-fields,.wifi-network-tools{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;max-width:760px;margin:12px 0;align-items:end}
 .wifi-network-tools{grid-template-columns:168px minmax(0,1fr)}
@@ -17,15 +17,15 @@
 .wifi-actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:12px}
 .wifi-actions label{display:flex;align-items:center;font-weight:400;margin-right:auto}
 .wifi-setup #show-password{width:18px;height:18px;padding:0;margin:0;accent-color:#0b7180}
-.wifi-setup #wifi-connect-button,.wifi-setup #wifi-network-continue,.wifi-setup #wifi-check-result{background:#0b7180;color:#fff;border-color:#0b7180;min-width:128px}
-.wifi-setup #wifi-connect-button:hover,.wifi-setup #wifi-network-continue:hover,.wifi-setup #wifi-check-result:hover{background:#09616e;border-color:#09616e}
+.wifi-setup #wifi-connect-button,.wifi-setup #wifi-network-continue{background:#0b7180;color:#fff;border-color:#0b7180;min-width:128px}
+.wifi-setup #wifi-connect-button:hover,.wifi-setup #wifi-network-continue:hover{background:#09616e;border-color:#09616e}
 .wifi-setup #reset-wifi-button{display:block;margin:16px 0 32px;color:var(--danger,#b42318);min-width:0}
 .wifi-setup #wifi-current,.wifi-setup #wifi-status{min-height:1.5em;overflow-wrap:anywhere;unicode-bidi:plaintext;font-size:14px;line-height:1.5}
 .wifi-setup #wifi-current{color:var(--wifi-muted)}
 .wifi-setup #wifi-status[data-tone=error]{color:var(--danger,#b42318)}
 .wifi-setup #wifi-status[data-tone=success]{color:var(--green-dark,#118544)}
 .wifi-setup #wifi-status[data-tone=neutral]{color:var(--wifi-muted)}
-.wifi-setup #wifi-open-scale{display:block;overflow-wrap:anywhere;margin:8px 0;font-size:14px}
+.wifi-setup #wifi-open-scale,.wifi-setup #wifi-check-result{display:block;overflow-wrap:anywhere;margin:8px 0;font-size:14px}
 .wifi-setup #wifi-network-ssid{overflow-wrap:anywhere;unicode-bidi:plaintext}
 .wifi-setup [hidden]{display:none!important}
 .wifi-dialog{box-sizing:border-box;width:min(92vw,460px);max-height:90vh;border:1px solid var(--wifi-border);border-radius:8px;padding:18px;background:var(--surface,#fff)}

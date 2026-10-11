@@ -231,10 +231,13 @@ async function runDeviceIdentity(browser, html, label, viewport) {
 }
 
 async function confirmNetwork(page, ssid) {
+  if (!await page.locator('#wifi-network-dialog').isVisible()) {
+    await page.getByRole('link', { name: 'Check connection', exact: true }).click();
+  }
   await page.locator('#wifi-network-dialog').waitFor({ state: 'visible' });
   assert.equal(await page.locator('#wifi-network-ssid').textContent(), ssid);
   assert.notEqual(await page.locator('#wifi-status').getAttribute('data-tone'), 'success');
-  await page.getByRole('button', { name: 'Check connection', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
 }
 
 async function run(browser, html, label, viewport) {
@@ -297,21 +300,25 @@ async function run(browser, html, label, viewport) {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   });
+  await page.getByRole('link', { name: 'Check connection', exact: true }).waitFor({ state: 'visible' });
+  assert.equal(await page.locator('#wifi-network-dialog').isVisible(), false);
+  assert.equal(session.context.pages().length, 1);
+  await page.getByRole('link', { name: 'Check connection', exact: true }).click();
   await page.locator('#wifi-network-dialog').waitFor({ state: 'visible' });
   assert.equal(session.operationPolls(), 0);
-  assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Check connection');
+  assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Continue');
   await page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-network-${label}-${viewport.width}.png`) });
   await page.getByRole('button', { name: 'Check later', exact: true }).click();
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('operation continues'));
   assert.match(await page.locator('#wifi-status').textContent(), /operation continues.*not confirmed/);
   assert.equal(await page.locator('#wifi-connect-button').isEnabled(), false);
   assert.equal(session.posts().length, 1);
-  await page.getByRole('button', { name: 'Check WiFi result' }).click();
+  await page.getByRole('link', { name: 'Check connection', exact: true }).click();
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('#wifi-network-dialog').isVisible(), false);
   await page.locator('#wifi-check-result').waitFor({ state: 'visible' });
   assert.equal(session.operationPolls(), 0);
-  await page.getByRole('button', { name: 'Check WiFi result' }).click();
+  await page.getByRole('link', { name: 'Check connection', exact: true }).click();
   await confirmNetwork(page, 'New network');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
   assert.equal(await page.locator('#wifi-check-result').isVisible(), false);
@@ -449,6 +456,7 @@ async function runResultNavigation(browser, html, label, viewport) {
     session.variant('unreachable');
     await page.locator('#ssid').fill('<img src=x onerror=alert(1)>');
     await page.getByRole('button', { name: 'Connect', exact: true }).click();
+    await page.getByRole('link', { name: 'Check connection', exact: true }).click();
     await page.locator('#wifi-network-dialog').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#wifi-network-dialog img').count(), 0);
     assert.equal(session.operationPolls(), 0);

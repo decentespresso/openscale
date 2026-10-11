@@ -491,7 +491,7 @@
     </form>
     <p id="wifi-status" role="status" aria-live="polite" data-tone="neutral"></p>
     <a id="wifi-open-scale" hidden></a>
-    <button id="wifi-check-result" type="button" hidden>Check WiFi result</button>
+    <a id="wifi-check-result" href="#wifi-network-dialog" aria-haspopup="dialog" aria-controls="wifi-network-dialog" hidden>Check connection</a>
     <button id="reset-wifi-button" type="button" disabled>Reset WiFi settings</button>
     <h2>Scale Name</h2>
     <p class="hint">Sets the address the scale answers at. Default <code>hds</code> gives <code>hds.local</code>. Use a different name for each scale on your network. 1-24 characters: letters, digits, hyphens. Saving restarts the scale.</p>
@@ -513,14 +513,14 @@
 
   <dialog id="wifi-network-dialog" class="wifi-setup wifi-dialog" aria-labelledby="wifi-network-title" aria-describedby="wifi-network-description wifi-network-recovery">
     <h2 id="wifi-network-title">WiFi change started</h2>
-    <p id="wifi-network-description">The scale is trying to join <strong id="wifi-network-ssid"></strong>. Connect this phone or computer to that network, then check the connection.</p>
+    <p id="wifi-network-description">The scale is trying to join <strong id="wifi-network-ssid"></strong>. Connect this phone or computer to that network, then select Continue.</p>
     <p id="wifi-network-recovery"></p>
     <label class="wifi-address" for="wifi-network-address">Scale IP address (if the hostname is unavailable)
       <input id="wifi-network-address" inputmode="decimal" autocomplete="off" placeholder="IP shown on the scale">
     </label>
     <form method="dialog" class="wifi-dialog-actions">
       <button value="later">Check later</button>
-      <button id="wifi-network-continue" type="button" autofocus>Check connection</button>
+      <button id="wifi-network-continue" type="button" autofocus>Continue</button>
     </form>
   </dialog>
 

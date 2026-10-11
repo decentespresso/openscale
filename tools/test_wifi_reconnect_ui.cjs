@@ -20,8 +20,10 @@ async function openSource(browser, html, viewport, options = {}) {
   const context = await browser.newContext({ viewport });
   const page = await context.newPage();
   const servedHtml = options.previousMarkup ? html.replace(/<label class="wifi-address"[\s\S]*?<\/label>/, '')
-    .replace('id="wifi-network-continue" type="button" autofocus>Check connection',
-      'id="wifi-network-continue" value="continue" autofocus>Continue')
+    .replace('id="wifi-network-continue" type="button" autofocus>Continue',
+      'id="wifi-network-continue" value="continue" autofocus>Check connection')
+    .replace('<a id="wifi-check-result" href="#wifi-network-dialog" aria-haspopup="dialog" aria-controls="wifi-network-dialog" hidden>Check connection</a>',
+      '<button id="wifi-check-result" type="button" hidden>Check WiFi result</button>')
     .replace('WiFi change started', 'Check your WiFi network') : html;
   const sourceHost = options.provisioning ? '192.168.1.1' : '192.168.50.30';
   let posts = [];
@@ -108,10 +110,24 @@ async function submit(page, ssid = 'New network') {
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
 }
 
+async function openCheckDialog(page) {
+  await page.waitForFunction(() => document.getElementById('password').value === '');
+  assert.equal(await page.locator('#wifi-network-dialog').isVisible(), false);
+  await page.locator('#wifi-check-result').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('#wifi-network-dialog').isVisible(), false);
+  const originalUrl = page.url();
+  const views = page.context().pages().length;
+  await page.locator('#wifi-check-result').click();
+  await page.locator('#wifi-network-dialog').waitFor({ state: 'visible' });
+  assert.equal(page.url(), originalUrl);
+  assert.equal(page.context().pages().length, views);
+}
+
 async function openDestination(session, ip = '') {
+  if (!await session.page.locator('#wifi-network-dialog').isVisible()) await openCheckDialog(session.page);
   await session.page.locator('#wifi-network-address').fill(ip);
   const destination = session.context.waitForEvent('page');
-  await session.page.getByRole('button', { name: 'Check connection', exact: true }).click();
+  await session.page.getByRole('button', { name: 'Continue', exact: true }).click();
   return destination;
 }
 
@@ -121,7 +137,8 @@ async function checkHandoffs(browser, html, label, viewport) {
     const session = await openSource(browser, html, viewport, options);
     try {
       await submit(session.page);
-      await session.page.locator('#wifi-network-dialog').waitFor({ state: 'visible' });
+      await openCheckDialog(session.page);
+      if (!options.previousMarkup) assert.equal(await session.page.locator('#wifi-check-result').getAttribute('href'), '#wifi-network-dialog');
       assert.match(await session.page.locator('#wifi-network-title').textContent(), /change started/);
       assert.equal(session.posts().length, 1);
       assert.equal(await session.page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
@@ -131,16 +148,18 @@ async function checkHandoffs(browser, html, label, viewport) {
       if (options.variant === 'hostname-unavailable') {
         const unavailable = await openDestination(session);
         await unavailable.waitForLoadState().catch(() => {});
+        assert.equal(await session.page.locator('#wifi-network-dialog').isVisible(), false);
+        await openCheckDialog(session.page);
         assert.equal(await session.page.locator('#wifi-network-dialog').isVisible(), true);
       }
       if (options.mdns === false || options.mdnsName) {
-        await session.page.getByRole('button', { name: 'Check connection', exact: true }).click();
+        await session.page.getByRole('button', { name: 'Continue', exact: true }).click();
         assert.equal(session.context.pages().length, 1);
       }
       for (const ip of ['javascript:alert(1)', '192.168.60.999', '192.168.060.40', '0.0.0.0']) {
         const count = session.context.pages().length;
         await session.page.locator('#wifi-network-address').fill(ip);
-        await session.page.getByRole('button', { name: 'Check connection', exact: true }).click();
+        await session.page.getByRole('button', { name: 'Continue', exact: true }).click();
         assert.equal(session.context.pages().length, count);
         assert.equal(await session.page.locator('#wifi-network-address').evaluate(input => input.checkValidity()), false);
       }
@@ -151,6 +170,12 @@ async function checkHandoffs(browser, html, label, viewport) {
           errors: session.errors, failedRequests: session.failures() });
         throw error;
       });
+      await destination.screenshot({ path: path.join(root, '.pio.nosync', `wifi-handoff-result-${label}-${viewport.width}.png`) });
+      assert.equal(await destination.locator('#wifi-status').evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        const front = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return rect.top >= 0 && rect.bottom <= innerHeight && element.contains(front);
+      }), true, 'The verified handoff result must be visible and unobstructed');
       const url = new URL(destination.url());
       assert.equal(url.hostname, ip || 'hds.local');
       assert.equal(url.searchParams.get('wifi_device'), deviceId);
@@ -159,7 +184,8 @@ async function checkHandoffs(browser, html, label, viewport) {
       assert.equal(await destination.evaluate(() => window.opener), null);
       assert.equal(session.posts().length, 1);
       assert.notEqual(await session.page.locator('#wifi-status').getAttribute('data-tone'), 'success');
-      assert.equal(await session.page.locator('#wifi-network-dialog').isVisible(), true);
+      assert.equal(await session.page.locator('#wifi-network-dialog').isVisible(), false);
+      assert.equal(await session.page.locator('#wifi-check-result').isVisible(), true);
       assert.deepEqual(session.errors, []);
     } finally { await session.context.close(); }
   }
@@ -181,6 +207,20 @@ async function checkRejectedResults(browser, html, viewport) {
 }
 
 async function checkSameNetworkAndRecovery(browser, html, viewport) {
+  const blocked = await openSource(browser, html, viewport);
+  try {
+    await blocked.page.evaluate(() => { window.open = () => null; });
+    await submit(blocked.page);
+    await openCheckDialog(blocked.page);
+    await blocked.page.getByRole('button', { name: 'Continue', exact: true }).click();
+    assert.equal(await blocked.page.locator('#wifi-network-dialog').isVisible(), false);
+    assert.equal(await blocked.page.locator('#wifi-check-result').isVisible(), true);
+    assert.notEqual(await blocked.page.locator('#wifi-status').getAttribute('data-tone'), 'success');
+    assert.equal(blocked.context.pages().length, 1);
+    assert.equal(blocked.posts().length, 1);
+    await openCheckDialog(blocked.page);
+    assert.equal(await blocked.page.locator('#wifi-network-dialog').isVisible(), true);
+  } finally { await blocked.context.close(); }
   const session = await openSource(browser, html, viewport);
   try {
     await submit(session.page, 'Old network');
@@ -192,9 +232,9 @@ async function checkSameNetworkAndRecovery(browser, html, viewport) {
   const recovery = await openSource(browser, html, viewport, { variant: 'rollback' });
   try {
     await submit(recovery.page);
-    await recovery.page.locator('#wifi-network-dialog').waitFor({ state: 'visible' });
+    await openCheckDialog(recovery.page);
     await recovery.page.locator('#wifi-network-address').fill('192.168.50.30');
-    await recovery.page.getByRole('button', { name: 'Check connection', exact: true }).click();
+    await recovery.page.getByRole('button', { name: 'Continue', exact: true }).click();
     await recovery.page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('Back on Old network'));
     assert.equal(recovery.context.pages().length, 1);
     assert.equal(recovery.posts().length, 1);
