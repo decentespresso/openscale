@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 enum class WifiSwitchPhase : uint8_t {
-  Idle, Queued, Connecting, Verifying, Saving, Restoring, Succeeded, Failed
+  Idle, Queued, Connecting, Verifying, Saving, Restoring, Returning, Ready, Succeeded, Failed
 };
 
 enum class WifiSetupError : uint8_t {
@@ -19,11 +19,12 @@ struct WifiSwitch {
   unsigned long startedAt = 0;
   uint32_t connectionGeneration = 0;
   bool hasPrevious = false;
+  bool testOnly = false;
 
   bool busy() const {
     return phase == WifiSwitchPhase::Queued || phase == WifiSwitchPhase::Connecting ||
            phase == WifiSwitchPhase::Verifying || phase == WifiSwitchPhase::Saving ||
-           phase == WifiSwitchPhase::Restoring;
+           phase == WifiSwitchPhase::Restoring || phase == WifiSwitchPhase::Returning;
   }
 
   WifiSwitchAction restore(unsigned long now, WifiSetupError reason) {
@@ -61,6 +62,11 @@ struct WifiSwitch {
       case WifiSwitchPhase::Verifying:
         if (!connected || generation != connectionGeneration) return restore(now, failure);
         if (now - startedAt >= 3000) {
+          if (testOnly) {
+            phase = WifiSwitchPhase::Returning;
+            startedAt = now;
+            return hasPrevious ? WifiSwitchAction::Restore : WifiSwitchAction::AccessPoint;
+          }
           phase = WifiSwitchPhase::Saving;
           return WifiSwitchAction::Save;
         }
@@ -71,6 +77,17 @@ struct WifiSwitch {
           return WifiSwitchAction::AccessPoint;
         }
         if (connected) phase = WifiSwitchPhase::Failed;
+        break;
+      case WifiSwitchPhase::Returning:
+        if (now - startedAt >= 20000) {
+          error = WifiSetupError::Timeout;
+          phase = WifiSwitchPhase::Failed;
+          return WifiSwitchAction::AccessPoint;
+        }
+        if (connected) {
+          phase = WifiSwitchPhase::Ready;
+          startedAt = now;
+        }
         break;
       default:
         break;

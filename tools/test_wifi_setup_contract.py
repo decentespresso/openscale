@@ -21,12 +21,12 @@ def main():
     assert '"wifi": ("HDS_FEATURE_WIFI", ("webserver",)' in read("tools/configure_custom_build.py")
     assert "HDS_FEATURE_WIFI requires HDS_FEATURE_WEBSERVER" in read("include/hds_features.h")
     assert "wifi_config_server.h" not in read("src/hds.ino")
-    for path in ("/setup/wifi", "/setup/wifi/status", "/setup/wifi/scan", "/setup/wifi/continue"):
+    for path in ("/setup/wifi", "/setup/wifi/status", "/setup/wifi/scan", "/setup/wifi/continue", "/setup/wifi/activate"):
         assert f'"{path}"' in routes, path
     assert "wifiSendJson(request, 202, response)" in routes
     assert 'response["restarting"] = false' in routes
     assert routes.count('response["device_id"] = wifiSetupDeviceId();') == 3
-    assert routes.count('if (!wifiRequestDeviceAllowed(request)) return;') == 2
+    assert routes.count('if (!wifiRequestDeviceAllowed(request)) return;') == 3
     assert 'if (!wifiRequestDeviceAllowed(request)) return;' in server
     assert 'request->getHeader("X-HDS-Device-ID")->value() == wifiSetupDeviceId()' in routes
     assert 'request->getParam("wifi_device")->value() != wifiSetupDeviceId()' in routes
@@ -91,11 +91,20 @@ def main():
     assert "resetDialog.showModal()" in script
     assert "resetDialog.returnValue === 'reset'" in script
     assert "networkDialog.returnValue === 'checking'" in script
-    assert "window.open(url.href, '_blank', 'noopener,noreferrer')" in script
+    assert "window.open" not in script
     assert "url.searchParams.set('wifi_attempt', id)" in script
     assert "data.device_id === expectedDevice" in script
     assert "url.searchParams.set('wifi_device', expectedDevice)" in script
-    assert "location.assign" not in script
+    assert "location.assign(url.href)" in script
+    assert 'object["test_only"].is<bool>()' in routes
+    assert 'json["operation_id"].is<uint32_t>()' in routes
+    assert 'response["tested_ip"] = status.testedIp' in routes
+    assert "wifiSetupStatus.phase == WifiSwitchPhase::Ready" in worker
+    assert "operationId == wifiSetupStatus.operationId" in worker
+    assert "now - wifiSetupRuntime.change.startedAt < 120000" in worker
+    assert "wifiSetupRuntime.change.testOnly = request.command == WifiSetupCommand::Test" in worker
+    assert "request('/setup/wifi/activate', { operation_id: data.operation_id })" in script
+    assert "openScale.addEventListener('click'" in script
     assert 'response->addHeader("Location", location)' in routes
     assert 'String(id) != attempt || id != wifiReadSetupStatus().operationId' in routes
     assert "showReconnect" not in script

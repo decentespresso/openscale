@@ -28,6 +28,10 @@ async function openSource(browser, html, viewport, options = {}) {
   const sourceHost = options.provisioning ? '192.168.1.1' : '192.168.50.30';
   let posts = [];
   let variant = options.variant || 'success';
+  let testReady = options.holdTest !== true;
+  let activated = false;
+  let activations = [];
+  let polls = 0;
   let status = {
     operation_id: 0, state: 'idle', error: '', requested_ssid: '',
     ssid: options.provisioning ? '' : 'Old network', ip: sourceHost,
@@ -35,6 +39,8 @@ async function openSource(browser, html, viewport, options = {}) {
     access_point: options.provisioning === true, busy: false,
     mdns_name: options.mdnsName || 'hds', mdns_available: options.mdns !== false, device_id: deviceId
   };
+  if (options.initialReady) status = { ...status, operation_id: 4294967295, test_only: true,
+    requested_ssid: 'New network', state: 'ready', tested_ip: '192.168.60.40' };
   const errors = [];
   let failedRequests = [];
   context.on('requestfailed', request => {
@@ -49,7 +55,7 @@ async function openSource(browser, html, viewport, options = {}) {
   await context.routeWebSocket('**/snapshot', socket => {
     socket.onMessage(() => socket.send(JSON.stringify({ type: 'status', mdns_name: 'hds' })));
   });
-  await context.route(/^http:\/\/(?:hds\.local|192\.168\.50\.30|192\.168\.60\.40|192\.168\.1\.1)\//, async route => {
+  await context.route(/^http:\/\/(?:hds\.local|192\.168\.50\.30|192\.168\.60\.4[01]|192\.168\.1\.1)\//, async route => {
     const request = route.request();
     const url = new URL(request.url());
     const json = data => route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) });
@@ -72,35 +78,58 @@ async function openSource(browser, html, viewport, options = {}) {
       return route.fulfill({ contentType: url.pathname.endsWith('.css') ? 'text/css' : 'application/javascript',
         body: fs.readFileSync(path.join(root, 'plugins/default-web-apps/assets', url.pathname.slice(1)), 'utf8') });
     }
+    if (url.pathname === '/setup/wifi/activate' && request.method() === 'POST') {
+      assert.equal(url.hostname, sourceHost);
+      assert.equal(request.headers()['x-hds-device-id'], deviceId);
+      const data = request.postDataJSON();
+      assert.deepEqual(data, { operation_id: status.operation_id });
+      activations = [...activations, data];
+      if (variant === 'activation-rejected') return route.fulfill({ status: 409,
+        contentType: 'application/json', body: JSON.stringify({ error: 'wifi_operation_not_ready' }) });
+      activated = true;
+      status = { ...status, state: 'succeeded', ssid: status.requested_ssid, connected: true,
+        access_point: false, credentials_saved: true, ip: options.finalIp || '192.168.60.40', busy: false };
+      if (variant === 'activation-interrupted') return route.abort('failed');
+      return json({ operation_id: status.operation_id, device_id: deviceId, restarting: false });
+    }
     if (request.method() === 'POST') {
       assert.equal(url.hostname, sourceHost);
       assert.equal(url.pathname, '/setup/wifi');
       assert.equal(request.headers()['x-hds-device-id'], deviceId);
       const data = request.postDataJSON();
       posts = [...posts, data];
-      status = { ...status, operation_id: 4294967295, state: 'succeeded', error: '',
+      status = { ...status, operation_id: 4294967295, state: data.test_only ? 'testing' : 'succeeded', error: '',
         requested_ssid: data.ssid, ssid: data.ssid, connected: data.ssid !== '',
         credentials_saved: data.ssid !== '', access_point: data.ssid === '', busy: false,
+        test_only: data.test_only === true,
         ip: data.ssid === '' ? '192.168.1.1' : data.ssid === 'Old network' ? sourceHost : '192.168.60.40' };
       return json({ operation_id: status.operation_id, device_id: deviceId, ssid: data.ssid,
-        mdns_name: status.mdns_name, mdns_available: status.mdns_available, restarting: false });
+        mdns_name: status.mdns_name, mdns_available: status.mdns_available, restarting: false,
+        test_only: data.test_only === true });
     }
     if (url.pathname === '/setup/wifi/status') {
-      if (status.operation_id && url.hostname === sourceHost && status.ip !== sourceHost && variant !== 'rollback') {
-        return route.abort('failed');
-      }
+      polls += 1;
       if (status.operation_id && variant === 'rollback') return json({ ...status,
         state: 'failed', error: 'authentication_failed', ssid: 'Old network', ip: sourceHost, connected: true });
+      if (status.operation_id && variant === 'wrong-trial') return json({ ...status, device_id: 'ffeeddccbbaa' });
+      if (status.operation_id && variant === 'stale-trial') return json({ ...status, operation_id: 123 });
+      if (status.operation_id && variant === 'unreachable') return route.abort('failed');
+      if (status.test_only && !activated) return json({ ...status,
+        state: testReady ? 'ready' : 'testing', ssid: options.provisioning ? '' : 'Old network',
+        ip: sourceHost, connected: !options.provisioning, access_point: options.provisioning === true,
+        credentials_saved: !options.provisioning, busy: !testReady,
+        tested_ip: variant === 'bad-tested-ip' ? 'javascript:alert(1)' : '192.168.60.40' });
+      if (status.operation_id && url.hostname === sourceHost && status.ip !== sourceHost) return route.abort('failed');
       if (status.operation_id && variant === 'wrong-status') return json({ ...status, device_id: 'ffeeddccbbaa' });
       if (status.operation_id && variant === 'stale-status') return json({ ...status, operation_id: 123 });
-      if (status.operation_id && variant === 'unreachable') return route.abort('failed');
       return json(status);
     }
     return route.fulfill({ status: 404 });
   });
-  await page.goto(`http://${sourceHost}/`);
+  await page.goto(`http://${sourceHost}/${options.initialReady ? '?wifi_attempt=123' : ''}`);
   await page.waitForFunction(() => !document.getElementById('wifi-connect-button').disabled);
   return { context, page, posts: () => posts, errors, failures: () => failedRequests,
+    activations: () => activations, polls: () => polls, releaseTest: () => { testReady = true; },
     variant: value => { variant = value; } };
 }
 
@@ -113,11 +142,14 @@ async function submit(page, ssid = 'New network') {
 async function openCheckDialog(page) {
   await page.waitForFunction(() => document.getElementById('password').value === '');
   assert.equal(await page.locator('#wifi-network-dialog').isVisible(), false);
-  await page.locator('#wifi-check-result').waitFor({ state: 'visible' });
+  await page.waitForFunction(() => !document.getElementById('wifi-open-scale').hidden ||
+    !document.getElementById('wifi-check-result').hidden);
+  const link = await page.locator('#wifi-check-result').isVisible() ? '#wifi-check-result' : '#wifi-open-scale';
+  await page.locator(link).waitFor({ state: 'visible' });
   assert.equal(await page.locator('#wifi-network-dialog').isVisible(), false);
   const originalUrl = page.url();
   const views = page.context().pages().length;
-  await page.locator('#wifi-check-result').click();
+  await page.locator(link).click();
   await page.locator('#wifi-network-dialog').waitFor({ state: 'visible' });
   assert.equal(page.url(), originalUrl);
   assert.equal(page.context().pages().length, views);
@@ -126,41 +158,42 @@ async function openCheckDialog(page) {
 async function openDestination(session, ip = '') {
   if (!await session.page.locator('#wifi-network-dialog').isVisible()) await openCheckDialog(session.page);
   await session.page.locator('#wifi-network-address').fill(ip);
-  const destination = session.context.waitForEvent('page');
   await session.page.getByRole('button', { name: 'Continue', exact: true }).click();
-  return destination;
+  return session.page;
 }
 
 async function checkHandoffs(browser, html, label, viewport) {
-  for (const options of [{}, { provisioning: true }, { mdns: false }, { variant: 'hostname-unavailable' },
+  for (const options of [{}, { provisioning: true }, { mdns: false }, { variant: 'activation-interrupted' },
+    { finalIp: '192.168.60.41' }, { variant: 'hostname-unavailable' },
     { mdnsName: 'bad/name' }, { previousMarkup: true }]) {
-    const session = await openSource(browser, html, viewport, options);
+    const session = await openSource(browser, html, viewport, { ...options, holdTest: true });
     try {
       await submit(session.page);
+      await session.page.waitForFunction(() => document.getElementById('password').value === '');
+      assert.equal(await session.page.locator('#wifi-open-scale').isVisible(), false);
+      assert.equal(await session.page.locator('#wifi-check-result').isVisible(), false);
+      assert.equal(await session.page.locator('#wifi-network-dialog').isVisible(), false);
+      assert.match(await session.page.locator('#wifi-current').textContent(), /Checking connection to/);
+      assert.equal(session.activations().length, 0);
+      session.releaseTest();
+      await session.page.locator('#wifi-open-scale').waitFor({ state: 'visible' });
+      await session.page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-handoff-ready-${label}-${viewport.width}.png`) });
       await openCheckDialog(session.page);
-      if (!options.previousMarkup) assert.equal(await session.page.locator('#wifi-check-result').getAttribute('href'), '#wifi-network-dialog');
-      assert.match(await session.page.locator('#wifi-network-title').textContent(), /change started/);
+      assert.match(await session.page.locator('#wifi-open-scale').getAttribute('href'), /\/setup\/wifi\/continue\?/);
+      assert.match(await session.page.locator('#wifi-network-title').textContent(), /test succeeded/);
       assert.equal(session.posts().length, 1);
+      assert.equal(session.activations().length, 1);
       assert.equal(await session.page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
       assert.equal(await session.page.locator('#wifi-network-dialog button').evaluateAll(buttons =>
         buttons.every(button => button.scrollWidth <= button.clientWidth && button.scrollHeight <= button.clientHeight)), true);
       await session.page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-handoff-${label}-${viewport.width}.png`) });
-      if (options.variant === 'hostname-unavailable') {
-        const unavailable = await openDestination(session);
-        await unavailable.waitForLoadState().catch(() => {});
-        assert.equal(await session.page.locator('#wifi-network-dialog').isVisible(), false);
-        await openCheckDialog(session.page);
-        assert.equal(await session.page.locator('#wifi-network-dialog').isVisible(), true);
-      }
-      if (options.mdns === false || options.mdnsName) {
-        await session.page.getByRole('button', { name: 'Continue', exact: true }).click();
-        assert.equal(session.context.pages().length, 1);
-      }
       for (const ip of ['javascript:alert(1)', '192.168.60.999', '192.168.060.40', '0.0.0.0']) {
         const count = session.context.pages().length;
+        const originalUrl = session.page.url();
         await session.page.locator('#wifi-network-address').fill(ip);
         await session.page.getByRole('button', { name: 'Continue', exact: true }).click();
         assert.equal(session.context.pages().length, count);
+        assert.equal(session.page.url(), originalUrl);
         assert.equal(await session.page.locator('#wifi-network-address').evaluate(input => input.checkValidity()), false);
       }
       const ip = options.mdns === false || options.variant || options.mdnsName ? '192.168.60.40' : '';
@@ -183,9 +216,10 @@ async function checkHandoffs(browser, html, label, viewport) {
       assert.deepEqual([...url.searchParams.keys()].sort(), ['wifi_attempt', 'wifi_device']);
       assert.equal(await destination.evaluate(() => window.opener), null);
       assert.equal(session.posts().length, 1);
-      assert.notEqual(await session.page.locator('#wifi-status').getAttribute('data-tone'), 'success');
+      assert.equal(session.activations().length, 1);
+      assert.equal(session.context.pages().length, 1);
       assert.equal(await session.page.locator('#wifi-network-dialog').isVisible(), false);
-      assert.equal(await session.page.locator('#wifi-check-result').isVisible(), true);
+      assert.equal(await session.page.locator('#wifi-check-result').isVisible(), false);
       assert.deepEqual(session.errors, []);
     } finally { await session.context.close(); }
   }
@@ -196,6 +230,7 @@ async function checkRejectedResults(browser, html, viewport) {
     const session = await openSource(browser, html, viewport, { variant });
     try {
       await submit(session.page);
+      await session.page.locator('#wifi-open-scale').waitFor({ state: 'visible' });
       const destination = await openDestination(session);
       await destination.waitForFunction(() => document.body.textContent.includes('different scale') ||
         document.body.textContent.includes('no longer current'));
@@ -206,18 +241,45 @@ async function checkRejectedResults(browser, html, viewport) {
   }
 }
 
+async function checkRejectedTests(browser, html, viewport) {
+  const stale = await openSource(browser, html, viewport, { initialReady: true });
+  try {
+    assert.match(await stale.page.locator('#wifi-status').textContent(), /no longer current/);
+    assert.equal(stale.activations().length, 0);
+    assert.equal(await stale.page.locator('#wifi-open-scale').isVisible(), false);
+    assert.deepEqual(stale.errors, []);
+  } finally { await stale.context.close(); }
+  for (const variant of ['wrong-trial', 'stale-trial', 'bad-tested-ip', 'activation-rejected']) {
+    const session = await openSource(browser, html, viewport, { variant });
+    try {
+      await submit(session.page);
+      await session.page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('different scale') ||
+        document.getElementById('wifi-status').textContent.includes('no longer current') ||
+        document.getElementById('wifi-status').textContent.includes('not confirmed') ||
+        document.getElementById('wifi-status').textContent.includes('could not start'));
+      assert.equal(await session.page.locator('#wifi-open-scale').isVisible(), false);
+      assert.equal(await session.page.locator('#wifi-check-result').isVisible(), false);
+      assert.equal(await session.page.locator('#wifi-network-dialog').isVisible(), false);
+      assert.equal(session.activations().length, variant === 'activation-rejected' ? 1 : 0);
+      assert.equal(session.context.pages().length, 1);
+      assert.deepEqual(session.errors, []);
+    } finally { await session.context.close(); }
+  }
+}
+
 async function checkSameNetworkAndRecovery(browser, html, viewport) {
   const blocked = await openSource(browser, html, viewport);
   try {
-    await blocked.page.evaluate(() => { window.open = () => null; });
     await submit(blocked.page);
+    await blocked.page.locator('#wifi-open-scale').waitFor({ state: 'visible' });
     await openCheckDialog(blocked.page);
-    await blocked.page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await blocked.page.getByRole('button', { name: 'Check later', exact: true }).click();
     assert.equal(await blocked.page.locator('#wifi-network-dialog').isVisible(), false);
-    assert.equal(await blocked.page.locator('#wifi-check-result').isVisible(), true);
-    assert.notEqual(await blocked.page.locator('#wifi-status').getAttribute('data-tone'), 'success');
+    assert.equal(await blocked.page.locator('#wifi-open-scale').isVisible(), true);
+    assert.match(await blocked.page.locator('#wifi-status').textContent(), /test succeeded/i);
     assert.equal(blocked.context.pages().length, 1);
     assert.equal(blocked.posts().length, 1);
+    assert.equal(blocked.activations().length, 1);
     await openCheckDialog(blocked.page);
     assert.equal(await blocked.page.locator('#wifi-network-dialog').isVisible(), true);
   } finally { await blocked.context.close(); }
@@ -232,12 +294,12 @@ async function checkSameNetworkAndRecovery(browser, html, viewport) {
   const recovery = await openSource(browser, html, viewport, { variant: 'rollback' });
   try {
     await submit(recovery.page);
-    await openCheckDialog(recovery.page);
-    await recovery.page.locator('#wifi-network-address').fill('192.168.50.30');
-    await recovery.page.getByRole('button', { name: 'Continue', exact: true }).click();
     await recovery.page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('Back on Old network'));
     assert.equal(recovery.context.pages().length, 1);
     assert.equal(recovery.posts().length, 1);
+    assert.equal(recovery.activations().length, 0);
+    assert.equal(await recovery.page.locator('#wifi-open-scale').isVisible(), false);
+    assert.equal(await recovery.page.locator('#wifi-network-dialog').isVisible(), false);
     assert.equal(await recovery.page.locator('#wifi-status').getAttribute('data-tone'), 'error');
   } finally { await recovery.context.close(); }
   const reset = await openSource(browser, html, viewport, { mdns: false });
@@ -259,6 +321,7 @@ async function checkSameNetworkAndRecovery(browser, html, viewport) {
       for (const [label, html] of Object.entries(pages)) {
         await checkHandoffs(browser, html, label, viewport);
         await checkRejectedResults(browser, html, viewport);
+        await checkRejectedTests(browser, html, viewport);
         await checkSameNetworkAndRecovery(browser, html, viewport);
         console.log(`${label} ${viewport.width}px: changed-origin hostname/IP handoff, identity/operation guards, provisioning, rollback and reset passed`);
       }

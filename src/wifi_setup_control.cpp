@@ -121,6 +121,22 @@ bool wifiQueueSetup(WifiSetupCommand command, const WifiCredentials &credentials
   return accepted;
 }
 
+bool wifiQueueActivation(uint32_t operationId) {
+  const WifiSetupRequest request = {WifiSetupCommand::Activate, {}, operationId, millis()};
+  portENTER_CRITICAL(&wifiSetupMux);
+  const bool accepted = operationId != 0 && operationId == wifiSetupStatus.operationId &&
+                        wifiSetupStatus.phase == WifiSwitchPhase::Ready &&
+                        !wifiOperationReserved && !b_ota && !wifiWorkerStopRequested &&
+                        b_wifiEnabled && wifiWorkerTask != nullptr;
+  if (accepted) {
+    wifiOperationReserved = true;
+    memcpy((void *)&wifiPendingRequest, &request, sizeof(request));
+    wifiSetupStatus.phase = WifiSwitchPhase::Queued;
+  }
+  portEXIT_CRITICAL(&wifiSetupMux);
+  return accepted;
+}
+
 void wifiPublishSetupStatus() {
   const bool connected = WiFi.status() == WL_CONNECTED && (uint32_t)WiFi.localIP() != 0;
   const bool accessPoint = (WiFi.getMode() & WIFI_AP) != 0;
@@ -131,6 +147,7 @@ void wifiPublishSetupStatus() {
   status.error = wifiSetupRuntime.change.error;
   status.operationId = wifiSetupRuntime.operationId;
   memcpy(status.requestedSsid, wifiSetupRuntime.requestedSsid, sizeof(status.requestedSsid));
+  memcpy(status.testedIp, wifiSetupRuntime.testedIp, sizeof(status.testedIp));
   ssid.toCharArray(status.ssid, sizeof(status.ssid));
   ip.toCharArray(status.ip, sizeof(status.ip));
   status.connected = connected;
@@ -153,6 +170,7 @@ void wifiCancelSetup() {
   wifiSetupRuntime.change.phase = WifiSwitchPhase::Failed;
   wifiSetupRuntime.change.error = WifiSetupError::Aborted;
   wifiSetupRuntime.candidate = {};
+  wifiSetupRuntime.testedIp[0] = 0;
   wifiSetupRuntime.recoveryApAt = 0;
   const WifiSetupRequest empty;
   portENTER_CRITICAL(&wifiSetupMux);
@@ -199,7 +217,10 @@ static void wifiExecuteSwitchAction(WifiSwitchAction action) {
 }
 
 static void wifiFinishSetup() {
-  wifiSetupRuntime.candidate = {};
+  if (wifiSetupRuntime.change.phase != WifiSwitchPhase::Ready) {
+    wifiSetupRuntime.candidate = {};
+    wifiSetupRuntime.testedIp[0] = 0;
+  }
   wifiPublishSetupStatus();
   wifiReleaseExternalOperation();
 }
@@ -217,11 +238,26 @@ void wifiProcessSetup() {
     request.command = WifiSetupCommand::None;
   }
   portEXIT_CRITICAL(&wifiSetupMux);
-  if (request.command != WifiSetupCommand::None) {
+  if (request.command == WifiSetupCommand::Activate) {
+    if (wifiSetupRuntime.change.phase == WifiSwitchPhase::Ready &&
+        request.operationId == wifiSetupRuntime.operationId &&
+        now - wifiSetupRuntime.change.startedAt < 120000) {
+      wifiSetupRuntime.change = {};
+      wifiSetupRuntime.change.phase = WifiSwitchPhase::Queued;
+      wifiSetupRuntime.change.startedAt = request.queuedAt;
+      wifiSetupRuntime.change.hasPrevious = params.hasCredentials();
+    } else {
+      wifiSetupRuntime.change.phase = WifiSwitchPhase::Failed;
+      wifiSetupRuntime.change.error = WifiSetupError::Aborted;
+      wifiFinishSetup();
+    }
+  } else if (request.command != WifiSetupCommand::None) {
     wifiSetupRuntime.operationId = request.operationId;
     memcpy(wifiSetupRuntime.requestedSsid, request.credentials.ssid,
            sizeof(wifiSetupRuntime.requestedSsid));
     wifiSetupRuntime.change = {};
+    wifiSetupRuntime.testedIp[0] = 0;
+    wifiSetupRuntime.candidate = {};
     if (request.command == WifiSetupCommand::Scan) {
       wifiBeginScan();
     } else if (request.command == WifiSetupCommand::Reset) {
@@ -239,16 +275,24 @@ void wifiProcessSetup() {
       wifiSetupRuntime.change.phase = WifiSwitchPhase::Queued;
       wifiSetupRuntime.change.startedAt = request.queuedAt;
       wifiSetupRuntime.change.hasPrevious = params.hasCredentials();
+      wifiSetupRuntime.change.testOnly = request.command == WifiSetupCommand::Test;
     }
   }
   wifiProcessScan();
   if (wifiSetupRuntime.change.busy()) {
-    const char *expected = wifiSetupRuntime.change.phase == WifiSwitchPhase::Restoring
+    const bool returning = wifiSetupRuntime.change.phase == WifiSwitchPhase::Returning;
+    const char *expected = returning || wifiSetupRuntime.change.phase == WifiSwitchPhase::Restoring
                                ? params.getSSID().c_str() : wifiSetupRuntime.candidate.ssid;
-    uint32_t connectionGeneration;
-    const bool connected = wifiFreshConnection(expected, connectionGeneration);
+    uint32_t connectionGeneration = 0;
+    const bool connected = returning && !wifiSetupRuntime.change.hasPrevious
+                               ? (WiFi.getMode() & WIFI_AP) != 0
+                               : wifiFreshConnection(expected, connectionGeneration);
     WifiSwitchAction action = wifiSetupRuntime.change.tick(
         now, connected, wifiConnectionFailure(), connectionGeneration);
+    if (!returning && wifiSetupRuntime.change.phase == WifiSwitchPhase::Returning) {
+      WiFi.localIP().toString().toCharArray(wifiSetupRuntime.testedIp,
+                                          sizeof(wifiSetupRuntime.testedIp));
+    }
     if (action == WifiSwitchAction::Save) {
       const bool saved = params.saveCredentials(wifiSetupRuntime.candidate.ssid,
                                                wifiSetupRuntime.candidate.pass);
@@ -256,6 +300,12 @@ void wifiProcessSetup() {
     }
     wifiExecuteSwitchAction(action);
     if (!wifiSetupRuntime.change.busy()) wifiFinishSetup();
+  }
+  if (wifiSetupRuntime.change.phase == WifiSwitchPhase::Ready &&
+      now - wifiSetupRuntime.change.startedAt >= 120000) {
+    wifiSetupRuntime.change.phase = WifiSwitchPhase::Failed;
+    wifiSetupRuntime.change.error = WifiSetupError::Aborted;
+    wifiFinishSetup();
   }
   if (wifiSetupRuntime.recoveryApAt != 0 && params.hasCredentials() &&
       !wifiSetupBusy() && millis() - wifiSetupRuntime.recoveryApAt >= 600000 &&
@@ -273,6 +323,8 @@ const char *wifiSetupPhaseName(WifiSwitchPhase phase) {
     case WifiSwitchPhase::Verifying: return "verifying";
     case WifiSwitchPhase::Saving: return "saving";
     case WifiSwitchPhase::Restoring: return "restoring";
+    case WifiSwitchPhase::Returning: return "returning";
+    case WifiSwitchPhase::Ready: return "ready";
     case WifiSwitchPhase::Succeeded: return "succeeded";
     case WifiSwitchPhase::Failed: return "failed";
     default: return "idle";
