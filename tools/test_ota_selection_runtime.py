@@ -10,8 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    selection = block_after((ROOT / "include/pull_ota.h").read_text(encoding="utf-8"),
-                            "void pullOtaBuildSelectableReleases(")
+    ota = (ROOT / "include/pull_ota.h").read_text(encoding="utf-8")
+    selection = block_after(ota, "void pullOtaBuildSelectableReleases(")
     custom = block_after((ROOT / "include/custom_build_ota.h").read_text(encoding="utf-8"),
                          "void customBuildRun(bool interactive = true) {")
     source = r'''
@@ -20,11 +20,17 @@ def main():
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <utility>
+#include "pull_ota_target.h"
 #include "pull_ota_version.h"
 
 using String = std::string;
 constexpr uint8_t HDS_OTA_MAX_RELEASE_CHOICES = 10;
-struct PullOtaManifest { String version; };
+struct PullOtaManifest {
+  String version;
+  struct { bool present = false; } littlefs;
+  int forwardRecoveryVersion = 0, firmware = 0;
+};
 struct PullOtaReleaseList {
   PullOtaManifest releases[HDS_OTA_MAX_RELEASE_CHOICES];
   uint8_t count = 0;
@@ -41,6 +47,8 @@ struct CustomBuildAssignment {
 };
 struct Probe {
   int installs = 0, customFetches = 0, officialFetches = 0, pairingCalls = 0;
+  int catalogFetches = 0, streams = 0, reboots = 0, clears = 0, resumes = 0;
+  int pickerCalls = 0, confirms = 0, legacyPreparations = 0;
   String targetVersion, rollbackVersion, targetHash, rollbackHash, message;
 };
 const String hashA(64, 'a'), hashB(64, 'b');
@@ -49,6 +57,13 @@ std::atomic<bool> filesystemRecoveryActive{false};
 CustomBuildAssignment assignment;
 Probe probe;
 bool paired = true, signatureValid = true, confirmInstall = true;
+bool rollbackAvailable = true, signedCatalogValid = true, pending = false;
+bool storageReady = true, streamReady = true, credentialsReady = true, b_ota = false;
+PullOtaReleaseList offeredCatalog;
+struct {
+  bool prepareLegacyDowngrade() { ++probe.legacyPreparations; return credentialsReady; }
+} params;
+constexpr int U_FLASH = 0;
 
 String pullOtaCurrentVersion() { return currentVersion; }
 String pullOtaCurrentCombinationHash() { return currentHash; }
@@ -64,10 +79,12 @@ bool customBuildLoadCredentials(String &, String &, bool *initialized) {
 }
 bool customBuildPairScale(bool) { ++probe.pairingCalls; return true; }
 void customBuildShowStatus(const char *message, const char *) { probe.message = message; }
-void pullOtaDraw(const char *, const char *) {}
+void pullOtaDraw(const char *message, const char * = "", const char * = "") {
+  if (String(message) == "No newer stable") probe.message = message;
+}
 bool pullOtaEnsureWifi() { return true; }
 bool pullOtaClockReady() { return true; }
-bool pullOtaFail(const char *message) { probe.message = message; return false; }
+bool pullOtaFail(const char *message, const char * = "") { probe.message = message; return false; }
 bool customBuildCheckIn(const String &installed, CustomBuildAssignment &output) {
   assert(installed == currentHash);
   output = assignment;
@@ -82,24 +99,64 @@ bool customBuildFetchManifest(const String &hash, PullOtaManifest &manifest) {
   ++probe.customFetches;
   assert(hash == assignment.combinationHash || hash == currentHash);
   manifest.version = "3.1.14-custom";
-  return signatureValid;
+  manifest.littlefs.present = true;
+  return signatureValid && (hash != currentHash || rollbackAvailable);
 }
 bool customBuildConfirmInstall(const PullOtaManifest &, const String &) { return confirmInstall; }
 bool pullOtaFetchCurrentReleaseManifest(PullOtaManifest &manifest) {
   ++probe.officialFetches;
   manifest.version = currentVersion;
+  manifest.littlefs.present = true;
   return true;
 }
-bool pullOtaInstall(const PullOtaManifest &target, const PullOtaManifest &rollback,
-                    const String &targetHash, const String &rollbackHash) {
+bool pullOtaStorePendingLittleFs(const PullOtaManifest &target, const PullOtaManifest &rollback,
+                               const String &targetHash, const String &rollbackHash) {
   ++probe.installs;
   probe.targetVersion = target.version;
   probe.rollbackVersion = rollback.version;
   probe.targetHash = targetHash;
   probe.rollbackHash = rollbackHash;
+  return storageReady;
+}
+bool pullOtaStreamAsset(int, int command, const char *) {
+  assert(command == U_FLASH);
+  ++probe.streams;
+  return streamReady;
+}
+void customBuildReportInstallState(const String &, const char *) {}
+bool pullOtaClearPendingLittleFs() { ++probe.clears; return true; }
+void delay(int) {}
+unsigned long millis() { return 0; }
+void remoteQueueOtaResetAt(unsigned long) { ++probe.reboots; }
+bool pullOtaInstall(const PullOtaManifest &manifest, const PullOtaManifest &rollbackManifest,
+                    const String &combinationHash = "", const String &rollbackCombinationHash = "") { @INSTALL@ }
+void customBuildRun(bool interactive = true) { @CUSTOM@ }
+bool pullOtaHasPendingLittleFs() { return pending; }
+bool pullOtaResumePendingLittleFs() { ++probe.resumes; return true; }
+bool pullOtaFetchSignedManifest(String &body) {
+  ++probe.catalogFetches;
+  body = "verified-catalog-fixture";
+  return signedCatalogValid;
+}
+bool pullOtaParseManifest(const String &, PullOtaReleaseList &catalog) {
+  catalog = offeredCatalog;
   return true;
 }
-void customBuildRun(bool interactive = true) { @CUSTOM@ }
+bool pullOtaFindCurrentRelease(const PullOtaReleaseList &, PullOtaManifest &) { return false; }
+bool pullOtaHasNewerRelease(const PullOtaReleaseList &catalog,
+                           const PullOtaReleaseSelection &selection) { @NEWER@ }
+bool pullOtaFindTargetRelease(const PullOtaReleaseList &catalog,
+                            const PullOtaReleaseSelection &selection,
+                            const PullOtaTargetVersion &target,
+                            uint8_t *selectedCatalogIndex) { @TARGET@ }
+bool pullOtaPickRelease(const PullOtaReleaseList &, const PullOtaReleaseSelection &selection,
+                       uint8_t *selectedCatalogIndex) {
+  ++probe.pickerCalls;
+  *selectedCatalogIndex = selection.indices[0];
+  return true;
+}
+bool pullOtaConfirmInstall(const PullOtaManifest &) { ++probe.confirms; return confirmInstall; }
+void pullOtaRunUpdate(const PullOtaTargetVersion &target) { @RUN@ }
 
 void resetProbe(const String &version, const String &hash = "") {
   currentVersion = version;
@@ -109,6 +166,12 @@ void resetProbe(const String &version, const String &hash = "") {
   assignment.combinationHash = hashB;
   probe = Probe{};
   paired = signatureValid = confirmInstall = true;
+  rollbackAvailable = signedCatalogValid = storageReady = streamReady = credentialsReady = true;
+  pending = b_ota = false;
+  offeredCatalog = PullOtaReleaseList{};
+  offeredCatalog.count = 1;
+  offeredCatalog.releases[0].version = "3.1.14";
+  offeredCatalog.releases[0].littlefs.present = true;
 }
 
 void testReleaseSelection() {
@@ -180,13 +243,70 @@ void testAssignmentGuards() {
   assert(probe.installs == 0 && probe.officialFetches == 0);
 }
 
+void testCustomToSameVersionOfficial() {
+  for (const bool interactive : {false, true}) {
+    resetProbe("3.1.14-custom", hashA);
+    pullOtaRunUpdate(interactive ? pullOtaNoTargetVersion() : pullOtaMakeTargetVersion(3, 1, 14));
+    assert(probe.catalogFetches == 1 && probe.customFetches == 1 && probe.officialFetches == 0);
+    assert(probe.installs == 1 && probe.streams == 1 && probe.reboots == 1);
+    assert(probe.targetVersion == "3.1.14" && probe.rollbackVersion == "3.1.14-custom");
+    assert(probe.targetHash.empty() && probe.rollbackHash == hashA && probe.legacyPreparations == 1);
+    assert(probe.pickerCalls == int(interactive) && probe.confirms == int(interactive));
+    if (interactive) assert(probe.message == "No newer stable");
+  }
+  resetProbe("3.1.14-custom", hashA);
+  rollbackAvailable = false;
+  pullOtaRunUpdate(pullOtaMakeTargetVersion(3, 1, 14));
+  assert(probe.message == "Recovery unsupported" && probe.installs == 0 && probe.streams == 0);
+  assert(probe.customFetches == 1 && probe.officialFetches == 0 && probe.legacyPreparations == 0);
+  offeredCatalog.releases[0].forwardRecoveryVersion = HDS_OTA_FORWARD_RECOVERY_VERSION;
+  pullOtaRunUpdate(pullOtaMakeTargetVersion(3, 1, 14));
+  assert(probe.installs == 1 && probe.streams == 1 && probe.reboots == 1);
+  assert(probe.rollbackVersion.empty() && probe.rollbackHash == hashA);
+}
+
+void testOfficialRunGuards() {
+  resetProbe("3.1.14-custom", hashA);
+  signedCatalogValid = false;
+  pullOtaRunUpdate(pullOtaMakeTargetVersion(3, 1, 14));
+  assert(probe.message == "Signature failed" && probe.customFetches == 0 && probe.installs == 0);
+  resetProbe("3.1.14-custom", hashA);
+  pending = true;
+  pullOtaRunUpdate(pullOtaMakeTargetVersion(3, 1, 14));
+  assert(probe.resumes == 1 && probe.catalogFetches == 0 && probe.installs == 0);
+  resetProbe("3.1.14-custom", hashA);
+  pullOtaRunUpdate(pullOtaMakeTargetVersion(3, 1, 13));
+  assert(probe.message == "Version not offered" && probe.installs == 0 && probe.pickerCalls == 0);
+  resetProbe("3.1.14-custom", hashA);
+  credentialsReady = false;
+  pullOtaRunUpdate(pullOtaMakeTargetVersion(3, 1, 14));
+  assert(probe.message == "WiFi storage failed" && probe.installs == 0 && probe.streams == 0);
+  resetProbe("3.1.14-custom", hashA);
+  storageReady = false;
+  pullOtaRunUpdate(pullOtaMakeTargetVersion(3, 1, 14));
+  assert(probe.message == "FS state failed" && probe.streams == 0 && probe.reboots == 0);
+  resetProbe("3.1.14-custom", hashA);
+  streamReady = false;
+  pullOtaRunUpdate(pullOtaMakeTargetVersion(3, 1, 14));
+  assert(probe.streams == 1 && probe.clears == 1 && probe.reboots == 0);
+}
+
 int main() {
   testReleaseSelection();
   testOfficialToSameVersionCustom();
   testCustomCombinationIdentity();
   testAssignmentGuards();
+  testCustomToSameVersionOfficial();
+  testOfficialRunGuards();
 }
 '''.replace("@SELECTION@", selection).replace("@CUSTOM@", custom)
+    for marker, signature in (
+        ("@INSTALL@", "bool pullOtaInstall("),
+        ("@NEWER@", "bool pullOtaHasNewerRelease("),
+        ("@TARGET@", "bool pullOtaFindTargetRelease("),
+        ("@RUN@", "void pullOtaRunUpdate("),
+    ):
+        source = source.replace(marker, block_after(ota, signature))
     compiler = shutil.which("g++")
     assert compiler, "g++ is required"
     with tempfile.TemporaryDirectory() as directory:
@@ -196,7 +316,7 @@ int main() {
         subprocess.run([compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror",
                         "-I", str(ROOT / "include"), str(cpp), "-o", str(binary)], check=True)
         subprocess.run([str(binary)], check=True)
-    print("Same-version official/custom OTA selection and assignment runtime tests passed")
+    print("Same-version official/custom OTA selection, installation, and assignment runtime tests passed")
 
 
 if __name__ == "__main__":

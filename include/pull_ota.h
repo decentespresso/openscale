@@ -128,7 +128,7 @@ static const size_t HDS_OTA_MANIFEST_MAX_BYTES = 16384;
 static const size_t HDS_OTA_MANIFEST_SIGNATURE_MAX_BYTES = 1024;
 static const size_t HDS_OTA_BUFFER_BYTES = 1024;
 static const unsigned long HDS_OTA_WIFI_TIMEOUT_MS = 45000;
-static const unsigned long HDS_OTA_PENDING_WIFI_TIMEOUT_MS = 10000;
+static const unsigned long HDS_OTA_PENDING_WIFI_TIMEOUT_MS = HDS_OTA_WIFI_TIMEOUT_MS;
 static const unsigned long HDS_OTA_HTTP_TIMEOUT_MS = 20000;
 static const unsigned long HDS_OTA_CLOCK_TIMEOUT_MS = 8000;
 static const unsigned long HDS_OTA_CONFIRM_TIMEOUT_MS = 15000;
@@ -1669,7 +1669,7 @@ void pullOtaRunUpdate(const PullOtaTargetVersion &target) {
     return;
   }
   if (!pullOtaHasNewerRelease(catalog, selection)) {
-    pullOtaDraw("Newest stable", pullOtaCurrentVersion().c_str());
+    pullOtaDraw("No newer stable", pullOtaCurrentVersion().c_str());
     delay(1500);
   }
   if (!pullOtaPickRelease(catalog, selection, &selectedCatalogIndex)) {

@@ -188,7 +188,7 @@ Flow:
 
 1. Current firmware stores both manifests, writes `firmware.bin` to the inactive app slot, and reboots.
 2. The new firmware calls `hdsOtaRollbackBegin()`, detects pending LittleFS work, leaves BLE uninitialized, and runs `pullOtaResumePendingLittleFs()` before application validity marking.
-3. Recovery first accepts an already-written filesystem that passes size/schema, raw SHA-256, and mount checks. Otherwise, the target filesystem gets at most two attempts. Each attempt is recorded before network or write work; `fs_dirty` is recorded before `Update.begin()` can modify the partition.
+3. Recovery first accepts an already-written filesystem that passes size/schema, raw SHA-256, and mount checks. Otherwise, the target filesystem gets at most two attempts. Each attempt uses the ordinary bounded WiFi startup timeout, allowing the worker's saved-network reconnect grace and backoff. Each attempt is recorded before network or write work; `fs_dirty` is recorded before `Update.begin()` can modify the partition.
 4. A successful target write passes the same checks. The new application is then marked valid before pending state is cleared, and the device reboots.
 5. If both attempts fail before filesystem writing begins, `setup()` calls `hdsOtaRollback("LittleFS update")`; the previous application remains paired with its unchanged filesystem.
 6. If writing may have begun, recovery first replaces pending state with the previous application's matching signed filesystem asset, then rolls the application back. The previous application gets one recorded restore attempt.
@@ -217,6 +217,8 @@ The project-owned `/ota/start` handler and main-loop remote action dispatch shar
 Both OTA paths stop BLE advertising and wait for an active peer's disconnect callback before flash work. BLE writes are ignored after OTA claims the runtime. Disconnect callbacks defer the saved buzzer setting until a failed or cancelled update resumes advertising from the main loop; display state is not restored over newer deferred commands. WebSocket connect and data callbacks close without doing application work once OTA is active. Do not shut BLE down from an AsyncTCP callback.
 
 While OTA is active, the main loop closes WebSocket clients and the HTTP middleware rejects new non-OTA work. The project-owned `/ota/upload` handler is registered before ElegantOTA's handler and checks Pull OTA ownership under `otaDispatchMutex` before every `Update.write()` and `Update.end()`. Uploads cannot claim the session until the main-loop pause is complete and `Update.begin()` is live. The first multipart file request then claims the ElegantOTA session, competing requests are rejected without touching that session, and only the owner can report success after its multipart callback completes `Update.end(true)`. The middleware alone is not an upload guard because ESPAsyncWebServer parses multipart bodies before running server middleware.
+
+Official and custom OTA entry points reserve the same WiFi operation guard as setup switching. Custom task creation failure, cancellation, pairing/relink completion, and other non-rebooting exits release that guard. While OTA owns it, the WiFi worker may reconnect only the saved STA network; setup mutations and scans remain paused. Do not suppress that reconnect loop while `pullOtaEnsureWifi()` waits for connectivity.
 
 ElegantOTA accepts firmware images only. Direct filesystem uploads are rejected because they bypass the signed, staged LittleFS transaction and its rollback protection. Use the WiFi Update menu for firmware and filesystem release updates.
 
@@ -252,6 +254,7 @@ python tools/test_ota_public_key_header.py
 python tools/test_ota_reboot_routing_contract.py
 python tools/test_custom_build_ota_contract.py
 python tools/test_ota_selection_runtime.py
+python tools/test_ota_wifi_runtime.py
 node --test cloudflare/custom-build-worker/test/fleet.test.mjs
 node --test cloudflare/custom-build-worker/test/configurator.test.mjs
 pio run -e esp32s3

@@ -19,7 +19,7 @@ def main():
     assert_contains(HDS_SOURCE, "hdsOtaRollbackMarkValid();")
     assert_contains(HDS_SOURCE, "if (!pullOtaResumePendingLittleFs())")
     assert_contains(HDS_SOURCE, 'hdsOtaRollback("LittleFS update");')
-    assert_contains(PULL_OTA_HEADER, "HDS_OTA_PENDING_WIFI_TIMEOUT_MS = 10000")
+    assert_contains(PULL_OTA_HEADER, "HDS_OTA_PENDING_WIFI_TIMEOUT_MS = HDS_OTA_WIFI_TIMEOUT_MS")
     assert_contains(PULL_OTA_HEADER, "pullOtaEnsureWifi(HDS_OTA_PENDING_WIFI_TIMEOUT_MS)")
     assert_contains(PULL_OTA_HEADER, "hdsOtaRollbackMarkValid();")
     assert_contains(PULL_OTA_HEADER, "pullOtaFindCurrentRelease(catalog, rollbackManifest)")
