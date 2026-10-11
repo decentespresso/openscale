@@ -276,6 +276,7 @@ void wifiProcessSetup() {
       wifiSetupRuntime.change.startedAt = request.queuedAt;
       wifiSetupRuntime.change.hasPrevious = params.hasCredentials();
       wifiSetupRuntime.change.testOnly = request.command == WifiSetupCommand::Test;
+      wifiSetupRuntime.change.returnToAp = (WiFi.getMode() & WIFI_AP) != 0;
     }
   }
   wifiProcessScan();
@@ -284,7 +285,8 @@ void wifiProcessSetup() {
     const char *expected = returning || wifiSetupRuntime.change.phase == WifiSwitchPhase::Restoring
                                ? params.getSSID().c_str() : wifiSetupRuntime.candidate.ssid;
     uint32_t connectionGeneration = 0;
-    const bool connected = returning && !wifiSetupRuntime.change.hasPrevious
+    const bool connected = returning &&
+                               (wifiSetupRuntime.change.returnToAp || !wifiSetupRuntime.change.hasPrevious)
                                ? (WiFi.getMode() & WIFI_AP) != 0
                                : wifiFreshConnection(expected, connectionGeneration);
     WifiSwitchAction action = wifiSetupRuntime.change.tick(

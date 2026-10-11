@@ -5,8 +5,8 @@ void connectHandoffStation() {
   wifiProcessSetup();
 }
 
-uint32_t prepareHandoffTest(bool provisioning = false) {
-  seedCredentials(provisioning, provisioning);
+uint32_t prepareHandoffTest(bool provisioning = false, bool savedRecovery = false) {
+  seedCredentials(provisioning && !savedRecovery, provisioning && !savedRecovery);
   wifiSetupRuntime = {};
   wifiCancelSetup();
   WiFi.currentMode = provisioning ? WIFI_AP : WIFI_STA;
@@ -32,8 +32,8 @@ uint32_t prepareHandoffTest(bool provisioning = false) {
   assert(strcmp(status.testedIp, "192.168.50.30") == 0);
   assert(strcmp(status.requestedSsid, "New network") == 0);
   assert(status.operationId == id && storageWrites == 0);
-  if (provisioning) assert(status.accessPoint && !params.hasCredentials());
-  else assertPreviousCredentials();
+  if (provisioning) assert(status.accessPoint && params.hasCredentials() == savedRecovery);
+  if (!provisioning || savedRecovery) assertPreviousCredentials();
   assert(!wifiQueueActivation(0) && !wifiQueueActivation(id + 1));
   assert(wifiReserveExternalOperation());
   assert(!wifiQueueActivation(id));
@@ -56,8 +56,8 @@ void activateHandoff(uint32_t id) {
 }
 
 void testWifiHandoffRuntime() {
-  for (const bool provisioning : {false, true}) {
-    const uint32_t id = prepareHandoffTest(provisioning);
+  for (const int source : {0, 1, 2}) {
+    const uint32_t id = prepareHandoffTest(source != 0, source == 2);
     activateHandoff(id);
     connectHandoffStation();
     clockMs += 3000;

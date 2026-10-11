@@ -20,6 +20,7 @@ struct WifiSwitch {
   uint32_t connectionGeneration = 0;
   bool hasPrevious = false;
   bool testOnly = false;
+  bool returnToAp = false;
 
   bool busy() const {
     return phase == WifiSwitchPhase::Queued || phase == WifiSwitchPhase::Connecting ||
@@ -65,7 +66,7 @@ struct WifiSwitch {
           if (testOnly) {
             phase = WifiSwitchPhase::Returning;
             startedAt = now;
-            return hasPrevious ? WifiSwitchAction::Restore : WifiSwitchAction::AccessPoint;
+            return hasPrevious && !returnToAp ? WifiSwitchAction::Restore : WifiSwitchAction::AccessPoint;
           }
           phase = WifiSwitchPhase::Saving;
           return WifiSwitchAction::Save;

@@ -206,13 +206,17 @@ void testSuccessfulTestReturnsWithoutSaving() {
 }
 
 void testProvisioningTestReturnsToSetup() {
-  WifiSwitch change;
-  change.testOnly = true;
-  change.phase = WifiSwitchPhase::Connecting;
-  change.tick(1000, true);
-  TEST_ASSERT_EQUAL_INT((int)WifiSwitchAction::AccessPoint, (int)change.tick(4000, true));
-  change.tick(5000, true);
-  TEST_ASSERT_EQUAL_INT((int)WifiSwitchPhase::Ready, (int)change.phase);
+  for (const bool hasPrevious : {false, true}) {
+    WifiSwitch change;
+    change.testOnly = true;
+    change.returnToAp = true;
+    change.hasPrevious = hasPrevious;
+    change.phase = WifiSwitchPhase::Connecting;
+    change.tick(1000, true);
+    TEST_ASSERT_EQUAL_INT((int)WifiSwitchAction::AccessPoint, (int)change.tick(4000, true));
+    change.tick(5000, true);
+    TEST_ASSERT_EQUAL_INT((int)WifiSwitchPhase::Ready, (int)change.phase);
+  }
 }
 
 void testUnavailableReturnDoesNotReportSuccess() {
