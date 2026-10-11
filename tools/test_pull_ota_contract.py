@@ -100,6 +100,8 @@ def main():
     selection = function_body(source, "pullOtaBuildSelectableReleases")
     assert "currentCompare != 0 || currentIsPrerelease" in selection
     assert "!pullOtaVersionIsStable(currentVersion.c_str())" in selection
+    assert "const bool currentIsCustom = pullOtaCurrentCombinationHash().length() > 0;" in selection
+    assert "currentIsPrerelease || currentIsCustom || filesystemRecoveryActive.load()" in selection
     assert_contains(PULL_OTA_HEADER, "!candidate.littlefs.present || !candidate.littlefs.required")
     assert_before(
         PULL_OTA_HEADER,

@@ -26,7 +26,7 @@ def main():
     assert "filesystemRecoveryLoad();" in function_body(rollback, "void hdsOtaRollbackBegin(")
     assert "filesystemRecoveryActive.load()" in function_body(custom, "bool customBuildCheckIn(")
     assert "assignment.combinationHash == installedCombination && !filesystemRecoveryActive.load()" in custom
-    assert "currentCompare != 0 || currentIsPrerelease || filesystemRecoveryActive.load()" in ota
+    assert "currentCompare != 0 || currentIsPrerelease || currentIsCustom || filesystemRecoveryActive.load()" in ota
     assert "if (filesystemRecoveryActive.load())" in setup
     assert web.index('server.serveStatic("/", LittleFS, "/")') < web.index('server.on("/", HTTP_GET')
     assert "return webFilesystemReady.load() && !filesystemRecoveryActive.load();" in web

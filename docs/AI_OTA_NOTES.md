@@ -47,6 +47,10 @@ must return before custom manifest or signature retrieval, asset download, pendi
 or reboot scheduling. The Worker copy of `installed_combination` is telemetry and must never drive
 this decision.
 
+Official-to-custom and custom-to-custom assignments may share the running
+firmware's numeric version. Only the full combination identity determines
+whether the assigned custom build is already installed.
+
 Fleet build references, scale lists, bulk assignment, and deployment history stay in the
 Worker/browser. Firmware must not fetch a fleet build list, add fleet-sized collections, persist a
 short hash, add background check-ins, or increase `HDS_OTA_TASK_STACK_BYTES` without measurement.
@@ -140,7 +144,11 @@ Do not offer:
 - malformed versions
 - versions before `v3.1.13`
 - incompatible hardware
-- the same installed stable version, except when repairing LittleFS; a preview/RC may select the stable release with the same numeric version
+- the same installed official stable version, except when repairing LittleFS; preview/RC and custom builds may select the stable release with the same numeric version
+
+The custom-to-official exception requires a valid embedded full combination
+hash, not merely a `-custom` version suffix. It retains signed custom rollback
+manifest lookup and the shared staged LittleFS installation path.
 
 Compatible older stable releases at `v3.1.13+` may be offered as signed downgrades.
 
@@ -152,7 +160,7 @@ A start request may name a target release. Over BLE and USB that is the five-byt
 
 The unattended path skips only `pullOtaPickRelease()` and `pullOtaConfirmInstall()`. Everything else is shared and unchanged: WiFi, clock, signed catalog fetch and signature verification, rollback-manifest resolution before any write, `pullOtaInstall()`, HTTPS with CA validation, asset URL allowlisting, exact size checks, SHA-256 verification, and the staged LittleFS transaction with its bounded retries and rollback metadata.
 
-A request is refused when the target is absent from the verified catalog, incompatible with this hardware, not a stable numeric release, below `HDS_OTA_MIN_INSTALL_VERSION`, or equal to the installed stable version outside LittleFS recovery. A preview/RC may select its same-numeric stable release. Missing signed rollback metadata requires the target's signed forward-recovery capability; an older target without it is refused before writes. A refusal calls `pullOtaFail()` and returns. It must never fall back to the picker, and it must never install a release other than the one requested.
+A request is refused when the target is absent from the verified catalog, incompatible with this hardware, not a stable numeric release, below `HDS_OTA_MIN_INSTALL_VERSION`, or equal to the installed official stable version outside LittleFS recovery. A preview/RC or identified custom build may select its same-numeric stable release. Missing signed rollback metadata requires the target's signed forward-recovery capability; an older target without it is refused before writes. A refusal calls `pullOtaFail()` and returns. It must never fall back to the picker, and it must never install a release other than the one requested.
 
 An eligible downgrade is accepted, matching picker behavior.
 
@@ -243,6 +251,7 @@ python tools/test_ota_rollback_contract.py
 python tools/test_ota_public_key_header.py
 python tools/test_ota_reboot_routing_contract.py
 python tools/test_custom_build_ota_contract.py
+python tools/test_ota_selection_runtime.py
 node --test cloudflare/custom-build-worker/test/fleet.test.mjs
 node --test cloudflare/custom-build-worker/test/configurator.test.mjs
 pio run -e esp32s3
