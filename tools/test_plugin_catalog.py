@@ -230,11 +230,13 @@ def main():
     assert len(pageCatalog["catalog_revision"]) == 64
     assert generatedCatalog["firmware_refs"] == list(customBuild.BROWSER_FIRMWARE_REFS)
     assert customBuild.BROWSER_FIRMWARE_REFS == (
-        "v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main",
+        "v3.1.15", "v3.1.14", "main",
     )
-    assert customBuild.FIRMWARE_REFS == (*customBuild.BROWSER_FIRMWARE_REFS, "v3.1.15")
+    assert customBuild.FIRMWARE_REFS == (
+        "v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main", "v3.1.15",
+    )
     assert serviceCatalog["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
-    assert "v3.1.15" not in pageCatalog["firmware_refs"]
+    assert pageCatalog["firmware_refs"][0] == "v3.1.15"
     assert serviceCatalog["firmware"]["v3.1.15"]["custom_version"] == "3.1.15-custom"
     assert customBuild.customFirmwareVersion("v3.1.15", "") == "3.1.15-custom"
     assert pageCatalog["custom_ota_signing_key_generation"] == 1
