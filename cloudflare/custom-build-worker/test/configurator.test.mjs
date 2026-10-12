@@ -80,7 +80,7 @@ test("offers only stable 3.1.14 and main with stable selected by default", async
   for (const ref of ["v3.1.14", "main"]) {
     assert.equal(parseSelection(`?ref=${ref}&features=&plugins=`, shipped).firmware_ref, ref);
   }
-  for (const ref of ["v3.1.14-preview.3", "v3.1.14-preview.4"]) {
+  for (const ref of ["v3.1.14-preview.3", "v3.1.14-preview.4", "v3.1.15"]) {
     assert.throws(() => parseSelection(`?ref=${ref}&features=&plugins=`, shipped), /unsupported_firmware_ref/);
   }
 });
