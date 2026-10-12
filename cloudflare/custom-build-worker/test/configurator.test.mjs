@@ -69,18 +69,18 @@ test("labels stable, preview, and development firmware refs", () => {
 });
 
 
-test("offers only stable 3.1.14 and main with stable selected by default", async () => {
+test("offers stable releases and main with 3.1.15 selected by default", async () => {
   const shipped = JSON.parse(await readFile(
     new URL("../../../docs/custom-build/catalog.json", import.meta.url), "utf8",
   ));
-  assert.deepEqual(shipped.firmware_refs, ["v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main"]);
-  assert.deepEqual(selectableFirmwareRefs(shipped), ["v3.1.14", "main"]);
-  assert.equal(firmwareRefLabel(defaultSelection(shipped).firmware_ref), "3.1.14 (stable)");
+  assert.deepEqual(shipped.firmware_refs, ["v3.1.15", "v3.1.14", "main"]);
+  assert.deepEqual(selectableFirmwareRefs(shipped), ["v3.1.15", "v3.1.14", "main"]);
+  assert.equal(firmwareRefLabel(defaultSelection(shipped).firmware_ref), "3.1.15 (stable)");
   assert.equal(defaultSelection({...shipped, firmware_refs: ["main"]}).firmware_ref, "main");
-  for (const ref of ["v3.1.14", "main"]) {
+  for (const ref of ["v3.1.15", "v3.1.14", "main"]) {
     assert.equal(parseSelection(`?ref=${ref}&features=&plugins=`, shipped).firmware_ref, ref);
   }
-  for (const ref of ["v3.1.14-preview.3", "v3.1.14-preview.4", "v3.1.15"]) {
+  for (const ref of ["v3.1.14-preview.3", "v3.1.14-preview.4"]) {
     assert.throws(() => parseSelection(`?ref=${ref}&features=&plugins=`, shipped), /unsupported_firmware_ref/);
   }
 });
