@@ -10,6 +10,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
+    radio = (ROOT / "src/wifi_setup.cpp").read_text(encoding="utf-8")
+    stationStart = radio.index("void wifiStartStation(")
+    stationDeclaration = radio[stationStart:radio.index("{", stationStart)].strip()
+    station = block_after(radio, "void wifiStartStation(")
+    accessPoint = block_after(radio, "void setupAP() {")
     reset = block_after((ROOT / "include/menu.h").read_text(encoding="utf-8"), "void resetWifi() {")
     save = block_after((ROOT / "src/wifi_setup.cpp").read_text(encoding="utf-8"),
                        "bool saveCredentials(const String &ssid, const String &pass) {")
@@ -36,9 +41,10 @@ using portMUX_TYPE = int;
 using StaticSemaphore_t = int;
 using SemaphoreHandle_t = int *;
 using TaskHandle_t = void *;
-constexpr int portMAX_DELAY = 0, WL_CONNECTED = 3, WIFI_AP = 2, WIFI_STA = 1;
+constexpr int portMAX_DELAY = 0, WL_CONNECTED = 3, WIFI_AP = 2, WIFI_STA = 1, WIFI_OFF = 0;
 constexpr int WIFI_AP_STA = WIFI_AP | WIFI_STA;
 constexpr int WIFI_SCAN_FAILED = -2, WIFI_SCAN_RUNNING = -1, WIFI_AUTH_OPEN = 0;
+constexpr int WIFI_AUTH_WPA2_PSK = 3, WIFI_POWER_8_5dBm = 1, WIFI_POWER_18_5dBm = 2;
 constexpr int WIFI_REASON_AUTH_FAIL = 1, WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT = 2;
 constexpr int WIFI_REASON_HANDSHAKE_TIMEOUT = 3, WIFI_REASON_NO_AP_FOUND = 4;
 unsigned long clockMs = 1000;
@@ -52,7 +58,10 @@ SemaphoreHandle_t xSemaphoreCreateMutexStatic(int *storage) { return storage; }
 void xSemaphoreTake(int *, int) {}
 void xSemaphoreGive(int *) {}
 void esp_wifi_scan_stop() {}
-struct { void println(const char *) {} } Serial;
+struct {
+  template<class T> void print(const T &) {}
+  template<class T> void println(const T &) {}
+} Serial;
 #include "wifi_setup.h"
 #include "wifi_settings.h"
 std::map<String, String> strings;
@@ -125,15 +134,34 @@ struct Ip {
   operator uint32_t() const { return value; }
   String toString() const { return value ? "192.168.50.30" : "0.0.0.0"; }
 };
+struct IPAddress { IPAddress(int, int, int, int) {} };
 struct Network { String ssid; int16_t rssi; bool secure; };
+int stationStarts = 0, apStarts = 0;
 struct {
   int stationStatus = 0, currentMode = WIFI_AP;
+  int apStops = 0, radioStops = 0;
+  bool disconnectOk = true;
   String stationSsid;
   Ip ip;
   std::vector<Network> networks;
   int status() const { return stationStatus; }
   int getMode() const { return currentMode; }
-  void mode(int value) { currentMode = value; }
+  void mode(int value) {
+    if ((currentMode & WIFI_AP) && !(value & WIFI_AP)) ++apStops;
+    if (value == WIFI_OFF) ++radioStops;
+    currentMode = value;
+  }
+  bool disconnect(bool, bool, unsigned long = 0) {
+    stationStatus = 0;
+    ip.value = 0;
+    return disconnectOk;
+  }
+  bool softAPdisconnect(bool) { ++apStops; return true; }
+  bool softAPConfig(IPAddress, IPAddress, IPAddress) { return true; }
+  bool softAP(const char *, const char *) { ++apStarts; return true; }
+  void setMinSecurity(int) {}
+  void setTxPower(int) {}
+  void begin(const char *ssid, const char *) { ++stationStarts; stationSsid = ssid; }
   Ip localIP() const { return ip; }
   Ip softAPIP() const { return Ip{1}; }
   String SSID() const { return stationSsid; }
@@ -161,16 +189,9 @@ WifiSetupRuntime wifiSetupRuntime;
 const char *wifiPrefsKey = "wifi", *wifiSSIDKey = "ssid", *wifiPassKey = "pass";
 const char *wifiMdnsNameKey = "mdns_name";
 WiFiParams params;
-int stationStarts = 0, apStarts = 0;
-void wifiStartStation(const char *ssid, const char *) {
-  ++stationStarts;
-  wifiSetupRuntime.ipBaseline = wifiGotIpGeneration;
-  WiFi.stationSsid = ssid;
-  WiFi.stationStatus = 0;
-  WiFi.ip.value = 0;
-  WiFi.currentMode = WIFI_STA;
-}
-void setupAP() { ++apStarts; WiFi.currentMode = WIFI_AP; WiFi.stationStatus = 0; clockMs += 100; }
+static void mdnsWithdraw() {}
+@STATION_DECLARATION@ { @STATION@ }
+void setupAP() { @AP@ }
 #include "wifi_settings.cpp"
 #include "wifi_setup_control.cpp"
 #include "wifi_scan.cpp"
@@ -722,6 +743,7 @@ void testDhcpRecoveryInvalidatesStability() {
 
 int main() {
   testWifiHandoffRuntime();
+  testSetupApFailureKeepsBrowserNetwork();
   testCredentialsSurviveStableDowngrade();
   testFreshProvisioningAndOpenNetwork();
   testCredentialWriteFailures();
@@ -741,7 +763,8 @@ int main() {
   testFailedHttpResetKeepsRecoveryTimer();
   testDhcpRecoveryInvalidatesStability();
 }
-'''.replace("@RESET@", reset).replace("@SAVE@", save).replace("@DEVICE@", device).replace("@INSTALL@", install)
+'''.replace("@RESET@", reset).replace("@SAVE@", save).replace("@DEVICE@", device).replace("@INSTALL@", install) \
+        .replace("@STATION_DECLARATION@", stationDeclaration).replace("@STATION@", station).replace("@AP@", accessPoint)
     compiler = shutil.which("g++")
     assert compiler, "g++ is required"
     with tempfile.TemporaryDirectory() as directory:

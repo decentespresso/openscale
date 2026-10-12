@@ -31,8 +31,9 @@ struct WifiSwitch {
   WifiSwitchAction restore(unsigned long now, WifiSetupError reason) {
     error = reason;
     startedAt = now;
-    phase = hasPrevious ? WifiSwitchPhase::Restoring : WifiSwitchPhase::Failed;
-    return hasPrevious ? WifiSwitchAction::Restore : WifiSwitchAction::AccessPoint;
+    const bool restoreStation = hasPrevious && !(testOnly && returnToAp);
+    phase = restoreStation ? WifiSwitchPhase::Restoring : WifiSwitchPhase::Failed;
+    return restoreStation ? WifiSwitchAction::Restore : WifiSwitchAction::AccessPoint;
   }
 
   WifiSwitchAction saved(unsigned long now, bool success) {

@@ -10,6 +10,8 @@ uint32_t prepareHandoffTest(bool provisioning = false, bool savedRecovery = fals
   wifiSetupRuntime = {};
   wifiCancelSetup();
   WiFi.currentMode = provisioning ? WIFI_AP : WIFI_STA;
+  const int previousApStops = WiFi.apStops;
+  const int previousApStarts = apStarts;
   WifiCredentials candidate;
   strcpy(candidate.ssid, "New network");
   strcpy(candidate.pass, "new pass");
@@ -19,6 +21,8 @@ uint32_t prepareHandoffTest(bool provisioning = false, bool savedRecovery = fals
   wifiProcessSetup();
   clockMs += 500;
   wifiProcessSetup();
+  assert(WiFi.currentMode == (provisioning ? WIFI_AP_STA : WIFI_STA));
+  if (provisioning) assert(WiFi.apStops == previousApStops && apStarts == previousApStarts);
   connectHandoffStation();
   clockMs += 3000;
   wifiProcessSetup();
@@ -32,7 +36,10 @@ uint32_t prepareHandoffTest(bool provisioning = false, bool savedRecovery = fals
   assert(strcmp(status.testedIp, "192.168.50.30") == 0);
   assert(strcmp(status.requestedSsid, "New network") == 0);
   assert(status.operationId == id && storageWrites == 0);
-  if (provisioning) assert(status.accessPoint && params.hasCredentials() == savedRecovery);
+  if (provisioning) {
+    assert(status.accessPoint && params.hasCredentials() == savedRecovery);
+    assert(WiFi.apStops == previousApStops && apStarts == previousApStarts);
+  }
   if (!provisioning || savedRecovery) assertPreviousCredentials();
   assert(!wifiQueueActivation(0) && !wifiQueueActivation(id + 1));
   assert(wifiReserveExternalOperation());
@@ -143,6 +150,43 @@ void testWifiHandoffRuntime() {
   wifiPublishSetupStatus();
   assert(!wifiQueueActivation(id));
   assert(wifiSetupRuntime.candidate.ssid[0] == 0);
+  stationStarts = 0;
+  apStarts = 0;
+}
+
+void testSetupApFailureKeepsBrowserNetwork() {
+  for (const bool savedRecovery : {false, true}) {
+    seedCredentials(!savedRecovery, !savedRecovery);
+    wifiCancelSetup();
+    WiFi.currentMode = WIFI_AP;
+    const int previousApStops = WiFi.apStops;
+    const int previousApStarts = apStarts;
+    WifiCredentials candidate;
+    strcpy(candidate.ssid, "New network");
+    strcpy(candidate.pass, "wrong password");
+    uint32_t id;
+    assert(wifiQueueSetup(WifiSetupCommand::Test, candidate, id));
+    wifiProcessSetup();
+    clockMs += 500;
+    wifiProcessSetup();
+    assert(WiFi.currentMode == WIFI_AP_STA);
+    wifiDisconnectReason = WIFI_REASON_AUTH_FAIL;
+    clockMs += 20000;
+    wifiProcessSetup();
+    const WifiSetupStatus status = wifiReadSetupStatus();
+    assert(status.phase == WifiSwitchPhase::Failed && status.error == WifiSetupError::Authentication);
+    assert(status.accessPoint && !status.connected && !wifiSetupBusy());
+    assert(WiFi.currentMode == WIFI_AP && storageWrites == 0);
+    assert(WiFi.apStops == previousApStops && apStarts == previousApStarts);
+    assert(params.hasCredentials() == savedRecovery);
+    if (savedRecovery) assertPreviousCredentials();
+  }
+  const int previousRadioStops = WiFi.radioStops;
+  WiFi.disconnectOk = false;
+  prepareHandoffTest(true);
+  assert(WiFi.radioStops == previousRadioStops);
+  WiFi.disconnectOk = true;
+  wifiCancelSetup();
   stationStarts = 0;
   apStarts = 0;
 }
