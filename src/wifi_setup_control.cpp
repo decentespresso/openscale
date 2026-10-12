@@ -317,6 +317,7 @@ void wifiProcessSetup() {
       !wifiSetupBusy() && millis() - wifiSetupRuntime.recoveryApAt >= 600000 &&
       wifiReserveExternalOperation()) {
     wifiSetupRuntime.recoveryApAt = 0;
+    wifiSetupRuntime.change.testOnly = false;
     wifiSetupRuntime.change.hasPrevious = true;
     wifiExecuteSwitchAction(wifiSetupRuntime.change.restore(now, wifiSetupRuntime.change.error));
   }

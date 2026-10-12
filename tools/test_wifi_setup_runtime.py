@@ -744,6 +744,7 @@ void testDhcpRecoveryInvalidatesStability() {
 int main() {
   testWifiHandoffRuntime();
   testSetupApFailureKeepsBrowserNetwork();
+  testSetupApRecoveryRetryReleasesReservation();
   testCredentialsSurviveStableDowngrade();
   testFreshProvisioningAndOpenNetwork();
   testCredentialWriteFailures();

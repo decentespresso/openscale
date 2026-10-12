@@ -190,3 +190,66 @@ void testSetupApFailureKeepsBrowserNetwork() {
   stationStarts = 0;
   apStarts = 0;
 }
+
+void testSetupApRecoveryRetryReleasesReservation() {
+  for (const bool candidateWorks : {false, true}) {
+    seedCredentials(false);
+    wifiSetupRuntime = {};
+    wifiCancelSetup();
+    WiFi.currentMode = WIFI_AP;
+    WifiCredentials candidate;
+    strcpy(candidate.ssid, "New network");
+    strcpy(candidate.pass, "new pass");
+    uint32_t id;
+    assert(wifiQueueSetup(WifiSetupCommand::Test, candidate, id));
+    wifiProcessSetup();
+    clockMs += 500;
+    wifiProcessSetup();
+    if (candidateWorks) {
+      connectHandoffStation();
+      clockMs += 3000;
+      wifiProcessSetup();
+      wifiProcessSetup();
+      assert(wifiSetupRuntime.change.phase == WifiSwitchPhase::Ready);
+      clockMs += 120000;
+    } else {
+      wifiDisconnectReason = WIFI_REASON_AUTH_FAIL;
+      clockMs += 20000;
+    }
+    wifiProcessSetup();
+    assert(wifiSetupRuntime.change.phase == WifiSwitchPhase::Failed);
+    assert(WiFi.currentMode == WIFI_AP && !wifiSetupBusy());
+    assertPreviousCredentials();
+    const unsigned long openedAt = wifiSetupRuntime.recoveryApAt;
+    const int previousStationStarts = stationStarts;
+    clockMs = openedAt + 599999;
+    wifiProcessSetup();
+    assert(stationStarts == previousStationStarts);
+    assert(wifiReserveExternalOperation());
+    clockMs = openedAt + 600000;
+    wifiProcessSetup();
+    assert(stationStarts == previousStationStarts);
+    wifiReleaseExternalOperation();
+    wifiProcessSetup();
+    assert(stationStarts == previousStationStarts + 1 && WiFi.stationSsid == "Old network");
+    assert(WiFi.currentMode == WIFI_STA && wifiSetupBusy());
+    assert(wifiSetupRuntime.change.phase == WifiSwitchPhase::Restoring);
+    assert(!wifiSetupRuntime.change.testOnly);
+    clockMs += 20000;
+    wifiProcessSetup();
+    assert(WiFi.currentMode == WIFI_AP && !wifiSetupBusy());
+    assert(wifiReserveExternalOperation());
+    wifiReleaseExternalOperation();
+    clockMs += 600000;
+    wifiProcessSetup();
+    assert(stationStarts == previousStationStarts + 2);
+    assert(WiFi.currentMode == WIFI_STA && wifiSetupBusy());
+    connectHandoffStation();
+    assert(!wifiSetupBusy() && wifiSetupRuntime.recoveryApAt == 0);
+    assert(storageWrites == 0);
+    assertPreviousCredentials();
+  }
+  wifiCancelSetup();
+  stationStarts = 0;
+  apStarts = 0;
+}
