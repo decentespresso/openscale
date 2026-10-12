@@ -487,6 +487,10 @@ async function runResultNavigation(browser, html, label, viewport) {
       await page.locator('#wifi-popup').scrollIntoViewIfNeeded();
       await page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-verified-address-${label}-${viewport.width}.png`) });
       await page.locator('#wifi-open-scale').click();
+      assert.equal(page.url(), originalUrl);
+      assert.equal(await page.locator('#wifi-network-dialog').getAttribute('data-view'), 'instructions');
+      assert.equal(await page.locator('#wifi-network-address').inputValue(), '192.168.60.40');
+      await page.getByRole('button', { name: 'Continue', exact: true }).click();
     } else {
       assert.equal(await page.locator('#wifi-open-scale').getAttribute('href'), null);
     }

@@ -123,7 +123,8 @@ async function openSource(browser, html, viewport, options = {}) {
         ip: sourceHost, connected: !options.provisioning, access_point: options.provisioning === true,
         credentials_saved: !options.provisioning, busy: !testReady,
         tested_ip: variant === 'bad-tested-ip' ? 'javascript:alert(1)' : '192.168.60.40' });
-      if (status.operation_id && url.hostname === sourceHost && status.ip !== sourceHost) return route.abort('failed');
+      if (status.operation_id && url.hostname === sourceHost && status.ip !== sourceHost &&
+          !options.finalStatusReachable) return route.abort('failed');
       if (status.operation_id && variant === 'wrong-status') return json({ ...status, device_id: 'ffeeddccbbaa' });
       if (status.operation_id && variant === 'stale-status') return json({ ...status, operation_id: 123 });
       return json(status);
@@ -353,6 +354,45 @@ async function checkSameNetworkAndRecovery(browser, html, viewport) {
   } finally { await reset.context.close(); }
 }
 
+async function checkCompletedAddressChoice(browser, html, label, viewport) {
+  for (const options of [{}, { useHostname: true, mdnsName: 'kitchen-scale' },
+    { finalStatusReachable: true, finalIp: '192.168.60.41', mdns: false }]) {
+    const session = await openSource(browser, html, viewport, options);
+    try {
+      await submit(session.page, options.finalStatusReachable ? 'New network' : 'Old network');
+      await session.page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
+      const successText = await session.page.locator('#wifi-status').textContent();
+      const ip = options.finalStatusReachable ? options.finalIp : '192.168.50.30';
+      const activations = options.finalStatusReachable ? 1 : 0;
+      await openCheckDialog(session.page);
+      assert.equal(await session.page.locator('#wifi-network-dialog').getAttribute('data-view'), 'instructions');
+      assert.equal(await session.page.locator('#wifi-network-target').inputValue(), 'ip');
+      assert.equal(await session.page.locator('#wifi-network-address').inputValue(), ip);
+      assert.equal(await session.page.locator('#wifi-open-scale').getAttribute('aria-haspopup'), 'dialog');
+      assert.equal(await session.page.locator('#wifi-network-target option[value="hostname"]').evaluate(option => !option.disabled), options.mdns !== false);
+      assert.doesNotMatch(await session.page.locator('#wifi-network-dialog').textContent(), /switching|Connect this phone|returns to the previous network/i);
+      await session.page.getByRole('button', { name: 'Check later', exact: true }).click();
+      assert.equal(await session.page.locator('#wifi-status').textContent(), successText);
+      assert.equal(await session.page.locator('#wifi-status').getAttribute('data-tone'), 'success');
+      assert.equal(await session.page.locator('#wifi-open-scale').isVisible(), true);
+      await openCheckDialog(session.page);
+      assert.equal(await session.page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      await session.page.screenshot({ path: path.join(root, '.pio.nosync', `wifi-completed-choice-${label}-${viewport.width}-${options.finalStatusReachable ? 'late' : options.useHostname ? 'hostname' : 'ip'}.png`) });
+      if (options.useHostname) await session.page.locator('#wifi-network-target').selectOption('hostname');
+      await openDestination(session);
+      await session.page.waitForFunction(() => document.getElementById('wifi-status')?.textContent.includes('WiFi settings saved'));
+      const url = new URL(session.page.url());
+      assert.equal(url.hostname, options.useHostname ? 'kitchen-scale.local' : ip);
+      assert.equal(url.searchParams.get('wifi_device'), deviceId);
+      assert.equal(url.searchParams.get('wifi_attempt'), '4294967295');
+      assert.equal(session.context.pages().length, 1);
+      assert.equal(session.posts().length, 1);
+      assert.equal(session.activations().length, activations);
+      assert.deepEqual(session.errors, []);
+    } finally { await session.context.close(); }
+  }
+}
+
 async function checkReloadedTests(browser, html, viewport) {
   for (const testState of ['testing', 'verifying', 'returning']) {
     const session = await openSource(browser, html, viewport, { holdTest: true, testState });
@@ -438,6 +478,15 @@ async function checkProgressPopup(browser, html, label, viewport) {
   fs.mkdirSync(path.join(root, '.pio.nosync'), { recursive: true });
   const browser = await chromium.launch({ headless: true });
   try {
+    if (process.argv.includes('--address-choice-only')) {
+      for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }, { width: 320, height: 568 }]) {
+        for (const [label, html] of Object.entries(pages)) {
+          await checkCompletedAddressChoice(browser, html, label, viewport);
+          console.log(`${label} ${viewport.width}px: completed IP/hostname choice and late-success navigation passed`);
+        }
+      }
+      return;
+    }
     if (process.argv.includes('--popup-only')) {
       for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }, { width: 320, height: 568 }]) {
         for (const [label, html] of Object.entries(pages)) {
@@ -453,6 +502,7 @@ async function checkProgressPopup(browser, html, label, viewport) {
         await checkRejectedResults(browser, html, viewport);
         await checkRejectedTests(browser, html, viewport);
         await checkSameNetworkAndRecovery(browser, html, viewport);
+        await checkCompletedAddressChoice(browser, html, label, viewport);
         await checkReloadedTests(browser, html, viewport);
         console.log(`${label} ${viewport.width}px: IP-default and explicit hostname handoff, editable DHCP address, identity/operation guards, provisioning, rollback and reset passed`);
       }

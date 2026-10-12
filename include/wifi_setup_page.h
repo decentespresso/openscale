@@ -122,6 +122,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   let deviceMismatch = false;
   let scannedSsid = null;
   let pendingCheck = null;
+  let completedCheck = null;
   let operationWatch = null;
   let connectedSsid = '';
   const query = new URLSearchParams(location.search);
@@ -139,6 +140,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
 
   function message(text, tone = 'neutral') {
     if (!pendingCheck?.handoff) {
+      completedCheck = null;
       openScale.hidden = true;
       openScale.removeAttribute('href');
       openScale.removeAttribute('aria-haspopup');
@@ -235,30 +237,34 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   }
 
   function showNetworkDialog() {
-    if (!pendingCheck || (networkDialog.open && networkDialog.dataset.view !== 'operation')) return;
+    const operation = pendingCheck || completedCheck;
+    if (!operation || (networkDialog.open && networkDialog.dataset.view !== 'operation')) return;
+    const completed = operation === completedCheck;
     operationView.hidden = true;
     networkDetails.forEach(element => { element.hidden = false; });
     checkButton.before(status, openScale);
     networkDialog.dataset.view = 'instructions';
     networkDialog.setAttribute('aria-describedby', 'wifi-network-description wifi-network-recovery');
-    document.getElementById('wifi-network-title').textContent = pendingCheck.handoff
-      ? 'Connection test succeeded' : 'WiFi change started';
+    document.getElementById('wifi-network-title').textContent = completed ? 'WiFi result' :
+      operation.handoff ? 'Connection test succeeded' : 'WiFi change started';
     const ssid = document.getElementById('wifi-network-ssid');
-    ssid.textContent = pendingCheck.kind === 'reset'
-      ? 'DecentScale' : pendingCheck.ssid;
+    ssid.textContent = operation.kind === 'reset'
+      ? 'DecentScale' : operation.ssid;
     document.getElementById('wifi-network-description').replaceChildren(
-      document.createTextNode('The scale is switching to '), ssid,
-      document.createTextNode('. Connect this phone or computer to that network, then select Continue.'));
-    document.getElementById('wifi-network-recovery').textContent = pendingCheck.kind === 'reset'
-      ? 'Setup password: 12345678. The scale will use 192.168.1.1.'
-      : 'If the switch fails, the scale returns to the previous network. If its IP changes, use the address on the scale.';
-    const hostname = operationHostname(pendingCheck);
+      document.createTextNode(completed ? operation.kind === 'reset' ? 'Setup network: ' : 'Connected to ' : 'The scale is switching to '), ssid,
+      document.createTextNode(completed ? '. Select Continue to open the scale.' :
+        '. Connect this phone or computer to that network, then select Continue.'));
+    document.getElementById('wifi-network-recovery').textContent = completed
+      ? 'If its IP changes, use the address on the scale.' : operation.kind === 'reset'
+        ? 'Setup password: 12345678. The scale will use 192.168.1.1.'
+        : 'If the switch fails, the scale returns to the previous network. If its IP changes, use the address on the scale.';
+    const hostname = operationHostname(operation);
     const hostnameOption = networkTarget.querySelector('[value="hostname"]');
     hostnameOption.textContent = hostname ? `Hostname (${hostname})` : 'Hostname';
     hostnameOption.disabled = !hostname;
     networkTarget.value = 'ip';
-    networkAddress.value = pendingCheck.kind === 'reset' ? '192.168.1.1' :
-      validIp(pendingCheck.tested_ip) ? pendingCheck.tested_ip : '';
+    networkAddress.value = completed ? operation.ip : operation.kind === 'reset' ? '192.168.1.1' :
+      validIp(operation.tested_ip) ? operation.tested_ip : '';
     updateNetworkTarget();
     networkDialog.returnValue = '';
     if (!networkDialog.open) networkDialog.showModal();
@@ -266,7 +272,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   }
 
   function continueCheck() {
-    const operation = pendingCheck;
+    const operation = pendingCheck || completedCheck;
     if (!operation) return;
     const usingHostname = networkTarget.value === 'hostname';
     const host = usingHostname ? operationHostname(operation) : networkAddress.value.trim();
@@ -309,8 +315,11 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     if (!expectedDevice || data.device_id !== expectedDevice ||
         !validIp(data.ip)) return;
     const url = operationUrl(data.ip, data.operation_id);
+    completedCheck = { ...data, kind: data.access_point ? 'reset' : 'switch' };
     openScale.href = url.href;
     openScale.textContent = `Open scale at ${data.ip}`;
+    openScale.setAttribute('aria-haspopup', 'dialog');
+    openScale.setAttribute('aria-controls', 'wifi-network-dialog');
     openScale.hidden = false;
   }
 
@@ -521,7 +530,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     passwordInput.focus();
   });
   openScale.addEventListener('click', event => {
-    if (!pendingCheck?.handoff) return;
+    if (!pendingCheck?.handoff && !completedCheck) return;
     event.preventDefault();
     showNetworkDialog();
   });
