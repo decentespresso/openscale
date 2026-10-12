@@ -29,7 +29,7 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
   let polls = 0;
   let unsupportedRequests = 0;
   let namePosts = 0;
-  let state = { ...initialStatus };
+  let state = { ...initialStatus, ...options.status };
   let testOnly = false;
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -169,13 +169,53 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
   });
   await page.goto(startUrl, { waitUntil: options.scriptDelay ? 'commit' : 'load' });
   if (options.scriptDelay) await page.waitForFunction(() => document.readyState !== 'loading');
-  if (options.waitForInitial !== false) await page.waitForFunction(legacy
-    ? () => document.getElementById('wifi-form').dataset.wifiSetup === 'legacy'
-    : () => document.getElementById('wifi-current').textContent.includes('Old network'));
+  if (options.waitForInitial !== false) {
+    if (legacy) await page.waitForFunction(() => document.getElementById('wifi-form').dataset.wifiSetup === 'legacy');
+    else await page.waitForFunction(text => document.getElementById('wifi-current').textContent.includes(text),
+      options.status?.access_point ? 'Setup network: DecentScale' : 'Old network');
+  }
   return { context, page, posts: () => posts, variant: value => { variant = value; },
     scanVariant: value => { scanVariant = value; }, scanPosts: () => scanPosts,
     namePosts: () => namePosts,
     unsupportedRequests: () => unsupportedRequests, operationPolls: () => polls, errors };
+}
+
+async function runAccessPointScan(browser, html, label, viewport) {
+  for (const connected of [false, true]) {
+    const session = await openPage(browser, html, viewport, false, 'http://hds.local', {
+      status: { access_point: true, connected, credentials_saved: connected, ip: '192.168.1.1' }
+    });
+    const { page } = session;
+    assert.equal(await page.locator('.wifi-network-tools').isVisible(), false);
+    assert.equal(await page.locator('#wifi-scan-button').isEnabled(), false);
+    assert.equal(await page.locator('#wifi-networks').isEnabled(), false);
+    for (const selector of ['#ssid', '#password', '#wifi-connect-button']) {
+      assert.equal(await page.locator(selector).isVisible(), true);
+      assert.equal(await page.locator(selector).isEnabled(), true);
+    }
+    await page.locator('#wifi-scan-button').evaluate(button => button.dispatchEvent(new Event('click')));
+    await page.locator('#ssid').fill('Manual network');
+    await page.locator('#password').fill('password');
+    await page.locator('#wifi-popup').scrollIntoViewIfNeeded();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await page.screenshot({ path: path.join(root, '.pio.nosync',
+      `wifi-ap-${connected ? 'sta' : 'only'}-${label}-${viewport.width}.png`) });
+    assert.equal(session.scanPosts(), 0);
+    session.variant('ap-failure');
+    await page.locator('#wifi-connect-button').click();
+    await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('password was not accepted'));
+    assert.deepEqual(session.posts(), [{ ssid: 'Manual network', pass: 'password', test_only: true }]);
+    await page.locator('#wifi-retry').click();
+    assert.equal(await page.locator('.wifi-network-tools').isVisible(), false);
+    assert.equal(await page.locator('#wifi-scan-button').isEnabled(), false);
+    assert.equal(await page.locator('#ssid').isEnabled(), true);
+    assert.equal(await page.locator('#password').isEnabled(), true);
+    assert.equal(await page.locator('#wifi-connect-button').isEnabled(), true);
+    assert.equal(session.scanPosts(), 0);
+    assert.deepEqual(session.errors, []);
+    await session.context.close();
+  }
+  console.log(`${label} ${viewport.width}px: AP and AP+STA hide and block scans, manual setup and retry remain available`);
 }
 
 async function runDeviceIdentity(browser, html, label, viewport) {
@@ -363,6 +403,8 @@ async function run(browser, html, label, viewport) {
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('The previous network is unavailable'));
   assert.match(await page.locator('#wifi-status').textContent(), /Connect to DecentScale \(password 12345678\), then open 192\.168\.1\.1/);
   assert.equal(await page.locator('#wifi-open-scale').isVisible(), false);
+  assert.equal(await page.locator('.wifi-network-tools').isVisible(), false);
+  assert.equal(await page.locator('#wifi-scan-button').isEnabled(), false);
   await page.getByRole('button', { name: 'Close', exact: true }).click();
 
   session.variant('interrupted');
@@ -372,6 +414,8 @@ async function run(browser, html, label, viewport) {
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('Waiting for the result'));
   assert.notEqual(await page.locator('#wifi-status').getAttribute('data-tone'), 'success');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
+  assert.equal(await page.locator('.wifi-network-tools').isVisible(), true);
+  assert.equal(await page.locator('#wifi-scan-button').isEnabled(), true);
 
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   session.variant('wrong-id');
@@ -603,6 +647,8 @@ async function runLegacy(browser, viewport) {
   const browser = await chromium.launch({ headless: true });
   try {
     for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+      await runAccessPointScan(browser, mainPage, 'main', viewport);
+      await runAccessPointScan(browser, inlinePage, 'inline', viewport);
       await run(browser, mainPage, 'main', viewport);
       await run(browser, inlinePage, 'inline', viewport);
       await runLegacy(browser, viewport);
