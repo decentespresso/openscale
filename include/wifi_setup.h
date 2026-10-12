@@ -88,7 +88,7 @@ bool wifiScannedSsid(const char *ssid, size_t length);
 void wifiProcessSetup();
 void wifiCancelSetup();
 void wifiPublishSetupStatus();
-void wifiStartStation(const char *ssid, const char *pass);
+void wifiStartStation(const char *ssid, const char *pass, bool keepSetupAp = false);
 void setupAP();
 const char *wifiSetupPhaseName(WifiSwitchPhase phase);
 const char *wifiSetupErrorName(WifiSetupError error);

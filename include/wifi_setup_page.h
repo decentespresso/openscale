@@ -53,6 +53,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   const ssidInput = document.getElementById('ssid');
   const passwordInput = document.getElementById('password');
   const scanButton = document.getElementById('wifi-scan-button');
+  const networkTools = scanButton.closest('.wifi-network-tools');
   const networks = document.getElementById('wifi-networks');
   const scanProgress = document.getElementById('wifi-scan-progress');
   const resetButton = document.getElementById('reset-wifi-button');
@@ -120,6 +121,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   let busy = false;
   let deviceReady = false;
   let deviceMismatch = false;
+  let accessPoint = true;
   let scannedSsid = null;
   let pendingCheck = null;
   let completedCheck = null;
@@ -176,9 +178,10 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   function setBusy(value) {
     busy = value || !deviceReady || deviceMismatch;
     form.querySelectorAll('input,button').forEach(element => { element.disabled = busy; });
-    scanButton.disabled = busy;
+    networkTools.hidden = accessPoint;
+    scanButton.disabled = busy || accessPoint;
     resetButton.disabled = busy;
-    networks.disabled = busy || networks.options.length <= 1;
+    networks.disabled = busy || accessPoint || networks.options.length <= 1;
     document.querySelectorAll('#name-form input,#name-form button,#name input,#name button')
       .forEach(element => { element.disabled = busy; });
     form.setAttribute('aria-busy', String(busy));
@@ -207,6 +210,8 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   const connectionInterrupted = error => ['TimeoutError', 'AbortError', 'TypeError'].includes(error.name);
 
   function updateCurrent(data) {
+    accessPoint = data.access_point === true;
+    networkTools.hidden = accessPoint;
     connectedSsid = data.connected && !data.access_point ? data.ssid : '';
     current.textContent = data.access_point ? `Setup network: DecentScale | ${data.ip}` :
       data.connected ? `Connected: ${data.ssid} | ${data.ip}` :
@@ -549,7 +554,7 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   });
 
   scanButton.addEventListener('click', async () => {
-    if (busy) return;
+    if (busy || accessPoint) return;
     setBusy(true);
     scannedSsid = null;
     networks.replaceChildren();

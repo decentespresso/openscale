@@ -205,7 +205,8 @@ static bool wifiFreshConnection(const char *ssid, uint32_t &connectionGeneration
 
 static void wifiExecuteSwitchAction(WifiSwitchAction action) {
   if (action == WifiSwitchAction::Connect) {
-    wifiStartStation(wifiSetupRuntime.candidate.ssid, wifiSetupRuntime.candidate.pass);
+    wifiStartStation(wifiSetupRuntime.candidate.ssid, wifiSetupRuntime.candidate.pass,
+                     wifiSetupRuntime.change.testOnly && wifiSetupRuntime.change.returnToAp);
     wifiSetupRuntime.change.startedAt = millis();
   } else if (action == WifiSwitchAction::Restore) {
     wifiStartStation(params.getSSID().c_str(), params.getPass().c_str());
@@ -316,6 +317,7 @@ void wifiProcessSetup() {
       !wifiSetupBusy() && millis() - wifiSetupRuntime.recoveryApAt >= 600000 &&
       wifiReserveExternalOperation()) {
     wifiSetupRuntime.recoveryApAt = 0;
+    wifiSetupRuntime.change.testOnly = false;
     wifiSetupRuntime.change.hasPrevious = true;
     wifiExecuteSwitchAction(wifiSetupRuntime.change.restore(now, wifiSetupRuntime.change.error));
   }

@@ -43,14 +43,17 @@ bool setupMdns();
 #endif
 
 void setupAP() {
+  const bool accessPointStarted = (WiFi.getMode() & WIFI_AP) != 0;
   mdnsWithdraw();
   WiFi.disconnect(false, false);
   WiFi.mode(WIFI_AP);
-  delay(100);
-  WiFi.softAPConfig(IPAddress(192, 168, 1, 1), IPAddress(192, 168, 1, 1),
-                    IPAddress(255, 255, 255, 0));
-  if (!WiFi.softAP("DecentScale", "12345678")) {
-    Serial.println("[wifi] access point startup failed");
+  if (!accessPointStarted) {
+    delay(100);
+    WiFi.softAPConfig(IPAddress(192, 168, 1, 1), IPAddress(192, 168, 1, 1),
+                      IPAddress(255, 255, 255, 0));
+    if (!WiFi.softAP("DecentScale", "12345678")) {
+      Serial.println("[wifi] access point startup failed");
+    }
   }
   WiFi.setTxPower(WIFI_POWER_8_5dBm);
   Serial.println("WiFi: DecentScale");
@@ -62,11 +65,11 @@ void setupAP() {
 #endif
 }
 
-void wifiStartStation(const char *ssid, const char *pass) {
+void wifiStartStation(const char *ssid, const char *pass, bool keepSetupAp) {
   mdnsWithdraw();
-  if (WiFi.getMode() & WIFI_AP) WiFi.softAPdisconnect(false);
-  if (!WiFi.disconnect(false, false, 1000)) WiFi.mode(WIFI_OFF);
-  WiFi.mode(WIFI_STA);
+  if (!keepSetupAp && (WiFi.getMode() & WIFI_AP)) WiFi.softAPdisconnect(false);
+  if (!WiFi.disconnect(false, false, 1000) && !keepSetupAp) WiFi.mode(WIFI_OFF);
+  WiFi.mode(keepSetupAp ? WIFI_AP_STA : WIFI_STA);
   portENTER_CRITICAL(&wifiSetupMux);
   wifiSetupRuntime.ipBaseline = wifiGotIpGeneration;
   wifiDisconnectReason = 0;
