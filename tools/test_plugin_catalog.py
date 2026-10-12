@@ -228,8 +228,15 @@ def main():
     assert serviceCatalog == customBuild.buildServiceCatalog()
     assert pageCatalog["catalog_revision"] == serviceCatalog["catalog_revision"]
     assert len(pageCatalog["catalog_revision"]) == 64
-    assert generatedCatalog["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
-    assert customBuild.FIRMWARE_REFS == ("v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main")
+    assert generatedCatalog["firmware_refs"] == list(customBuild.BROWSER_FIRMWARE_REFS)
+    assert customBuild.BROWSER_FIRMWARE_REFS == (
+        "v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main",
+    )
+    assert customBuild.FIRMWARE_REFS == (*customBuild.BROWSER_FIRMWARE_REFS, "v3.1.15")
+    assert serviceCatalog["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
+    assert "v3.1.15" not in pageCatalog["firmware_refs"]
+    assert serviceCatalog["firmware"]["v3.1.15"]["custom_version"] == "3.1.15-custom"
+    assert customBuild.customFirmwareVersion("v3.1.15", "") == "3.1.15-custom"
     assert pageCatalog["custom_ota_signing_key_generation"] == 1
     assert serviceCatalog["custom_ota_signing_key_generation"] == 1
     assert all(
@@ -336,6 +343,15 @@ def main():
         assert all(not target.is_absolute() and ".." not in target.parts for _, target in configuration["assets"])
     with tempfile.TemporaryDirectory() as temporaryDirectory:
         root = Path(temporaryDirectory)
+        for features, plugins in (
+            ([], []), (["wifi"], []), (["pull-ota"], []),
+            (["elegant-ota", "pull-ota"], ["default-web-apps"]),
+            ([], ["pressensor"]), (["pull-ota"], ["grind-by-weight"]),
+        ):
+            candidate = customBuild.resolveConfiguration(
+                writeConfig(root, features, plugins, "v3.1.15")
+            )
+            assert candidate["firmware_ref"] == "v3.1.15"
         for feature, (_, dependencies, _) in customBuild.FEATURES.items():
             resolvedFeature = customBuild.resolveConfiguration(writeConfig(root, [feature], []))
             assert set(dependencies).issubset(resolvedFeature["features"])

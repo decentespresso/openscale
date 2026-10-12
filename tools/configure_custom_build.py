@@ -21,7 +21,8 @@ DEFAULT_FIRMWARE_VERSION_PATTERN = re.compile(
     r'^\s*#define\s+HDS_FIRMWARE_VERSION\s+"([0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9]+(?:[.-][a-z0-9]+)*)?)"\s*$',
     re.MULTILINE,
 )
-FIRMWARE_REFS = ("v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main")
+BROWSER_FIRMWARE_REFS = ("v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main")
+FIRMWARE_REFS = (*BROWSER_FIRMWARE_REFS, "v3.1.15")
 FEATURES = {
     "wifi": ("HDS_FEATURE_WIFI", ("webserver",), FIRMWARE_REFS),
     "mdns": ("HDS_FEATURE_MDNS", ("wifi",), FIRMWARE_REFS),
@@ -519,7 +520,7 @@ def buildBrowserCatalog():
     return {
         "catalog_revision": catalogRevision(plugins),
         "custom_ota_signing_key_generation": CUSTOM_OTA_SIGNING_KEY_GENERATION,
-        "firmware_refs": list(FIRMWARE_REFS),
+        "firmware_refs": list(BROWSER_FIRMWARE_REFS),
         "features": features,
         "plugins": browserPlugins,
     }

@@ -16,6 +16,7 @@ def read(path):
 def main():
     firmwareWorkflow = read(".github/workflows/nightly.yml")
     customWorkflow = read(".github/workflows/custom-build.yml")
+    configuratorWorkflow = read(".github/workflows/custom-build-configurator.yml")
     otaWorkflow = read(".github/workflows/ota-contracts.yml")
     platformio = read("platformio.ini")
     patchPath = ROOT / "plugins" / "pressensor" / "patches" / "main.patch"
@@ -27,6 +28,8 @@ def main():
         "\n  native-tests:\n", 1
     )[0]
     assert 'git tag v3.1.14 "${{ github.sha }}"' in pythonContracts
+    assert 'git tag v3.1.15 HEAD' in pythonContracts
+    assert 'git tag v3.1.15 HEAD' in configuratorWorkflow
     stockBuild = firmwareWorkflow.split("\n  build:\n", 1)[1].split("\n  energy-build:\n", 1)[0]
     energyBuild = firmwareWorkflow.split("\n  energy-build:\n", 1)[1]
     assert firmwareWorkflow.count("pio run -e esp32s3\n") == 1
@@ -57,6 +60,7 @@ def main():
     assert dispatchBuild.lstrip().startswith("if: github.event_name == 'workflow_dispatch'")
     assert "if: inputs.firmware_ref == 'main' || inputs.firmware_ref == 'v3.1.14-preview.3' || inputs.firmware_ref == 'v3.1.14-preview.4'" in dispatchBuild
     assert 'git tag v3.1.14 "${{ github.sha }}"' in dispatchBuild
+    assert 'git tag v3.1.15' not in dispatchBuild
 
     assert "dependency-build:" not in otaWorkflow
     assert "pio run -e" not in otaWorkflow
@@ -70,8 +74,9 @@ def main():
         "v3.1.14-preview.3": "patches/main.patch",
         "v3.1.14-preview.4": "patches/main.patch",
         "main": "patches/main.patch",
+        "v3.1.15": "patches/v3.1.15.patch",
     }
-    assert workerConfig["vars"]["ALLOWED_FIRMWARE_REFS"] == "main,v3.1.14,v3.1.14-preview.3,v3.1.14-preview.4"
+    assert workerConfig["vars"]["ALLOWED_FIRMWARE_REFS"] == "main,v3.1.14,v3.1.14-preview.3,v3.1.14-preview.4,v3.1.15"
     assert workerConfig["vars"]["BUILDER_REF"] == "main"
     assert changedPlugins.changedPluginIds([
         "plugins/pressensor/plugin.json",
@@ -83,6 +88,7 @@ def main():
     ]) == [
         {"plugin": "pressensor", "firmware_ref": "main"},
         {"plugin": "pressensor", "firmware_ref": "v3.1.14"},
+        {"plugin": "pressensor", "firmware_ref": "v3.1.15"},
     ]
     assert changedPlugins.changedPluginMatrix([
         "plugins/default-web-apps/assets/index.html"
@@ -112,6 +118,8 @@ def main():
     assert "--config .pio.nosync/pr-ci.json" in compileCustom
     assert 'git tag v3.1.14 "${{ github.sha }}"' in verifyPlugins
     assert 'git tag v3.1.14 "${{ github.sha }}"' in compileCustom
+    assert 'git tag v3.1.15 HEAD' in verifyPlugins
+    assert 'git tag v3.1.15 HEAD' in compileCustom
     assert '--source-commit "$CANDIDATE_COMMIT"' in compileCustom
     assert '--builder-commit "$CANDIDATE_COMMIT"' in compileCustom
     assert 'ref: ${{ inputs.commit || github.sha }}' in compileCustom
@@ -120,6 +128,12 @@ def main():
     assert "if: github.event_name == 'workflow_dispatch' && inputs.commit == ''" in dispatchBuild
     subprocess.run(
         ["git", "apply", "--check", "--whitespace=error", str(patchPath)],
+        cwd=ROOT,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "apply", "--check", "--whitespace=error",
+         str(ROOT / "plugins" / "pressensor" / "patches" / "v3.1.15.patch")],
         cwd=ROOT,
         check=True,
     )
