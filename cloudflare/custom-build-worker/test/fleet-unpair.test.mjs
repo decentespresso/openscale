@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
 import {test} from "node:test";
 import worker, {BuildCoordinator} from "../src/worker.mjs";
+import {cleanupFleetExpirations} from "../src/fleet.mjs";
 
 const origin = "https://decentespresso.github.io";
 const deviceId = "1".repeat(32);
@@ -47,7 +48,7 @@ function environment() {
   const coordinator = new BuildCoordinator({storage}, env);
   env.COORDINATOR = {idFromName: name => name,
     get: () => ({fetch: (input, options) => coordinator.fetch(new Request(input, options))})};
-  return {env, values, fleet, peerId};
+  return {env, values, fleet, peerId, storage};
 }
 
 function request(env, path, {method = "GET", secret = fleetSecret, device = false, body, selectedOrigin = origin} = {}) {
@@ -123,4 +124,49 @@ test("an unpaired scale reuses its credentials and can physically pair to anothe
   assert.equal(values.get(`device:${deviceId}`).desired_combination, null);
   const result = await request(env, "/fleet/scales", {secret: otherFleetSecret});
   assert.deepEqual((await result.json()).scales.map(scale => scale.device_id), [deviceId]);
+});
+
+test("expired re-pairing preserves legacy claimed credentials and rejects former-owner takeover", async () => {
+  const {env, values, storage} = environment();
+  assert.equal(values.get(`device:${deviceId}`).was_claimed, undefined);
+  assert.equal((await request(env, `/fleet/scales/${deviceId}`, {method: "DELETE"})).status, 200);
+  const newPairCode = "97BACC-654321";
+  assert.equal((await request(env, "/device/pair", {
+    method: "POST", secret: deviceSecret, device: true, body: {pair_code: newPairCode},
+  })).status, 200);
+  await cleanupFleetExpirations(storage, values.get(`pair:${newPairCode}`).expires_at);
+  const takeover = await request(env, "/device/pair", {
+    method: "POST", secret: "f".repeat(64), device: true, body: {pair_code: "97BACC-999999"},
+  });
+  assert.equal(takeover.status, 401);
+  assert.equal((await takeover.json()).error, "invalid_device_credentials");
+  const retained = values.get(`device:${deviceId}`);
+  assert.equal(retained.secret_hash, hash(deviceSecret));
+  assert.equal(retained.fleet_id, null);
+  assert.equal(retained.was_claimed, true);
+  assert.equal(retained.pair_code, null);
+  assert.equal(retained.pair_created_at, null);
+  assert.equal(retained.installed_combination, combinationHash);
+  assert.equal(values.has(`pair:${newPairCode}`), false);
+  assert.equal(values.has("pair:97BACC-999999"), false);
+  const assignment = await request(env, "/device/assignment", {secret: deviceSecret, device: true});
+  assert.equal(assignment.status, 200);
+  assert.deepEqual(await assignment.json(), {linked: false, desired_combination: null});
+  const checkIn = await request(env, "/device/check-in", {
+    method: "POST", secret: deviceSecret, device: true,
+    body: {installed_combination: combinationHash, firmware_version: "3.1.15-custom"},
+  });
+  assert.equal(checkIn.status, 200);
+  assert.deepEqual(await checkIn.json(), {linked: false, desired_combination: null});
+  assert.equal((await request(env, "/fleet/claim", {
+    method: "POST", body: {pair_code: newPairCode},
+  })).status, 404);
+  assert.equal((await request(env, "/device/pair", {
+    method: "POST", secret: deviceSecret, device: true, body: {pair_code: newPairCode},
+  })).status, 200);
+  assert.equal((await request(env, "/fleet/claim", {
+    method: "POST", secret: otherFleetSecret, body: {pair_code: newPairCode},
+  })).status, 200);
+  assert.equal(values.get(`device:${deviceId}`).fleet_id, hash(otherFleetSecret));
+  assert.equal(values.get(`device:${deviceId}`).secret_hash, hash(deviceSecret));
 });

@@ -189,7 +189,7 @@ async function expirePair(storage, pairKey, pair) {
   const deviceKey = `device:${pair.device_id}`;
   const device = await storage.get(deviceKey);
   if (device?.pair_code === pairKey.slice(5)) {
-    if (device.fleet_id) {
+    if (device.fleet_id || device.was_claimed === true) {
       await storage.put(deviceKey, {...device, pair_code: null, pair_created_at: null});
     } else {
       await storage.delete(deviceKey);
@@ -371,6 +371,7 @@ async function claimDevice(request, storage) {
         name: `Scale ${device.serial_hint}`,
       } : {}),
       fleet_id: ownerFleetId,
+      was_claimed: true,
       pair_code: null,
       pair_created_at: null,
     };
@@ -503,6 +504,7 @@ async function unpairScale(request, storage, deviceId) {
       [deviceKey]: {
         ...device,
         fleet_id: null,
+        was_claimed: true,
         name: `Scale ${device.serial_hint}`,
         desired_combination: null,
         desired_updated_at: null,
