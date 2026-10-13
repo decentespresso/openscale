@@ -490,6 +490,31 @@ async function updateScale(request, storage, deviceId) {
   });
 }
 
+async function unpairScale(request, storage, deviceId) {
+  const ownerFleetId = await fleetId(request);
+  return storage.transaction(async transaction => {
+    const deviceKey = `device:${deviceId}`;
+    const device = await transaction.get(deviceKey);
+    if (!device || device.fleet_id !== ownerFleetId) throw new FleetError(404, "device_not_found");
+    const fleetKey = `fleet:${ownerFleetId}`;
+    const fleet = await transaction.get(fleetKey);
+    await transaction.put({
+      [fleetKey]: {...fleet, devices: fleetDevices(fleet).filter(id => id !== deviceId)},
+      [deviceKey]: {
+        ...device,
+        fleet_id: null,
+        name: `Scale ${device.serial_hint}`,
+        desired_combination: null,
+        desired_updated_at: null,
+        pair_code: null,
+        pair_created_at: null,
+      },
+    });
+    if (device.pair_code) await transaction.delete(`pair:${device.pair_code}`);
+    return {device_id: deviceId};
+  });
+}
+
 async function updateAssignments(request, storage, env) {
   const ownerFleetId = await fleetId(request);
   const rawBody = await readJson(request, 64 * 1024);
@@ -620,6 +645,7 @@ export async function handleFleetRequest(request, storage, env) {
   }
   const scaleMatch = url.pathname.match(/^\/fleet\/scales\/([0-9a-f]{32})$/);
   if (scaleMatch && request.method === "PATCH") return updateScale(request, storage, scaleMatch[1]);
+  if (scaleMatch && request.method === "DELETE") return unpairScale(request, storage, scaleMatch[1]);
   const buildMatch = url.pathname.match(/^\/fleet\/builds\/([0-9a-f]{64})$/);
   if (buildMatch && request.method === "PATCH") return renameBuild(request, storage, buildMatch[1]);
   if (buildMatch && request.method === "DELETE") return removeBuild(request, storage, buildMatch[1]);

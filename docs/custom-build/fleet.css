@@ -303,6 +303,11 @@
   white-space: nowrap;
 }
 
+.scale-actions .icon-button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
 @media (max-width: 930px) {
   .fleet-build-labels { display: none; }
 
@@ -375,6 +380,7 @@
 
   .fleet-table .scale-select { grid-column: 1; grid-row: 1; padding-top: 10px; }
   .fleet-table .scale-identity { grid-column: 2; grid-row: 1; }
+  .fleet-table .scale-actions { grid-column: 2; justify-self: end; }
 
   .fleet-table td[data-label] {
     grid-column: 2 / -1;
