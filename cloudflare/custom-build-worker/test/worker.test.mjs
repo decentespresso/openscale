@@ -32,6 +32,21 @@ test("staged 3.1.15 identities retain older refs and bind candidate and builder"
 });
 
 
+test("main build identities distinguish development firmware from the stable tag", async () => {
+  const catalog = JSON.parse(await readFile(
+    new URL("../../../docs/custom-build/service-catalog.json", import.meta.url), "utf8",
+  ));
+  const source = "1".repeat(40);
+  const builder = "2".repeat(40);
+  const selection = {firmware_ref: "main", features: ["pull-ota"], plugins: []};
+  const development = identityForSelection(catalog, source, selection, builder);
+  const stable = identityForSelection(catalog, source, {...selection, firmware_ref: "v3.1.15"}, builder);
+  assert.equal(development.firmware_version, "3.1.15-main-custom");
+  assert.equal(stable.firmware_version, "3.1.15-custom");
+  assert.notEqual(development.firmware_version, stable.firmware_version);
+});
+
+
 class Bucket {
   constructor() {
     this.objects = new Map();

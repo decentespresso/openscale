@@ -1500,7 +1500,9 @@ void showAbout() {
   u8g2.firstPage();
   do {
     u8g2.setFont(FONT_S);
+    if (u8g2.getUTF8Width(actionMessage.c_str()) > LCDWidth) u8g2.setFont(u8g2_font_5x7_tr);
     u8g2.drawStr(AC(actionMessage.c_str()), AM() - 24, actionMessage.c_str());
+    u8g2.setFont(FONT_S);
     u8g2.drawStr(AC(actionMessage2.c_str()), AM() - (buildIdentity.length() ? 8 : 0), actionMessage2.c_str());
     u8g2.drawStr(AC(GIT_REV), AM() + (buildIdentity.length() ? 8 : 24), GIT_REV);
     if (buildIdentity.length()) {

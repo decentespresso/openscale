@@ -316,8 +316,9 @@ def main():
     assert customBuild.customFirmwareVersion("v3.1.14-preview.4", "") == "3.1.14-preview.4-custom"
     assert serviceCatalog["firmware"]["v3.1.14-preview.4"]["custom_version"] == "3.1.14-preview.4-custom"
     assert customBuild.customFirmwareVersion(
-        "main", '#define HDS_FIRMWARE_VERSION "3.1.14"'
-    ) == "3.1.14-custom"
+        "main", '#define HDS_FIRMWARE_VERSION "3.1.15"'
+    ) == "3.1.15-main-custom"
+    assert serviceCatalog["firmware"]["main"]["custom_version"] == "3.1.15-main-custom"
     assert customBuild.customFirmwareVersion(
         "v3.1.14-preview.1", '#define HDS_FIRMWARE_VERSION "3.1.14-preview.1"'
     ) == "3.1.14-preview.1-custom"

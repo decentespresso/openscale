@@ -753,7 +753,7 @@ def customFirmwareVersion(firmwareRef, configHeader):
     match = DEFAULT_FIRMWARE_VERSION_PATTERN.search(configHeader)
     if not match:
         raise ValueError("selected firmware has no valid HDS_FIRMWARE_VERSION")
-    return f"{match.group(1)}-custom"
+    return f"{match.group(1)}-main-custom"
 
 
 def partitionMetadataFromBytes(platformioBytes, readPartition):

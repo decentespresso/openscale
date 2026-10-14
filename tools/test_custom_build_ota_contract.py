@@ -159,6 +159,8 @@ def main():
     assert "installedCombination.substring(0, 8)" in about
     assert "hashPrefix.toUpperCase();" in about
     assert 'String("Build: ") + hashPrefix' in about
+    assert "if (u8g2.getUTF8Width(actionMessage.c_str()) > LCDWidth) u8g2.setFont(u8g2_font_5x7_tr);" in about
+    assert "AM() - 24, actionMessage.c_str());\n    u8g2.setFont(FONT_S);" in about
     assert '"Relink", customBuildRelinkMenu' in menu
     assert "getMenuSize(connectionsMenu) - (customBuildRelinkAvailable() ? 0 : 1)" in menu
     assert menu.count("currentMenuSize = connectionsMenuSize();") == 2
