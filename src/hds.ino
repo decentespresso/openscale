@@ -2760,6 +2760,9 @@ void drawAbout() {
     u8g2.setFont(FONT_M);
     if (AC(FIRMWARE_VER) < 0 || AC(PCB_VER) < 0)
       u8g2.setFont(FONT_S);
+    if (u8g2.getUTF8Width(FIRMWARE_VER) > LCDWidth ||
+        u8g2.getUTF8Width(PCB_VER) > LCDWidth)
+      u8g2.setFont(u8g2_font_5x7_tr);
     u8g2.setDrawColor(0);
     u8g2.drawBox(0, 0, LCDWidth, LCDHeight);
     u8g2.setDrawColor(1);
