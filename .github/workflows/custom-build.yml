@@ -243,7 +243,7 @@ jobs:
       - name: Build standard firmware
         run: pio run -e esp32s3
       - name: Check both About layouts
-        run: python tools/test_about_layout.py
+        run: python tools/check_about_layout.py
       - name: Build multi-webapp filesystem fixture
         run: python tools/test_webapp_contract.py --buildfs
       - name: Build changed webapp filesystems
