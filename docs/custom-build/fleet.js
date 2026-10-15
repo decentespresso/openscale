@@ -204,10 +204,12 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
       selectedDeviceIds = new Set([...selectedDeviceIds].filter(deviceId =>
         scales.some(scale => scale.device_id === deviceId)));
       if (background && editingFleet()) {
-        for (const row of scaleRows.children) {
+        for (const row of [...scaleRows.children]) {
           const scale = scales.find(item => item.device_id === row.dataset.deviceId);
           if (scale) renderScaleStatus(row, scale);
+          else row.remove();
         }
+        renderControls();
       } else {
         renderBuilds();
         renderScales();
@@ -266,11 +268,10 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
           builds = builds.map(item => item.combination_hash === build.combination_hash ? {...item, label: next} : item);
           label.value = next;
           renderControls();
-          scales.forEach((scale, index) => {
-            const scaleRow = scaleRows.children[index];
-            if (scale.installed_combination === build.combination_hash) scaleRow.querySelector(".scale-build span").textContent = identityForBuild(build.combination_hash);
-            if (scale.desired_combination === build.combination_hash) scaleRow.querySelector(".desired-build strong").textContent = identityForBuild(build.combination_hash);
-          });
+          for (const scaleRow of scaleRows.children) {
+            const scale = scales.find(item => item.device_id === scaleRow.dataset.deviceId);
+            if (scale) renderScaleStatus(scaleRow, scale);
+          }
           showToast("Build label saved");
         } catch (error) {
           label.value = previous;
@@ -317,7 +318,8 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
         <td class="scale-build" data-label="Installed"><strong></strong><span></span></td>
         <td class="scale-build desired-build" data-label="Desired"><strong></strong></td>
         <td data-label="Deployment"><span class="deployment-state"></span></td>
-        <td class="last-seen" data-label="Last seen"></td>`;
+        <td class="last-seen" data-label="Last seen"></td>
+        <td class="scale-actions"><button class="icon-button unpair-scale" type="button" title="Unpair scale"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></td>`;
       const checkbox = row.querySelector('[type="checkbox"]');
       checkbox.checked = selectedDeviceIds.has(scale.device_id);
       checkbox.setAttribute("aria-label", `Select ${scale.name}`);
@@ -347,12 +349,32 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
           scales = scales.map(item => item.device_id === scale.device_id ? {...item, name: next} : item);
           name.value = next;
           checkbox.setAttribute("aria-label", `Select ${next}`);
+          unpair.setAttribute("aria-label", `Unpair ${next}`);
           showToast("Scale name saved");
         } catch (error) {
           name.value = previous;
           showApiError(error);
         } finally {
           name.disabled = false;
+        }
+      });
+      const unpair = row.querySelector(".unpair-scale");
+      unpair.setAttribute("aria-label", `Unpair ${scale.name}`);
+      unpair.addEventListener("click", async () => {
+        unpair.disabled = true;
+        try {
+          const currentName = scales.find(item => item.device_id === scale.device_id)?.name || scale.name;
+          if (!(await confirm("Unpair scale?", `${currentName} will be removed from My scales. Its installed firmware will not change.`, "Unpair"))) return;
+          await api(`/api/v1/fleet/scales/${scale.device_id}`, {method: "DELETE"});
+          scales = scales.filter(item => item.device_id !== scale.device_id);
+          selectedDeviceIds = new Set([...selectedDeviceIds].filter(id => id !== scale.device_id));
+          renderScales();
+          showToast("Scale unpaired");
+          await loadFleet();
+        } catch (error) {
+          showApiError(error);
+        } finally {
+          unpair.disabled = false;
         }
       });
       return row;
@@ -493,6 +515,11 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
     {device_ids: [...selectedDeviceIds]}, null, "Clear assignment for",
   ));
   document.addEventListener("openscale-build-status", renderControls);
+  const refreshFleetOnReturn = () => {
+    if (fleetKey && !document.hidden && !activeRequests) loadFleet(true);
+  };
+  window.addEventListener("focus", refreshFleetOnReturn);
+  document.addEventListener("visibilitychange", refreshFleetOnReturn);
   startFleetPolling(
     () => Boolean(fleetKey) && !document.hidden && !activeRequests &&
       scales.some(scale => scale.desired_combination &&

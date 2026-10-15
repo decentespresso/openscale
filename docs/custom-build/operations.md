@@ -63,6 +63,7 @@ secret established during physical pairing.
 | --- | --- | --- |
 | `POST` | `/api/v1/device/check-in` | Report installed hash and firmware version, then receive the current assignment. |
 | `GET` | `/api/v1/fleet/overview` | Return scales, saved builds, and one canonical state per unique combination hash. |
+| `DELETE` | `/api/v1/fleet/scales/<device-id>` | Unpair an owned scale and clear its desired deployment. |
 | `GET` | `/api/v1/fleet/builds` | List saved build references. |
 | `POST` | `/api/v1/fleet/builds` | Add one ready custom build by full combination hash. |
 | `PATCH` | `/api/v1/fleet/builds/<hash>` | Rename a saved build reference. |
@@ -86,6 +87,11 @@ validated before the transaction writes, and cross-fleet or missing targets fail
 Removing a saved build that is still desired by any scale returns `409 build_assigned`. Clear or
 replace those assignments first. Removal leaves R2 artifacts and every scale's
 `installed_combination` untouched.
+
+Unpairing removes the scale from the owner's list and invalidates its pending pairing code. It
+preserves saved builds, installed firmware, and device credentials. To pair again, generate a new
+code on the scale. Returning to a browser window or tab refreshes ownership, including when no
+installation is pending. Offline scales remain listed until their owner unpairs or transfers them.
 
 ## Scale Resource Contract
 

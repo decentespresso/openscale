@@ -9,7 +9,7 @@ import {
   selectableFirmwareRefs,
   selectionQuery,
 } from "./selection.mjs?v=6";
-import {initFleet} from "./fleet.js?v=14";
+import {initFleet} from "./fleet.js?v=15";
 import {buildEstimate} from "./build-estimate.mjs?v=1";
 import {initBuildProgress} from "./build-progress.mjs?v=1";
 
