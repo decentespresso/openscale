@@ -10,6 +10,8 @@ def main():
     source = r'''
 #include <cassert>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 #include "energy_policy.h"
 #include "energy_runtime_policy.h"
 #define HDS_ENABLE_ENERGY_MENU 1
@@ -28,6 +30,15 @@ bool b_heartBeatIcon = false;
 unsigned long now = 0, t_tareStatus = 0, t_shutdownFailBle = 0;
 unsigned long t_oled_refresh = 0, i_oled_print_interval = 100;
 int i_adc_recovery_count = 0;
+constexpr int ADC_ERROR_RECOVERY_COUNT = 2;
+int recoveryFrames = 0, pressensorCells = 0;
+const char *recoveryText = "";
+const char *getAdcRecoveryDisplayText();
+enum { PRESSENSOR_SHOT_IDLE, PRESSENSOR_SHOT_RUNNING, PRESSENSOR_SHOT_DONE };
+struct { float liveBar = 9, flowEma = 1, peakBar = 9; int state = PRESSENSOR_SHOT_RUNNING; } pressensorShot;
+bool pressensorStreaming() { return true; }
+uint32_t pressensorShotElapsedMs() { return 1000; }
+const char *pressensorStatusText() { return "armed"; }
 const unsigned char image_ble_enabled[] = {1};
 EnergyPolicy energyPolicy;
 struct { DisplayIdleMode displayMode = DisplayIdleMode::Active; OledFrameGate oledFrames; } energyRuntime;
@@ -37,12 +48,18 @@ struct {
   bool icon = false;
   unsigned frames = 0;
   unsigned bitmapCalls = 0;
-  void firstPage() { icon = false; bitmapCalls = 0; frames++; }
-  bool nextPage() { return false; }
+  bool frameOpen = false;
+  void firstPage() { assert(!frameOpen); frameOpen = true; icon = false; bitmapCalls = 0; frames++; }
+  bool nextPage() { frameOpen = false; return false; }
   void setDisplayRotation(int) {}
   void setFontMode(int) {}
   void setDrawColor(int) {}
   void drawXBM(int, int, int, int, const unsigned char *image) { bitmapCalls++; icon = image == image_ble_enabled; }
+  void drawVLine(int, int, int) {}
+  void drawFrame(int, int, int, int) {}
+  void drawBox(int, int, int, int) {}
+  void drawDisc(int, int, int) {}
+  void drawCircle(int, int, int) {}
 } u8g2;
 unsigned long millis() { return now; }
 int digitalRead(int) { return HIGH; }
@@ -50,7 +67,9 @@ bool bleHasLiveClient() { return connected; }
 long map(long x, long inMin, long inMax, long outMin, long outMax) {
   return (x - inMin) * (outMax - outMin) / (inMax - inMin) + outMin;
 }
-void drawAdcRecovery() {}
+void drawAdcRecovery() { recoveryFrames++; recoveryText = getAdcRecoveryDisplayText(); }
+void drawPressensorCell(int, int, const char *, const char *) { pressensorCells++; }
+void drawPressensorSmall(int, int, const char *) {}
 void drawWeight(float) {}
 void drawTime() {}
 void drawBattery(unsigned long) {}
@@ -66,10 +85,43 @@ void drawDebug() {}
         "uint32_t energyDisplaySignature(unsigned long now)",
         "void drawBle(unsigned long now)",
         "void updateOled()",
+        "const char* getAdcRecoveryDisplayText()",
     ):
         source += signature + " {" + body(FIRMWARE, signature) + "}\n"
+    for index, name in enumerate(("main.patch", "v3.1.15.patch")):
+        patch = (ROOT / "plugins/pressensor/patches" / name).read_text(encoding="utf-8")
+        added = "\n".join(line[1:] for line in patch.splitlines()
+                          if line.startswith("+") and not line.startswith("+++"))
+        source += f"void updatePressensorOled{index}() {{" + body(added, "void updatePressensorOled()") + "}\n"
     source += r'''
 int main() {
+  for (auto render : {updatePressensorOled0, updatePressensorOled1}) {
+    for (bool redraw : {false, true}) {
+      energyPolicy.settings.select(EnergyFeature::OledRedraw, redraw);
+      energyRuntime.oledFrames.invalidate();
+      b_adc_recovery_active = false;
+      now += 1000;
+      const int cells = pressensorCells;
+      render();
+      assert(pressensorCells > cells);
+      for (int count : {1, 2}) {
+        b_adc_recovery_active = true;
+        i_adc_recovery_count = count;
+        now += 100;
+        const auto frames = u8g2.frames;
+        const int cellsBefore = pressensorCells, recoveryBefore = recoveryFrames;
+        render();
+        assert(u8g2.frames == frames + 1 && recoveryFrames == recoveryBefore + 1);
+        assert(pressensorCells == cellsBefore && !u8g2.frameOpen);
+        assert(std::strcmp(recoveryText, count == 1 ? "ADC RECOVER" : "ADC ERROR") == 0);
+      }
+      b_adc_recovery_active = false;
+      now += 100;
+      const int cellsBefore = pressensorCells;
+      render();
+      assert(pressensorCells > cellsBefore);
+    }
+  }
   for (bool redraw : {false, true}) {
     for (unsigned cadence : {100, 200}) {
       for (unsigned phase = 0; phase < 2000; phase += 137) {
@@ -115,7 +167,7 @@ int main() {
             "-I" + str(ROOT / "include"), str(cpp), "-o", str(binary),
         ], check=True)
         subprocess.run([str(binary)], check=True)
-    print("BLE disconnect, blink, reconnect and disable render correctly with OLED Redraw on/off")
+    print("BLE redraw and both Pressensor ADC recovery render paths passed")
 
 
 if __name__ == "__main__":
