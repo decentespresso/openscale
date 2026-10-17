@@ -153,7 +153,7 @@ class EnergyLightSleepContractTests(unittest.TestCase):
             update_locks.index("stockSleepAcquireOk"),
             update_locks.index("stockCpuOk"),
         )
-        deep_sleep = body(SHUTDOWN, "void esp32_sleep()")
+        deep_sleep = body(SHUTDOWN, "void esp32_sleep(")
         self.assertLess(
             deep_sleep.index("applyEnergyLightSleepSetting(false)"),
             deep_sleep.index("esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER)"),

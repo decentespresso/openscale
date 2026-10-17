@@ -53,6 +53,7 @@ struct DebugInfo {
   bool signalTimeout = false;
 };
 struct Scale { DebugInfo info; DebugInfo getDebugInfo() { return info; } } scale;
+struct { void setPowerSave(int) {} } u8g2;
 unsigned long millis() { return nowMs; }
 void delay(unsigned long ms) { nowMs += ms; }
 unsigned long getCpuFrequencyMhz() { return cpuMhz; }
@@ -140,8 +141,49 @@ bool tick() {
   return true;
 }
 void arm() { wowCaptureBaselineForSleep(); assert(wowRtc.armed); }
+void checkRejectedButtonWake() {
+  for (int interval = 1; interval <= 3; interval++) {
+    resetBoot();
+    i_wow_interval = interval;
+    arm();
+    const WowRtcState saved = wowRtc;
+    resetBoot();
+    wakeCause = ESP_SLEEP_WAKEUP_EXT1;
+    f_calibration_value = CALIBRATION_VALUE_DEFAULT;
+    f_batteryVoltage = 0;
+    scale.info.validSamples = 0;
+    prepareSleep(true);
+    assert(wowRtc.armed && timerUs == saved.intervalUs);
+    assert(wowRtc.magic == saved.magic && wowRtc.baselineRaw == saved.baselineRaw);
+    assert(wowRtc.thresholdRaw == saved.thresholdRaw && begunAdcs == 0);
+    resetBoot();
+    sampleRaw = saved.baselineRaw + saved.thresholdRaw + 1;
+    assert(tick() && !wowRtc.armed);
+    f_calibration_value = 10;
+    f_batteryVoltage = 4;
+    scale.info = {};
+  }
+  i_wow_interval = 1;
+  for (int invalid = 0; invalid < 5; invalid++) {
+    resetBoot(); arm(); resetBoot();
+    if (invalid == 0) i_wow_interval = 0;
+    if (invalid == 1) i_wow_interval = 4;
+    if (invalid == 2) wowRtc.magic = 0;
+    if (invalid == 3) wowRtc.intervalUs = wowIntervalUs[2];
+    if (invalid == 4) wowRtc.armed = 0;
+    prepareSleep(true);
+    assert(!wowRtc.armed && timerUs == 0);
+    i_wow_interval = 1;
+  }
+  resetBoot(); arm(); resetBoot();
+  f_calibration_value = CALIBRATION_VALUE_DEFAULT;
+  prepareSleep(false);
+  assert(!wowRtc.armed && timerUs == 0);
+  f_calibration_value = 10;
+}
 int main() {
   static_assert(sizeof(WowRtcState) == 20);
+  checkRejectedButtonWake();
   for (bool outOfRange : {false, true}) {
     for (bool timeout : {false, true}) {
       resetBoot(); arm();
@@ -292,10 +334,14 @@ def main():
     state = parameter[parameter.index("struct WowRtcState {"):]
     state = state[:state.index("#endif")]
     wow = (ROOT / "include/wake_on_weight.h").read_text(encoding="utf-8")
+    power = (ROOT / "include/power.h").read_text(encoding="utf-8")
+    sleep = power[power.index("void esp32_sleep("):power.index("void shut_down_now()")]
+    preparation = sleep[sleep.index("  u8g2.setPowerSave(1);"):sleep.index("  scale.powerDown();")]
+    prepare_sleep = "void prepareSleep(bool resumeWowSession) {\n(void)resumeWowSession;\n" + preparation + "}\n"
     menu = (ROOT / "include/menu.h").read_text(encoding="utf-8")
     menuFunctions = menu[menu.index("void updateWakeOnWeightLabel() {"):]
     menuFunctions = menuFunctions[:menuFunctions.index("#endif")]
-    source = HARNESS + state + re.sub(r"^#include[^\n]*", "", wow, flags=re.MULTILINE) + CHECKS.replace("MENU_FUNCTIONS", menuFunctions)
+    source = HARNESS + state + re.sub(r"^#include[^\n]*", "", wow, flags=re.MULTILINE) + prepare_sleep + CHECKS.replace("MENU_FUNCTIONS", menuFunctions)
     with tempfile.TemporaryDirectory(prefix="wow-test-") as directory:
         cpp = Path(directory) / "wow.cpp"
         binary = Path(directory) / "wow-test.exe"

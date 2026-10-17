@@ -56,6 +56,12 @@ retain their existing quick-boot/500 ms hold behavior. Circle/square BLE
 selection and charging-only boot behavior remain unchanged. Weight-only boot
 leaves `GPIO_power_on_with` at -1 as before.
 
+A short EXT1 button wake rejected by that hold check resumes a valid retained
+WoW session without recapturing its baseline from uninitialized boot state.
+The saved interval must still match the retained session; Off or invalid
+retained state does not arm a timer. Normal shutdown keeps its existing
+calibration, battery, and live-sample checks.
+
 Polling is not an edge latch: pulses shorter than the polling/scheduler gap,
 or entirely within ROM/Arduino startup before setup, are not guaranteed.
 The roughly 500 ms normal power-button press is longer than the measured

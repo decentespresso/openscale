@@ -985,7 +985,7 @@ void setup() {
     } else {
       Serial.println("Button released before 0.5 second.");
       Serial.println("Going to sleep now.");
-      esp32_sleep();
+      esp32_sleep(true);
       break;
       b_button_pressed = false;
     }

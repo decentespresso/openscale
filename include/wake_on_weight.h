@@ -38,6 +38,14 @@ void wowCaptureBaselineForSleep() {
   wowRtc.intervalUs = wowIntervalUs[i_wow_interval];
 }
 
+void wowResumeSleepSession() {
+  if (wowRtc.magic != WOW_RTC_MAGIC ||
+      i_wow_interval <= 0 || i_wow_interval >= WOW_INTERVAL_COUNT ||
+      wowRtc.intervalUs != wowIntervalUs[i_wow_interval]) {
+    wowRtc.armed = 0;
+  }
+}
+
 void wowArmSleepTimer() {
   if (wowRtc.armed && wowRtc.intervalUs > 0) {
     esp_sleep_enable_timer_wakeup(wowRtc.intervalUs);
@@ -185,6 +193,7 @@ void wowMicroWakeOrContinue() {
 #else  // !ADS1232ADC
 
 inline void wowCaptureBaselineForSleep() {}
+inline void wowResumeSleepSession() {}
 inline void wowArmSleepTimer() {}
 inline void wowMicroWakeOrContinue() {}
 

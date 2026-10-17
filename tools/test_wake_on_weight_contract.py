@@ -129,9 +129,17 @@ class WakeOnWeightContractTests(unittest.TestCase):
         self.assertLess(FIRMWARE.index("wowMicroWakeOrContinue();"),
                         FIRMWARE.index("pinMode(PWR_CTRL, OUTPUT)"))
         self.assertLess(FIRMWARE.index("storageGetInt(KEY_WOW_INTERVAL, 0)"),
-                        FIRMWARE.index("esp32_sleep();"))
+                        FIRMWARE.index("esp32_sleep(true);"))
         self.assertLess(FIRMWARE.index("i_wow_interval = storageGetInt(KEY_WOW_INTERVAL, 0)"),
                         FIRMWARE.index("releaseWakePinsFromRtcMode();"))
+
+    def test_rejected_button_wake_resumes_only_the_retained_session(self):
+        rejection = FIRMWARE[FIRMWARE.index('Serial.println("Button released before 0.5 second.");'):]
+        self.assertIn("esp32_sleep(true);", rejection[:rejection.index("break;")])
+        sleep = body(POWER, "void esp32_sleep(bool resumeWowSession = false)")
+        self.assertIn("if (resumeWowSession)", sleep)
+        self.assertIn("wowResumeSleepSession();", sleep)
+        self.assertLess(sleep.index("wowResumeSleepSession();"), sleep.index("wowArmSleepTimer();"))
 
     def test_storage_key_in_all_three_paths(self):
         self.assertIn("KEY_WOW_INTERVAL = \"wow_interval\"", STORAGE)
