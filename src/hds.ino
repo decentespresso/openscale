@@ -493,6 +493,7 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
   b_websocketLowPowerEnabled = false;
 #endif
   int pin = button->getPin();
+  if (handleMenuInfoPageButton(pin, eventType)) return;
   switch (eventType) {
     case AceButton::kEventPressed:
 #if HDS_ENABLE_ENERGY_MENU
@@ -2235,6 +2236,8 @@ void serviceEnergyHousekeeping(unsigned long now) {
 void loop() {
   static bool otaBleClientDisconnected = false;
   static bool otaTransportsStopped = false;
+  processMenuInfoPageExit();
+  if (!b_menu && menuInfoPageActive()) clearMenuInfoPage();
 #if HDS_ENABLE_ENERGY_MENU
   const uint64_t lightSleepWakeMask = serviceEnergyLightSleepWakeRestore();
   if (energyLightSleepButtonWake(lightSleepWakeMask)) {
@@ -2284,6 +2287,7 @@ void loop() {
         otaBleClientDisconnected && !bleHasLiveClient());
     otaBleClientDisconnected = false;
     otaTransportsStopped = false;
+    invalidateMenuFrame();
   }
 
   processBleStatusResponse();

@@ -220,6 +220,7 @@ def main():
         PARAMETER_HEADER,
         "inline void leaveMenu() {\n"
         "  b_menu = false;\n"
+        "  menuInfoPageClearPending = true;\n"
         "  portENTER_CRITICAL(&wsPendingMux);\n"
         "  const bool restartRequired = b_menuRestartRequired;\n"
         "  b_menuRestartRequired = false;\n"
@@ -230,7 +231,7 @@ def main():
         "}",
     )
     assert_contains(MENU_HEADER, "void calibrate() {\n  calibrationReturnToMenu = b_menu;\n  b_menu = false;")
-    assert_contains(MENU_HEADER, "pullOtaUpdate(target);\n  }\n}")
+    assert_contains(MENU_HEADER, "pullOtaUpdate(target);\n  }\n  invalidateMenuFrame();\n}")
     assert_contains(MENU_HEADER, "if (pullOtaTargetIsAssignedCustomBuild(target)) {\n    customBuildStart(false, false);")
     assert_contains(MENU_HEADER, "b_debug = true;\n  leaveMenu();")
     menu_contents = MENU_HEADER.read_text(encoding="utf-8")
