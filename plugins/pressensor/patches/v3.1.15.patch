@@ -1055,10 +1055,10 @@ index 0000000000000000000000000000000000000000..9d54dfcf9389a04ca30eed5414d8c760
 +#endif
 diff --git a/include/pressensor_runtime.h b/include/pressensor_runtime.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..68f5fe9e79a84b586b9855ce80c41a367a671618
+index 0000000000000000000000000000000000000000..10cdefccbf8cd74876bcc590fca5a4d770aaddcf
 --- /dev/null
 +++ b/include/pressensor_runtime.h
-@@ -0,0 +1,311 @@
+@@ -0,0 +1,312 @@
 +#ifndef PRESSENSOR_RUNTIME_H
 +#define PRESSENSOR_RUNTIME_H
 +
@@ -1339,9 +1339,10 @@ index 0000000000000000000000000000000000000000..68f5fe9e79a84b586b9855ce80c41a36
 +  pressensorAutoStartTick(bar, weight);
 +  if (pressensorShot.state == PRESSENSOR_SHOT_RUNNING) {
 +    const float drink = pressensorDrinkWeight(weight);
-+    pressensorFlushGuardTick(bar, drink, now);
++    const uint32_t shotNow = millis();
++    pressensorFlushGuardTick(bar, drink, shotNow);
 +    if (pressensorShot.state == PRESSENSOR_SHOT_RUNNING) {
-+      pressensorAutoStopTick(drink, now);
++      pressensorAutoStopTick(drink, shotNow);
 +    }
 +  }
 +}
@@ -1581,11 +1582,14 @@ index 399e8c4e2b11fca2ad94371f83999df8ba80d85a..f4fa4644bddbb9db085f5257ad35f7d6
  
 diff --git a/tools/test_pressensor_ble_contract.py b/tools/test_pressensor_ble_contract.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..4fbf212de3ac5b3f0e2253a2c7ab5351433057d6
+index 0000000000000000000000000000000000000000..1fbad22750ad5cffe925c350ee9d6b681a0a1363
 --- /dev/null
 +++ b/tools/test_pressensor_ble_contract.py
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,169 @@
 +from pathlib import Path
++import shutil
++import subprocess
++import tempfile
 +
 +
 +ROOT = Path(__file__).resolve().parents[1]
@@ -1630,7 +1634,67 @@ index 0000000000000000000000000000000000000000..4fbf212de3ac5b3f0e2253a2c7ab5351
 +            raise AssertionError(f"missing contract: {snippet}")
 +
 +
++def test_start_clock():
++    runtime = (ROOT / "include" / "pressensor_runtime.h").read_text(encoding="utf-8")
++    declarations = runtime[runtime.index("#define PRESSENSOR_FLOW_SAMPLE_MS"):runtime.index("static inline float pressensorFlushPeakLimit")]
++    harness = r'''
++#include <cassert>
++#include <cstdint>
++#include <initializer_list>
++''' + declarations + r'''
++uint32_t clockNow = 0;
++uint32_t millis() { return clockNow++; }
++struct Logger {
++  template<class... Args> void printf(const char*, Args...) {}
++} Serial;
++enum { PRESSENSOR_LINK_OFF, PRESSENSOR_LINK_STREAMING };
++int pressensorGetLinkState() { return PRESSENSOR_LINK_STREAMING; }
++void pressensorApplyLinkTarget() {}
++void pressensorLinkTick() {}
++bool pressensorStreaming() { return true; }
++float pressensorReadBar() { return 1.5f; }
++'''
++    for signature in (
++        "float pressensorFlushPeakLimit()",
++        "void pressensorResetShot()",
++        "void pressensorStartShot(bool byPressure, float weight)",
++        "void pressensorStopShot(uint32_t endElapsedMs)",
++        "void pressensorCancelShot(const char *reason)",
++        "float pressensorDrinkWeight(float weight)",
++        "void pressensorUpdateFlow(float weight, uint32_t now)",
++        "void pressensorAutoStartTick(float bar, float weight)",
++        "void pressensorFlushGuardTick(float bar, float drink, uint32_t now)",
++        "void pressensorAutoStopTick(float drink, uint32_t now)",
++        "void pressensorRuntimeTick(float weight, bool shotLogicPaused)",
++    ):
++        name = signature.split("(", 1)[0].split()[-1]
++        harness += signature + " {" + function_body(runtime, name) + "}\n"
++    harness += r'''
++int main() {
++  pressensorSettings.enabled = true;
++  for (uint32_t initial : {uint32_t(1000), UINT32_MAX - 1}) {
++    pressensorShot = PressensorShot();
++    clockNow = initial;
++    pressensorRuntimeTick(0.0f, false);
++    assert(pressensorShot.startMs == initial + 1);
++    assert(pressensorShot.state == PRESSENSOR_SHOT_RUNNING);
++    clockNow = pressensorShot.startMs + PRESSENSOR_BACKSTOP_MS;
++    pressensorRuntimeTick(0.0f, false);
++    assert(pressensorShot.state == PRESSENSOR_SHOT_IDLE);
++  }
++}
++'''
++    compiler = shutil.which("g++") or shutil.which("clang++")
++    assert compiler, "a host C++ compiler is required"
++    with tempfile.TemporaryDirectory() as directory:
++        cpp, binary = Path(directory) / "clock.cpp", Path(directory) / "clock.exe"
++        cpp.write_text(harness, encoding="utf-8")
++        subprocess.run([compiler, "-std=c++11", str(cpp), "-o", str(binary)], check=True)
++        subprocess.run([str(binary)], check=True)
++
++
 +def main():
++    test_start_clock()
 +    ble = BLE_HEADER.read_text(encoding="utf-8")
 +    parameter = PARAMETER_HEADER.read_text(encoding="utf-8")
 +    compact = " ".join(ble.split())
