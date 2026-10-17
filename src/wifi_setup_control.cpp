@@ -153,6 +153,9 @@ void wifiPublishSetupStatus() {
   status.connected = connected;
   status.accessPoint = accessPoint;
   status.credentialsSaved = params.hasCredentials();
+#if HDS_FEATURE_MDNS
+  if (mdns_hostname_get(status.mdnsHostname) != ESP_OK) status.mdnsHostname[0] = 0;
+#endif
   portENTER_CRITICAL(&wifiSetupMux);
   if (wifiPendingRequest.command != WifiSetupCommand::None) {
     status.phase = wifiSetupStatus.phase;
