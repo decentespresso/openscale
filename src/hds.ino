@@ -2288,6 +2288,9 @@ void loop() {
 
   processBleStatusResponse();
   processBleVoltageResponse();
+  if (powerCadence.chargeCheck.shouldRun(millis(), 200)) {
+    checkBattery();
+  }
 #if HDS_ENABLE_ENERGY_MENU
   serviceEnergyPowerManagement();
   serviceEnergyHousekeeping(millis());
@@ -2369,9 +2372,6 @@ void loop() {
 #endif  //DEBUG
     if (millis() - t_batteryRefresh > i_batteryRefreshTareInterval){
       updateBattery(BATTERY_PIN);
-    }
-    if (powerCadence.chargeCheck.shouldRun(millis(), 200)) {
-      checkBattery();
     }
     if (b_menu) {
 #if HDS_FEATURE_WIFI
