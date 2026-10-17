@@ -151,6 +151,11 @@ hash, not merely a `-custom` version suffix. It retains signed custom rollback
 manifest lookup and the shared staged LittleFS installation path.
 
 Compatible older stable releases at `v3.1.13+` may be offered as signed downgrades.
+Official `3.1.13` is excluded when running identified custom firmware or a
+preview/RC release: its recovery loader cannot consume custom rollback URLs or
+prerelease rollback identities. The shared selection excludes it for both the
+picker and unattended requests, including filesystem recovery. Stable-to-stable
+`3.1.13` downgrades remain supported.
 
 ## Unattended Install
 

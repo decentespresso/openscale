@@ -506,6 +506,10 @@ void pullOtaBuildSelectableReleases(
                                    !pullOtaVersionIsStable(currentVersion.c_str());
   const bool currentIsCustom = pullOtaCurrentCombinationHash().length() > 0;
   for (uint8_t i = 0; i < catalog.count; i++) {
+    if ((currentIsCustom || currentIsPrerelease) &&
+        pullOtaCompareVersions(catalog.releases[i].version, "3.1.13") == 0) {
+      continue;
+    }
     int currentCompare = pullOtaCompareVersions(catalog.releases[i].version, currentVersion);
     if ((currentCompare != 0 || currentIsPrerelease || currentIsCustom || filesystemRecoveryActive.load()) &&
         selection.count < HDS_OTA_MAX_RELEASE_CHOICES) {
