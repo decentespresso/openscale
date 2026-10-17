@@ -681,17 +681,76 @@ test("expires stale build attempts", async () => {
   assert.deepEqual(await storage.get("pending"), {});
 });
 
-test("inventory and storage budget failures do not consume build attempts", async () => {
+test("budget refusals preserve attempts and weekly slots for a later dispatch", async () => {
   const storage = new Storage();
-  const coordinator = new BuildCoordinator({storage}, {FREE_TIER_GUARDS: "true"});
+  const keyPair = await crypto.subtle.generateKey(
+    {name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256"},
+    true, ["sign", "verify"],
+  );
+  const env = {FREE_TIER_GUARDS: "true", GITHUB_APP_ID: "123", GITHUB_APP_INSTALLATION_ID: "456",
+    GITHUB_APP_PRIVATE_KEY_PKCS8: Buffer.from(await crypto.subtle.exportKey("pkcs8", keyPair.privateKey)).toString("base64")};
+  const coordinator = new BuildCoordinator({storage}, env);
   const hash = "d".repeat(64);
-  for (let index = 0; index < 3; index += 1) {
-    const response = await coordinator.fetch(new Request(`https://coordinator/build/${hash}`, {
-      method: "POST", body: JSON.stringify({configuration: {firmware_ref: "main"}, clientKey: "test"}),
-    }));
-    assert.equal(response.status, 503);
-    assert.equal((await response.json()).error, "storage_inventory_pending");
-    assert.equal((await storage.get(`build:${hash}`)).state, "missing");
-    assert.equal((await storage.get(`build:${hash}`)).attempts, 0);
+  const requestBuild = () => coordinator.fetch(new Request(`https://coordinator/build/${hash}`, {
+    method: "POST",
+    body: JSON.stringify({configuration: {firmware_ref: "main", features: [], plugins: []},
+      builderRef: "main", builderCommit: "1".repeat(40), sourceCommit: "1".repeat(40),
+      combinationHash: hash, clientKey: "test"}),
+  }));
+  for (const code of ["storage_inventory_pending", "free_tier_storage_budget"]) {
+    if (code === "free_tier_storage_budget") {
+      await storage.put("budget:inventory", {complete: true, bytes: 4_000_000_000});
+    }
+    for (let index = 0; index < 22; index += 1) {
+      const response = await requestBuild();
+      assert.equal(response.status, 503);
+      assert.equal((await response.json()).error, code);
+      assert.equal((await storage.get(`build:${hash}`)).state, "missing");
+      assert.equal((await storage.get(`build:${hash}`)).attempts, 0);
+      assert.deepEqual(await storage.get("pending"), {});
+      const rates = await storage.get("rates");
+      assert.equal(rates.global, 0);
+      assert.equal(rates.clients.test, 0);
+    }
   }
+  await storage.put("budget:inventory", {complete: true, bytes: 0});
+  let dispatches = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async url => {
+    if (String(url).endsWith("/access_tokens")) return Response.json({token: "test-token"});
+    assert.ok(String(url).endsWith("/custom-build.yml/dispatches"));
+    dispatches += 1;
+    return new Response(null, {status: 204});
+  };
+  try {
+    assert.equal((await requestBuild()).status, 202);
+    assert.equal((await requestBuild()).status, 200);
+    assert.equal(dispatches, 1);
+    assert.equal((await storage.get(`build:${hash}`)).attempts, 1);
+    const rates = await storage.get("rates");
+    assert.equal(rates.global, 1);
+    assert.equal(rates.clients.test, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("budget rollback does not refund a newer week's counters", async () => {
+  const storage = new Storage();
+  const get = storage.get.bind(storage);
+  storage.get = async key => {
+    if (key === "budget:inventory") {
+      const rates = await get("rates");
+      await storage.put("rates", {...rates, week: rates.week + 1, global: 7, clients: {test: 2, peer: 5}});
+    }
+    return get(key);
+  };
+  const coordinator = new BuildCoordinator({storage}, {FREE_TIER_GUARDS: "true"});
+  const response = await coordinator.fetch(new Request(`https://coordinator/build/${"e".repeat(64)}`, {
+    method: "POST", body: JSON.stringify({configuration: {firmware_ref: "main"}, clientKey: "test"}),
+  }));
+  assert.equal(response.status, 503);
+  const rates = await get("rates");
+  assert.equal(rates.global, 7);
+  assert.deepEqual(rates.clients, {test: 2, peer: 5});
 });
