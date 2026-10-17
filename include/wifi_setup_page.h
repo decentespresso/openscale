@@ -132,7 +132,6 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   let expectedDevice = query.get('wifi_device') || '';
   if (!/^[a-f0-9]{12}$/.test(expectedDevice)) expectedDevice = '';
 
-  const trimEdge = value => value.replace(/^[\s\u0085\p{Default_Ignorable_Code_Point}]+|[\s\u0085\p{Default_Ignorable_Code_Point}]+$/gu, '');
   const bytes = value => new TextEncoder().encode(value).length;
   const invalidText = value => /[\u0000-\u001f\u007f-\u009f]/u.test(value) ||
     Array.from(value).some(character => {
@@ -463,7 +462,8 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     if (kind === 'switch') showOperationDialog();
     let accepted;
     const testOnly = kind === 'switch' && ssid !== connectedSsid;
-    const credentials = { ssid, pass, ...(scanned ? { scanned: true } : {}), ...(testOnly ? { test_only: true } : {}) };
+    const credentials = { ssid, pass, ...(kind === 'switch' ? { preserve_edges: true } : {}),
+      ...(scanned ? { scanned: true } : {}), ...(testOnly ? { test_only: true } : {}) };
     try { accepted = await request('/setup/wifi', credentials); }
     catch (error) {
       if (deviceMismatch) return;
@@ -492,8 +492,8 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
   form.addEventListener('submit', event => {
     event.preventDefault();
     const scanned = scannedSsid !== null && ssidInput.value === scannedSsid;
-    const ssid = scanned ? ssidInput.value : trimEdge(ssidInput.value);
-    const pass = scanned ? passwordInput.value : trimEdge(passwordInput.value);
+    const ssid = ssidInput.value;
+    const pass = passwordInput.value;
     if (!ssid || bytes(ssid) > 32 || invalidText(ssid) || invalidText(pass) ||
         !(pass.length === 0 || (bytes(pass) >= 8 && bytes(pass) <= 63) || /^[a-f0-9]{64}$/i.test(pass))) {
       message(failureText('wifi_credentials_invalid'), 'error');

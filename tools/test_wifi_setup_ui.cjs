@@ -194,8 +194,8 @@ async function runAccessPointScan(browser, html, label, viewport) {
       assert.equal(await page.locator(selector).isEnabled(), true);
     }
     await page.locator('#wifi-scan-button').evaluate(button => button.dispatchEvent(new Event('click')));
-    await page.locator('#ssid').fill('Manual network');
-    await page.locator('#password').fill('password');
+    await page.locator('#ssid').fill(' Manual network ');
+    await page.locator('#password').fill(' password ');
     await page.locator('#wifi-popup').scrollIntoViewIfNeeded();
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await page.screenshot({ path: path.join(root, '.pio.nosync',
@@ -204,7 +204,7 @@ async function runAccessPointScan(browser, html, label, viewport) {
     session.variant('ap-failure');
     await page.locator('#wifi-connect-button').click();
     await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('password was not accepted'));
-    assert.deepEqual(session.posts(), [{ ssid: 'Manual network', pass: 'password', test_only: true }]);
+    assert.deepEqual(session.posts(), [{ ssid: ' Manual network ', pass: ' password ', preserve_edges: true, test_only: true }]);
     await page.locator('#wifi-retry').click();
     assert.equal(await page.locator('.wifi-network-tools').isVisible(), false);
     assert.equal(await page.locator('#wifi-scan-button').isEnabled(), false);
@@ -349,23 +349,25 @@ async function run(browser, html, label, viewport) {
   assert.equal(await page.locator('#password').getAttribute('type'), 'text');
   await page.locator('#show-password').uncheck();
   assert.equal(await page.locator('#password').getAttribute('type'), 'password');
-  await page.locator('#ssid').fill(' \u00a0\u200bNew network\ufeff ');
-  await page.locator('#password').fill('\u0085\u2060 pass word \u00a0');
+  const manualSsid = ' \u00a0\u200bNew network\ufeff ';
+  const manualPass = '\u2060 pass word \u00a0';
+  await page.locator('#ssid').fill(manualSsid);
+  await page.locator('#password').fill(manualPass);
   await page.locator('#wifi-form').evaluate(form => {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   });
-  await confirmNetwork(page, 'New network');
+  await confirmNetwork(page, manualSsid);
   assert.equal(session.context.pages().length, 1);
   assert(session.operationPolls() > 0);
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
   assert.equal(await page.locator('#wifi-check-result').isVisible(), false);
   assert.equal(await page.locator('#wifi-open-scale').isVisible(), true);
-  assert.deepEqual(session.posts(), [{ ssid: 'New network', pass: 'pass word', test_only: true }]);
+  assert.deepEqual(session.posts(), [{ ssid: manualSsid, pass: manualPass, preserve_edges: true, test_only: true }]);
   assert.equal(await page.locator('#password').inputValue(), '');
   assert.equal(await page.evaluate(() => localStorage.length), 0);
 
-  await page.locator('#ssid').fill(' \u200b ');
+  await page.locator('#ssid').fill('Bad\u007f');
   await page.locator('#password').fill('password');
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
   await page.waitForFunction(() => document.getElementById('wifi-status').dataset.tone === 'error');
@@ -376,13 +378,13 @@ async function run(browser, html, label, viewport) {
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
   await confirmNetwork(page, ' Cafe \u200b ');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
-  assert.deepEqual(session.posts().at(-1), { ssid: ' Cafe \u200b ', pass: ' pass word \ufeff ', scanned: true, test_only: true });
+  assert.deepEqual(session.posts().at(-1), { ssid: ' Cafe \u200b ', pass: ' pass word \ufeff ', preserve_edges: true, scanned: true, test_only: true });
   await page.locator('#ssid').fill(' Cafe \u200b ');
   await page.locator('#password').fill(' pass word \ufeff ');
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
-  await confirmNetwork(page, 'Cafe');
+  await confirmNetwork(page, ' Cafe \u200b ');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
-  assert.deepEqual(session.posts().at(-1), { ssid: 'Cafe', pass: 'pass word', test_only: true });
+  assert.deepEqual(session.posts().at(-1), { ssid: ' Cafe \u200b ', pass: ' pass word \ufeff ', preserve_edges: true });
 
   session.variant('interrupted-failure');
   await page.locator('#ssid').fill('Wrong password network');
@@ -488,7 +490,7 @@ async function run(browser, html, label, viewport) {
   }
   assert.deepEqual(session.errors, []);
   await session.context.close();
-  console.log(`${label} ${viewport.width}px: spinner, scan recovery, trim, validation, duplicate submission, fallback, interruptions, reset dialog and layout passed`);
+  console.log(`${label} ${viewport.width}px: spinner, scan recovery, exact credentials, validation, duplicate submission, fallback, interruptions, reset dialog and layout passed`);
 }
 
 async function runResultNavigation(browser, html, label, viewport) {
@@ -549,7 +551,7 @@ async function runResultNavigation(browser, html, label, viewport) {
         ? /different scale.*not confirmed/ : /Not found/);
       assert.equal(await page.locator('#wifi-connect-button').count(), 0);
     }
-    assert.deepEqual(session.posts(), [{ ssid: '<img src=x onerror=alert(1)>', pass: '', test_only: true }]);
+    assert.deepEqual(session.posts(), [{ ssid: '<img src=x onerror=alert(1)>', pass: '', preserve_edges: true, test_only: true }]);
     assert.deepEqual(session.errors, []);
     await session.context.close();
   }
