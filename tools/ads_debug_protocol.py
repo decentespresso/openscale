@@ -4,6 +4,16 @@ ADS_RESET_TYPE = 0x26
 ADS_SAMPLES_TYPE = 0x1D
 DEBUG_PACKET_LENGTH = 41
 RESET_RESPONSE_LENGTH = 5
+SERIAL_PACKET_LENGTHS = {
+    0x0A: 7,
+    0x21: 7,
+    0x22: 7,
+    ADS_DEBUG_TYPE: DEBUG_PACKET_LENGTH,
+    ADS_RESET_TYPE: RESET_RESPONSE_LENGTH,
+    0x2A: 7,
+    0xAA: 7,
+    0xCE: 7,
+}
 HEARTBEAT_CMD = bytes([0x03, 0x0A, 0x03, 0xFF, 0xFF, 0x00, 0x0A])
 
 
@@ -36,19 +46,27 @@ def format_hex(data):
 
 
 def find_packet(buffer, packet_type, packet_length):
-    for i in range(len(buffer) - 1):
-        if buffer[i] == MODEL_BYTE and buffer[i + 1] == packet_type:
-            if len(buffer) >= i + packet_length:
-                packet = buffer[i:i + packet_length]
-                if packet[-1] != xor_checksum(packet[:-1]):
-                    continue
-                remaining = buffer[i + packet_length:]
-                return packet, remaining
-            return None, buffer
+    offset = 0
+    while offset + 1 < len(buffer):
+        if buffer[offset] != MODEL_BYTE:
+            offset += 1
+            continue
+        frameType = buffer[offset + 1]
+        frameLength = packet_length if frameType == packet_type else SERIAL_PACKET_LENGTHS.get(frameType)
+        if frameLength is None:
+            offset += 1
+            continue
+        if len(buffer) < offset + frameLength:
+            return None, buffer[offset:]
+        packet = buffer[offset:offset + frameLength]
+        if packet[-1] != xor_checksum(packet[:-1]):
+            offset += 1
+            continue
+        offset += frameLength
+        if frameType == packet_type:
+            return packet, buffer[offset:]
 
-    if len(buffer) > 0:
-        return None, buffer[-1:]
-    return None, buffer
+    return None, buffer[offset:]
 
 
 def find_debug_packet(buffer):
