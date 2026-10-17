@@ -113,6 +113,15 @@ const context = vm.createContext({
   assert.equal(storage.get('lastUsedQCPreset'), 'Coffee');
   assert.equal(dosing.getPresets().Dose.settings.targetWeight, 10);
   assert.equal(qc.getPresets().Quality.goalWeight, 20);
+  resetElements();
+  storage.set('lastUsedQCPreset', 'Coffee');
+  for (let index = 0; index < 3; ++index) {
+    assert.equal(qc.savePreset({...quality, name: 'Coffee'}), true);
+    qc.updatePresetList();
+    assert.deepEqual(elements.get('presetSelect').options.map(option => option.value),
+      ['', 'save_preset', 'Quality', 'Coffee']);
+    assert.equal(elements.get('presetSelect').value, 'Coffee');
+  }
   assert.equal(dosing.savePreset({name: 'bad', settings: {targetWeight: NaN}}), false);
   assert.equal(qc.savePreset(dose), false);
   const reloadedDosing = new module.namespace.PresetManager();
