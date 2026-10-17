@@ -258,7 +258,7 @@ export class BuildCoordinator {
       const record = {
         state: "queued",
         combination_hash: hash,
-        attempts: (effectiveCurrent?.state === "failed" ? effectiveCurrent.attempts : 0) + 1,
+        attempts: (["failed", "missing"].includes(effectiveCurrent?.state) ? effectiveCurrent.attempts || 0 : 0) + 1,
         attempt_id: attemptId,
         lease_expires_at: leaseExpiresAt,
         updated_at: new Date(now).toISOString(),

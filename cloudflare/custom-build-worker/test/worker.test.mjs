@@ -730,6 +730,28 @@ test("budget refusals preserve attempts and weekly slots for a later dispatch", 
     const rates = await storage.get("rates");
     assert.equal(rates.global, 1);
     assert.equal(rates.clients.test, 1);
+    await coordinator.updateAttempt(hash, {state: "failed", failure_code: "build_failed",
+      attempt_id: (await storage.get(`build:${hash}`)).attempt_id});
+    const budget = await storage.get("budget:operations");
+    await storage.put("budget:operations", {...budget, daily: 10000});
+    const refusedRetry = await requestBuild();
+    assert.equal(refusedRetry.status, 503);
+    assert.equal((await refusedRetry.json()).error, "free_tier_operation_budget");
+    assert.equal((await storage.get(`build:${hash}`)).attempts, 1);
+    assert.equal((await storage.get("rates")).global, 1);
+    assert.equal((await storage.get("rates")).clients.test, 1);
+    await storage.put("budget:operations", {...budget, day: budget.day - 1});
+    assert.equal((await requestBuild()).status, 202);
+    const retry = await storage.get(`build:${hash}`);
+    assert.equal(retry.attempts, 2);
+    assert.equal(dispatches, 2);
+    assert.equal((await storage.get("rates")).global, 2);
+    assert.equal((await storage.get("rates")).clients.test, 2);
+    await coordinator.updateAttempt(hash, {state: "failed", failure_code: "build_failed", attempt_id: retry.attempt_id});
+    const terminal = await requestBuild();
+    assert.equal(terminal.status, 409);
+    assert.equal((await terminal.json()).attempts, 2);
+    assert.equal(dispatches, 2);
   } finally {
     globalThis.fetch = originalFetch;
   }
