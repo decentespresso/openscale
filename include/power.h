@@ -178,7 +178,7 @@ void print_wakeup_reason() {
 }
 
 
-void esp32_sleep() {
+void esp32_sleep(bool resumeWowSession = false) {
 #if HDS_ENABLE_ENERGY_MENU
   applyEnergyLightSleepSetting(false);
   setEnergyIdleWakeEnabled(false);
@@ -203,7 +203,11 @@ void esp32_sleep() {
     mpu.enableSleep(true);
   }
 #endif
-  wowCaptureBaselineForSleep();
+  if (resumeWowSession) {
+    wowResumeSleepSession();
+  } else {
+    wowCaptureBaselineForSleep();
+  }
   wowArmSleepTimer();
   scale.powerDown();
 #ifdef ESP32C3
