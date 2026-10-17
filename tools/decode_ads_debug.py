@@ -115,7 +115,12 @@ def decode_ads_reset_response(data):
     }
 
 def print_reset_response(info):
-    status_str = "SUCCESS" if info['success'] else "FAILED (DOUT timeout)"
+    status_names = {
+        0x00: "SUCCESS",
+        0x01: "FAILED (DOUT timeout)",
+        0x02: "FAILED (dataset/tare refresh timeout)",
+    }
+    status_str = status_names.get(info['status'], f"FAILED (unknown status 0x{info['status']:02X})")
     print(f"\n=== ADS1232 Reset Response ===")
     print(f"Mode:   0x{info['mode']:02X} ({info['mode_name']})")
     print(f"Status: {status_str}")
