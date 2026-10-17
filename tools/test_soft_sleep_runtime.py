@@ -16,6 +16,7 @@ def main():
     parameter = (ROOT / "include/parameter.h").read_text(encoding="utf-8")
     sleepCommand = ws[ws.index('if (websocketEqualsIgnoreCase(command, "sleep") ||'):]
     displayCommand = ws[ws.index('if (websocketEqualsIgnoreCase(command, "display"))'):]
+    timerCommand = ws[ws.index('if (websocketEqualsIgnoreCase(command, "timer"))'):]
     loop = block_after(hds, "void loop()")
     sleepGate = loop.index("if (!b_softSleep)")
     wifiGuard = "if (b_softSleep && b_wifiEnabled)"
@@ -66,7 +67,27 @@ struct {
   void setContrast(int) { assert(wsPendingMux == 0); }
 } u8g2;
 struct { template<class T> void println(T) {} void print(const char*) {} } Serial;
-struct { void reset() {} void start() {} void stop() {} } stopWatch;
+struct {
+  unsigned long elapsedMs = 42000;
+  bool running = false;
+  int calls = 0;
+  void reset() {
+    assert(wsPendingMux == 0 && !b_ota);
+    elapsedMs = 0;
+    running = false;
+    ++calls;
+  }
+  void start() {
+    assert(wsPendingMux == 0 && !b_ota);
+    running = true;
+    ++calls;
+  }
+  void stop() {
+    assert(wsPendingMux == 0 && !b_ota);
+    running = false;
+    ++calls;
+  }
+} stopWatch;
 struct {
   int getSamplesInUse() { return 1; }
   void powerUp() { assert(wsPendingMux == 0); ++wakes; }
@@ -104,7 +125,8 @@ void remoteReplacePending(uint32_t setBits, uint32_t clearBits) { @REPLACE@ }
 void wsReplacePending(uint32_t setBits, uint32_t clearBits) { @WS_REPLACE@ }
 void remoteRestoreDeferredPendingLocked(uint32_t deferredMask, unsigned long resetAt) { @RESTORE@ }
 void remoteFinishWifiUpdateDispatch() { @FINISH_OTA@ }
-void sendWebsocketStatus(void*, const char*) {}
+int statusReplies = 0;
+void sendWebsocketStatus(void*, const char*) { ++statusReplies; }
 void queueBleStatusResponse() {}
 bool refreshScaleDatasetAfterDiscontinuity(const char*) {
   assert(wsPendingMux == 0);
@@ -129,7 +151,69 @@ void bleDisplayOn() { @BLE_DISPLAY_ON@ }
 void bleDisplayOff() { @BLE_DISPLAY_OFF@ }
 bool wsDisplayOn() { void *client = nullptr; @WS_DISPLAY_ON@ }
 bool wsDisplayOff() { void *client = nullptr; @WS_DISPLAY_OFF@ }
+void bleTimerCommand(int action) {
+  if (action == 0) { @BLE_TIMER_START@ }
+  else if (action == 1) { @BLE_TIMER_STOP@ }
+  else { @BLE_TIMER_ZERO@ }
+}
+bool wsTimerCommand(int action) {
+  void *client = nullptr;
+  if (action == 0) { @WS_TIMER_START@ }
+  if (action == 1) { @WS_TIMER_STOP@ }
+  @WS_TIMER_ZERO@
+}
+void queueTimerCommand(int source, int action) {
+  if (source == 0) bleTimerCommand(action);
+  else assert(wsTimerCommand(action));
+}
 void dispatch() { @DISPATCH@ }
+int deferredTimerSource = 0, deferredTimerAction = 0;
+void queueTimerBeforeOtaPause() {
+  queueTimerCommand(deferredTimerSource, deferredTimerAction);
+  b_ota = true;
+}
+void testTimerCommands() {
+  struct TimerCase { int first, last; unsigned long elapsedMs; bool running; };
+  const TimerCase cases[] = {
+    {0, 0, 0, true}, {0, 1, 0, false}, {0, 2, 0, false},
+    {1, 0, 0, true}, {1, 1, 42000, false}, {1, 2, 0, false},
+    {2, 0, 0, true}, {2, 1, 0, false}, {2, 2, 0, false},
+  };
+  for (const auto &test : cases) {
+    for (const bool initiallyRunning : {false, true}) {
+      for (const int firstSource : {0, 1}) {
+        for (const int lastSource : {0, 1}) {
+          for (const bool deferred : {false, true}) {
+            stopWatch.elapsedMs = 42000;
+            stopWatch.running = initiallyRunning;
+            stopWatch.calls = 0;
+            const int repliesBefore = statusReplies;
+            queueTimerCommand(firstSource, test.first);
+            if (deferred) {
+              deferredTimerSource = lastSource;
+              deferredTimerAction = test.last;
+              afterSnapshot = queueTimerBeforeOtaPause;
+              dispatch();
+              assert(!afterSnapshot && b_ota && stopWatch.calls == 0);
+              const auto pending = wsPendingMask;
+              dispatch();
+              assert(wsPendingMask == pending && stopWatch.calls == 0);
+              b_ota = false;
+            } else {
+              queueTimerCommand(lastSource, test.last);
+            }
+            assert(statusReplies == repliesBefore + (firstSource == 1) + (lastSource == 1));
+            assert(stopWatch.calls == 0 && stopWatch.elapsedMs == 42000);
+            assert(stopWatch.running == initiallyRunning);
+            dispatch();
+            assert(stopWatch.elapsedMs == test.elapsedMs && stopWatch.running == test.running);
+            assert(wsPendingMask == 0);
+          }
+        }
+      }
+    }
+  }
+}
 int transport = 0;
 void wakeCommand() {
   if (transport == 0) bleWake();
@@ -153,6 +237,7 @@ void assertDisplay(bool enabled) {
 #endif
 }
 int main() {
+  testTimerCommands();
   for (transport = 0; transport < 3; ++transport) {
     sleepCommand();
     dispatch();
@@ -374,6 +459,12 @@ int main() {
         "BLE_DISPLAY_OFF": block_after(ble, "void displayOff()"),
         "WS_DISPLAY_ON": block_after(displayCommand, 'if (websocketEqualsIgnoreCase(action, "on"))'),
         "WS_DISPLAY_OFF": block_after(displayCommand, 'if (websocketEqualsIgnoreCase(action, "off"))'),
+        "BLE_TIMER_START": block_after(ble, "void timerStart()"),
+        "BLE_TIMER_STOP": block_after(ble, "void timerStop()"),
+        "BLE_TIMER_ZERO": block_after(ble, "void timerZero()"),
+        "WS_TIMER_START": block_after(timerCommand, 'if (websocketEqualsIgnoreCase(action, "start"))'),
+        "WS_TIMER_STOP": block_after(timerCommand, 'if (websocketEqualsIgnoreCase(action, "stop"))'),
+        "WS_TIMER_ZERO": block_after(timerCommand, 'if (websocketEqualsIgnoreCase(action, "zero") ||'),
         "DISPATCH": block_after(ws, "void processWsPendingCmds()"),
         "WIFI": block_after(loop, wifiGuard),
     }
@@ -388,7 +479,7 @@ int main() {
                             f"-DHDS_FEATURE_WEBSERVER={webserver}", str(source),
                             "-o", str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
-    print("Soft-sleep transport/display ordering, ADC recovery and sleeping WiFi supervision passed")
+    print("Remote timer composition, soft-sleep transport/display ordering, ADC recovery and sleeping WiFi supervision passed")
 
 
 if __name__ == "__main__":
