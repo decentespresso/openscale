@@ -43,12 +43,18 @@ void clearMenuInfoPage() {
   invalidateMenuFrame();
 }
 
+void processMenuInfoPageExit() {
+  if (!menuInfoPageClearPending) return;
+  if (menuInfoPageClearPending.exchange(false)) clearMenuInfoPage();
+}
+
 void dismissMenuInfoPage() {
   if (b_showLogo) b_showNumber = !b_showNumber;
   clearMenuInfoPage();
 }
 
 bool handleMenuInfoPageButton(int pin, uint8_t eventType) {
+  processMenuInfoPageExit();
   if (!b_menu || !menuInfoPageActive()) return false;
   if (pin == BUTTON_SQUARE && eventType == AceButton::kEventReleased) dismissMenuInfoPage();
   return true;
@@ -1485,6 +1491,7 @@ void wifiUpdate(const PullOtaTargetVersion &target) {
   } else {
     pullOtaUpdate(target);
   }
+  invalidateMenuFrame();
 }
 
 void wifiUpdate() {
@@ -1670,6 +1677,7 @@ void refreshMenuRows() {
 }
 
 void navigateMenu(int direction) {
+  processMenuInfoPageExit();
   recordEnergyActivity();
   if (menuInfoPageActive()) return;
   if (currentMenu == connectionsMenu) currentMenuSize = connectionsMenuSize();
@@ -1703,6 +1711,7 @@ void backMenu() {
 }
 
 void selectMenu() {
+  processMenuInfoPageExit();
 #if HDS_ENABLE_ENERGY_MENU
   recordEnergyActivity();
 #endif
@@ -1757,6 +1766,7 @@ bool renderMenuInfoPage() {
 }
 
 void showMenu() {
+  processMenuInfoPageExit();
   if (renderMenuInfoPage()) return;
   const unsigned long now = millis();
   if (!menuFrameNeedsRender(now)) return;

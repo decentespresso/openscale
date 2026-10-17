@@ -82,6 +82,7 @@ def main():
     callback = block_after(sketch, "void aceButtonHandleEvent(")
     assert callback.index("handleMenuInfoPageButton(pin, eventType)") < callback.index("switch (eventType)")
     loop = block_after(sketch, "void loop() {")
+    assert loop.index("processMenuInfoPageExit();") < loop.index("if (!b_menu && menuInfoPageActive())")
     assert "if (!b_menu && menuInfoPageActive()) clearMenuInfoPage();" in loop
     resume = loop[loop.index("if (otaTransportsStopped)"):loop.index("processBleStatusResponse();")]
     assert "invalidateMenuFrame();" in resume
@@ -91,6 +92,11 @@ def main():
 
 
 def check_info_pages(menu):
+    parameter = (ROOT / "include" / "parameter.h").read_text(encoding="utf-8")
+    protocol = (ROOT / "include" / "decent_protocol.h").read_text(encoding="utf-8")
+    usb = (ROOT / "include" / "usbcomm.h").read_text(encoding="utf-8")
+    menu_command = protocol[protocol.index("    case 0x1E:"):protocol.index("    case 0x1F:")]
+    assert "handleDecentMenuCommand(data);" in menu_command
     source = r'''
 #include <atomic>
 #include <cassert>
@@ -101,6 +107,7 @@ def check_info_pages(menu):
 #include <initializer_list>
 #include <string>
 #include "timing.h"
+#include "decent_protocol_frame.h"
 using String = std::string;
 constexpr int BUTTON_CIRCLE = 1, BUTTON_SQUARE = 2;
 struct AceButton {
@@ -110,7 +117,14 @@ bool b_menu = true, b_showLogo = false, b_showWifiData = false;
 bool b_showStatusData = false, b_showNumber = false, b_negativeWeight = false;
 bool b_menuCirclePressPending = false, b_menuSquarePressPending = false;
 bool b_menuCircleLongHandled = false, b_menuSquareLongHandled = false;
-std::atomic<bool> b_showAbout{false};
+volatile std::atomic<bool> b_showAbout{false};
+volatile std::atomic<bool> menuInfoPageClearPending{false};
+bool b_about = false, b_debug = false, b_ota = false, b_softSleep = false;
+bool b_calibration = false, b_showChargingUI = false, b_menuRestartRequired = false;
+int wsPendingMux = 0;
+void portENTER_CRITICAL(int *) {}
+void portEXIT_CRITICAL(int *) {}
+void remoteQueueResetAt(unsigned long) { assert(false); }
 bool b_wifiEnabled = true, b_wifiOnBoot = true, b_ble_enabled = true;
 bool b_btnFuncWhileConnected = true, b_requireHeartBeat = true;
 bool b_autoSleep = true, b_quickBoot = false, b_timeOnTop = false, b_screenFlipped = false;
@@ -183,7 +197,7 @@ const Menu *currentSelection = &item;
 int currentIndex = 0, currentMenuSize = 1, currentPage = 0, totalPages = 0, linesPerPage = 4;
 template<typename T> int getMenuSize(T &values) { return sizeof(values) / sizeof(values[0]); }
 int connectionsMenuSize() { return 1; }
-struct { void print(const char *) {} void println(int) {} } Serial;
+struct { void print(const char *) {} void println(int) {} void println(const char *) {} } Serial;
 void recordEnergyActivity() {}
 void backMenu() { assert(false); }
 void refreshMenuRows() {}
@@ -191,6 +205,9 @@ void invalidateMenuFrame() { @INVALIDATE@ }
 bool menuFrameNeedsRender(unsigned long now) { @NEEDS_RENDER@ }
 bool menuInfoPageActive() { @ACTIVE@ }
 void clearMenuInfoPage() { @CLEAR@ }
+void processMenuInfoPageExit() { @PROCESS_EXIT@ }
+void leaveMenu() { @LEAVE@ }
+void handleDecentMenuCommand(const uint8_t *data) { @MENU_COMMAND@ }
 void dismissMenuInfoPage() { @DISMISS@ }
 bool handleMenuInfoPageButton(int pin, uint8_t eventType) { @BUTTON@ }
 void showWifiStatus() { @WIFI@ }
@@ -201,6 +218,92 @@ bool renderMenuInfoPage() { @RENDER@ }
 void showMenu() { @MENU@ }
 void navigateMenu(int direction) { @NAVIGATE@ }
 void selectMenu() { @SELECT@ }
+void wakeScaleFromSoftSleep(const char *) { assert(false); }
+bool otaStartAccepted = false;
+int officialOtaStarts = 0, customOtaStarts = 0;
+void drawOtaResult() {
+  u8g2.firstPage();
+  u8g2.drawStr(0, 0, "WiFi busy");
+  u8g2.nextPage();
+  b_ota = otaStartAccepted;
+}
+void pullOtaUpdate(const PullOtaTargetVersion &) { ++officialOtaStarts; drawOtaResult(); }
+void customBuildStart(bool relink, bool interactive) {
+  assert(!relink && !interactive);
+  ++customOtaStarts;
+  drawOtaResult();
+}
+void wifiUpdate(const PullOtaTargetVersion &target) { @OTA@ }
+class UsbParser {
+public:
+  @USB_FIELDS@
+  int binaryCommands = 0;
+  void (*buttonSquare_Pressed)() = selectMenu;
+  void (*toggleTimer)() = nullptr;
+  void consumeUsbRxBytes(size_t count) { @USB_CONSUME@ }
+  void appendToUsbRxBuffer(uint8_t *data, size_t len) { @USB_APPEND@ }
+  bool usbRxTimedOut() { @USB_TIMEOUT@ }
+  size_t bufferedTextLength(bool allowTimeout) { @USB_TEXT_LENGTH@ }
+  void processUsbRxBuffer(bool allowTimeout) { @USB_PROCESS@ }
+  void onStream(uint8_t *data, size_t len) { @USB_STREAM@ }
+  void onWrite(uint8_t *data, size_t len) {
+    if (data[0] == 0x03) {
+      assert(len == 4 && data[1] == 0x1E);
+      ++binaryCommands;
+      handleDecentMenuCommand(data);
+    } else {
+      assert(String(reinterpret_cast<char *>(data), len) == "set\n");
+      @USB_SET@
+    }
+  }
+};
+void checkMenuExit(void (*open)()) {
+  open();
+  b_menuCirclePressPending = b_menuSquarePressPending = true;
+  b_menuCircleLongHandled = b_menuSquareLongHandled = true;
+  const bool wasNumber = b_showNumber;
+  const Menu *selectionBefore = currentSelection;
+  const int before = u8g2.frames;
+  uint8_t hideShow[] = {0x03, 0x1E, 0, 0, 0x03, 0x1E, 0, 1};
+  UsbParser parser;
+  parser.onStream(hideShow, sizeof(hideShow));
+  assert(parser.binaryCommands == 2 && parser.usbRxLen == 0 && b_menu);
+  assert(menuInfoPageActive() && menuInfoPageClearPending && u8g2.frames == before);
+  assert(b_menuCirclePressPending && b_menuSquarePressPending);
+  assert(b_menuCircleLongHandled && b_menuSquareLongHandled);
+  showMenu();
+  assert(!menuInfoPageActive() && !menuInfoPageClearPending && u8g2.frames == before + 1);
+  assert(currentSelection == selectionBefore && b_showNumber == wasNumber);
+  assert(!b_menuCirclePressPending && !b_menuSquarePressPending);
+  assert(!b_menuCircleLongHandled && !b_menuSquareLongHandled);
+  open();
+  const Menu infoAction = {"Info", open};
+  currentSelection = &infoAction;
+  uint8_t hideShowSet[] = {0x03, 0x1E, 0, 0, 0x03, 0x1E, 0, 1, 's', 'e', 't', '\n'};
+  parser.onStream(hideShowSet, sizeof(hideShowSet));
+  assert(menuInfoPageActive() && !menuInfoPageClearPending);
+  processMenuInfoPageExit();
+  assert(menuInfoPageActive());
+  currentSelection = selectionBefore;
+  parser.onStream(hideShow, sizeof(hideShow));
+  assert(!handleMenuInfoPageButton(BUTTON_SQUARE, AceButton::kEventPressed));
+  assert(!menuInfoPageActive() && !menuInfoPageClearPending);
+  open();
+  parser.onStream(hideShow, sizeof(hideShow));
+  navigateMenu(1);
+  assert(!menuInfoPageActive() && !menuInfoPageClearPending);
+}
+void checkOtaFailure(void (*open)()) {
+  for (const auto target : {pullOtaNoTargetVersion(), pullOtaMakeTargetVersion(0, 0, 0)}) {
+    open();
+    const int before = u8g2.frames;
+    wifiUpdate(target);
+    assert(!b_ota && menuFrameDirty && menuInfoPageActive());
+    showMenu();
+    assert(!menuFrameDirty && menuInfoPageActive() && u8g2.frames == before + 2);
+    clearMenuInfoPage();
+  }
+}
 int main() {
   for (const auto open : {showStatus, showAbout, showLogo
 #if HDS_FEATURE_WIFI
@@ -240,7 +343,10 @@ int main() {
     assert(!handleMenuInfoPageButton(BUTTON_SQUARE, AceButton::kEventReleased));
     showMenu();
     assert(u8g2.frames == before + 2);
+    checkMenuExit(open);
+    checkOtaFailure(open);
   }
+  assert(officialOtaStarts > 0 && officialOtaStarts == customOtaStarts);
   showAbout();
   b_showAbout = false;
   clockMs += 1000;
@@ -262,6 +368,7 @@ int main() {
         "NEEDS_RENDER": "inline bool menuFrameNeedsRender(",
         "ACTIVE": "bool menuInfoPageActive()",
         "CLEAR": "void clearMenuInfoPage()",
+        "PROCESS_EXIT": "void processMenuInfoPageExit()",
         "DISMISS": "void dismissMenuInfoPage()",
         "BUTTON": "bool handleMenuInfoPageButton(",
         "WIFI": "void showWifiStatus() {",
@@ -272,9 +379,24 @@ int main() {
         "MENU": "void showMenu() {",
         "NAVIGATE": "void navigateMenu(int direction) {",
         "SELECT": "void selectMenu() {",
+        "OTA": "void wifiUpdate(const PullOtaTargetVersion &target) {",
     }
     for marker, signature in replacements.items():
         source = source.replace(f"@{marker}@", block_after(menu, signature))
+    source = source.replace("@LEAVE@", block_after(parameter, "inline void leaveMenu()"))
+    source = source.replace("@MENU_COMMAND@", block_after(protocol, "static inline void handleDecentMenuCommand("))
+    source = source.replace("@USB_FIELDS@", usb[usb.index("  static const size_t USB_RX_BUFFER_SIZE"):usb.index("  void consumeUsbRxBytes(")])
+    usb_methods = {
+        "USB_CONSUME": "void consumeUsbRxBytes(",
+        "USB_APPEND": "void appendToUsbRxBuffer(",
+        "USB_TIMEOUT": "bool usbRxTimedOut()",
+        "USB_TEXT_LENGTH": "size_t bufferedTextLength(",
+        "USB_PROCESS": "void processUsbRxBuffer(",
+        "USB_STREAM": "void onStream(",
+        "USB_SET": 'if (inputString.startsWith("set"))',
+    }
+    for marker, signature in usb_methods.items():
+        source = source.replace(f"@{marker}@", block_after(usb, signature))
     with tempfile.TemporaryDirectory() as directory:
         cpp = Path(directory) / "menu_info.cpp"
         binary = Path(directory) / "menu_info.exe"

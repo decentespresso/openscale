@@ -2236,6 +2236,7 @@ void serviceEnergyHousekeeping(unsigned long now) {
 void loop() {
   static bool otaBleClientDisconnected = false;
   static bool otaTransportsStopped = false;
+  processMenuInfoPageExit();
   if (!b_menu && menuInfoPageActive()) clearMenuInfoPage();
 #if HDS_ENABLE_ENERGY_MENU
   const uint64_t lightSleepWakeMask = serviceEnergyLightSleepWakeRestore();

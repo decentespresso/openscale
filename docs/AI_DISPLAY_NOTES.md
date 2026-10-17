@@ -195,7 +195,7 @@ Circle short advances and Circle long moves to the previous row. Square short to
 
 Menu short actions are classified on button release. A recognized long press suppresses its release action, so it cannot also trigger the short action. Normal weighing-mode gestures remain unchanged.
 
-Status, About, Logo, and WiFi Status are nonblocking information pages. They remain visible without suspending main-loop commands, battery checks, heartbeat enforcement, or OTA admission. Square release dismisses the page without selecting another action; Logo retains its next-preview toggle. Circle input is ignored while a page is open. USB text `set` also dismisses the page. OTA owns the display during an update. If an update returns without leaving the menu, its information page is redrawn. Weighing remains paused while the menu is open.
+Status, About, Logo, and WiFi Status are nonblocking information pages. They remain visible without suspending main-loop commands, battery checks, heartbeat enforcement, or OTA admission. Square release dismisses the page without selecting another action; Logo retains its next-preview toggle. Circle input is ignored while a page is open. USB text `set` also dismisses the page. Hiding and reopening the menu returns to its selected row, even when both commands arrive in one USB buffer. OTA owns the display during an update. If an update returns without leaving the menu, including an admission failure, its information page is redrawn. Weighing remains paused while the menu is open.
 
 Display order comes from pointer arrays such as `mainMenu[]`, not declaration order.
 

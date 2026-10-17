@@ -69,6 +69,7 @@ void wifiUpdate(const PullOtaTargetVersion &target) { @OTA@ }
 void navigateMenu(int) {}
 void backMenu() {}
 bool menuInfoPageActive() { return false; }
+void processMenuInfoPageExit() {}
 void dismissMenuInfoPage() { assert(false); }
 bool handleMenuInfoPageButton(int, uint8_t) { return false; }
 void buttonCircle_Pressed();

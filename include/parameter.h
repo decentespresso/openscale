@@ -564,11 +564,12 @@ bool b_extraction = false;  //萃取模式标识
 int b_mode = 0;             //0 = pourover; 1 = espresso;
 
 bool b_menu = false;
-std::atomic<bool> b_showAbout{false};
+volatile std::atomic<bool> b_showAbout{false};
 bool b_showLogo = false;
 bool b_showNumber = false;
 bool b_showWifiData = false;
 bool b_showStatusData = false;
+volatile std::atomic<bool> menuInfoPageClearPending{false};
 volatile bool b_menuRestartRequired = false;
 bool b_menuCirclePressPending = false;
 bool b_menuSquarePressPending = false;
@@ -584,6 +585,7 @@ inline void markMenuRestartRequired() {
 
 inline void leaveMenu() {
   b_menu = false;
+  menuInfoPageClearPending = true;
   portENTER_CRITICAL(&wsPendingMux);
   const bool restartRequired = b_menuRestartRequired;
   b_menuRestartRequired = false;
