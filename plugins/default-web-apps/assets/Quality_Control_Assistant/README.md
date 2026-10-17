@@ -41,7 +41,7 @@ Experience the app in action! It requires a **Chrome or Edge browser (version 70
 3.  **Connect to Scale:** Click the **"Connect to Scale"** button. A browser prompt will appear; select your "Decent Scale" from the list and click "Pair".
 4.  **Configure Settings:**
     * Input your target **Goal Weight**, allowable **Low Threshold**, and **High Threshold**.
-    * Set the **Min Weight** (the minimum weight detected to consider an object placed).
+    * Set the **Min Weight** above 0.2 g (the empty-scale tolerance). All weight fields must be finite, with the goal between the low and high thresholds. Incomplete or inconsistent settings cannot start QC.
     * Check **"Enable Sounds"** if you want audio cues for pass/fail.
     * You can also save your current settings as a **preset** by typing a name in "Object Name" and selecting "Save Current Settings as Preset" from the dropdown. To load a saved preset, simply select it from the dropdown.
 5.  **Start QC Mode:** Click the **"Start QC Mode"** button. The app will tare the scale and display status messages.
@@ -67,7 +67,7 @@ The `decentscale_qcweigh` application relies on a few key technical aspects:
     * **`WAITING_FOR_NEXT`**: The scale is waiting for an object to be placed.
     * **`MEASURING`**: An object has been detected, and the app is waiting for the weight to stabilize.
     * **`REMOVAL_PENDING`**: A measurement has been recorded, and the app is waiting for the object to be removed before prompting for the next.
-* **Weight Stability:** Stability is determined by monitoring the change in weight over time. A `stabilityThreshold` (default **0.2g**) defines the maximum allowed fluctuation for a reading to be considered stable.
+* **Weight Stability:** After object detection, the observed weight range must stay within `stabilityThreshold` (default **0.2 g**) for **2.5 seconds**. A sample gap over one second or a WebSocket interruption restarts settling. Removing an unsettled object does not create a reading. A completed object still has to be removed before the next reading, including after reconnect. Stopping QC clears settling and its pending removal reminder.
 * **Local Storage for Presets:** QC uses `decentScaleQCPresets` with `{version: 1, presets: {...}}` and `lastUsedQCPreset`, separate from Dosing Assistant. Before the first save, it reads compatible legacy entries and selections from `decentScalePresets` and `lastUsedPreset`. Saving copies them into the QC namespace without changing the legacy data. Once the QC store exists, the app stops consulting either shared key. It ignores unsupported store versions and refuses to overwrite them.
 * **Sound Generation:** Basic pass/fail sounds are generated directly in the browser using the **Web Audio API** (`AudioContext`, `OscillatorNode`, `GainNode`).
 * **Fullscreen API:** Utilizes the HTML Fullscreen API (`requestFullscreen`, `exitFullscreen`) for a more immersive user interface.
