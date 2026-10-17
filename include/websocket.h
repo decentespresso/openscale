@@ -185,7 +185,9 @@ inline void remoteQueuePending(uint32_t bits) {
 
 inline void remoteReplacePending(uint32_t setBits, uint32_t clearBits) {
   portENTER_CRITICAL(&wsPendingMux);
-  wsPendingMask = (wsPendingMask & ~clearBits) | setBits;
+  const uint32_t timerResetBits = (setBits & WSP_TIMER_STOP)
+      ? wsPendingMask & (WSP_TIMER_START | WSP_TIMER_ZERO) : 0;
+  wsPendingMask = (wsPendingMask & ~clearBits) | setBits | timerResetBits;
   portEXIT_CRITICAL(&wsPendingMux);
 #if HDS_ENABLE_ENERGY_MENU
   notifyEnergyMainLoop();
@@ -232,6 +234,9 @@ inline void remoteFinishWifiUpdateDispatch() {
 
 inline void remoteRestoreDeferredPendingLocked(uint32_t deferredMask,
                                                unsigned long resetAt) {
+  const uint32_t timerResetBits =
+      (wsPendingMask & (WSP_TIMER_START | WSP_TIMER_STOP | WSP_TIMER_ZERO)) == WSP_TIMER_STOP
+          ? deferredMask & (WSP_TIMER_START | WSP_TIMER_ZERO) : 0;
   const uint32_t replacementGroups[] = {
     WSP_DISPLAY_ON | WSP_DISPLAY_OFF,
     WSP_LOWPWR_ON | WSP_LOWPWR_OFF,
@@ -246,7 +251,7 @@ inline void remoteRestoreDeferredPendingLocked(uint32_t deferredMask,
   if ((deferredMask & WSP_RESET) && !(wsPendingMask & WSP_RESET)) {
     pendingResetAt = resetAt;
   }
-  wsPendingMask |= deferredMask;
+  wsPendingMask |= deferredMask | timerResetBits;
 }
 
 inline void wsQueuePending(uint32_t bits) {

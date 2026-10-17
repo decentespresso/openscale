@@ -46,7 +46,7 @@ Allowed from AsyncTCP callbacks:
 
 The WebSocket callback updates visible state and queues hardware work. `loop()` drains pending work at the top via `processWsPendingCmds()`, before the soft-sleep guard, so queued wake and shutdown work can still run.
 
-Use `wsQueuePending(bits)` for single actions. Use `wsReplacePending(set, clear)` for mutually exclusive pairs such as display, low power, sleep, and timer commands.
+Use `wsQueuePending(bits)` for single actions. Use `wsReplacePending(set, clear)` for mutually exclusive pairs such as display, low power, and sleep. Timer START/ZERO reset effects survive a newer STOP until the main loop drains the batch; a newer START or ZERO supersedes earlier timer intent. The shared helper applies this composition to BLE and WebSocket commands.
 
 ## Auto-Off And Light Sleep
 
