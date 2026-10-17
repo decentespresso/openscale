@@ -40,6 +40,8 @@ def find_packet(buffer, packet_type, packet_length):
         if buffer[i] == MODEL_BYTE and buffer[i + 1] == packet_type:
             if len(buffer) >= i + packet_length:
                 packet = buffer[i:i + packet_length]
+                if packet[-1] != xor_checksum(packet[:-1]):
+                    continue
                 remaining = buffer[i + packet_length:]
                 return packet, remaining
             return None, buffer
