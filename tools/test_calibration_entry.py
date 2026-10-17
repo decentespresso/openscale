@@ -51,6 +51,8 @@ template <typename T, unsigned N> int getMenuSize(T (&)[N]) { return N; }
 int connectionsMenuSize() { return 1; }
 void invalidateMenuFrame() {}
 void backMenu() {}
+bool menuInfoPageActive() { return false; }
+void dismissMenuInfoPage() { assert(false); }
 void selectMenu() { @SELECT@ }
 struct SerialStub {
   void print(const char*) {}

@@ -564,6 +564,11 @@ bool b_extraction = false;  //萃取模式标识
 int b_mode = 0;             //0 = pourover; 1 = espresso;
 
 bool b_menu = false;
+std::atomic<bool> b_showAbout{false};
+bool b_showLogo = false;
+bool b_showNumber = false;
+bool b_showWifiData = false;
+bool b_showStatusData = false;
 volatile bool b_menuRestartRequired = false;
 bool b_menuCirclePressPending = false;
 bool b_menuSquarePressPending = false;

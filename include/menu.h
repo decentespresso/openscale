@@ -14,11 +14,6 @@
 #include <string.h>
 const char *const weights[] = { "Exit", "50g", "100g", "200g", "500g", "1000g" };
 const float weight_values[] = { 0.0, 50.0, 100.0, 200.0, 500.0, 1000.0 };
-bool b_showAbout = false;
-bool b_showLogo = false;
-bool b_showNumber = false;
-bool b_showWifiData = false;
-bool b_showStatusData = false;
 String actionMessage = "Default";
 String actionMessage2 = "Default";
 unsigned long t_actionMessage = 0;
@@ -30,6 +25,33 @@ unsigned long lastMenuFrameRender = 0;
 
 inline void invalidateMenuFrame() {
   menuFrameDirty = true;
+}
+
+bool menuInfoPageActive() {
+  return b_showAbout || b_showLogo || b_showWifiData || b_showStatusData;
+}
+
+void clearMenuInfoPage() {
+  b_showAbout = false;
+  b_showLogo = false;
+  b_showWifiData = false;
+  b_showStatusData = false;
+  b_menuCirclePressPending = false;
+  b_menuSquarePressPending = false;
+  b_menuCircleLongHandled = false;
+  b_menuSquareLongHandled = false;
+  invalidateMenuFrame();
+}
+
+void dismissMenuInfoPage() {
+  if (b_showLogo) b_showNumber = !b_showNumber;
+  clearMenuInfoPage();
+}
+
+bool handleMenuInfoPageButton(int pin, uint8_t eventType) {
+  if (!b_menu || !menuInfoPageActive()) return false;
+  if (pin == BUTTON_SQUARE && eventType == AceButton::kEventReleased) dismissMenuInfoPage();
+  return true;
 }
 
 inline bool menuFrameNeedsRender(unsigned long now) {
@@ -402,13 +424,7 @@ void showWifiStatus() {
     }
 
   } while (u8g2.nextPage());
-  delay(1000);
-  while (b_showWifiData) {
-    if (digitalRead(BUTTON_SQUARE) == LOW) {
-      b_showWifiData = false;
-    }
-  }
-  waitForMenuButtonRelease();
+  menuFrameDirty = false;
 }
 #endif
 
@@ -471,13 +487,7 @@ void showStatus() {
     u8g2.drawStr(0, 58, driftLine);
 #endif
   } while (u8g2.nextPage());
-  delay(1000);
-  while (b_showStatusData) {
-    if (digitalRead(BUTTON_SQUARE) == LOW) {
-      b_showStatusData = false;
-    }
-  }
-  waitForMenuButtonRelease();
+  menuFrameDirty = false;
 }
 
 #if HDS_FEATURE_WIFI
@@ -1512,12 +1522,7 @@ void showAbout() {
 #ifdef BUZZER
   buzzer.off();
 #endif
-  delay(1000);
-  while (b_showAbout) {
-    if (digitalRead(BUTTON_SQUARE) == LOW)
-      b_showAbout = false;
-  }
-  waitForMenuButtonRelease();
+  menuFrameDirty = false;
 }
 
 void showLogo() {
@@ -1580,14 +1585,7 @@ void showLogo() {
 #ifdef BUZZER
   buzzer.off();
 #endif
-  delay(1000);
-  while (b_showLogo) {
-    if (digitalRead(BUTTON_SQUARE) == LOW) {
-      b_showNumber = !b_showNumber;
-      b_showLogo = false;
-    }
-  }
-  waitForMenuButtonRelease();
+  menuFrameDirty = false;
 }
 
 void enableDebug() {
@@ -1673,6 +1671,7 @@ void refreshMenuRows() {
 
 void navigateMenu(int direction) {
   recordEnergyActivity();
+  if (menuInfoPageActive()) return;
   if (currentMenu == connectionsMenu) currentMenuSize = connectionsMenuSize();
   currentIndex = (currentIndex + direction + currentMenuSize) % currentMenuSize;
   currentSelection = currentMenu[currentIndex];
@@ -1707,6 +1706,10 @@ void selectMenu() {
 #if HDS_ENABLE_ENERGY_MENU
   recordEnergyActivity();
 #endif
+  if (menuInfoPageActive()) {
+    dismissMenuInfoPage();
+    return;
+  }
   invalidateMenuFrame();
   if (currentSelection->subMenu) {
     if (currentSelection == &menuScale) {
@@ -1740,7 +1743,21 @@ void selectMenu() {
   }
 }
 
+bool renderMenuInfoPage() {
+  if (!menuInfoPageActive()) return false;
+  if (!menuFrameDirty) return true;
+#if HDS_FEATURE_WIFI
+  if (b_showWifiData) showWifiStatus();
+  else
+#endif
+  if (b_showStatusData) showStatus();
+  else if (b_showAbout) showAbout();
+  else if (b_showLogo) showLogo();
+  return true;
+}
+
 void showMenu() {
+  if (renderMenuInfoPage()) return;
   const unsigned long now = millis();
   if (!menuFrameNeedsRender(now)) return;
   refreshMenuRows();
