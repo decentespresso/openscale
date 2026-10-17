@@ -184,6 +184,11 @@ Staged LittleFS OTA stores target and rollback metadata in NVS namespace `ota_fs
 
 `install_combo` retains the original attempted custom target across conversion to a rollback restore. Terminal failure telemetry uses that identity, not the running rollback firmware. Legacy restore transactions without an original target omit failure telemetry rather than attributing it to the wrong build.
 
+Successful rollback restoration also reports the original target as failed alongside
+the verified restored identity. The loader retains `install_combo` in the local
+pending record before transaction cleanup; the completion report uses the existing
+three-attempt limit and never blocks reboot on a telemetry outage.
+
 Flow:
 
 1. Current firmware stores both manifests, writes `firmware.bin` to the inactive app slot, and reboots.
