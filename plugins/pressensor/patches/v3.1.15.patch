@@ -1612,10 +1612,10 @@ index 399e8c4e2b11fca2ad94371f83999df8ba80d85a..f4fa4644bddbb9db085f5257ad35f7d6
  
 diff --git a/tools/test_pressensor_ble_contract.py b/tools/test_pressensor_ble_contract.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..ea5aec0b604e49c181bf2cf3b1644e37c5046620
+index 0000000000000000000000000000000000000000..1756766fcb35857399b2c7ccbf4bc614e77c8c70
 --- /dev/null
 +++ b/tools/test_pressensor_ble_contract.py
-@@ -0,0 +1,206 @@
+@@ -0,0 +1,213 @@
 +from pathlib import Path
 +
 +
@@ -1632,11 +1632,15 @@ index 0000000000000000000000000000000000000000..ea5aec0b604e49c181bf2cf3b1644e37
 +    runtime = (ROOT / "include" / "pressensor_runtime.h").read_text(encoding="utf-8")
 +    tap = (ROOT / "include" / "tap_detection.h").read_text(encoding="utf-8")
 +    declarations = runtime[runtime.index("#define PRESSENSOR_FLOW_SAMPLE_MS"):runtime.index("static inline float pressensorFlushPeakLimit")]
++    tapState = "\n".join(line for line in tap.splitlines() if line.startswith((
++        "constexpr unsigned long TAP_ACTION_DELAY_MS", "static bool tapActionArmed",
++        "static bool tapTripleArmed", "static unsigned long tapActionAtMs",
++    ))) + "\n"
 +    harness = r'''
 +#include <cassert>
 +#include <cstdint>
 +#include <initializer_list>
-+''' + declarations + r'''
++''' + declarations + tapState + r'''
 +uint32_t now = 10000;
 +uint32_t millis() { return now; }
 +struct Logger {
@@ -1659,11 +1663,15 @@ index 0000000000000000000000000000000000000000..ea5aec0b604e49c181bf2cf3b1644e37
 +  bool running = false;
 +  bool isRunning() { return running; }
 +} stopWatch;
-+enum class TapEvent { Double, Triple };
++enum class TapEvent { None, Double, Triple };
 +TapEvent nextEvent = TapEvent::Double;
 +struct Detector {
 +  void reset(unsigned long, float) {}
-+  TapEvent tick(unsigned long, float) { return nextEvent; }
++  TapEvent tick(unsigned long, float) {
++    const TapEvent event = nextEvent;
++    nextEvent = TapEvent::None;
++    return event;
++  }
 +} tapDetector;
 +int digitalRead(int) { return HIGH; }
 +void power_off(int) {}
@@ -1680,6 +1688,8 @@ index 0000000000000000000000000000000000000000..ea5aec0b604e49c181bf2cf3b1644e37
 +    ):
 +        name = signature.split("(", 1)[0].split()[-1]
 +        harness += signature + " {" + function_body(source, name) + "}\n"
++    delay = "now += TAP_ACTION_DELAY_MS; tapDetectTick();" if "TAP_ACTION_DELAY_MS" in tap else ""
++    harness += "void sendTap(TapEvent event) { nextEvent = event; tapDetectTick(); " + delay + "}\n"
 +    harness += r'''
 +int main() {
 +  for (bool enabled : {false, true}) {
@@ -1690,24 +1700,21 @@ index 0000000000000000000000000000000000000000..ea5aec0b604e49c181bf2cf3b1644e37
 +    stopWatch.running = false;
 +    timerActions = 0;
 +    b_tareByButton = b_weight_quick_zero = false;
-+    nextEvent = TapEvent::Double;
-+    tapDetectTick();
++    sendTap(TapEvent::Double);
 +    assert(b_tareByButton == !active);
-+    nextEvent = TapEvent::Triple;
-+    tapDetectTick();
++    sendTap(TapEvent::Triple);
 +    if (active) {
 +      assert(pressensorShot.state == PRESSENSOR_SHOT_DONE);
-+      tapDetectTick();
++      sendTap(TapEvent::Triple);
 +      assert(pressensorShot.state == PRESSENSOR_SHOT_IDLE);
-+      tapDetectTick();
++      sendTap(TapEvent::Triple);
 +      assert(pressensorShot.state == PRESSENSOR_SHOT_RUNNING);
 +      assert(timerActions == 0 && !stopWatch.running);
 +    } else {
 +      assert(timerActions == 1 && stopWatch.running);
 +    }
-+    nextEvent = TapEvent::Double;
 +    b_tareByButton = b_weight_quick_zero = false;
-+    tapDetectTick();
++    sendTap(TapEvent::Double);
 +    assert(!b_tareByButton && !b_weight_quick_zero);
 +  }
 +}
