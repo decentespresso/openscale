@@ -267,7 +267,7 @@ bool energyMainLoopHasPendingWork() {
       otaDisplayState != OTA_DISPLAY_NONE || b_powerOff) {
     return true;
   }
-  return hasRemoteTareRequest();
+  return !b_softSleep && hasRemoteTareRequest();
 }
 
 bool energyMainLoopCanBlock() {
@@ -346,9 +346,11 @@ unsigned long energyMainLoopWaitMs(unsigned long now) {
     waitMs = EnergyRuntimePolicy::earlier(waitMs, ENERGY_DISPLAY_DEADLINE_MS);
   }
   waitMs = EnergyRuntimePolicy::earlier(waitMs, 200);
-  waitMs = EnergyRuntimePolicy::earlier(
-    waitMs, EnergyRuntimePolicy::timeUntil(
-      now, t_batteryRefresh, i_batteryRefreshTareInterval));
+  if (!b_softSleep) {
+    waitMs = EnergyRuntimePolicy::earlier(
+      waitMs, EnergyRuntimePolicy::timeUntil(
+        now, t_batteryRefresh, i_batteryRefreshTareInterval));
+  }
 
 #if HDS_FEATURE_WIFI
   if (b_wifiEnabled) {

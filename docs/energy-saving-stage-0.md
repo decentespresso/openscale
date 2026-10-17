@@ -28,6 +28,8 @@ USB presence keeps the existing serial PM lock held and disables main-loop block
 
 With BLE connected, Light Sleep on, USB policy permitting sleep, and explicit soft sleep active, the Arduino loop uses the same event-driven wait and automatic ESP32-S3 Light Sleep remains available. BLE deferred commands wake main-loop processing. SCALE_DOUT is neither an EXT1 source nor a fallback polling requirement while the powered-down ADC is in explicit soft sleep.
 
+Awake-only battery refresh deadlines and queued tare requests do not prevent that soft-sleep wait. Tare requests remain queued until wake; battery timestamps are not advanced without a sample. Runnable timer, wake, shutdown, and reset commands still interrupt the wait.
+
 Explicit soft sleep and deep sleep retain their existing behavior. Soft sleep does not cause the PM performance lock to remain held.
 
 After installing the pinned build dependencies, run `python tools/check_energy_button_regressions.py`. It compiles the firmware button and migration functions against AceButton 1.10.1 with host-side GPIO, clock, and NVS doubles. Use `--acebutton <library-directory>` to select another local installation of that version. Physical first-press, tare, timer, double-click, long-press, and power measurements still require device validation.
