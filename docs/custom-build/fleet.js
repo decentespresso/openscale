@@ -26,9 +26,9 @@ const encodeBase32 = bytes => {
   return result;
 };
 
-const readStoredKey = (storage, key, version) => {
+const readStoredKey = (storageName, key, version) => {
   try {
-    const stored = JSON.parse(storage.getItem(key));
+    const stored = JSON.parse(globalThis[storageName].getItem(key));
     const fleetKey = normalizedFleetKey(stored?.key);
     return stored?.version === version && fleetPattern.test(fleetKey) ? fleetKey : "";
   } catch {
@@ -36,9 +36,9 @@ const readStoredKey = (storage, key, version) => {
   }
 };
 
-const removeStoredKey = (storage, key) => {
+const removeStoredKey = (storageName, key) => {
   try {
-    storage.removeItem(key);
+    globalThis[storageName].removeItem(key);
   } catch {
   }
 };
@@ -53,13 +53,13 @@ const saveKey = key => {
 };
 
 const loadStoredKey = () => {
-  const current = readStoredKey(localStorage, storageKey, 2);
+  const current = readStoredKey("localStorage", storageKey, 2);
   if (current) return current;
-  const legacy = readStoredKey(sessionStorage, storageKey, 2)
-    || readStoredKey(localStorage, legacyStorageKey, 1);
+  const legacy = readStoredKey("sessionStorage", storageKey, 2)
+    || readStoredKey("localStorage", legacyStorageKey, 1);
   if (legacy && saveKey(legacy)) {
-    removeStoredKey(sessionStorage, storageKey);
-    removeStoredKey(localStorage, legacyStorageKey);
+    removeStoredKey("sessionStorage", storageKey);
+    removeStoredKey("localStorage", legacyStorageKey);
   }
   return legacy;
 };
@@ -439,9 +439,9 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
   document.querySelector("#forget-fleet").addEventListener("click", () => forgetDialog.showModal());
   forgetDialog.addEventListener("close", () => {
     if (forgetDialog.returnValue !== "confirm") return;
-    removeStoredKey(sessionStorage, storageKey);
-    removeStoredKey(localStorage, storageKey);
-    removeStoredKey(localStorage, legacyStorageKey);
+    removeStoredKey("sessionStorage", storageKey);
+    removeStoredKey("localStorage", storageKey);
+    removeStoredKey("localStorage", legacyStorageKey);
     fleetKey = "";
     generation += 1;
     scales = [];
