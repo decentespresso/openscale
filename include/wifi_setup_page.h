@@ -415,7 +415,13 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
         return;
       }
       if (data.state === 'ready') {
-        if (pendingCheck?.handoff || !await acknowledgeTest(data)) return;
+        if (pendingCheck?.handoff) {
+          if (data.busy) continue;
+          finishOperation(data);
+          message('The final WiFi switch did not start. Stay on the original network and retry.', 'error');
+          return;
+        }
+        if (!await acknowledgeTest(data)) return;
         started = Date.now();
         continue;
       }
