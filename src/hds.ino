@@ -2313,7 +2313,7 @@ void loop() {
   else
     b_heartBeatIcon = false;
 #endif
-  if (b_ota || bleHasLiveClient()
+  if (b_ota || b_is_charging || bleHasLiveClient()
 #if HDS_FEATURE_WEBSOCKET
       || (b_wifiEnabled && websocketHasClients())
 #endif
