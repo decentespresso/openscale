@@ -708,6 +708,10 @@ static inline void grinderTickConnected(float weight) {
 }
 
 static inline void grinderTickArmed() {
+  if (!(grinderSettings.zeroMaxGrams < grinderCutoffGrams(grinderSettings.targetGrams, grinderSettings.safetyMarginGrams))) {
+    grinderEnterError("invalid zero range");
+    return;
+  }
   const uint32_t now = millis();
   if (grinderRuntime.pendingCommand == GRINDER_COMMAND_NONE) {
     Serial.println("[grinder] armed send ON");
