@@ -1,4 +1,5 @@
 import io
+import json
 import os
 from pathlib import Path
 import shutil
@@ -28,7 +29,7 @@ def testFirmware():
     except ValueError:
         revision = run(["git", "rev-parse", "HEAD"]).stdout.decode("ascii").strip()
     archive = run(["git", "archive", "--format=zip", revision,
-                   "include/config.h", "include/parameter.h", "include/ble.h", "src/hds.ino", "platformio.ini"]).stdout
+                   "include", "src", "platformio.ini", "tools"]).stdout
     with tempfile.TemporaryDirectory(prefix="hds-app-prompts-") as temporary:
         checkout = Path(temporary)
         with zipfile.ZipFile(io.BytesIO(archive)) as source:
@@ -74,6 +75,13 @@ def testFirmware():
                  "-I", str(checkout / "include"), str(PLUGIN / "tests" / f"{name}.cpp"),
                  "-o", str(executable)])
             run([str(executable)])
+        selection = checkout / "combination.json"
+        selection.write_text(json.dumps({
+            "firmware_ref": "main", "features": [], "plugins": ["app-prompts", "pressensor"],
+        }), encoding="utf-8")
+        combination = customBuild.resolveConfiguration(selection)
+        assert [pluginId for pluginId, _ in combination["patches"]] == ["app-prompts", "pressensor"]
+        applyPatches({**combination, "patches": combination["patches"][1:]}, checkout)
     print(f"App Prompts firmware checks passed against {revision}")
 
 

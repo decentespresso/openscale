@@ -257,12 +257,12 @@ index 612eaed..d582599 100644
    if (bleHasLiveClient() && connId != 0xFFFF) {
      pServer->disconnect(connId, 0x13);
 diff --git a/include/config.h b/include/config.h
-index 315a91b..35116c6 100644
+index 315a91b..38509a6 100644
 --- a/include/config.h
 +++ b/include/config.h
-@@ -3,6 +3,14 @@
- 
- #include "hds_features.h"
+@@ -8,6 +8,14 @@
+ #define CUUID_DECENTSCALE_WRITE "36f5"
+ #define SUUID_DECENTSCALE "fff0"
  
 +#ifndef HDS_ENABLE_APP_PROMPTS
 +#if HDS_CUSTOM_BUILD
@@ -272,9 +272,9 @@ index 315a91b..35116c6 100644
 +#endif
 +#endif
 +
+ #define DATA_SET 4
  
- #define CUUID_DECENTSCALE_READ "fff4"
- #define CUUID_DECENTSCALE_WRITE "36f5"
+ 
 diff --git a/include/parameter.h b/include/parameter.h
 index 6bc69e2..26e6eb8 100644
 --- a/include/parameter.h
@@ -293,22 +293,19 @@ index 6bc69e2..26e6eb8 100644
  #include "wifi_setup.h"
  
 diff --git a/platformio.ini b/platformio.ini
-index c53dca6..48a8a4b 100644
+index c53dca6..8271f61 100644
 --- a/platformio.ini
 +++ b/platformio.ini
-@@ -122,6 +122,12 @@ extra_scripts =
-   ${env:esp32s3.extra_scripts}
-   pre:tools/configure_custom_build.py
- 
+@@ -127,3 +127,9 @@ platform = native
+ test_build_src = no
+ test_framework = unity
+ build_flags = -Iinclude
++
 +[env:esp32s3-app-prompts]
 +extends = env:esp32s3
 +build_flags =
 +  ${env:esp32s3.build_flags}
 +  -DHDS_ENABLE_APP_PROMPTS=1
-+
- [env:native]
- platform = native
- test_build_src = no
 diff --git a/src/hds.ino b/src/hds.ino
 index a8a3171..726a5ac 100644
 --- a/src/hds.ino
