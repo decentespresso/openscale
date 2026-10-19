@@ -47,6 +47,7 @@ inline void menuActionMessageChanged() {
 
 void waitForMenuButtonRelease() {
   while (digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW) {
+    serviceFuelGauge();
     delay(20);
   }
 }
@@ -421,6 +422,8 @@ void showWifiStatus() {
   } while (u8g2.nextPage());
   delay(1000);
   while (b_showWifiData) {
+    power_off(-1);
+    delay(20);
     if (digitalRead(BUTTON_SQUARE) == LOW) {
       b_showWifiData = false;
     }
@@ -490,6 +493,8 @@ void showStatus() {
   } while (u8g2.nextPage());
   delay(1000);
   while (b_showStatusData) {
+    power_off(-1);
+    delay(20);
     if (digitalRead(BUTTON_SQUARE) == LOW) {
       b_showStatusData = false;
     }
@@ -1531,6 +1536,8 @@ void showAbout() {
 #endif
   delay(1000);
   while (b_showAbout) {
+    power_off(-1);
+    delay(20);
     if (digitalRead(BUTTON_SQUARE) == LOW)
       b_showAbout = false;
   }
@@ -1599,6 +1606,8 @@ void showLogo() {
 #endif
   delay(1000);
   while (b_showLogo) {
+    power_off(-1);
+    delay(20);
     if (digitalRead(BUTTON_SQUARE) == LOW) {
       b_showNumber = !b_showNumber;
       b_showLogo = false;
@@ -1623,7 +1632,7 @@ void enableDebug() {
 }
 
 void calibrateVoltage() {
-  if (b_hasFuelGauge) return;
+  if (!fuelGaugeLegacyHardware()) return;
   actionMessage = "Calibrate 4.2v";
   menuActionMessageChanged();
   t_actionMessageDelay = 1000;

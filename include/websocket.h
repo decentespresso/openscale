@@ -379,7 +379,7 @@ void processWsPendingCmds() {
     b_u8g2Sleep = true;
     u8g2.setPowerSave(1);
     digitalWrite(PWR_CTRL, LOW);
-    if (!b_hasFuelGauge) {
+    if (fuelGaugeLegacyHardware()) {
       digitalWrite(ACC_PWR_CTRL, LOW);
     }
 #if HDS_ENABLE_ENERGY_MENU

@@ -30,6 +30,7 @@ def main():
 bool b_softSleep = false, b_u8g2Sleep = false, b_wifiEnabled = true;
 bool b_ota = false, b_powerOff = false, pendingOtaDispatching = false;
 bool b_hasFuelGauge = false;
+bool fuelGaugeLegacyHardware() { return !b_hasFuelGauge; }
 bool rail = true, accessory = true, oled = true;
 int wakes = 0, sleeps = 0, supervises = 0, adcRefreshes = 0, outputResets = 0;
 constexpr int PWR_CTRL = 3, ACC_PWR_CTRL = 14, LOW = 0, HIGH = 1;

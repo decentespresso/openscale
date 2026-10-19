@@ -9,6 +9,7 @@
 #endif
 #include "espnow.h"
 #include "fuel_gauge.h"
+#include "storage.h"
 
 #ifdef ESP32
 #include "driver/rtc_io.h"
@@ -252,7 +253,8 @@ void esp32_sleep() {
   gpio_hold_en((gpio_num_t)I2C_SCL);
   gpio_hold_en((gpio_num_t)I2C_SDA);
 
-  if (!b_hasFuelGauge) {
+  fuelGaugeSleep();
+  if (fuelGaugeLegacyHardware()) {
     digitalWrite(ACC_PWR_CTRL, LOW);
     gpio_hold_en((gpio_num_t)ACC_PWR_CTRL);
   }
@@ -351,7 +353,13 @@ void shut_down_now_accidentTouch() {
 
 void updateBattery(int batteryPin){
   if (b_hasFuelGauge) {
-    f_batteryVoltage = fuelGaugeVoltageV();
+    fuelGaugeLoop();
+    const FuelGaugeReading reading = fuelGaugeReading();
+    if (!reading.valid || reading.sequence == powerCadence.fuelGaugeSampleSequence) return;
+    f_batteryVoltage = reading.voltageMv / 1000.0f;
+    powerCadence.fuelGaugeSampleSequence = reading.sequence;
+  } else if (!fuelGaugeLegacyHardware()) {
+    return;
   } else if (!b_ads1115InitFail) {
     int16_t adc0;
     float volts0;
@@ -367,7 +375,7 @@ void updateBattery(int batteryPin){
     f_batteryVoltage = correctedVoltage;
   }
   const int percent = b_hasFuelGauge
-      ? constrain(static_cast<int>(fuelGaugeSocPercent()), 0, 100)
+      ? static_cast<int>(fuelGaugeSocPercent())
       : constrain(static_cast<int>(map(f_batteryVoltage * 1000,
           showEmptyBatteryBelowVoltage * 1000,
           showFullBatteryAboveVoltage * 1000, 0, 100)), 0, 100);
@@ -376,6 +384,18 @@ void updateBattery(int batteryPin){
   portEXIT_CRITICAL(&batteryStateMux);
   t_batteryRefresh = millis();
   powerCadence.batterySampleSequence++;
+}
+
+void serviceFuelGauge() {
+  if (!b_hasFuelGauge) return;
+  const uint32_t previousSequence = powerCadence.batterySampleSequence;
+  updateBattery(BATTERY_PIN);
+  if (powerCadence.batterySampleSequence != previousSequence &&
+      fuelGaugeRuntime.capacityPersistPending &&
+      storagePutInt(KEY_BAT_CAPACITY, fuelGaugeRuntime.desiredCapacity)) {
+    fuelGaugeRuntime.capacityPersistPending = false;
+    storagePutBool(KEY_BAT_CAPACITY_SET, true);
+  }
 }
 
 float getUsbVoltage(int usbPin) {
@@ -428,6 +448,7 @@ void evaluateAutoOff(double seconds, bool showCountdown) {
 }
 
 void power_off(int min) {
+  serviceFuelGauge();
   if (processNewBatterySample()) return;
   if (min == -1) {
     resetAutoOffTimer(millis());
@@ -457,6 +478,7 @@ void power_off_gyro(int sec) {
 #endif
 
 void power_off(double sec) {
+  serviceFuelGauge();
   if (processNewBatterySample()) return;
   if (sec == -1) {
     resetAutoOffTimer(millis());
@@ -477,6 +499,8 @@ float get_usb_voltage() {
 }
 
 float get_bat_voltage() {
+  if (b_hasFuelGauge) return fuelGaugeVoltageV();
+  if (!fuelGaugeLegacyHardware()) return 0;
   Serial.print("get_bat_voltage");
   Serial.println(readCheckBatteryVoltage(BATTERY_PIN));
   return readCheckBatteryVoltage(BATTERY_PIN);

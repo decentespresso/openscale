@@ -1033,27 +1033,23 @@ void setup() {
   gpio_hold_dis((gpio_num_t)ACC_PWR_CTRL);
 #endif
   gpio_deep_sleep_hold_dis();
-  Serial.println("ACC_PWR_CTRL = HIGH");
 #ifdef ESP32
   Wire.begin(I2C_SDA, I2C_SCL);
 #endif
-  fuelGaugeBegin();
-  if (!b_hasFuelGauge) {
+  b_batteryProtect = storageGetBool(KEY_BAT_PROTECT, false);
+  const int storedBatteryCapacity = storageGetInt(KEY_BAT_CAPACITY, 0);
+  const uint16_t batteryCapacity = storedBatteryCapacity >= 300 && storedBatteryCapacity <= 2000
+      ? static_cast<uint16_t>(storedBatteryCapacity) : 0;
+  fuelGaugeBegin(batteryCapacity, storageGetBool(KEY_BAT_CAPACITY_SET, false));
+  if (fuelGaugeLegacyHardware()) {
     pinMode(ACC_PWR_CTRL, OUTPUT);
     digitalWrite(ACC_PWR_CTRL, HIGH);
-  }
-  b_batteryProtect = storageGetBool(KEY_BAT_PROTECT, false);
-  if (b_hasFuelGauge && !storageGetBool(KEY_BAT_CAPACITY_SET, false)) {
-    if (fuelGaugeSetCapacity(700)) {
-      storagePutBool(KEY_BAT_CAPACITY_SET, true);
-      Serial.println("fuelGauge: design capacity set once (700 mAh)");
-    }
   }
 #ifdef HW_SPI
   SPI.begin(OLED_SCLK, -1, OLED_SDIN, OLED_CS);
 #endif
 #ifdef ADS1115ADC
-  if (!b_hasFuelGauge) {
+  if (fuelGaugeLegacyHardware()) {
     ADS_init();
   }
 #endif
@@ -1740,7 +1736,7 @@ void resetStableOutput() {
 
 bool wakeScaleFromSoftSleep(const char *context) {
   digitalWrite(PWR_CTRL, HIGH);
-  if (!b_hasFuelGauge) {
+  if (fuelGaugeLegacyHardware()) {
     digitalWrite(ACC_PWR_CTRL, HIGH);
   }
   delay(5);
@@ -2256,6 +2252,7 @@ void loop() {
 #endif
   processWsPendingCmds();
   if (b_ota) {
+    fuelGaugePauseCharging();
     if (!otaRuntimeIsPaused()) {
       if (!otaTransportsStopped) {
         otaBleClientDisconnected =
@@ -2300,9 +2297,7 @@ void loop() {
 
   processBleStatusResponse();
   processBleVoltageResponse();
-  if (b_hasFuelGauge && powerCadence.fuelGauge.shouldRun(millis(), 1000)) {
-    fuelGaugeLoop();
-  }
+  serviceFuelGauge();
 #if HDS_ENABLE_ENERGY_MENU
   serviceEnergyPowerManagement();
   serviceEnergyHousekeeping(millis());

@@ -1,6 +1,3 @@
-// Bat. Info menu for the BQ27427 fuel gauge, following the showStatus
-// pattern: draw a frame, hold it, then poll buttons. ENTER cycles pages,
-// NEXT steps back (exit on first page).
 #ifndef FUEL_GAUGE_MENU_H
 #define FUEL_GAUGE_MENU_H
 #include "fuel_gauge.h"
@@ -14,17 +11,18 @@
 #define MENU_BTN_BACK 1
 #endif
 
-static bool b_showBatInfoData = false;
-static bool s_showBatInfoBusy = false;
-static int i_batInfoPage = 0;
-
 static int batInfoTotalPages() {
   return b_hasFuelGauge ? 2 : 1;
 }
 
-static void drawBatInfoPage() {
+static void drawBatInfoPage(int page) {
+  const FuelGaugeReading reading = fuelGaugeReading();
+  const bool charging = fuelGaugeCharging();
+  const bool usbPlugged = fuelGaugeUsbPlugged();
+  const float voltage = b_hasFuelGauge ? reading.voltageMv / 1000.0f : f_batteryVoltage;
+  const int percent = batteryPercent();
   char pageInfo[10];
-  snprintf(pageInfo, sizeof(pageInfo), "%d/%d", i_batInfoPage + 1,
+  snprintf(pageInfo, sizeof(pageInfo), "%d/%d", page + 1,
            batInfoTotalPages());
 
   u8g2.firstPage();
@@ -33,35 +31,38 @@ static void drawBatInfoPage() {
     u8g2.drawUTF8(AR(pageInfo), 12, pageInfo);
     if (!b_hasFuelGauge) {
       char l[8];
-      snprintf(l, sizeof(l), "%.2fV", f_batteryVoltage);
+      snprintf(l, sizeof(l), "%.2fV", voltage);
       u8g2.drawUTF8(0, 12, l);
-      snprintf(l, sizeof(l), "%d%%", batteryPercent());
+      snprintf(l, sizeof(l), "%d%%", percent);
       u8g2.drawUTF8(0, 24, l);
-      snprintf(l, sizeof(l), "CRG %s", fuelGaugeUsbPlugged() ? "Y" : "N");
+      snprintf(l, sizeof(l), "CRG %s", charging ? "Y" : "N");
       u8g2.drawUTF8(0, 36, l);
-      snprintf(l, sizeof(l), "USB %s", fuelGaugeUsbPlugged() ? "Y" : "N");
+      snprintf(l, sizeof(l), "USB %s", usbPlugged ? "Y" : "N");
       u8g2.drawUTF8(0, 48, l);
-    } else if (i_batInfoPage == 0) {
+    } else if (!reading.valid) {
+      u8g2.drawUTF8(0, 24, "Gauge unavailable");
+      u8g2.drawUTF8(0, 36, "Charging disabled");
+    } else if (page == 0) {
       char l[12];
       char r[12];
-      snprintf(l, sizeof(l), "%.2f V", fuelGaugeVoltageV());
-      snprintf(r, sizeof(r), "%.1f C", fuelGaugeTempC());
+      snprintf(l, sizeof(l), "%.2f V", voltage);
+      snprintf(r, sizeof(r), "%.1f C", reading.temperature * 0.1f - 273.15f);
       u8g2.drawUTF8(0, 12, l);
       u8g2.drawUTF8(64, 12, r);
-      snprintf(l, sizeof(l), "%d mA", fuelGaugeCurrentMa());
-      snprintf(r, sizeof(r), "%d mW", fuelGaugePowerMw());
+      snprintf(l, sizeof(l), "%d mA", reading.currentMa);
+      snprintf(r, sizeof(r), "%d mW", reading.powerMw);
       u8g2.drawUTF8(0, 24, l);
       u8g2.drawUTF8(64, 24, r);
-      snprintf(l, sizeof(l), "Cap %u", fuelGaugeCapacityMah());
-      snprintf(r, sizeof(r), "FCC %u", fuelGaugeFullCapacityMah());
+      snprintf(l, sizeof(l), "Cap %u", reading.capacityMah);
+      snprintf(r, sizeof(r), "FCC %u", reading.fullCapacityMah);
       u8g2.drawUTF8(0, 36, l);
       u8g2.drawUTF8(64, 36, r);
-      snprintf(l, sizeof(l), "Health %u%%", fuelGaugeSoHPercent());
-      snprintf(r, sizeof(r), "Bat. %u%%", fuelGaugeSocPercent());
+      snprintf(l, sizeof(l), "Health %u%%", reading.soh);
+      snprintf(r, sizeof(r), "Bat. %u%%", reading.soc);
       u8g2.drawUTF8(0, 48, l);
       u8g2.drawUTF8(64, 48, r);
-      snprintf(l, sizeof(l), "CRG %s", fuelGaugeCharging() ? "Y" : "N");
-      snprintf(r, sizeof(r), "USB %s", fuelGaugeUsbPlugged() ? "Y" : "N");
+      snprintf(l, sizeof(l), "CRG %s", charging ? "Y" : "N");
+      snprintf(r, sizeof(r), "USB %s", usbPlugged ? "Y" : "N");
       u8g2.drawUTF8(0, 60, l);
       u8g2.drawUTF8(64, 60, r);
     } else {
@@ -73,39 +74,36 @@ static void drawBatInfoPage() {
 }
 
 void showBatInfo() {
-  if (s_showBatInfoBusy) {
-    return;
-  }
-  s_showBatInfoBusy = true;
-  b_showBatInfoData = true;
-  i_batInfoPage = 0;
-  drawBatInfoPage();
+  bool showing = true;
+  int page = 0;
+  power_off(-1);
+  drawBatInfoPage(page);
   delay(1000);
   unsigned long t_lastRefresh = millis();
-  while (b_showBatInfoData) {
+  while (showing) {
+    power_off(-1);
     if (digitalRead(MENU_BTN_ENTER) == LOW) {
-      i_batInfoPage = (i_batInfoPage + 1) % batInfoTotalPages();
-      drawBatInfoPage();
+      page = (page + 1) % batInfoTotalPages();
+      drawBatInfoPage(page);
       t_lastRefresh = millis();
       delay(250);
     }
     if (digitalRead(MENU_BTN_BACK) == LOW) {
-      if (i_batInfoPage <= 0) {
-        b_showBatInfoData = false;
+      if (page <= 0) {
+        showing = false;
       } else {
-        i_batInfoPage--;
-        drawBatInfoPage();
+        page--;
+        drawBatInfoPage(page);
         t_lastRefresh = millis();
         delay(250);
       }
     }
     if (millis() - t_lastRefresh >= 500) {
-      drawBatInfoPage();
+      drawBatInfoPage(page);
       t_lastRefresh = millis();
     }
     delay(50);
   }
-  s_showBatInfoBusy = false;
 }
 
 #endif

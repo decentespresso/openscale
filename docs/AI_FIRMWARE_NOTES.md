@@ -24,6 +24,47 @@ Core files:
 - `include/menu.h` and `include/display.h`: OLED UI and menu actions.
 - `include/finger_detection.h`: touch-button press classifier.
 
+## HDS 9.0.5 Battery Safety
+
+`src/fuel_gauge.cpp` owns runtime sampling and charger control on the loop task.
+`src/fuel_gauge_config.cpp` checks I2C acknowledgments, exact read lengths,
+configuration checksums/readback, CFGUPDATE exit, and restoration of the prior
+seal state. It uses one-byte writes and bus-free delays per BQ27427 TRM 3.3.
+Normal measurements are read at most once per second; getters and OLED frames
+use the cached snapshot. Blocking information screens service the same path.
+
+An address acknowledgment retains gauge-board identity even if device-type or
+configuration validation fails. GPIO6 never falls back to ADC and GPIO14 never
+becomes accessory output on that board. Before detection, neither legacy pin
+role is assumed, including an aborted button wake.
+
+Invalid/short reads disable charging, mark telemetry unavailable, and do not
+advance the battery sample sequence or freshness timestamp. The last valid
+value remains cached for existing transports. Sampling retries once per second;
+failed configuration retries after ten seconds. No new automatic shutdown policy
+is applied to invalid data. Fresh low-voltage samples retain existing shutdown
+confirmation. Configuration and OTA pauses also keep charging disabled.
+
+Battery Protect still stops charging at 80% and resumes at 75%. Protected deep
+sleep holds GPIO6 HIGH (charging disabled) until normal wake; it does not cycle
+charging while switched off. Without protection, charging is held enabled only
+when the cached gauge reading is valid. Wake-on-Weight micro-wakes leave this
+hold intact. Normal detection releases it with charging disabled until validated.
+
+The integer `bat_capacity` NVS key persists the selected 300-2000 mAh capacity,
+including USB `bc` changes. Zero means migration is pending: adopt an existing
+custom capacity only when the old `bat_cap_set` flag is true and ITPOR is clear;
+otherwise select 700 mAh. Gauge POR triggers restoration of capacity, chemistry,
+and CC_GAIN before measurements or charging are trusted. The old Boolean key
+and storage schema remain compatible. A custom capacity already lost to a gauge
+reset before this migration cannot be recovered from the old Boolean alone.
+
+Host tests: `python tools/test_fuel_gauge_runtime.py` and
+`python tools/test_fuel_gauge_battery.py`. Physical sign-off still requires
+battery/charger specifications plus cold boot, gauge reset, sleep/wake, and
+charging-threshold tests on both 8.x and 9.0.5 boards. Host/CI tests do not provide
+hardware certification.
+
 ## Threading Model
 
 The Arduino sketch runs on the main loop task. `websocket.onEvent(...)` runs on the AsyncTCP task, potentially on another core.

@@ -347,7 +347,7 @@ public:
     if (inputString.startsWith("v")) {
       Serial.print("Battery Voltage:");
       Serial.print(f_batteryVoltage);
-      if (b_ads1115InitFail && !b_hasFuelGauge) {
+      if (b_ads1115InitFail && fuelGaugeLegacyHardware()) {
         int adcValue = analogRead(BATTERY_PIN);
         float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;
         Serial.print("\tADC Voltage:");
@@ -359,7 +359,7 @@ public:
       Serial.print(i_lowBatteryCountTotal);
     }
 
-    if (!b_hasFuelGauge && inputString.startsWith("vf ")) {
+    if (fuelGaugeLegacyHardware() && inputString.startsWith("vf ")) {
       int adcValue = analogRead(BATTERY_PIN);
       float voltageAtPin = (adcValue / adcResolution) * referenceVoltage;
       float batteryVoltage = voltageAtPin * dividerRatio;
@@ -370,17 +370,24 @@ public:
       Serial.println(f_batteryCalibrationFactor);
     }
 
-    if (inputString.startsWith("bc")) {
-      if (inputString.length() > 2) {
-        uint16_t cap = inputString.substring(3).toInt();
+    if (inputString == "bc" || inputString.startsWith("bc ")) {
+      uint16_t cap;
+      if (!b_hasFuelGauge) {
+        Serial.println("Battery gauge unavailable");
+      } else if (inputString == "bc") {
+        Serial.printf("Battery capacity: %u mAh\n", fuelGaugeDesignCapacityMah());
+      } else if (!fuelGaugeParseCapacity(inputString.c_str() + 3, cap)) {
+        Serial.println("Invalid capacity (300-2000 mAh)");
+      } else if (!storagePutInt(KEY_BAT_CAPACITY, cap)) {
+        Serial.println("Battery capacity storage failed; unchanged");
+      } else {
+        fuelGaugeRuntime.capacityPersistPending = false;
+        storagePutBool(KEY_BAT_CAPACITY_SET, true);
         if (fuelGaugeSetCapacity(cap)) {
           Serial.printf("Battery capacity set to: %u mAh\n", cap);
         } else {
-          Serial.println("Invalid capacity (300-2000 mAh)");
+          Serial.println("Capacity saved; gauge configuration failed, charging disabled; retry pending");
         }
-      } else {
-        Serial.printf("Battery capacity: %u mAh\n",
-                      fuelGaugeDesignCapacityMah());
       }
     }
 

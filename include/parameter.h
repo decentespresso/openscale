@@ -33,6 +33,7 @@ WifiSetupRuntime wifiSetupRuntime;
 #include "auto_off_activity.h"
 #include "energy_runtime_policy.h"
 #include "pull_ota_target.h"
+#include "fuel_gauge.h"
 #if HDS_ENABLE_ENERGY_MENU
 #include "energy_policy.h"
 #include "energy_power_management.h"
@@ -42,7 +43,7 @@ Preferences settingsPreferences;
 struct PowerCadenceState {
   CadenceGate autoOff;
   CadenceGate chargeCheck;
-  CadenceGate fuelGauge;
+  uint32_t fuelGaugeSampleSequence = 0;
   BatterySampleGate batterySamples;
   uint32_t batterySampleSequence = 0;
 };
@@ -608,6 +609,7 @@ bool b_is_charging = false;             //正在充电标识
 bool b_espnow = false;
 volatile bool b_hasFuelGauge = false;   //BQ27427 电量计存在(9.0.5)
 volatile bool b_batteryProtect = false; //电池保护:充电上限 80%(9.0.5)
+FuelGaugeRuntime fuelGaugeRuntime;
 volatile int batteryPercentCached = 0;
 portMUX_TYPE batteryStateMux = portMUX_INITIALIZER_UNLOCKED;
 //bool b_debug = DEBUG;                                //debug信息显示
