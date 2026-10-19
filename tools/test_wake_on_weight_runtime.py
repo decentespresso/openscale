@@ -27,6 +27,9 @@ constexpr int BUTTON_CIRCLE = 1, BUTTON_SQUARE = 2, BATTERY_CHARGING = 10;
 constexpr int SCALE_DOUT = 11, SCALE_SCLK = 12, SCALE_PDWN = 13, SCALE_A0 = -1, PWR_CTRL = 3;
 constexpr int ESP_SLEEP_WAKEUP_TIMER = 1, ESP_SLEEP_WAKEUP_EXT1 = 2, ESP_EXT1_WAKEUP_ANY_LOW = 0;
 constexpr uint64_t PIN_BITMASK = (1ULL << 1) | (1ULL << 2) | (1ULL << 10);
+bool protectedSleep = false;
+bool fuelGaugeDeepSleepActive() { return protectedSleep; }
+uint64_t fuelGaugeSleepWakeMask() { return protectedSleep ? PIN_BITMASK & ~(1ULL << BATTERY_CHARGING) : PIN_BITMASK; }
 constexpr float lowBatteryThreshold = 3.2f;
 using gpio_num_t = int;
 int i_wow_interval = 1, i_lowBatteryCount = 0, GPIO_power_on_with = -1;
@@ -77,7 +80,7 @@ void gpio_deep_sleep_hold_en() {}
 void gpio_deep_sleep_hold_dis() {}
 void configureWakePinsForDeepSleep() { rtcInputsReady = true; }
 void esp_sleep_enable_ext1_wakeup_io(uint64_t mask, int) {
-  assert(mask == PIN_BITMASK);
+  assert(mask == fuelGaugeSleepWakeMask());
   ext1 = true;
   if (pressOnRearm) pressAt = nowMs;
 }
@@ -118,6 +121,7 @@ MENU_FUNCTIONS
 
 void resetBoot() {
   nowMs = 0; cpuMhz = 240; timerUs = 0; ext1 = false;
+  protectedSleep = false;
   rtcInputsReady = false;
   GPIO_power_on_with = -1; wowButtonWake = false; wowTimerArmedThisBoot = false;
   liveAdcs = 0; endedAdcs = 0; begunAdcs = 0;
@@ -142,6 +146,8 @@ bool tick() {
 void arm() { wowCaptureBaselineForSleep(); assert(wowRtc.armed); }
 int main() {
   static_assert(sizeof(WowRtcState) == 20);
+  resetBoot(); arm(); protectedSleep = true; pressPin = BATTERY_CHARGING; pressAt = 0;
+  assert(!tick() && wowRtc.armed && GPIO_power_on_with == -1);
   for (bool outOfRange : {false, true}) {
     for (bool timeout : {false, true}) {
       resetBoot(); arm();

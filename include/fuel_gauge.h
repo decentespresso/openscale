@@ -49,6 +49,22 @@ struct FuelGaugeRuntime {
   bool lowSocNotified = false;
 };
 
+struct FuelGaugeSleepState {
+  uint32_t magic;
+  uint16_t capacity;
+  bool ready;
+  bool chargeEnabled;
+  bool sealRequired;
+};
+
+constexpr uint32_t fuelGaugeSleepMagic = 0x42415431;
+extern FuelGaugeSleepState fuelGaugeSleepState;
+
+inline bool fuelGaugeDeepSleepActive() {
+  return fuelGaugeSleepState.magic == fuelGaugeSleepMagic &&
+         fuelGaugeSleepState.capacity >= 300 && fuelGaugeSleepState.capacity <= 2000;
+}
+
 extern FuelGaugeRuntime fuelGaugeRuntime;
 
 bool fuelGaugeBegin(uint16_t capacity, bool adoptCapacity);

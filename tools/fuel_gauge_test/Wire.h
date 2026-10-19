@@ -13,6 +13,8 @@ struct FakeWire {
   bool present = true, sealed = true, configTimeout = false, checksumBad = false;
   int operations = 0, failAt = -1, shortReg = -1, negativeReg = -1, nackReg = -1;
   int unsealKeys = 0, configEntries = 0, resets = 0, seals = 0;
+  uint8_t errorCode = 2;
+  uint16_t failCommand = 0xffff;
 
   FakeWire() {
     words = {{0x04, 3800}, {0x06, 8}, {0x1c, 50}, {0x1e, 2981},
@@ -22,6 +24,7 @@ struct FakeWire {
   void setCapacity(uint16_t capacity) { blocks[82][6] = capacity >> 8; blocks[82][7] = capacity & 0xff; }
   uint16_t capacity() const { return static_cast<uint16_t>(blocks[82][6]) << 8 | blocks[82][7]; }
   void begin(int, int) {}
+  void end() {}
   void beginTransmission(uint8_t address) { assert(address == 0x55); tx.clear(); }
   size_t write(uint8_t byte) { tx.push_back(byte); return 1; }
   bool fails() { return ++operations == failAt; }
@@ -41,7 +44,8 @@ struct FakeWire {
     if (value == 0x0020) { ++seals; sealed = true; }
   }
   uint8_t endTransmission(bool = true) {
-    if (fails() || !present) return 2;
+    if (fails()) return 2;
+    if (!present) return errorCode;
     if (tx.empty()) return 0;
     reg = tx[0];
     if (reg == nackReg) return 2;
@@ -49,7 +53,11 @@ struct FakeWire {
     assert(tx.size() == 2);
     const uint8_t value = tx[1];
     if (reg == 0) commandLow = value;
-    if (reg == 1) control(commandLow | static_cast<uint16_t>(value) << 8);
+    if (reg == 1) {
+      const uint16_t requested = commandLow | static_cast<uint16_t>(value) << 8;
+      if (requested == failCommand) { failCommand = 0xffff; return 2; }
+      control(requested);
+    }
     if (reg == 0x3e) subclass = value;
     if (reg >= 0x40 && reg <= 0x5f) {
       if (sealed || !(words[0x06] & 0x10)) return 2;

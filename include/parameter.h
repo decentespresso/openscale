@@ -610,6 +610,7 @@ bool b_espnow = false;
 volatile bool b_hasFuelGauge = false;   //BQ27427 电量计存在(9.0.5)
 volatile bool b_batteryProtect = false; //电池保护:充电上限 80%(9.0.5)
 FuelGaugeRuntime fuelGaugeRuntime;
+RTC_DATA_ATTR FuelGaugeSleepState fuelGaugeSleepState;
 volatile int batteryPercentCached = 0;
 portMUX_TYPE batteryStateMux = portMUX_INITIALIZER_UNLOCKED;
 //bool b_debug = DEBUG;                                //debug信息显示

@@ -45,11 +45,20 @@ failed configuration retries after ten seconds. No new automatic shutdown policy
 is applied to invalid data. Fresh low-voltage samples retain existing shutdown
 confirmation. Configuration and OTA pauses also keep charging disabled.
 
-Battery Protect still stops charging at 80% and resumes at 75%. Protected deep
-sleep holds GPIO6 HIGH (charging disabled) until normal wake; it does not cycle
-charging while switched off. Without protection, charging is held enabled only
-when the cached gauge reading is valid. Wake-on-Weight micro-wakes leave this
-hold intact. Normal detection releases it with charging disabled until validated.
+Battery Protect still stops charging at 80% and resumes at 75%, including while
+switched off. `include/fuel_gauge_sleep.h` services the gauge on brief timer wakes
+every ten seconds with USB connected, without initializing the display, storage,
+or radios. It retains charging hysteresis, readiness, capacity, and pending seal
+restoration in RTC memory. Failed readings disable charging until valid again;
+gauge POR restores configuration before charging resumes.
+
+With USB absent, protection adds no periodic wakes: GPIO8 wakes on USB attachment.
+The charger-status pin is excluded from this protected sleep wake mask so active
+charging cannot cause an immediate full boot. Buttons still wake normally, and
+Wake-on-Weight retains its shorter timer and weight detection. Normal wake pauses
+charging during initialization and releases the USB-detect RTC mode. Without
+protection, the existing sleep/wake policy remains unchanged and GPIO6 is held
+enabled only when the cached gauge reading is valid.
 
 The integer `bat_capacity` NVS key persists the selected 300-2000 mAh capacity,
 including USB `bc` changes. Zero means migration is pending: adopt an existing

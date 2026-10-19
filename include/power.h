@@ -123,9 +123,14 @@ void releaseWakePinsFromRtcMode() {
   rtc_gpio_deinit((gpio_num_t)BUTTON_CIRCLE);
   rtc_gpio_deinit((gpio_num_t)BUTTON_SQUARE);
   rtc_gpio_deinit((gpio_num_t)BATTERY_CHARGING);
+  if (fuelGaugeDeepSleepActive()) {
+    rtc_gpio_deinit(static_cast<gpio_num_t>(FUEL_GAUGE_USB_DET));
+  }
 }
 
+uint64_t fuelGaugeSleepWakeMask();
 #include "wake_on_weight.h"
+#include "fuel_gauge_sleep.h"
 
 void print_wakeup_reason() {
   esp_sleep_wakeup_cause_t wakeup_reason;
@@ -254,6 +259,7 @@ void esp32_sleep() {
   gpio_hold_en((gpio_num_t)I2C_SDA);
 
   fuelGaugeSleep();
+  if (fuelGaugeDeepSleepActive()) fuelGaugeConfigureSleepWake();
   if (fuelGaugeLegacyHardware()) {
     digitalWrite(ACC_PWR_CTRL, LOW);
     gpio_hold_en((gpio_num_t)ACC_PWR_CTRL);

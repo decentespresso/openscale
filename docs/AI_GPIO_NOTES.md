@@ -89,6 +89,14 @@ are never touched by the micro path; the normal `setup()` release block
 (`gpio_hold_dis` sequence in `src/hds.ino`) is idempotent on pins the micro
 path already released.
 
+On detected 9.0.5 hardware with Battery Protect enabled,
+`include/fuel_gauge_sleep.h` also releases/re-latches I2C and charger GPIO6 on
+timer micro-wakes to maintain the 75-80% charge cycle. GPIO14 remains input.
+USB present uses a ten-second timer (or the shorter Wake-on-Weight timer);
+USB absent arms GPIO8 attachment wake without adding periodic wakes. The
+protected wake mask excludes GPIO10 while the charger can be active. Normal
+wake releases GPIO8 from RTC mode before digital USB detection resumes.
+
 Before its first button/charging check, the timer path releases the three wake pins'
 RTC holds and explicitly restores RTC input mode and pull-ups. A disabled input can
 read low and otherwise be mistaken for a pressed button before ADC sampling begins.

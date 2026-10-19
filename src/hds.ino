@@ -884,7 +884,8 @@ void beforeDeepSleepFlush() {
 #endif
 
 void setup() {
-  wowMicroWakeOrContinue();
+  const int batteryWakeButton = fuelGaugeMicroWakeOrContinue();
+  if (batteryWakeButton < 0) wowMicroWakeOrContinue();
 #if HDS_ENABLE_ENERGY_MENU
   energyIdle.mainTask = xTaskGetCurrentTaskHandle();
 #endif
@@ -951,6 +952,7 @@ void setup() {
   pinMode(PWR_CTRL, OUTPUT);
 #endif
   print_wakeup_reason();
+  if (batteryWakeButton > 0) GPIO_power_on_with = batteryWakeButton;
   Serial.println("GPIO_power_on_with = " + String(GPIO_power_on_with));
 
   if (GPIO_power_on_with == BATTERY_CHARGING)
@@ -964,6 +966,7 @@ void setup() {
     b_ble_enabled = true;
   }
   while (true && GPIO_power_on_with > 0) {
+    if (batteryWakeButton > 0) break;
 #ifdef ADS1232ADC
     if (wowButtonWake) break;
 #endif
@@ -1041,6 +1044,7 @@ void setup() {
   const uint16_t batteryCapacity = storedBatteryCapacity >= 300 && storedBatteryCapacity <= 2000
       ? static_cast<uint16_t>(storedBatteryCapacity) : 0;
   fuelGaugeBegin(batteryCapacity, storageGetBool(KEY_BAT_CAPACITY_SET, false));
+  fuelGaugeSleepState.magic = 0;
   if (fuelGaugeLegacyHardware()) {
     pinMode(ACC_PWR_CTRL, OUTPUT);
     digitalWrite(ACC_PWR_CTRL, HIGH);

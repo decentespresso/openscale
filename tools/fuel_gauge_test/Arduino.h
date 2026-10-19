@@ -6,7 +6,7 @@
 #include <limits>
 #include <vector>
 
-constexpr int LOW = 0, HIGH = 1, INPUT = 0, OUTPUT = 1;
+constexpr int LOW = 0, HIGH = 1, INPUT = 0, OUTPUT = 1, INPUT_PULLUP = 2;
 inline uint64_t fakeMicros = 0;
 inline std::array<int, 64> pinLevels{};
 inline std::array<int, 64> pinModes{};
@@ -20,7 +20,8 @@ inline void digitalWrite(int pin, int level) { pinLevels[pin] = level; pinWrites
 inline int digitalRead(int pin) { return pin == 1 && millis() >= buttonBackAt ? LOW : pinLevels[pin]; }
 inline void pinMode(int pin, int mode) { pinModes[pin] = mode; }
 struct FakeSerial {
-  template<class... T> void printf(const char *, T...) {}
-  void println(const char *) {}
+  int writes = 0;
+  template<class... T> void printf(const char *, T...) { ++writes; }
+  void println(const char *) { ++writes; }
 };
 inline FakeSerial Serial;
