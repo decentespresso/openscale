@@ -1,0 +1,435 @@
+diff --git a/include/app_prompt.h b/include/app_prompt.h
+new file mode 100644
+index 0000000..840a10c
+--- /dev/null
++++ b/include/app_prompt.h
+@@ -0,0 +1,97 @@
++#ifndef APP_PROMPT_H
++#define APP_PROMPT_H
++
++#include "app_prompt_state.h"
++
++inline AppPromptState readAppPromptLocked() {
++  AppPromptState state;
++  state.connectionHandle = appPromptState.connectionHandle;
++  state.cancelled = appPromptState.cancelled;
++  state.active = appPromptState.active;
++  state.heartbeatAt = appPromptState.heartbeatAt;
++  for (size_t index = 0; index < sizeof(state.text); ++index) state.text[index] = appPromptState.text[index];
++  return state;
++}
++
++inline void storeAppPromptLocked(const AppPromptState &state) {
++  appPromptState.connectionHandle = state.connectionHandle;
++  appPromptState.cancelled = state.cancelled;
++  appPromptState.active = state.active;
++  appPromptState.heartbeatAt = state.heartbeatAt;
++  for (size_t index = 0; index < sizeof(state.text); ++index) appPromptState.text[index] = state.text[index];
++}
++
++inline void setAppPromptConnection(uint16_t handle) {
++  portENTER_CRITICAL(&appPromptMux);
++  const unsigned long now = millis();
++  storeAppPromptLocked(appPromptConnection(handle, now));
++  portEXIT_CRITICAL(&appPromptMux);
++}
++
++inline void syncAppPromptConnection(uint16_t handle) {
++  portENTER_CRITICAL(&appPromptMux);
++  const unsigned long now = millis();
++  if (appPromptState.connectionHandle != handle) storeAppPromptLocked(appPromptConnection(handle, now));
++  portEXIT_CRITICAL(&appPromptMux);
++}
++
++inline void recordAppPromptHeartbeat(const uint8_t *bytes, size_t length) {
++  if (!appPromptIsHeartbeat(bytes, length)) return;
++  portENTER_CRITICAL(&appPromptMux);
++  const unsigned long now = millis();
++  storeAppPromptLocked(appPromptHeartbeat(readAppPromptLocked(), now));
++  portEXIT_CRITICAL(&appPromptMux);
++}
++
++inline void processAppPromptSession() {
++  portENTER_CRITICAL(&appPromptMux);
++  const unsigned long now = millis();
++  const AppPromptState state = readAppPromptLocked();
++  storeAppPromptLocked(b_ota || !b_ble_enabled
++    ? appPromptConnection(APP_PROMPT_NO_CONNECTION, now)
++    : appPromptExpire(state, now));
++  portEXIT_CRITICAL(&appPromptMux);
++}
++
++inline AppPromptState snapshotAppPrompt() {
++  portENTER_CRITICAL(&appPromptMux);
++  const AppPromptState state = readAppPromptLocked();
++  portEXIT_CRITICAL(&appPromptMux);
++  return state;
++}
++
++inline bool cancelAppPrompt() {
++  portENTER_CRITICAL(&appPromptMux);
++  const unsigned long now = millis();
++  const AppPromptState state = appPromptExpire(readAppPromptLocked(), now);
++  const bool cancelled = state.active;
++  if (cancelled) storeAppPromptLocked(appPromptCancel(state));
++  portEXIT_CRITICAL(&appPromptMux);
++  return cancelled;
++}
++
++class AppPromptCallbacks : public BLECharacteristicCallbacks {
++  void onRead(BLECharacteristic *characteristic) override {
++    uint8_t capabilities[] = {1, APP_PROMPT_MAX_BYTES, APP_PROMPT_TIMEOUT_MS / 1000};
++    characteristic->setValue(capabilities, sizeof(capabilities));
++  }
++
++  void onWrite(BLECharacteristic *characteristic) override {
++    const size_t length = characteristic->getLength();
++    if (length > APP_PROMPT_MAX_BYTES + 1) return;
++    const uint8_t *bytes = characteristic->getData();
++    portENTER_CRITICAL(&appPromptMux);
++    const unsigned long now = millis();
++    storeAppPromptLocked(appPromptCommand(readAppPromptLocked(), bytes, length, now));
++    portEXIT_CRITICAL(&appPromptMux);
++  }
++};
++
++inline void setupAppPromptCharacteristic(BLEService *service) {
++  BLECharacteristic *characteristic = service->createCharacteristic(
++    "8b8dc7c0-6bf7-4bdf-9a2c-0ba9cb9a4a01",
++    BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE);
++  characteristic->setCallbacks(new AppPromptCallbacks());
++}
++
++#endif
+diff --git a/include/app_prompt_state.h b/include/app_prompt_state.h
+new file mode 100644
+index 0000000..dcec4dc
+--- /dev/null
++++ b/include/app_prompt_state.h
+@@ -0,0 +1,75 @@
++#ifndef APP_PROMPT_STATE_H
++#define APP_PROMPT_STATE_H
++
++#include <stddef.h>
++#include <stdint.h>
++#include <string.h>
++
++static constexpr size_t APP_PROMPT_MAX_BYTES = 18;
++static constexpr uint16_t APP_PROMPT_NO_CONNECTION = UINT16_MAX;
++static constexpr unsigned long APP_PROMPT_TIMEOUT_MS = 10000;
++
++struct AppPromptState {
++  uint16_t connectionHandle = APP_PROMPT_NO_CONNECTION;
++  bool cancelled = false;
++  bool active = false;
++  unsigned long heartbeatAt = 0;
++  char text[APP_PROMPT_MAX_BYTES + 1] = {};
++};
++
++inline AppPromptState appPromptConnection(uint16_t handle, unsigned long now) {
++  AppPromptState state;
++  state.connectionHandle = handle;
++  state.heartbeatAt = now;
++  return state;
++}
++
++inline AppPromptState appPromptExpire(const AppPromptState &state, unsigned long now) {
++  AppPromptState next = state;
++  if (state.connectionHandle == APP_PROMPT_NO_CONNECTION || now - state.heartbeatAt >= APP_PROMPT_TIMEOUT_MS) {
++    next.active = false;
++    memset(next.text, 0, sizeof(next.text));
++  }
++  return next;
++}
++
++inline AppPromptState appPromptHeartbeat(const AppPromptState &state, unsigned long now) {
++  AppPromptState next = appPromptExpire(state, now);
++  if (state.connectionHandle != APP_PROMPT_NO_CONNECTION) next.heartbeatAt = now;
++  return next;
++}
++
++inline AppPromptState appPromptCancel(const AppPromptState &state) {
++  AppPromptState next = state;
++  next.cancelled = true;
++  next.active = false;
++  memset(next.text, 0, sizeof(next.text));
++  return next;
++}
++
++inline AppPromptState appPromptCommand(const AppPromptState &state, const uint8_t *bytes,
++                                      size_t length, unsigned long now) {
++  AppPromptState next = appPromptExpire(state, now);
++  if (bytes == nullptr || length == 0 || state.connectionHandle == APP_PROMPT_NO_CONNECTION || state.cancelled) return next;
++  if (length == 1 && bytes[0] == 0) {
++    next.active = false;
++    memset(next.text, 0, sizeof(next.text));
++    return next;
++  }
++  if (bytes[0] != 1 || length < 2 || length > APP_PROMPT_MAX_BYTES + 1 ||
++      now - state.heartbeatAt >= APP_PROMPT_TIMEOUT_MS) return next;
++  for (size_t index = 1; index < length; ++index) {
++    if (bytes[index] < 0x20 || bytes[index] > 0x7e) return next;
++  }
++  memset(next.text, 0, sizeof(next.text));
++  memcpy(next.text, bytes + 1, length - 1);
++  next.active = true;
++  return next;
++}
++
++inline bool appPromptIsHeartbeat(const uint8_t *bytes, size_t length) {
++  const uint8_t heartbeat[] = {0x03, 0x0a, 0x03, 0xff, 0xff, 0x00, 0x0a};
++  return bytes != nullptr && length == sizeof(heartbeat) && memcmp(bytes, heartbeat, sizeof(heartbeat)) == 0;
++}
++
++#endif
+diff --git a/include/ble.h b/include/ble.h
+index 612eaed..d582599 100644
+--- a/include/ble.h
++++ b/include/ble.h
+@@ -37,6 +37,9 @@ void buildAdsDebugPacket(byte data[41]);
+ void sendBleGyro();
+ #endif
+ volatile uint16_t connId = 0xFFFF;
++#if HDS_ENABLE_APP_PROMPTS
++#include "app_prompt.h"
++#endif
+ 
+ void resetBleFff4StateLocked(uint16_t subscriptionHandle) {
+   bleFff4SubscriptionHandle = subscriptionHandle;
+@@ -53,6 +56,9 @@ void setBleFff4Connection(uint16_t connectionHandle, uint16_t subscriptionHandle
+   connId = connectionHandle;
+   resetBleFff4StateLocked(subscriptionHandle);
+   portEXIT_CRITICAL(&bleFff4Mux);
++#if HDS_ENABLE_APP_PROMPTS
++  setAppPromptConnection(connectionHandle);
++#endif
+ }
+ 
+ void adoptBleFff4ConnectionFromSubscription(uint16_t connectionHandle) {
+@@ -74,6 +80,9 @@ bool clearBleFff4Connection(uint16_t connectionHandle) {
+     resetBleFff4StateLocked(0xFFFF);
+   }
+   portEXIT_CRITICAL(&bleFff4Mux);
++#if HDS_ENABLE_APP_PROMPTS
++  if (isCurrent) setAppPromptConnection(APP_PROMPT_NO_CONNECTION);
++#endif
+   return isCurrent;
+ }
+ 
+@@ -337,6 +346,9 @@ class MyCallbacks : public BLECharacteristicCallbacks {
+       Serial.print(" ");
+ 
+       if (data[0] == 0x03) {
++#if HDS_ENABLE_APP_PROMPTS
++        recordAppPromptHeartbeat(data, len);
++#endif
+         BleDecentCommandSink sink;
+         handleDecentBinaryCommand(sink, data, len);
+       }
+@@ -357,6 +369,9 @@ class Fff4Callbacks : public BLECharacteristicCallbacks {
+       deviceConnected = true;
+     }
+     const uint16_t nextHandle = subValue == 0 ? 0xFFFF : desc->conn_handle;
++#if HDS_ENABLE_APP_PROMPTS
++    if (subValue != 0 && desc->conn_handle == connId) syncAppPromptConnection(desc->conn_handle);
++#endif
+     portENTER_CRITICAL(&bleFff4Mux);
+     const bool changed = desc->conn_handle == connId && bleFff4SubscriptionHandle != nextHandle;
+     if (changed) bleFff4SubscriptionHandle = nextHandle;
+@@ -395,6 +410,9 @@ void ble_init() {
+     BLECharacteristic::PROPERTY_READ
+       | BLECharacteristic::PROPERTY_NOTIFY);
+   pReadCharacteristic->setCallbacks(new Fff4Callbacks());
++#if HDS_ENABLE_APP_PROMPTS
++  setupAppPromptCharacteristic(pService);
++#endif
+   pService->start();
+   pAdvertising = BLEDevice::getAdvertising();
+   pAdvertising->addServiceUUID(pService->getUUID());
+@@ -419,6 +437,9 @@ void disconnectBLE() {
+ }
+ 
+ void bleShutdown() {
++#if HDS_ENABLE_APP_PROMPTS
++  setAppPromptConnection(APP_PROMPT_NO_CONNECTION);
++#endif
+   if (pServer == nullptr) return;
+   if (bleHasLiveClient() && connId != 0xFFFF) {
+     pServer->disconnect(connId, 0x13);
+diff --git a/include/config.h b/include/config.h
+index 315a91b..35116c6 100644
+--- a/include/config.h
++++ b/include/config.h
+@@ -3,6 +3,14 @@
+ 
+ #include "hds_features.h"
+ 
++#ifndef HDS_ENABLE_APP_PROMPTS
++#if HDS_CUSTOM_BUILD
++#define HDS_ENABLE_APP_PROMPTS 1
++#else
++#define HDS_ENABLE_APP_PROMPTS 0
++#endif
++#endif
++
+ 
+ #define CUUID_DECENTSCALE_READ "fff4"
+ #define CUUID_DECENTSCALE_WRITE "36f5"
+diff --git a/include/parameter.h b/include/parameter.h
+index 6bc69e2..26e6eb8 100644
+--- a/include/parameter.h
++++ b/include/parameter.h
+@@ -7,6 +7,12 @@
+ #include <math.h>
+ #include <mutex>
+ #include "calibration_validation.h"
++#if HDS_ENABLE_APP_PROMPTS
++#include "app_prompt_state.h"
++
++portMUX_TYPE appPromptMux = portMUX_INITIALIZER_UNLOCKED;
++volatile AppPromptState appPromptState;
++#endif
+ #if HDS_FEATURE_WIFI
+ #include "wifi_setup.h"
+ 
+diff --git a/platformio.ini b/platformio.ini
+index c53dca6..48a8a4b 100644
+--- a/platformio.ini
++++ b/platformio.ini
+@@ -122,6 +122,12 @@ extra_scripts =
+   ${env:esp32s3.extra_scripts}
+   pre:tools/configure_custom_build.py
+ 
++[env:esp32s3-app-prompts]
++extends = env:esp32s3
++build_flags =
++  ${env:esp32s3.build_flags}
++  -DHDS_ENABLE_APP_PROMPTS=1
++
+ [env:native]
+ platform = native
+ test_build_src = no
+diff --git a/src/hds.ino b/src/hds.ino
+index a8a3171..726a5ac 100644
+--- a/src/hds.ino
++++ b/src/hds.ino
+@@ -744,6 +744,12 @@ void buttonSquare_DoubleClicked() {
+ }
+ 
+ void buttonCircle_LongPressed() {
++#if HDS_ENABLE_APP_PROMPTS
++  if (!b_menu && !b_calibration && GPIO_power_on_with != BATTERY_CHARGING && cancelAppPrompt()) {
++    circle_press_data = {};
++    return;
++  }
++#endif
+   if (!b_menu) {
+     Serial.println("O button long pressed");
+ #ifdef BUZZER
+@@ -2128,7 +2134,11 @@ bool energyDisplayIdleInhibited() {
+ #endif
+   return usbPower || b_menu || b_calibration || b_ota ||
+          b_adc_recovery_active || stopWatch.isRunning() || grinderDisplayRequired ||
+-         b_debug || b_about || b_shutdownFailBle;
++         b_debug || b_about || b_shutdownFailBle
++#if HDS_ENABLE_APP_PROMPTS
++         || snapshotAppPrompt().active
++#endif
++         ;
+ }
+ 
+ void applyEnergyDisplayMode(DisplayIdleMode requested, bool force = false) {
+@@ -2233,6 +2243,9 @@ void serviceEnergyHousekeeping(unsigned long now) {
+ 
+ 
+ void loop() {
++#if HDS_ENABLE_APP_PROMPTS
++  processAppPromptSession();
++#endif
+   static bool otaBleClientDisconnected = false;
+   static bool otaTransportsStopped = false;
+ #if HDS_ENABLE_ENERGY_MENU
+@@ -2530,6 +2543,11 @@ void chargingOLED(int perc, float voltage) {
+ 
+ 
+ void updateOled() {
++#if HDS_ENABLE_APP_PROMPTS
++  const AppPromptState promptFrame = snapshotAppPrompt();
++  const bool showPrompt = promptFrame.active && !b_debug && !b_about && !b_adc_recovery_active &&
++    !b_menu && !b_calibration && !b_softSleep && !b_ota && f_displayedValue <= OVER_WEIGHT;
++#endif
+   const unsigned long frameNow = millis();
+   if (frameNow - t_oled_refresh >= i_oled_print_interval) {
+     t_oled_refresh = frameNow;
+@@ -2540,8 +2558,13 @@ void updateOled() {
+       return;
+     }
+     if (oledRedraw) {
++      uint32_t signature = energyDisplaySignature(frameNow);
++#if HDS_ENABLE_APP_PROMPTS
++      signature = mixEnergyDisplaySignature(signature, promptFrame.active);
++      if (promptFrame.active) signature = mixEnergyDisplayText(signature, promptFrame.text);
++#endif
+       if (!energyRuntime.oledFrames.shouldRender(
+-            true, energyDisplaySignature(frameNow), frameNow, 1000)) {
++            true, signature, frameNow, 1000)) {
+         return;
+       }
+     }
+@@ -2559,14 +2582,28 @@ void updateOled() {
+         if (b_adc_recovery_active) {
+           drawAdcRecovery();
+         } else {
+-          drawWeight(f_displayedValue);
+-          drawTime();
++#if HDS_ENABLE_APP_PROMPTS
++          if (showPrompt) {
++            drawWeightAt(f_displayedValue, LCDHeight - 30);
++            u8g2.setFont(u8g2_font_6x10_tr);
++            u8g2.drawStr((LCDWidth - u8g2.getStrWidth(promptFrame.text)) / 2, LCDHeight - 16, promptFrame.text);
++          } else {
++#endif
++            drawWeight(f_displayedValue);
++            drawTime();
++#if HDS_ENABLE_APP_PROMPTS
++          }
++#endif
+         }
+       }
+       u8g2.setDrawColor(2);
+ 
+       drawBattery(frameNow);
++#if HDS_ENABLE_APP_PROMPTS
++      if (!showPrompt) drawButton();
++#else
+       drawButton();
++#endif
+       drawBle(frameNow);
+       drawHeartBeat();
+ #if HDS_ENABLE_GRINDER
+@@ -2605,7 +2642,15 @@ void separateFloat(float number) {
+   i_weightFirstDecimal = abs(roundedTenths % 10);
+ }
+ 
++#if HDS_ENABLE_APP_PROMPTS
+ void drawWeight(float input) {
++  drawWeightAt(input, -1);
++}
++
++void drawWeightAt(float input, int baseline) {
++#else
++void drawWeight(float input) {
++#endif
+   if (input > OVER_WEIGHT){
+     u8g2.setFont(FONT_GRAM);
+     u8g2.drawStr(AC((char *)"Over"), AT(), (char *)"Over");
+@@ -2640,6 +2685,9 @@ void drawWeight(float input) {
+     if (strcmp(sec2sec(stopWatch.elapsed()), "0s") == 0) {
+       y = AT();
+     }
++#if HDS_ENABLE_APP_PROMPTS
++    if (baseline >= 0) y = baseline;
++#endif
+     u8g2.drawStr(x_decimalPoint, y, ".");
+     u8g2.drawStr(x_integer, y, trim(integerStr));
+     u8g2.drawStr(x_decimal, y, trim(decimalStr));

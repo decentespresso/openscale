@@ -1,0 +1,5 @@
+{
+  "firmware_ref": "main",
+  "features": [],
+  "plugins": ["app-prompts"]
+}

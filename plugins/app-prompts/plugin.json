@@ -1,0 +1,20 @@
+{
+  "schema": 2,
+  "id": "app-prompts",
+  "name": "App Prompts",
+  "description": "Show instructions from a connected Bluetooth app alongside live weight.",
+  "tooltip": "Adds a versioned Bluetooth prompt API. Hold Circle to cancel prompts for the current connection. No WiFi or web apps required.",
+  "version": "1.0.0",
+  "firmware_refs": ["main"],
+  "requires": [],
+  "depends_on": [],
+  "conflicts": [],
+  "recommends": {"features": [], "plugins": []},
+  "patches": {"main": "patches/main.patch"},
+  "presentation": {"handbook": "README.md"},
+  "budget": {
+    "firmware_flash_bytes": 8192,
+    "static_ram_bytes": 256,
+    "littlefs_bytes": 0
+  }
+}

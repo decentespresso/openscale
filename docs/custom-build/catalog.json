@@ -1,5 +1,5 @@
 {
-  "catalog_revision": "84bffa6904707413b5cf28fb1fad5a153ffe0fe07a80176ad15c8f851b611de2",
+  "catalog_revision": "fd8b73b7244182369adcf0266f0d30b06b50cf488c00c3dc2345b8ea5ca050d3",
   "custom_ota_signing_key_generation": 1,
   "firmware_refs": [
     "v3.1.15",
@@ -160,6 +160,28 @@
     }
   ],
   "plugins": [
+    {
+      "id": "app-prompts",
+      "name": "App Prompts",
+      "description": "Show instructions from a connected Bluetooth app alongside live weight.",
+      "tooltip": "Adds a versioned Bluetooth prompt API. Hold Circle to cancel prompts for the current connection. No WiFi or web apps required.",
+      "version": "1.0.0",
+      "firmware_refs": [
+        "main"
+      ],
+      "requires": [],
+      "depends_on": [],
+      "conflicts": [],
+      "conflicts_features": [],
+      "recommends": {
+        "features": [],
+        "plugins": []
+      },
+      "asset_targets": [],
+      "presentation": {
+        "handbook": "plugin-media/app-prompts/041d4a85e58087f0abbb4422c30ba509937a4b2b2051e9ac76f9c2661ea2515c.md"
+      }
+    },
     {
       "id": "default-web-apps",
       "name": "Default web apps",

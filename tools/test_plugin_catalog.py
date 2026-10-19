@@ -209,8 +209,12 @@ def main():
     assert len(pluginIds) == len(set(pluginIds))
     assert all(customBuild.ID_PATTERN.fullmatch(pluginId) for pluginId in pluginIds)
     for pluginId in pluginIds:
+        manifest, _, _ = customBuild.loadPlugin(pluginId)
         for firmwareRef in customBuild.FIRMWARE_REFS:
-            customBuild.loadPlugin(pluginId, firmwareRef)
+            if firmwareRef in manifest["firmware_refs"]:
+                customBuild.loadPlugin(pluginId, firmwareRef)
+            else:
+                assertRejected(lambda ref=firmwareRef: customBuild.loadPlugin(pluginId, ref))
     generatedCatalog = customBuild.buildBrowserCatalog()
     pageCatalog = json.loads(
         (customBuild.ROOT / "docs" / "custom-build" / "catalog.json").read_text(encoding="utf-8")
