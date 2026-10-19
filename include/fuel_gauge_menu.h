@@ -11,19 +11,19 @@
 #define MENU_BTN_BACK 1
 #endif
 
-static int batInfoTotalPages() {
+static uint8_t batInfoTotalPages() {
   return b_hasFuelGauge ? 2 : 1;
 }
 
-static void drawBatInfoPage(int page) {
+static void drawBatInfoPage(uint8_t page) {
   const FuelGaugeReading reading = fuelGaugeReading();
   const bool charging = fuelGaugeCharging();
   const bool usbPlugged = fuelGaugeUsbPlugged();
   const float voltage = b_hasFuelGauge ? reading.voltageMv / 1000.0f : f_batteryVoltage;
   const int percent = batteryPercent();
   char pageInfo[10];
-  snprintf(pageInfo, sizeof(pageInfo), "%d/%d", page + 1,
-           batInfoTotalPages());
+  snprintf(pageInfo, sizeof(pageInfo), "%u/%u", static_cast<unsigned int>(page + 1),
+           static_cast<unsigned int>(batInfoTotalPages()));
 
   u8g2.firstPage();
   u8g2.setFont(u8g2_font_6x12_tr);
@@ -43,8 +43,8 @@ static void drawBatInfoPage(int page) {
       u8g2.drawUTF8(0, 24, "Gauge unavailable");
       u8g2.drawUTF8(0, 36, "Charging disabled");
     } else if (page == 0) {
-      char l[12];
-      char r[12];
+      char l[16];
+      char r[16];
       snprintf(l, sizeof(l), "%.2f V", voltage);
       snprintf(r, sizeof(r), "%.1f C", reading.temperature * 0.1f - 273.15f);
       u8g2.drawUTF8(0, 12, l);
@@ -75,7 +75,7 @@ static void drawBatInfoPage(int page) {
 
 void showBatInfo() {
   bool showing = true;
-  int page = 0;
+  uint8_t page = 0;
   power_off(-1);
   drawBatInfoPage(page);
   delay(1000);
