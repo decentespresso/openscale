@@ -11,7 +11,6 @@ PARAMETER = (ROOT / "include" / "parameter.h").read_text(encoding="utf-8")
 FIRMWARE = (ROOT / "src" / "hds.ino").read_text(encoding="utf-8")
 DOCS = (ROOT / "docs" / "wake-on-weight.md").read_text(encoding="utf-8")
 WOW_ADS = WOW[:WOW.index("#else  // !ADS1232ADC")]
-GAUGE_SLEEP = (ROOT / "include" / "fuel_gauge_sleep.h").read_text(encoding="utf-8")
 
 
 def body(source, signature):
@@ -85,7 +84,7 @@ class WakeOnWeightContractTests(unittest.TestCase):
                         POWER.index("esp_sleep_enable_ext1_wakeup_io"))
 
     def test_deep_sleep_call_sites(self):
-        for name, text in (("POWER", POWER), ("WOW", WOW), ("GAUGE_SLEEP", GAUGE_SLEEP)):
+        for name, text in (("POWER", POWER), ("WOW", WOW)):
             self.assertEqual(text.count("esp_deep_sleep_start()"), 1, name)
 
     def test_baseline_capture_gates(self):
@@ -124,9 +123,8 @@ class WakeOnWeightContractTests(unittest.TestCase):
 
     def test_boot_interceptor_slots_in_setup(self):
         setup = body(FIRMWARE, "void setup()")
-        self.assertLess(setup.index("fuelGaugeMicroWakeOrContinue();"), setup.index("wowMicroWakeOrContinue();"))
-        self.assertIn("fuelGaugeSleepWakeMask()", WOW)
-        self.assertIn("!fuelGaugeDeepSleepActive()", WOW)
+        self.assertNotIn("fuelGaugeMicroWakeOrContinue", setup)
+        self.assertIn("deepSleepWakeMask()", WOW)
         self.assertLess(setup.index("wowMicroWakeOrContinue();"), setup.index("Serial.begin"))
         self.assertLess(FIRMWARE.index("wowMicroWakeOrContinue();"),
                         FIRMWARE.index("storageInit()"))

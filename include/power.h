@@ -68,6 +68,20 @@ int batteryPercent() {
 
 void (*resetFunc)(void) = 0;
 
+bool usbPowerKeepsAwake() {
+#ifdef USB_DET
+  return digitalRead(USB_DET) == LOW;
+#else
+  return false;
+#endif
+}
+
+bool cancelUsbPoweredShutdown() {
+  if (!usbPowerKeepsAwake()) return false;
+  b_powerOff = false;
+  return true;
+}
+
 void reset() {
 #ifdef ESP32
   bleShutdown();
@@ -117,20 +131,29 @@ void configureWakePinsForDeepSleep() {
   configureWakePinForDeepSleep((gpio_num_t)BUTTON_CIRCLE);
   configureWakePinForDeepSleep((gpio_num_t)BUTTON_SQUARE);
   configureWakePinForDeepSleep((gpio_num_t)BATTERY_CHARGING);
+#ifdef USB_DET
+  configureWakePinForDeepSleep((gpio_num_t)USB_DET);
+#endif
 }
 
 void releaseWakePinsFromRtcMode() {
   rtc_gpio_deinit((gpio_num_t)BUTTON_CIRCLE);
   rtc_gpio_deinit((gpio_num_t)BUTTON_SQUARE);
   rtc_gpio_deinit((gpio_num_t)BATTERY_CHARGING);
-  if (fuelGaugeDeepSleepActive()) {
-    rtc_gpio_deinit(static_cast<gpio_num_t>(FUEL_GAUGE_USB_DET));
-  }
+#ifdef USB_DET
+  rtc_gpio_deinit((gpio_num_t)USB_DET);
+#endif
 }
 
-uint64_t fuelGaugeSleepWakeMask();
+uint64_t deepSleepWakeMask() {
+#ifdef USB_DET
+  return PIN_BITMASK | BUTTON_PIN_BITMASK(USB_DET);
+#else
+  return PIN_BITMASK;
+#endif
+}
+
 #include "wake_on_weight.h"
-#include "fuel_gauge_sleep.h"
 
 void print_wakeup_reason() {
   esp_sleep_wakeup_cause_t wakeup_reason;
@@ -157,7 +180,16 @@ void print_wakeup_reason() {
     Serial.println(i_wakeupPin);
 
     Serial.print("GPIO that triggered the wake up using built in definitions: ");
-    switch (GPIO_reason) {
+    const uint64_t wakePins = GPIO_reason & PIN_BITMASK;
+    switch (wakePins) {
+#ifdef USB_DET
+      case 0:
+        if (GPIO_reason & BUTTON_PIN_BITMASK(USB_DET)) {
+          GPIO_power_on_with = BATTERY_CHARGING;
+          Serial.println("USB attached");
+        }
+        break;
+#endif
       case BUTTON_PIN_BITMASK(BATTERY_CHARGING):
         GPIO_power_on_with = BATTERY_CHARGING;
         Serial.println("Only GPIO " + String(BATTERY_CHARGING));
@@ -193,6 +225,7 @@ void print_wakeup_reason() {
 
 
 void esp32_sleep() {
+  if (cancelUsbPoweredShutdown()) return;
 #if HDS_ENABLE_ENERGY_MENU
   applyEnergyLightSleepSetting(false);
   setEnergyIdleWakeEnabled(false);
@@ -224,7 +257,7 @@ void esp32_sleep() {
   esp_deep_sleep_enable_gpio_wakeup(1 << GPIO_NUM_BUTTON_POWER, ESP_GPIO_WAKEUP_GPIO_LOW);
 #else
   configureWakePinsForDeepSleep();
-  esp_sleep_enable_ext1_wakeup_io(PIN_BITMASK, ESP_EXT1_WAKEUP_ANY_LOW);
+  esp_sleep_enable_ext1_wakeup_io(deepSleepWakeMask(), ESP_EXT1_WAKEUP_ANY_LOW);
 #endif
 
 
@@ -259,7 +292,6 @@ void esp32_sleep() {
   gpio_hold_en((gpio_num_t)I2C_SDA);
 
   fuelGaugeSleep();
-  if (fuelGaugeDeepSleepActive()) fuelGaugeConfigureSleepWake();
   if (fuelGaugeLegacyHardware()) {
     digitalWrite(ACC_PWR_CTRL, LOW);
     gpio_hold_en((gpio_num_t)ACC_PWR_CTRL);
@@ -278,6 +310,7 @@ void esp32_sleep() {
 
 
 void shut_down_now() {
+  if (cancelUsbPoweredShutdown()) return;
   Serial.println("power off");
 #ifdef BUZZER
   buzzer.beep(1, BUZZER_DURATION);
@@ -303,6 +336,7 @@ void shut_down_now() {
 
 
 void shut_down_low_battery(float voltage) {
+  if (cancelUsbPoweredShutdown()) return;
   if (t_batteryRefresh > 0){
     Serial.print("Low battery, voltage:");
     Serial.println(voltage);
@@ -326,6 +360,7 @@ void shut_down_low_battery(float voltage) {
 }
 
 void shut_down_now_nobeep() {
+  if (cancelUsbPoweredShutdown()) return;
   Serial.println("power off no beep");
   u8g2.setFontDirection(0);
   if (b_screenFlipped)
@@ -347,6 +382,7 @@ void shut_down_now_nobeep() {
 }
 
 void shut_down_now_accidentTouch() {
+  if (cancelUsbPoweredShutdown()) return;
   Serial.println("accdient on, power off...");
 #ifdef ESPNOW
   if (b_espnow) {

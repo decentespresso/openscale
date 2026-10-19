@@ -2,7 +2,6 @@
 #include "fuel_gauge_internal.h"
 #include "config.h"
 #include <Wire.h>
-#include "driver/gpio.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -30,22 +29,11 @@ struct FakeOled {
 volatile bool b_hasFuelGauge = false;
 volatile bool b_batteryProtect = true;
 FuelGaugeRuntime fuelGaugeRuntime;
-FuelGaugeSleepState fuelGaugeSleepState{};
-constexpr uint32_t WOW_RTC_MAGIC = 0x574f5733;
-struct { uint32_t magic = 0; bool armed = false; uint32_t intervalUs = 0; } wowRtc;
-#define BUTTON_PIN_BITMASK(pin) (1ULL << (pin))
-constexpr uint64_t PIN_BITMASK = (1ULL << BUTTON_CIRCLE) | (1ULL << BUTTON_SQUARE) | (1ULL << BATTERY_CHARGING);
-void configureWakePinForDeepSleep(gpio_num_t) {}
-void configureWakePinsForDeepSleep() {}
-int rtc_gpio_get_level(gpio_num_t pin) { return digitalRead(pin); }
-#include "fuel_gauge_sleep.h"
 
 static void reset() {
   fakeMicros = 0;
   Wire = FakeWire{};
   fuelGaugeRuntime = FuelGaugeRuntime{};
-  fuelGaugeSleepState = {};
-  wowRtc = {};
   b_hasFuelGauge = false;
   b_batteryProtect = true;
   pinWrites.clear();
@@ -53,10 +41,6 @@ static void reset() {
   pinModes.fill(0);
   pinHolds.fill(false);
   buttonBackAt = std::numeric_limits<unsigned long>::max();
-  fakeWakeCause = ESP_SLEEP_WAKEUP_TIMER;
-  fakeWakeStatus = 0;
-  fakeWakeMask = 0;
-  fakeTimerUs = 0;
 }
 
 static void sample(uint16_t soc) {
@@ -147,15 +131,14 @@ static void checkIdentityAndSleep() {
   sample(50);
   assert(pinLevels[6] == LOW);
   fuelGaugeSleep();
-  assert(pinLevels[6] == LOW && pinHolds[6] && fuelGaugeDeepSleepActive());
+  assert(pinLevels[6] == HIGH && pinHolds[6]);
   assert(!pinHolds[14]);
   assert(fuelGaugeBegin(700, false));
   assert(!pinHolds[6] && pinLevels[6] == HIGH);
   sample(50);
   fuelGaugeProtectSet(false);
   fuelGaugeSleep();
-  assert(pinHolds[6] && pinLevels[6] == LOW);
-  assert(!fuelGaugeDeepSleepActive());
+  assert(pinHolds[6] && pinLevels[6] == HIGH);
   fuelGaugePauseCharging();
   assert(pinLevels[6] == HIGH);
 }
@@ -242,111 +225,19 @@ static void checkInfoScreen() {
   assert(Wire.operations == operations && u8g2.unavailable);
 }
 
-static void startProtectedSleep(uint16_t soc) {
+static void checkResealRecovery() {
   reset();
-  assert(fuelGaugeBegin(700, false));
-  sample(soc);
-  fuelGaugeSleep();
-  assert(fuelGaugeDeepSleepActive());
-  pinLevels[BUTTON_CIRCLE] = HIGH;
-  pinLevels[BUTTON_SQUARE] = HIGH;
-  pinLevels[FUEL_GAUGE_USB_DET] = LOW;
-}
-
-static void microBoot() {
-  fuelGaugeRuntime = {};
-  b_hasFuelGauge = false;
-  b_batteryProtect = false;
-  fakeMicros = 0;
-  pinLevels[CHRG_CTRL] = LOW;
-}
-
-static bool slept() {
-  try { fuelGaugeMicroWakeOrContinue(); }
-  catch (const FakeDeepSleep &) { return true; }
-  return false;
-}
-
-static void checkProtectedSleep() {
-  reset();
-  assert(fuelGaugeMicroWakeOrContinue() == -1 && Wire.operations == 0 && pinWrites.empty());
-  startProtectedSleep(30);
-  assert(pinLevels[CHRG_CTRL] == LOW);
-  microBoot();
-  const int writes = Serial.writes;
-  pinWrites.clear();
-  assert(slept());
-  for (int pin : pinWrites) assert(pin == CHRG_CTRL || pin == I2C_SDA || pin == I2C_SCL);
-  assert(pinLevels[CHRG_CTRL] == LOW && pinHolds[CHRG_CTRL]);
-  assert(fakeTimerUs == 10000000);
-  assert(fakeWakeMask == ((1ULL << BUTTON_CIRCLE) | (1ULL << BUTTON_SQUARE)));
-  assert(Serial.writes == writes);
-  assert(pinHolds[I2C_SDA] && pinHolds[I2C_SCL]);
-  for (uint16_t soc : {76, 80, 78, 75}) {
-    Wire.words[0x1c] = soc;
-    microBoot();
-    assert(slept());
-    assert(pinLevels[CHRG_CTRL] == (soc >= 78 ? HIGH : LOW));
-  }
-  Wire.shortReg = 0x04;
-  microBoot();
-  assert(slept() && pinLevels[CHRG_CTRL] == HIGH);
-  Wire.shortReg = -1;
-  Wire.words[0x1c] = 30;
-  microBoot();
-  assert(slept() && pinLevels[CHRG_CTRL] == LOW);
-  Wire.setCapacity(1340);
-  Wire.words[0x06] |= 0x20;
-  microBoot();
-  assert(slept() && Wire.capacity() == 700 && pinLevels[CHRG_CTRL] == HIGH);
-  microBoot();
-  assert(slept() && pinLevels[CHRG_CTRL] == LOW);
-  pinLevels[FUEL_GAUGE_USB_DET] = HIGH;
-  microBoot();
-  assert(slept() && fakeTimerUs == 0);
-  assert(fakeWakeMask & (1ULL << FUEL_GAUGE_USB_DET));
-  fakeWakeCause = ESP_SLEEP_WAKEUP_EXT1;
-  fakeWakeStatus = 1ULL << FUEL_GAUGE_USB_DET;
-  pinLevels[FUEL_GAUGE_USB_DET] = LOW;
-  microBoot();
-  assert(slept() && fakeTimerUs == 10000000);
-  fakeWakeStatus = 1ULL << BUTTON_SQUARE;
-  microBoot();
-  assert(fuelGaugeMicroWakeOrContinue() == -1 && pinLevels[CHRG_CTRL] == HIGH);
-  fakeWakeCause = ESP_SLEEP_WAKEUP_TIMER;
-  pinLevels[BUTTON_CIRCLE] = LOW;
-  microBoot();
-  assert(fuelGaugeMicroWakeOrContinue() == BUTTON_CIRCLE);
-  assert(pinLevels[CHRG_CTRL] == HIGH);
-  pinLevels[BUTTON_CIRCLE] = HIGH;
-  wowRtc = {WOW_RTC_MAGIC, true, 2000000};
-  microBoot();
-  assert(fuelGaugeMicroWakeOrContinue() == -1 && fakeTimerUs == 2000000);
-  assert(fuelGaugeDeepSleepActive());
-  fakeWakeCause = ESP_SLEEP_WAKEUP_UNDEFINED;
-  assert(fuelGaugeMicroWakeOrContinue() == -1 && !fuelGaugeDeepSleepActive());
-  startProtectedSleep(30);
-  microBoot();
-  Wire.present = false;
-  assert(!fuelGaugeBegin(700, false));
-  assert(b_hasFuelGauge && !fuelGaugeLegacyHardware() && pinLevels[CHRG_CTRL] == HIGH);
-  assert(!fuelGaugeRuntime.ready);
-  startProtectedSleep(30);
   Wire.chemistry = 0x1210;
   Wire.words[0x06] |= 0x20;
   Wire.failCommand = 0x0020;
-  microBoot();
-  assert(slept() && !Wire.sealed && !fuelGaugeSleepState.ready);
-  assert(fuelGaugeSleepState.sealRequired && pinLevels[CHRG_CTRL] == HIGH);
-  microBoot();
-  assert(slept() && Wire.sealed && fuelGaugeSleepState.ready);
-  assert(!fuelGaugeSleepState.sealRequired && pinLevels[CHRG_CTRL] == HIGH);
-  microBoot();
-  assert(slept() && pinLevels[CHRG_CTRL] == LOW);
-  microBoot();
-  buttonBackAt = 1;
-  assert(fuelGaugeMicroWakeOrContinue() == BUTTON_CIRCLE);
+  assert(!fuelGaugeBegin(700, false));
+  assert(!Wire.sealed && fuelGaugeRuntime.sealRequired && pinLevels[CHRG_CTRL] == HIGH);
+  delay(10000);
+  fuelGaugeLoop();
+  assert(Wire.sealed && fuelGaugeRuntime.ready && !fuelGaugeRuntime.sealRequired);
   assert(pinLevels[CHRG_CTRL] == HIGH);
+  sample(30);
+  assert(pinLevels[CHRG_CTRL] == LOW);
 }
 
 int main() {
@@ -355,5 +246,5 @@ int main() {
   checkConfiguration();
   checkTransactionFailures();
   checkInfoScreen();
-  checkProtectedSleep();
+  checkResealRecovery();
 }

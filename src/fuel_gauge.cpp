@@ -59,10 +59,6 @@ static void gaugeSelectHardware() {
 bool fuelGaugeBegin(uint16_t capacity, bool adoptCapacity) {
   fuelGaugeRuntime.desiredCapacity = capacity;
   fuelGaugeRuntime.adoptCapacity = adoptCapacity;
-  if (fuelGaugeDeepSleepActive()) {
-    fuelGaugeRuntime.sealRequired = fuelGaugeSleepState.sealRequired;
-    gaugeSelectHardware();
-  }
   Wire.begin(FUEL_GAUGE_I2C_SDA, FUEL_GAUGE_I2C_SCL);
   bool absent = true;
   for (int attempt = 0; attempt < 5; ++attempt) {
@@ -186,12 +182,7 @@ bool fuelGaugeUsbPlugged() { return digitalRead(FUEL_GAUGE_USB_DET) == LOW; }
 
 void fuelGaugeSleep() {
   if (!b_hasFuelGauge) return;
-  gaugeApplyProtection();
-  fuelGaugeSleepState = {
-    b_batteryProtect ? fuelGaugeSleepMagic : 0,
-    fuelGaugeRuntime.desiredCapacity == 0 ? static_cast<uint16_t>(700) : fuelGaugeRuntime.desiredCapacity,
-    fuelGaugeRuntime.ready, fuelGaugeRuntime.chargeEnabled, fuelGaugeRuntime.sealRequired
-  };
+  gaugeSetCharging(false);
 #ifdef ESP32
   gpio_hold_en(static_cast<gpio_num_t>(CHRG_CTRL));
 #endif

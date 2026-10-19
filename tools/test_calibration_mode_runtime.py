@@ -40,6 +40,7 @@ float f_batteryVoltage = 4.2f, showEmptyBatteryBelowVoltage = 3.2f, showFullBatt
 unsigned long millis() { return 10000; }
 bool bleHasLiveClient() { return bleClientLive; }
 int digitalRead(int pin) { return pin == USB_DET ? usbPin : chargingPin; }
+bool usbPowerKeepsAwake() { @USB_AWAKE@ }
 long map(long, long, long, long, long) { return 50; }
 void recordEnergyActivity() {}
 void power_off(int) {}
@@ -172,7 +173,7 @@ void testChargingAndWeighing() {
     chargingPin = HIGH;
     f_batteryVoltage = voltage;
     serviceUi();
-    assert(b_powerOff && !b_showChargingUI && calibrationFrames == 0);
+    assert(!b_powerOff && b_showChargingUI && calibrationFrames == 0 && chargingFrames == 1);
   }
   resetRuntime(false);
   chargingPin = usbPin = HIGH;
@@ -268,6 +269,7 @@ int main() {
 }
 '''
     replacements = {
+        "USB_AWAKE": block_after((Path(__file__).resolve().parents[1] / "include/power.h").read_text(encoding="utf-8"), "bool usbPowerKeepsAwake()"),
         "ENTRY": block_after(menu, "void calibrate() {"),
         "FINISH": block_after(menu, "void calibrationFinish("),
         "OTA": block_after(menu, "void wifiUpdate(const PullOtaTargetVersion &target) {"),

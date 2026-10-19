@@ -45,20 +45,17 @@ failed configuration retries after ten seconds. No new automatic shutdown policy
 is applied to invalid data. Fresh low-voltage samples retain existing shutdown
 confirmation. Configuration and OTA pauses also keep charging disabled.
 
-Battery Protect still stops charging at 80% and resumes at 75%, including while
-switched off. `include/fuel_gauge_sleep.h` services the gauge on brief timer wakes
-every ten seconds with USB connected, without initializing the display, storage,
-or radios. It retains charging hysteresis, readiness, capacity, and pending seal
-restoration in RTC memory. Failed readings disable charging until valid again;
-gauge POR restores configuration before charging resumes.
+Battery Protect stops charging at 80% and resumes at 75%. USB presence keeps the
+ESP32 awake even when charging pauses or completes, so the normal loop continues
+sampling and controlling the charger. Shutdown requests are cancelled before
+display or hardware teardown while USB is connected. The charging screen remains
+active until USB is unplugged or the user enters scale mode.
 
-With USB absent, protection adds no periodic wakes: GPIO8 wakes on USB attachment.
-The charger-status pin is excluded from this protected sleep wake mask so active
-charging cannot cause an immediate full boot. Buttons still wake normally, and
-Wake-on-Weight retains its shorter timer and weight detection. Normal wake pauses
-charging during initialization and releases the USB-detect RTC mode. Without
-protection, the existing sleep/wake policy remains unchanged and GPIO6 is held
-enabled only when the cached gauge reading is valid.
+With USB absent, deep sleep holds the charger disabled. USB detection is an EXT1
+wake source alongside the buttons and charger-status pin, including when Battery
+Protect has disabled charging. Wake-on-Weight retains its existing timer and
+weight detection; USB attachment interrupts that micro-wake path for a normal
+boot. No battery-specific timer wake or sleep-time I2C access is required.
 
 The integer `bat_capacity` NVS key persists the selected 300-2000 mAh capacity,
 including USB `bc` changes. Zero means migration is pending: adopt an existing
