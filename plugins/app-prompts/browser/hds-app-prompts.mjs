@@ -33,15 +33,33 @@ export async function connectAppPrompts(server) {
   try {
     const service = await enqueue(() => server.getPrimaryService(0xfff0));
     commandCharacteristic = await enqueue(() => service.getCharacteristic(0x36f5));
+    await enqueue(() => writeValue(commandCharacteristic, Uint8Array.from(HEARTBEAT)));
+    const discoverPrompts = async () => {
+      try {
+        const characteristic = await enqueue(() => service.getCharacteristic(APP_PROMPTS_UUID));
+        const capabilities = await enqueue(() => characteristic.readValue());
+        if (active && server.connected && capabilities.byteLength === 3 && capabilities.getUint8(0) === 1 &&
+            capabilities.getUint8(1) === MAX_PROMPT_BYTES && capabilities.getUint8(2) === 10) {
+          promptCharacteristic = characteristic;
+          promptsEnabled = true;
+        }
+      } catch {}
+    };
+    let discoveryTimer;
     try {
-      const characteristic = await enqueue(() => service.getCharacteristic(APP_PROMPTS_UUID));
-      const capabilities = await enqueue(() => characteristic.readValue());
-      if (capabilities.byteLength === 3 && capabilities.getUint8(0) === 1 &&
-          capabilities.getUint8(1) === MAX_PROMPT_BYTES && capabilities.getUint8(2) === 10) {
-        promptCharacteristic = characteristic;
-        promptsEnabled = true;
-      }
-    } catch {}
+      await Promise.race([discoverPrompts(), new Promise((_, reject) => {
+        discoveryTimer = setTimeout(() => {
+          if (active) {
+            disconnected();
+            try { server.disconnect(); } catch {}
+          }
+          reject(new Error("App Prompts discovery timed out; reconnect the scale"));
+        }, 2500);
+      })]);
+    } finally {
+      clearTimeout(discoveryTimer);
+    }
+    if (!active || !server.connected) throw new Error("Scale disconnected");
   } catch (error) {
     server.device.removeEventListener("gattserverdisconnected", disconnected);
     throw error;

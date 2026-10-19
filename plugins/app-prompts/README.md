@@ -90,10 +90,16 @@ weight notifications before creating the helper, then use:
 import { connectAppPrompts } from './hds-app-prompts.mjs';
 
 const prompts = await connectAppPrompts(server);
-await prompts.send([0x03, 0x0a, 0x03, 0xff, 0xff, 0x00, 0x0a]);
 await prompts.showPrompt('Add Gin: 35g');
 await prompts.clearPrompt();
 ```
+
+`connectAppPrompts()` sends an initial heartbeat before probing optional prompt
+support. Discovery and the capability read share a 2.5-second deadline and never
+overlap other GATT operations. On timeout, the helper invalidates its queue,
+disconnects, and rejects; reconnect rather than continuing on that connection.
+A timeout alone cannot cancel an outstanding Bluetooth request. Missing or
+incompatible support still returns a helper for the browser-only workflow.
 
 Use `prompts.send(bytes)` for all existing tare/heartbeat writes, so they share
 one queue with prompt writes. `supported` is false when the characteristic is
@@ -149,6 +155,8 @@ The patch retains auto-reconnection, ingredient pictures, per-step browser
 readouts, per-step tare, manual Next, batch scaling, Prev/Next, garnish ordering,
 and the final facts panel. HDS shows its native weight, including the site's
 existing per-step tare commands. The plugin adds no relative-weight calculation.
+The tare settling window starts only after its queued write finishes. Moving to
+another step or closing/reopening the maker invalidates late tare completions.
 Non-weighed steps remain manual. The scale shows
 `Place shaker; tare` before ingredients and `Mix, then serve` at the serving
 step; the browser retains the complete method.
@@ -176,8 +184,9 @@ write serialization, transport failures, and stale queued browser operations.
 Runtime checks inject a heartbeat update before lock acquisition to verify
 timestamp ordering. Patched-site checks cover a complete recipe, counted steps,
 batch quantities, Prev/Next, close/reopen, late device selection and GATT setup,
-delayed capability reads, auto-connect timeout, pending tare steps, and late
-heartbeat failures. They also cover a displayed prompt followed by failed update
+delayed and unresolved discovery/reads, initial-heartbeat ordering, safe retries,
+auto-connect timeout, tares delayed behind prompts, stale tare completions, and
+late heartbeat failures. They also cover a displayed prompt followed by failed update
 and cleanup writes, later recovery, completion/close, and persistent cleanup
 failure while heartbeats continue. These checks use mocked DOM and BLE APIs,
 not physical HDS. The current-site fixture also covers manual progression after

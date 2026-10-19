@@ -61,12 +61,16 @@ overwriting newer work. `webapp/original-scale_maker.js` records the exact basel
 
 ## What The Changes Do
 
-- Discover App Prompts after the existing BLE weight subscription starts.
+- Start the existing BLE weight subscription, then send an initial heartbeat
+  before optional App Prompts discovery. If discovery or its read stalls for
+  2.5 seconds, disconnect safely; use Connect to scale to retry.
 - Show `Place shaker; tare`, ingredient/action/quantity prompts, the serving
   instruction, and any garnish steps in their existing order.
 - Clear on Done and when leaving the maker. Retain the site's existing
   connection and heartbeat when closing the maker.
 - Serialize prompt, tare, and heartbeat writes through one GATT queue.
+- Start tare settling after its queued write finishes, not when requested.
+  Ignore late settling callbacks after a step change or maker close/reopen.
 - Keep the browser-only workflow with older firmware, a missing helper module,
   or a failed prompt write. Disconnect if prompt cleanup keeps failing, rather
   than keeping an old instruction alive with heartbeats.
@@ -90,6 +94,8 @@ suppress the text. See `PROTOCOL.md` for the helper API and recovery behavior.
    Prev/Next, final totals, and the browser's original UI.
 2. Check Clear, Done, maker close/reopen, BLE disconnect/reconnect, and loss of
    heartbeat. Firmware may disconnect after five seconds; prompt expiry is ten.
+   Check that each ingredient starts at zero and the final total remains correct
+   after a delayed prompt or a quick Prev/Next/close/reopen.
 3. Hold Circle while a prompt is active. It cancels prompts without taring;
    reconnect before expecting prompts again. Check both display rotations and
    timer continuity. Menus, calibration, charging, errors, and OTA keep priority.

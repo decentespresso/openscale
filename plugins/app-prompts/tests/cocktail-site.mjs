@@ -59,7 +59,8 @@ function maker(options = {}) {
   let notifications = false, reads = 0, connects = 0, disconnects = 0;
   let promptFailures = options.failPrompt ? Infinity : 0, displayed = "";
   let readGate = options.readGate, connectGate = options.connectGate, pickerGate = options.pickerGate;
-  let tareGate = null, heartbeatGate = null;
+  let discoveryGate = options.discoveryGate;
+  let tareGate = null, heartbeatGate = null, promptGate = null;
   const device = new EventTarget();
   device.name = "Decent Scale";
   const write = (kind) => async (bytes) => {
@@ -68,13 +69,21 @@ function maker(options = {}) {
     inFlight.set(connection, 1);
     try {
       const frame = Array.from(bytes);
-      if (kind === "command" && frame[1] === 15 && tareGate) await tareGate.promise;
+      if (kind === "command" && frame[1] === 15 && tareGate) {
+        const gate = tareGate; tareGate = null;
+        await gate.promise;
+      }
+      if (kind === "prompt" && frame[0] === 1 && promptGate) {
+        const gate = promptGate; promptGate = null;
+        await gate.promise;
+      }
       if (kind === "command" && frame[1] === 10 && heartbeatGate) {
         const gate = heartbeatGate; heartbeatGate = null;
         await gate.promise;
         throw new Error("Old heartbeat failed");
       }
       writes.push({ kind, bytes: frame });
+      if (options.autoTare && kind === "command" && frame[1] === 15) window.mkSim(0);
       if (kind === "prompt" && promptFailures > 0) { promptFailures--; throw new Error("Prompt transport failed"); }
       if (kind === "prompt") displayed = frame[0] === 0 ? "" : String.fromCharCode(...frame.slice(1));
     } finally { inFlight.set(connection, 0); }
@@ -85,10 +94,15 @@ function maker(options = {}) {
   const promptChar = {
     async readValue() {
       assert.ok(notifications, "Weight notifications must start before prompt discovery");
+      const connection = connects;
+      assert.equal(inFlight.get(connection) || 0, 0, "Capability reads must not overlap GATT writes");
+      inFlight.set(connection, 1);
       reads++;
       const gate = readGate; readGate = null;
-      if (gate) await gate.promise;
-      return new DataView(Uint8Array.of(1, 18, 10).buffer);
+      try {
+        if (gate) await gate.promise;
+        return new DataView(Uint8Array.of(1, 18, 10).buffer);
+      } finally { inFlight.set(connection, 0); }
     },
     writeValueWithResponse: write("prompt"),
   };
@@ -116,8 +130,15 @@ function maker(options = {}) {
           if (characteristic === 0xfff4) return readChar;
           if (characteristic === 0x36f5) return commandChar;
           assert.equal(characteristic, helper.APP_PROMPTS_UUID);
-          if (options.legacy) throw new Error("NotFoundError");
-          return promptChar;
+          const connection = connects;
+          assert.equal(inFlight.get(connection) || 0, 0, "Prompt discovery must not overlap GATT operations");
+          inFlight.set(connection, 1);
+          try {
+            const gate = discoveryGate; discoveryGate = null;
+            if (gate) await gate.promise;
+            if (options.legacy) throw new Error("NotFoundError");
+            return promptChar;
+          } finally { inFlight.set(connection, 0); }
         },
       };
     },
@@ -171,6 +192,7 @@ function maker(options = {}) {
     texts() { return writes.filter(({ kind, bytes }) => kind === "prompt" && bytes[0] === 1)
       .map(({ bytes }) => String.fromCharCode(...bytes.slice(1))); },
     holdTare(gate) { tareGate = gate; }, holdHeartbeat(gate) { heartbeatGate = gate; },
+    holdPrompt(gate) { promptGate = gate; },
     async open() { window.openMaker(); await settle(); },
     async tick(delay, elapsed = delay) {
       now += elapsed;
@@ -228,6 +250,97 @@ async function testRecipeLifecycle() {
   assert.equal(app.texts().at(-1), "Place shaker; tare");
 }
 
+async function testDelayedCapabilities() {
+  const gate = deferred();
+  const app = maker({ readGate: gate });
+  await app.open();
+  const connection = app.element("mkConnect").click();
+  await settle();
+  assert.equal(app.reads, 1);
+  await app.tick(4000, 2000);
+  assert.deepEqual(app.writes, [{ kind: "command", bytes: heartbeat }]);
+  gate.resolve(); await connection; await settle();
+  assert.equal(app.texts().at(-1), "Place shaker; tare");
+  await app.tick(4000);
+  assert.deepEqual(app.writes.at(-1), { kind: "command", bytes: heartbeat });
+}
+
+async function testQueuedTare() {
+  const app = await connectedMaker({ autoTare: true });
+  const prompt = deferred(); app.holdPrompt(prompt);
+  await app.element("mkTare").click();
+  await app.tick(100, 400);
+  app.window.mkSim(35);
+  assert.equal(app.element("mkWeight").textContent, "35.0");
+  await app.element("mkNext").click();
+  await app.tick(100, 2100);
+  prompt.resolve(); await settle();
+  assert.equal(app.element("mkWeight").textContent, "0.0", "A queued tare must not capture the previous 35g reading");
+  await app.tick(100, 400);
+  app.window.mkSim(2);
+  assert.equal(app.element("mkWeight").textContent, "2.0");
+  await app.element("mkNext").click();
+  await app.tick(100, 400);
+  await app.element("mkNext").click();
+  await app.element("mkNext").click();
+  assert.equal(app.element("mkWeight").textContent, "37.0");
+}
+
+async function testUnresolvedCapabilities() {
+  const cases = [];
+  for (const stage of ["discoveryGate", "readGate"]) {
+    for (const granted of [false, true]) {
+      const gate = deferred();
+      const app = maker({ [stage]: gate, granted });
+      await app.open();
+      if (!granted) await app.element("mkConnect").click();
+      assert.deepEqual(app.writes, [{ kind: "command", bytes: heartbeat }]);
+      cases.push({ app, gate });
+    }
+  }
+  await new Promise((resolve) => setTimeout(resolve, 2600));
+  for (const { app, gate } of cases) {
+    assert.equal(app.server.connected, false, "Stuck discovery must disconnect before the five-second watchdog");
+    assert.equal(app.intervals, 0);
+    assert.deepEqual(app.writes, [{ kind: "command", bytes: heartbeat }]);
+    await app.element("mkConnect").click();
+    assert.equal(app.texts().at(-1), "Place shaker; tare");
+    const writes = app.writes.length, disconnects = app.disconnects;
+    gate.resolve(); await settle();
+    assert.ok(app.server.connected, "A late probe must not disconnect the replacement session");
+    assert.equal(app.disconnects, disconnects);
+    assert.equal(app.writes.length, writes);
+    await app.tick(4000);
+    assert.deepEqual(app.writes.at(-1), { kind: "command", bytes: heartbeat });
+  }
+}
+
+async function testInvalidatedTare() {
+  for (const transition of ["prev", "reopen"]) {
+    const app = await connectedMaker({ autoTare: true });
+    await app.element("mkTare").click(); await app.tick(100, 400);
+    app.window.mkSim(35);
+    const oldTare = deferred(); app.holdTare(oldTare);
+    await app.element("mkNext").click();
+    if (transition === "prev") await app.element("mkPrev").click();
+    else { await app.element("mkBack").click(); await app.open(); }
+    oldTare.resolve(); await settle();
+    assert.equal(app.intervals, 1, `${transition}: stale tare must not restart settling`);
+  }
+  const app = await connectedMaker({ autoTare: true });
+  const oldTare = deferred(); app.holdTare(oldTare);
+  await app.element("mkTare").click();
+  await app.element("mkBack").click(); await app.open();
+  const newTare = deferred(); app.holdTare(newTare);
+  await app.element("mkTare").click();
+  oldTare.resolve(); await settle();
+  app.window.mkSim(35);
+  await app.tick(100, 2100);
+  assert.equal(app.intervals, 1, "Old completion must not start the new tare's settling window");
+  newTare.resolve(); await settle(); await app.tick(100, 400);
+  assert.equal(app.element("mkWeight").textContent, "0.0");
+}
+
 async function testCancelledConnections() {
   for (const stage of ["pickerGate", "connectGate", "readGate"]) {
     const gate = deferred();
@@ -242,7 +355,7 @@ async function testCancelledConnections() {
     assert.ok(app.element("mk").hidden);
     assert.equal(app.server.connected, false, `${stage}: connects=${app.connects}, disconnects=${app.disconnects}, reads=${app.reads}`);
     assert.equal(app.intervals, 0);
-    assert.deepEqual(app.writes, []);
+    assert.deepEqual(app.writes, stage === "readGate" ? [{ kind: "command", bytes: heartbeat }] : []);
   }
   const gate = deferred();
   const app = maker({ readGate: gate, granted: true });
@@ -252,7 +365,7 @@ async function testCancelledConnections() {
   assert.equal(app.server.connected, false);
   gate.resolve(); await settle();
   assert.equal(app.intervals, 0);
-  assert.deepEqual(app.writes, []);
+  assert.deepEqual(app.writes, [{ kind: "command", bytes: heartbeat }]);
   await app.element("mkConnect").click();
   assert.equal(app.texts().at(-1), "Place shaker; tare");
 }
@@ -359,6 +472,10 @@ async function testPromptCleanup() {
   assert.equal(app.intervals, 0);
 }
 
+await testDelayedCapabilities();
+await testQueuedTare();
+await testUnresolvedCapabilities();
+await testInvalidatedTare();
 await testRecipeLifecycle();
 await testCancelledConnections();
 await testCloseAndReopenDuringDiscovery();

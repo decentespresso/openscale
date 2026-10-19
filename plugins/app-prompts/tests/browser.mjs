@@ -3,6 +3,7 @@ import { APP_PROMPTS_UUID, connectAppPrompts, ingredientPrompt } from "../browse
 import { connectCocktailPrompts } from "../examples/cocktail-integration.mjs";
 
 assert.equal(APP_PROMPTS_UUID, "8b8dc7c0-6bf7-4bdf-9a2c-0ba9cb9a4a01");
+const heartbeat = [3, 10, 3, 255, 255, 0, 10];
 
 function scale({ present = true, capabilities = [1, 18, 10], failPrompt = false, afterClear = null } = {}) {
   const writes = [];
@@ -45,6 +46,7 @@ assert.deepEqual(await Promise.all([
   supported.showPrompt("Add Gin: 35g"), supported.send([3, 15, 1]), supported.clearPrompt(),
 ]), [true, undefined, true]);
 assert.deepEqual(supportedScale.writes, [
+  ["command", ...heartbeat],
   ["prompt", 1, ...new TextEncoder().encode("Add Gin: 35g")], ["command", 3, 15, 1], ["prompt", 0],
 ]);
 for (const text of ["", "A".repeat(19), "Gin\n", "\u00e9", null]) {
@@ -63,7 +65,7 @@ for (const options of [{ present: false }, { capabilities: [2, 18, 10] }, { capa
   assert.equal(older.supported, false);
   assert.equal(await older.showPrompt("Add Gin: 35g"), false);
   await older.send([3, 10]);
-  assert.deepEqual(olderScale.writes, [["command", 3, 10]]);
+  assert.deepEqual(olderScale.writes, [["command", ...heartbeat], ["command", 3, 10]]);
   older.dispose();
 }
 const failingScale = scale({ failPrompt: true });
@@ -73,7 +75,6 @@ assert.equal(failing.supported, false);
 await failing.send([3, 10]);
 assert.deepEqual(failingScale.writes.at(-1), ["command", 3, 10]);
 
-const heartbeat = [3, 10, 3, 255, 255, 0, 10];
 for (const recovery of ["clear", "heartbeat"]) {
   const recoveringScale = scale();
   const recovering = await connectAppPrompts(recoveringScale.server);
@@ -100,7 +101,7 @@ await stale.showPrompt("Add Gin: 35g");
 staleScale.failNextPrompts(Infinity);
 assert.equal(await stale.showPrompt("Add Rum: 20g"), false);
 await assert.rejects(stale.send(heartbeat), /clear stale/);
-assert.ok(!staleScale.writes.some(([kind, ...bytes]) => kind === "command" &&
+assert.ok(!staleScale.writes.slice(1).some(([kind, ...bytes]) => kind === "command" &&
   bytes.length === heartbeat.length && bytes.every((byte, index) => byte === heartbeat[index])));
 await stale.send([3, 15, 1]);
 assert.deepEqual(staleScale.writes.at(-1), ["command", 3, 15, 1]);
@@ -117,7 +118,7 @@ interruptedScale.failNextPrompts(2);
 await interrupted.showPrompt("Add Rum: 20g");
 await assert.rejects(interrupted.send(heartbeat), /disconnected/);
 assert.equal(interrupted.supported, false);
-assert.ok(!interruptedScale.writes.some(([kind]) => kind === "command"));
+assert.deepEqual(interruptedScale.writes.filter(([kind]) => kind === "command"), [["command", ...heartbeat]]);
 
 const beforeDisconnect = supportedScale.writes.length;
 const pending = supported.send([3, 15]);
