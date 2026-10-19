@@ -13,15 +13,23 @@ Do not reconstruct the active settings layout from the old address declarations 
 | Store | Owner | Purpose |
 | --- | --- | --- |
 | NVS `hds` | `include/storage.h` | Scale settings and their schema version. |
-| NVS `wifi` | `src/wifi_setup.cpp` | WiFi SSID and password, plus the `mdns_name` device name (default `hds`). |
+| NVS `wifi` | `src/wifi_settings.cpp` | WiFi SSID and password, plus the `mdns_name` device name (default `hds`). |
 | NVS `ota_fs` | `include/pull_ota.h` | Pending staged LittleFS metadata. |
 | NVS `ota_verify` | `include/ota_rollback.h` | OTA boot-verification attempt count. |
+| NVS `ota_recovery` | `include/filesystem_recovery.h` | Persisted filesystem-free recovery state. |
+| NVS `ota_custom` | `include/custom_build_ota.h` | Random device ID and device authentication secret. |
 | LittleFS | `include/webserver.h`, OTA code | On-device web application files. |
-| Browser `localStorage` | Files under `web_apps/` | Per-browser application data; unrelated to device NVS. |
+| Browser `localStorage` | Files under `plugins/default-web-apps/assets/` | Per-browser application data; unrelated to device NVS. |
 
 Keep these namespaces independent. A settings reset or migration must not clear WiFi credentials or OTA recovery state unless that behavior is explicitly requested.
 
-The device name lives in `wifi`, not `hds`, so renaming a scale never touches the settings schema or its migration. No shipped path clears it: `WiFiParams::reset()` would (it drops the whole `wifi` namespace) but has no callers, and the web UI's "Reset WiFi settings" button posts `{"ssid":""}`, which clears credentials only and leaves the name in place. Values are normalized and validated by `include/mdns_name.h` before they reach NVS, and a stored value that fails validation falls back to the default at boot.
+The device name lives in `wifi`, not `hds`, so renaming a scale never touches the settings schema or its migration. Reset WiFi posts `{"ssid":""}` and clears credentials only. Name values are normalized and validated by `include/mdns_name.h`; invalid stored names fall back to the default at boot.
+
+New WiFi credentials use the `credentials` blob: version byte `1`, a 33-byte terminated SSID buffer, and a 65-byte terminated password buffer. `WiFiParams` reads the old `ssid` and `pass` keys only when the blob is absent. It does not trim existing stored values. A network-change candidate stays in RAM until the worker observes a fresh DHCP address and three seconds of stability. Before modifying legacy keys, the worker ensures that the previous active credentials have a verified blob. It writes and reads back the legacy pair before committing the new blob and updating its active credentials. An interrupted write therefore leaves a complete previous or new blob; startup repairs the legacy pair from that blob. A failed save attempts to restore both stores and reports failure, including a separate diagnostic if restoration fails. Reset verifies removal of both legacy keys before committing an empty blob. It never clears the namespace or touches calibration, pairing, or device-name keys.
+
+Signed OTA calls `prepareLegacyDowngrade()` when the target or known rollback firmware predates `3.1.15`. The storage owner verifies or repairs the legacy pair and removes the blob only after verification. A storage failure cancels installation before pending LittleFS state or firmware writes. The surviving legacy pair supports rollback to the running firmware, and allows a later upgrade to read credentials changed by `v3.1.14`. The two legacy strings are not atomic; this guarantee relies on the verified OTA gate. A raw USB or firmware-upload downgrade bypasses it: after changing credentials on older firmware, a remaining blob can still override those changes on re-upgrade. Validate those unmanaged paths separately; do not claim arbitrary downgrade round-trip compatibility.
+
+Manual WiFi input trims Unicode whitespace and invisible characters at both edges. Selecting a scan result preserves the byte-exact SSID and password, including meaningful edge spaces. The firmware permits this only when the submitted SSID exactly matches its latest completed scan; UTF-8, control-character, and byte-length validation still applies. A failed scan clears the browser's old choices. Recovery AP retries the saved network after ten minutes, with a 20-second deadline before reopening the AP if that retry fails.
 
 ## HDS Schema Version 1
 
@@ -45,8 +53,13 @@ The device name lives in `wifi`, not `hds`, so renaming a scale never touches th
 | `auto_sleep` | bool | `true` |
 | `quick_boot` | bool | `false` |
 | `drift_max` | float | `0.05` |
+| `tap_tare` | bool | `false` |
+| `tap_timer` | bool | `false` |
+| `wow_interval` | int | `0` (off); indices 1-3 select 2-4 second sleep intervals. |
 
 `schema` is a `uint16_t`, currently `1`. Do not rename a key or change its stored type in place. Add an explicit migration, preserve old data until the new schema is complete, then increment the schema version.
+
+Energy-menu settings use `energy_schema` and `ENERGY_FEATURE_KEYS` in `include/storage.h`, independently of the base settings schema. Missing or invalid booleans receive validated defaults.
 
 ## Legacy EEPROM Migration
 
@@ -67,7 +80,9 @@ If NVS initialization, migration, or the final schema write fails, `storageInit(
 
 ## Browser Storage
 
-Browser `localStorage` is scoped to the browser origin, not to an individual app directory. The dosing preset manager and Quality Control Assistant both use `decentScalePresets` and `lastUsedPreset`, but they store incompatible preset shapes. Treat those names as a known collision; do not make either shape a cross-app contract.
+Browser `localStorage` is scoped to the browser origin, not to an individual app directory. The dosing preset manager uses `decentScaleDosingPresets` and `lastUsedDosingPreset`; Quality Control Assistant uses `decentScaleQCPresets` and `lastUsedQCPreset`. Each preset store contains `{version: 1, presets: {...}}`. The apps ignore unsupported versions and refuse to overwrite them.
+
+The old shared keys, `decentScalePresets` and `lastUsedPreset`, contain incompatible preset shapes. Each app reads compatible legacy presets and selections only while its own preset store is absent. Its first save copies those presets and any compatible last-used selection without changing the shared data. An existing app-specific store ends both legacy fallbacks, even when its last-used selection is missing.
 
 New browser-persisted data should use an app-specific key and a versioned object when its shape can evolve. Verify keys in implementation code: a README claim alone is not a storage contract.
 
@@ -77,6 +92,10 @@ Run the smallest relevant checks:
 
 ```sh
 python tools/test_storage_migration_contract.py
+python tools/test_wifi_setup_runtime.py
+python tools/test_wifi_setup_contract.py
+python tools/test_pull_ota_contract.py
+python tools/test_preset_isolation.py
 pio run -e esp32s3
 ```
 

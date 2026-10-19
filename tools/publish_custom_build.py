@@ -13,7 +13,7 @@ import configure_custom_build as customBuild
 
 
 HASH_PATTERN = re.compile(r"^[0-9a-f]{64}$")
-MAX_ENTRY_BYTES = 4 * 1024 * 1024
+MAX_ENTRY_BYTES = 12 * 1024 * 1024
 
 
 def loadEntry(entryDir):
@@ -30,7 +30,7 @@ def loadEntry(entryDir):
     if not customRunner.completeCacheEntry(entryDir, combinationHash, identity):
         raise ValueError("cache entry is incomplete")
     if sum((entryDir / name).stat().st_size for name in customRunner.BUILD_FILES) > MAX_ENTRY_BYTES:
-        raise ValueError("cache entry exceeds 4 MiB")
+        raise ValueError("cache entry exceeds 12 MiB")
     return combinationHash
 
 

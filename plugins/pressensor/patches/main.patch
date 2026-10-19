@@ -1,5 +1,5 @@
 diff --git a/include/config.h b/include/config.h
-index eb07f10..f16c19a 100644
+index ab6182175b28ed13921a14d7100a2967c9a2e8e1..65f4068312d4f879e1ed3466ab6ccc3325993c9f 100644
 --- a/include/config.h
 +++ b/include/config.h
 @@ -3,6 +3,13 @@
@@ -7,7 +7,7 @@ index eb07f10..f16c19a 100644
  #include "hds_features.h"
  
 +#ifndef HDS_ENABLE_PRESSENSOR
-+#ifdef HDS_CUSTOM_BUILD
++#if HDS_CUSTOM_BUILD
 +#define HDS_ENABLE_PRESSENSOR 1
 +#else
 +#define HDS_ENABLE_PRESSENSOR 0
@@ -17,45 +17,42 @@ index eb07f10..f16c19a 100644
  #define CUUID_DECENTSCALE_READ "fff4"
  #define CUUID_DECENTSCALE_WRITE "36f5"
 diff --git a/include/display.h b/include/display.h
-index 80187e8..d238c56 100644
+index 835c4cb58bbddf7110da9210d5b2c7b5b52f3ff0..7387c1fcb0ca8922eccc54bdd482fd65613d606e 100644
 --- a/include/display.h
 +++ b/include/display.h
-@@ -60,6 +60,7 @@ U8G2_SSD1306_128X64_NONAME_1_SW_I2C u8g2(U8G2_R0, /* clock=*/OLED_SCL, /* data=*
+@@ -54,6 +54,7 @@ U8G2_SSD1306_128X64_NONAME_1_SW_I2C u8g2(U8G2_R0, OLED_SCL, OLED_SDA, U8X8_PIN_N
+ #define OLED_BLE_WINDOW_HEIGHT 3
  #define FONT_EXTRACTION u8g2_font_fub14_tr
- //#define FONT_S FONT_M
  #define FONT_BATTERY u8g2_font_battery19_tn
 +#define FONT_PRESSENSOR_VALUE u8g2_font_logisoso16_tr
- //macros
- //文本对齐 AC居中 AR右对齐 AL左对齐 T为要显示的文本
  #define LCDWidth u8g2.getDisplayWidth()
+ #define LCDHeight u8g2.getDisplayHeight()
+ #define AC(T) ((LCDWidth - u8g2.getUTF8Width(T)) / 2 - Margin_Left - Margin_Right)
 diff --git a/include/finger_detection.h b/include/finger_detection.h
-index c854ef6..99b02fd 100644
+index 91a43cd8bc0b23285f246fb2f77acceeaa5702d2..e1666b4c0c15cec465ab27312d422f5cee43d931 100644
 --- a/include/finger_detection.h
 +++ b/include/finger_detection.h
-@@ -217,8 +217,17 @@ bool isFingerPress(int button) {
-           sendBleButton(2, 1);
-         }
-         if (!b_menu && !b_calibration && (!bleClientLive || b_btnFuncWhileConnected)) {
--          if (millis() - t_menuExitTime > 1000)
-+          if (millis() - t_menuExitTime > 1000) {
+@@ -94,7 +94,15 @@ void runRecognizedButtonAction(int button) {
+     b_tareByButton = true;
+   } else if (button == BUTTON_SQUARE && !b_menu && !b_calibration &&
+              millis() - t_menuExitTime > 1000) {
 +#if HDS_ENABLE_PRESSENSOR
-+            if (pressensorActive()) {
-+              pressensorTimerButton(f_displayedValue);
-+            } else {
-+              scaleTimer();
-+            }
++    if (pressensorActive()) {
++      pressensorTimerButton(f_displayedValue);
++    } else {
++      scaleTimer();
++    }
 +#else
-             scaleTimer();
+     scaleTimer();
 +#endif
-+          }
-         }
-       }
-     }
+   }
+ }
+ 
 diff --git a/include/menu.h b/include/menu.h
-index d002267..18840b3 100644
+index 1728cdeba947f4e60f4ad6dcd4dff51b40e1579d..2988b26c98aade16a215c87fcbf449d5cec87490 100644
 --- a/include/menu.h
 +++ b/include/menu.h
-@@ -10,6 +10,9 @@
+@@ -11,6 +11,9 @@
  #if HDS_ENABLE_GRINDER
  #include "grinder_runtime.h"
  #endif
@@ -63,15 +60,14 @@ index d002267..18840b3 100644
 +#include "pressensor_runtime.h"
 +#endif
  #include <string.h>
- const char *weights[] = { "Exit", "50g", "100g", "200g", "500g", "1000g" };
+ const char *const weights[] = { "Exit", "50g", "100g", "200g", "500g", "1000g" };
  const float weight_values[] = { 0.0, 50.0, 100.0, 200.0, 500.0, 1000.0 };
-@@ -82,6 +85,14 @@ void grinderTargetMenu();
+@@ -102,6 +105,13 @@ void grinderTargetMenu();
  void grinderSafetyMenu();
  void grinderZeroRangeMenu();
  #endif
 +#if HDS_ENABLE_PRESSENSOR
-+void pressensorMenuOn();
-+void pressensorMenuOff();
++void togglePressensor();
 +void pressensorSelectSensorMenu();
 +void pressensorZeroMenu();
 +void pressensorAutoStartToggle();
@@ -80,52 +76,67 @@ index d002267..18840b3 100644
  #if HDS_FEATURE_WIFI
  void wifi_init();
  #endif
-@@ -111,4 +122,7 @@
+@@ -114,6 +124,9 @@ extern const Menu menuInfoBack;
+ #if HDS_ENABLE_GRINDER
+ extern const Menu menuGrinderBack;
  #endif
 +#if HDS_ENABLE_PRESSENSOR
-+Menu menuPressensor = { "Pressensor", NULL, NULL, NULL };
++extern const Menu menuPressensorBack;
 +#endif
  
+ const Menu menuExit = { "Exit", exitMenu, NULL, NULL };
+ const Menu menuScale = { "Scale", NULL, &menuScaleBack, NULL };
+@@ -127,6 +140,9 @@ const Menu menuLogo = { "Show Logo", showLogo, NULL, &menuDisplay };
+ #if HDS_ENABLE_GRINDER
+ const Menu menuGrinder = { "Grind by weight", NULL, &menuGrinderBack, NULL };
+ #endif
++#if HDS_ENABLE_PRESSENSOR
++const Menu menuPressensor = { "Pressensor", NULL, &menuPressensorBack, NULL };
++#endif
  
- #ifdef BUZZER
-@@ -201,6 +215,16 @@ Menu menuGrinderZero = { "Zero Range", grinderZeroRangeMenu, NULL, &menuGrinder
- Menu *grinderMenu[] = { &menuGrinderBack, &menuGrinderOn, &menuGrinderOff, &menuGrinderSelect, &menuGrinderTarget, &menuGrinderSafety, &menuGrinderZero };
+ char menuDriftLabel[18] = "Drift: 0.05g";
+ char menuTapTareLabel[] = "2x Tap Tare o";
+@@ -225,6 +241,21 @@ const Menu *const grinderMenu[] = { &menuGrinderBack, &menuGrinderEnabled,
+                                    &menuGrinderSafety, &menuGrinderZero };
  #endif
  
 +#if HDS_ENABLE_PRESSENSOR
-+Menu menuPressensorBack = { "Back", NULL, NULL, &menuPressensor };
-+Menu menuPressensorOn = { "Pressensor On", pressensorMenuOn, NULL, &menuPressensor };
-+Menu menuPressensorOff = { "Pressensor Off", pressensorMenuOff, NULL, &menuPressensor };
-+Menu menuPressensorSelect = { "Select Sensor", pressensorSelectSensorMenu, NULL, &menuPressensor };
-+Menu menuPressensorZero = { "Zero Sensor", pressensorZeroMenu, NULL, &menuPressensor };
-+Menu menuPressensorAutoStart = { "Auto Start", pressensorAutoStartToggle, NULL, &menuPressensor };
-+Menu menuPressensorAutoStop = { "Auto Stop", pressensorAutoStopToggle, NULL, &menuPressensor };
-+Menu *pressensorMenu[] = { &menuPressensorBack, &menuPressensorOn, &menuPressensorOff, &menuPressensorSelect, &menuPressensorZero, &menuPressensorAutoStart, &menuPressensorAutoStop };
++const Menu menuPressensorBack = { "Back", NULL, NULL, &menuPressensor };
++char menuPressensorEnabledLabel[] = "Enabled o";
++char menuPressensorAutoStartLabel[] = "Auto Start o";
++char menuPressensorAutoStopLabel[] = "Auto Stop o";
++const Menu menuPressensorEnabled = { menuPressensorEnabledLabel, togglePressensor, NULL, &menuPressensor };
++const Menu menuPressensorSelect = { "Select Sensor", pressensorSelectSensorMenu, NULL, &menuPressensor };
++const Menu menuPressensorZero = { "Zero Sensor", pressensorZeroMenu, NULL, &menuPressensor };
++const Menu menuPressensorAutoStart = { menuPressensorAutoStartLabel, pressensorAutoStartToggle, NULL, &menuPressensor };
++const Menu menuPressensorAutoStop = { menuPressensorAutoStopLabel, pressensorAutoStopToggle, NULL, &menuPressensor };
++const Menu *const pressensorMenu[] = { &menuPressensorBack, &menuPressensorEnabled,
++                                      &menuPressensorSelect, &menuPressensorZero,
++                                      &menuPressensorAutoStart, &menuPressensorAutoStop };
 +#endif
- 
- Menu *mainMenu[] = {
++
+ const Menu *const mainMenu[] = {
    &menuExit,
-@@ -217,6 +241,9 @@ Menu *mainMenu[] = {
+   &menuScale,
+@@ -233,6 +264,9 @@ const Menu *const mainMenu[] = {
+   &menuPower,
  #if HDS_ENABLE_GRINDER
    &menuGrinder,
- #endif
++#endif
 +#if HDS_ENABLE_PRESSENSOR
 +  &menuPressensor,
-+#endif
- };
- Menu **currentMenu = mainMenu;
- Menu *currentSelection = mainMenu[0];
-@@ -245,6 +272,9 @@ void linkSubmenus() {
- #if HDS_ENABLE_GRINDER
-   menuGrinder.subMenu = grinderMenu[0];
  #endif
-+#if HDS_ENABLE_PRESSENSOR
-+  menuPressensor.subMenu = pressensorMenu[0];
-+#endif
- }
- 
- void exitMenu() {
-@@ -864,6 +894,126 @@ void grinderZeroRangeMenu() {
+   &menuInfo,
+ };
+@@ -318,7 +352,6 @@ void toggleWifi() {
+     actionMessage2 = "Needs WiFi";
+     menuActionMessageChanged();
+     t_actionMessageDelay = 1500;
+-    Serial.println("WiFi Off deferred until Grind by weight is disabled.");
+     return;
+   }
+ #endif
+@@ -773,4 +806,124 @@ void grinderZeroRangeMenu() {
  }
  #endif
  
@@ -133,20 +144,16 @@ index d002267..18840b3 100644
 +void pressensorSetActionMessage(const char *line1, const char *line2 = nullptr) {
 +  actionMessage = line1;
 +  actionMessage2 = line2 == nullptr ? "Default" : line2;
-+  t_actionMessage = millis();
++  menuActionMessageChanged();
 +  t_actionMessageDelay = 1500;
 +}
 +
-+void pressensorMenuOn() {
-+  pressensorSetEnabled(true);
-+  pressensorSetActionMessage("Pressensor On", pressensorSettings.selectedMac[0] == 0 ? "Select Sensor" : nullptr);
-+  Serial.printf("[pressensor] enabled mac=%s\n", pressensorSettings.selectedMac);
-+}
-+
-+void pressensorMenuOff() {
-+  pressensorSetEnabled(false);
-+  pressensorSetActionMessage("Pressensor Off");
-+  Serial.println("[pressensor] disabled");
++void togglePressensor() {
++  const bool enabled = !pressensorSettings.enabled;
++  const bool stored = pressensorStoreBool("enabled", enabled);
++  if (stored) pressensorSetEnabled(enabled, false);
++  updateToggleLabel(menuPressensorEnabledLabel, pressensorSettings.enabled);
++  showStoredAction("Pressensor", enabled, stored);
 +}
 +
 +void pressensorZeroMenu() {
@@ -158,15 +165,19 @@ index d002267..18840b3 100644
 +}
 +
 +void pressensorAutoStartToggle() {
-+  pressensorSettings.autoStart = !pressensorSettings.autoStart;
-+  pressensorSaveSettings();
-+  pressensorSetActionMessage(pressensorSettings.autoStart ? "Auto Start On" : "Auto Start Off");
++  const bool enabled = !pressensorSettings.autoStart;
++  const bool stored = pressensorStoreBool("astart", enabled);
++  if (stored) pressensorSettings.autoStart = enabled;
++  updateToggleLabel(menuPressensorAutoStartLabel, pressensorSettings.autoStart);
++  showStoredAction("Auto Start", enabled, stored);
 +}
 +
 +void pressensorAutoStopToggle() {
-+  pressensorSettings.autoStop = !pressensorSettings.autoStop;
-+  pressensorSaveSettings();
-+  pressensorSetActionMessage(pressensorSettings.autoStop ? "Auto Stop On" : "Auto Stop Off");
++  const bool enabled = !pressensorSettings.autoStop;
++  const bool stored = pressensorStoreBool("astop", enabled);
++  if (stored) pressensorSettings.autoStop = enabled;
++  updateToggleLabel(menuPressensorAutoStopLabel, pressensorSettings.autoStop);
++  showStoredAction("Auto Stop", enabled, stored);
 +}
 +
 +void pressensorWaitForButtonRelease() {
@@ -250,9 +261,19 @@ index d002267..18840b3 100644
 +#endif
 +
  void calibrate() {
-   b_menu = false;
-   b_calibration = true;
-@@ -1656,6 +1806,11 @@ void selectMenu() {
+@@ -1580,6 +1733,11 @@ void refreshMenuRows() {
+   snprintf(menuGrinderZeroLabel, sizeof(menuGrinderZeroLabel),
+            "Zero Range: %.1fg", grinderSettings.zeroMaxGrams);
+ #endif
++#if HDS_ENABLE_PRESSENSOR
++  updateToggleLabel(menuPressensorEnabledLabel, pressensorSettings.enabled);
++  updateToggleLabel(menuPressensorAutoStartLabel, pressensorSettings.autoStart);
++  updateToggleLabel(menuPressensorAutoStopLabel, pressensorSettings.autoStop);
++#endif
+ #if HDS_ENABLE_ENERGY_MENU
+   refreshEnergyMenuRows();
+ #endif
+@@ -1642,6 +1800,11 @@ void selectMenu() {
        b_grinderMenuDirectEntry = false;
        currentMenu = grinderMenu;
        currentMenuSize = getMenuSize(grinderMenu);
@@ -265,10 +286,10 @@ index d002267..18840b3 100644
      }
      currentIndex = 0;
 diff --git a/include/parameter.h b/include/parameter.h
-index c671664..5b540db 100644
+index afda7fa5cb5dbb268b17c7d5cee7f1585575e7fc..d4a71f336da2bcb2215148310e4b8354422efc71 100644
 --- a/include/parameter.h
 +++ b/include/parameter.h
-@@ -233,6 +233,17 @@ extern GrinderRuntime grinderRuntime;
+@@ -390,6 +390,17 @@ extern GrinderRuntime grinderRuntime;
  portMUX_TYPE grinderMdnsMux = portMUX_INITIALIZER_UNLOCKED;
  GrinderMdnsCandidate * volatile grinderMdnsCandidateBuffer = nullptr;
  #endif
@@ -288,7 +309,7 @@ index c671664..5b540db 100644
  // Enhanced tracking system global variables
 diff --git a/include/pressensor_ble.h b/include/pressensor_ble.h
 new file mode 100644
-index 0000000..9d54dfc
+index 0000000000000000000000000000000000000000..9d54dfcf9389a04ca30eed5414d8c76087c794f8
 --- /dev/null
 +++ b/include/pressensor_ble.h
 @@ -0,0 +1,740 @@
@@ -1034,10 +1055,10 @@ index 0000000..9d54dfc
 +#endif
 diff --git a/include/pressensor_runtime.h b/include/pressensor_runtime.h
 new file mode 100644
-index 0000000..b6a4258
+index 0000000000000000000000000000000000000000..68f5fe9e79a84b586b9855ce80c41a367a671618
 --- /dev/null
 +++ b/include/pressensor_runtime.h
-@@ -0,0 +1,303 @@
+@@ -0,0 +1,311 @@
 +#ifndef PRESSENSOR_RUNTIME_H
 +#define PRESSENSOR_RUNTIME_H
 +
@@ -1136,6 +1157,14 @@ index 0000000..b6a4258
 +  preferences.end();
 +}
 +
++static inline bool pressensorStoreBool(const char *key, bool value) {
++  Preferences preferences;
++  if (!preferences.begin("pressensor", false)) return false;
++  const bool stored = preferences.putBool(key, value) == sizeof(bool);
++  preferences.end();
++  return stored;
++}
++
 +static inline bool pressensorActive() {
 +  return pressensorSettings.enabled;
 +}
@@ -1161,9 +1190,9 @@ index 0000000..b6a4258
 +  }
 +}
 +
-+static inline void pressensorSetEnabled(bool enabled) {
++static inline void pressensorSetEnabled(bool enabled, bool store = true) {
 +  pressensorSettings.enabled = enabled;
-+  pressensorSaveSettings();
++  if (store) pressensorSaveSettings();
 +  pressensorResetShot();
 +  pressensorShot.pressureReady = true;
 +  pressensorApplyLinkTarget();
@@ -1342,10 +1371,10 @@ index 0000000..b6a4258
 +
 +#endif
 diff --git a/platformio.ini b/platformio.ini
-index 21fbdcb..623faf1 100644
+index c43ea7aa0f96cc68bd5039625da129214b8ce2a5..43e9333f5f33f882e59ea9b564b805f8ba398379 100644
 --- a/platformio.ini
 +++ b/platformio.ini
-@@ -102,6 +102,12 @@ extra_scripts =
+@@ -121,6 +121,12 @@ extra_scripts =
    ${env:esp32s3.extra_scripts}
    pre:tools/configure_custom_build.py
  
@@ -1359,10 +1388,10 @@ index 21fbdcb..623faf1 100644
  platform = native
  test_build_src = no
 diff --git a/src/hds.ino b/src/hds.ino
-index b93b7cd..d4f7809 100644
+index b0eb26b738ceb52fdd4fb7a5216f51fd3ad7b221..8855ea0ef72b55f8add6a3a588b327f6d88bffef 100644
 --- a/src/hds.ino
 +++ b/src/hds.ino
-@@ -22,6 +22,9 @@
+@@ -39,6 +39,9 @@ void waitForEnergyMainLoopWork();
  #if HDS_ENABLE_GRINDER
  #include "grinder_runtime.h"
  #endif
@@ -1372,7 +1401,7 @@ index b93b7cd..d4f7809 100644
  #if HDS_FEATURE_PULL_OTA
  #include "pull_ota.h"
  #include "ota_rollback.h"
-@@ -438,6 +441,9 @@ void setup() {
+@@ -807,6 +810,9 @@ void setup() {
  #if HDS_ENABLE_GRINDER
    grinderLoadSettings();
  #endif
@@ -1382,7 +1411,7 @@ index b93b7cd..d4f7809 100644
  
    b_quickBoot = storageGetBool(KEY_QUICK_BOOT, false);
    i_buttonBootDelay = b_quickBoot ? 0 : 500;
-@@ -1470,6 +1476,9 @@ void loop() {
+@@ -2170,6 +2176,9 @@ void loop() {
  #endif
  #if HDS_ENABLE_GRINDER
        || grinderRuntimeKeepsAwake()
@@ -1392,7 +1421,7 @@ index b93b7cd..d4f7809 100644
  #endif
    ) {
      power_off(-1);
-@@ -1535,6 +1544,9 @@ void loop() {
+@@ -2251,5 +2260,8 @@ void loop() {
  #endif
  #if HDS_ENABLE_GRINDER
        grinderRuntimeTick(f_displayedValue);
@@ -1401,11 +1430,10 @@ index b93b7cd..d4f7809 100644
 +      pressensorRuntimeTick(f_displayedValue, true);
  #endif
        showMenu();
-     } else if (GPIO_power_on_with == BATTERY_CHARGING) {
-@@ -1645,7 +1657,16 @@ void loop() {
-           }
+@@ -2375,7 +2387,16 @@ void loop() {
          }
          pureScale();
+         tapDetectTick();
 +#if HDS_ENABLE_PRESSENSOR
 +        pressensorRuntimeTick(f_displayedValue, false);
 +        if (pressensorActive()) {
@@ -1419,7 +1447,7 @@ index b93b7cd..d4f7809 100644
  #if HDS_ENABLE_GRINDER
          grinderRuntimeTick(f_displayedValue);
  #endif
-@@ -1853,6 +1874,119 @@ void drawGrinder() {
+@@ -2594,6 +2615,119 @@ void drawGrinder() {
  }
  #endif
  
@@ -1536,12 +1564,24 @@ index b93b7cd..d4f7809 100644
 +}
 +#endif
 +
- void drawBattery() {
-   if (millis() - t_batteryIcon >= 500) {
-     t_batteryIcon = millis();
+ void drawBattery(unsigned long now) {
+ #if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
+   if (digitalRead(USB_DET) == LOW) {
+diff --git a/tools/test_menu_memory_contract.py b/tools/test_menu_memory_contract.py
+index 399e8c4e2b11fca2ad94371f83999df8ba80d85a..f4fa4644bddbb9db085f5257ad35f7d6273b924f 100644
+--- a/tools/test_menu_memory_contract.py
++++ b/tools/test_menu_memory_contract.py
+@@ -12,6 +12,7 @@ SUBMENU_LINKS = {
+     "menuGrinder": "menuGrinderBack",
+     "menuInfo": "menuInfoBack",
+     "menuPower": "menuPowerBack",
++    "menuPressensor": "menuPressensorBack",
+     "menuScale": "menuScaleBack",
+ }
+ 
 diff --git a/tools/test_pressensor_ble_contract.py b/tools/test_pressensor_ble_contract.py
 new file mode 100644
-index 0000000..4fbf212
+index 0000000000000000000000000000000000000000..4fbf212de3ac5b3f0e2253a2c7ab5351433057d6
 --- /dev/null
 +++ b/tools/test_pressensor_ble_contract.py
 @@ -0,0 +1,106 @@

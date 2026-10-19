@@ -1,14 +1,28 @@
 {
+  "catalog_revision": "84bffa6904707413b5cf28fb1fad5a153ffe0fe07a80176ad15c8f851b611de2",
+  "custom_ota_signing_key_generation": 1,
   "firmware_refs": [
+    "v3.1.15",
+    "v3.1.14",
     "main"
   ],
   "features": [
     {
       "id": "wifi",
       "name": "WiFi",
-      "description": "Wireless networking support for connected features.",
-      "tooltip": "Provides the WiFi stack used by OTA updates, discovery, web tools, and connected plugins.",
-      "requires": []
+      "description": "Wireless networking with inline configuration support.",
+      "tooltip": "Provides WiFi and the embedded web server used to configure the network and device name.",
+      "requires": [
+        "webserver"
+      ],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ],
+      "default": true
     },
     {
       "id": "mdns",
@@ -17,7 +31,15 @@
       "tooltip": "Advertises the scale on the local network using multicast DNS. WiFi is included automatically.",
       "requires": [
         "wifi"
-      ]
+      ],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ],
+      "default": true
     },
     {
       "id": "webserver",
@@ -26,7 +48,15 @@
       "tooltip": "Adds the embedded HTTP server for web settings, APIs, and approved web plugins.",
       "requires": [
         "wifi"
-      ]
+      ],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ],
+      "default": true
     },
     {
       "id": "websocket",
@@ -36,14 +66,30 @@
       "requires": [
         "wifi",
         "webserver"
-      ]
+      ],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ],
+      "default": true
     },
     {
       "id": "littlefs",
       "name": "Runtime LittleFS files",
       "description": "Bundle files in the runtime flash filesystem.",
       "tooltip": "Adds runtime assets such as HTML, configuration, or plugin resources to LittleFS.",
-      "requires": []
+      "requires": [],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ],
+      "default": true
     },
     {
       "id": "elegant-ota",
@@ -53,60 +99,158 @@
       "requires": [
         "wifi",
         "webserver"
-      ]
+      ],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ],
+      "default": true
     },
     {
       "id": "pull-ota",
-      "name": "OLED Pull OTA",
-      "description": "Install official releases from the scale display.",
-      "tooltip": "Downloads signed firmware and LittleFS release assets over WiFi from the OLED update flow.",
+      "name": "Wifi Pull OTA",
+      "description": "Install official releases from the scale display. Updates replace custom builds.",
+      "tooltip": "Downloads signed firmware and LittleFS release assets over WiFi. Installing an official release replaces the custom build.",
       "requires": [
         "wifi"
+      ],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
       ],
       "default": true
     },
     {
       "id": "grinder",
-      "name": "Grind by weight",
-      "description": "Stop a supported grinder automatically at the target dose.",
-      "tooltip": "Controls a supported grinder plug and includes WiFi and mDNS.",
+      "name": "Grind by weight core",
+      "description": "Enable the built-in grinder integration.",
+      "tooltip": "Internal compile gate selected by the Grind by weight plugin.",
       "requires": [
         "wifi",
         "mdns"
       ],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ],
       "hidden": true
+    },
+    {
+      "id": "energy-menu",
+      "name": "Energy Saving Beta",
+      "description": "Enable optional energy-saving controls.",
+      "tooltip": "Adds Energy Saving settings under Power and saves your selections.",
+      "requires": [],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ]
     }
   ],
   "plugins": [
     {
+      "id": "default-web-apps",
+      "name": "Default web apps",
+      "description": "Install the bundled on-device dashboard and scale tools.",
+      "tooltip": "Adds the dashboard, Weigh Save, Dosing Assistant, and Quality Control Assistant. LittleFS, WebSocket, the web server, and WiFi are included automatically.",
+      "version": "1.0.0",
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ],
+      "requires": [
+        "littlefs",
+        "websocket"
+      ],
+      "depends_on": [],
+      "conflicts": [],
+      "conflicts_features": [],
+      "recommends": {
+        "features": [],
+        "plugins": []
+      },
+      "asset_targets": [
+        "Quality_Control_Assistant/README.md",
+        "Quality_Control_Assistant/quality_control.html",
+        "Quality_Control_Assistant/quality_control.js",
+        "README.md",
+        "Weigh_Save/README.md",
+        "Weigh_Save/main.js",
+        "Weigh_Save/modules/export.js",
+        "Weigh_Save/modules/scale.js",
+        "Weigh_Save/modules/timer.js",
+        "Weigh_Save/modules/ui-controller.js",
+        "Weigh_Save/weigh_save.html",
+        "dosing_assistant/README.md",
+        "dosing_assistant/dosing_assistant.html",
+        "dosing_assistant/dosing_assistant.md",
+        "dosing_assistant/main.js",
+        "dosing_assistant/modules/constants.js",
+        "dosing_assistant/modules/export.js",
+        "dosing_assistant/modules/scale.js",
+        "dosing_assistant/modules/state-machine.js",
+        "dosing_assistant/modules/ui-controller.js",
+        "index.html",
+        "shared/app.css",
+        "shared/measurement-history.js",
+        "shared/modules/download-file.js",
+        "shared/modules/presets.js",
+        "shared/reconnecting-websocket.js",
+        "shared/theme.css",
+        "shared/theme.js",
+        "shared/wifi-legacy.css",
+        "shared/wifi-legacy.js"
+      ],
+      "default": true
+    },
+    {
       "id": "grind-by-weight",
       "name": "Grind by weight",
       "description": "Stop a supported grinder automatically at the target dose.",
-      "tooltip": "Controls a supported Tasmota grinder plug over the local network and includes WiFi and mDNS.",
+      "tooltip": "Enables the built-in grind-by-weight integration. Its recommended setup also selects Wifi Pull OTA and the default web apps.",
       "version": "1.0.0",
       "firmware_refs": [
-        "main"
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
       ],
       "requires": [
         "grinder"
       ],
-      "conflicts": []
-    },
-    {
-      "id": "hello-web",
-      "name": "Hello Web",
-      "description": "Example web plugin with bundled runtime assets.",
-      "tooltip": "Approved example plugin requiring WiFi, the web server, and runtime LittleFS files.",
-      "version": "1.0.0",
-      "firmware_refs": [
-        "main"
+      "depends_on": [],
+      "conflicts": [
+        "pressensor"
       ],
-      "requires": [
-        "wifi",
-        "webserver",
-        "littlefs"
-      ],
-      "conflicts": []
+      "conflicts_features": [],
+      "recommends": {
+        "features": [
+          "pull-ota"
+        ],
+        "plugins": [
+          "default-web-apps"
+        ]
+      },
+      "asset_targets": [],
+      "presentation": {
+        "handbook": "plugin-media/grind-by-weight/9bf8d6abe06db79c81eee26b668390907677a198e8f5c64b189fa7a31e2367d6.md"
+      }
     },
     {
       "id": "pressensor",
@@ -115,10 +259,23 @@
       "tooltip": "Connects to a selected Pressensor over BLE and adds pressure-aware shot timing without requiring WiFi or runtime LittleFS.",
       "version": "1.0.0",
       "firmware_refs": [
-        "main"
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
       ],
       "requires": [],
-      "conflicts": []
+      "depends_on": [],
+      "conflicts": [
+        "grind-by-weight"
+      ],
+      "conflicts_features": [],
+      "recommends": {
+        "features": [],
+        "plugins": []
+      },
+      "asset_targets": []
     }
   ]
 }

@@ -56,6 +56,8 @@ def main():
             "digitalWrite(PWR_CTRL, HIGH);",
             "digitalWrite(ACC_PWR_CTRL, HIGH);",
             "scale.powerUp();",
+            "b_softSleep = false;",
+            "applyEnergyDisplayCommand(!energyRuntime.explicitDisplayOff);",
             "refreshScaleDatasetAfterDiscontinuity(context)",
             "resetScaleOutputAfterAdcDiscontinuity();",
         ],
@@ -69,18 +71,19 @@ def main():
     if "digitalWrite(PWR_CTRL, HIGH);" in button_handler:
         raise AssertionError("button soft wake must use wakeScaleFromSoftSleep")
 
+    usb_soft_on = method_body(USBCOMM_HEADER, "softSleepOn")
+    assert_ordered(usb_soft_on, ["remoteReplacePending(WSP_SLEEP_ON, WSP_SLEEP_OFF);"])
     usb_soft_off = method_body(USBCOMM_HEADER, "softSleepOff")
     assert_ordered(
         usb_soft_off,
         [
-            "if (b_softSleep)",
-            'wakeScaleFromSoftSleep("USB soft wake")',
-            "u8g2.setPowerSave(0);",
-            "b_u8g2Sleep = false;",
+            "remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);",
         ],
     )
-    if "digitalWrite(PWR_CTRL, HIGH);" in usb_soft_off:
-        raise AssertionError("USB soft wake must use wakeScaleFromSoftSleep")
+    for action in (usb_soft_on, usb_soft_off):
+        if any(direct in action for direct in
+               ("digitalWrite(", "u8g2.", "wakeScaleFromSoftSleep(", "b_softSleep =")):
+            raise AssertionError("USB soft sleep/wake must use the main-loop dispatcher")
 
     wifi_update = method_body(MENU_HEADER, "wifiUpdate")
     assert_ordered(
@@ -88,7 +91,7 @@ def main():
         [
             "if (b_softSleep)",
             'wakeScaleFromSoftSleep("WiFi OTA wake")',
-            "pullOtaUpdate();",
+            "pullOtaUpdate(target);",
         ],
     )
 
@@ -119,11 +122,16 @@ def main():
     if read(BLE_HEADER).count("restoreDisplayAfterBleDisconnect();") != 2:
         raise AssertionError("all BLE disconnect callbacks must preserve soft sleep")
 
-    ws_handler = read(WEBSOCKET_HEADER)
-    ws_wake_start = ws_handler.index('if (action == "off" || action == "wake")')
+    ws_handler = method_body(WEBSOCKET_HEADER, "handleWebsocketControlCommand")
+    ws_sleep_command = 'if (websocketEqualsIgnoreCase(command, "sleep") ||'
+    ws_wake_condition = 'if (websocketEqualsIgnoreCase(action, "off") ||'
+    ws_wake_start = ws_handler.index(ws_wake_condition, ws_handler.index(ws_sleep_command))
     ws_wake_end = ws_handler.index('sendWebsocketStatus(client, "ok");', ws_wake_start)
     ws_wake = ws_handler[ws_wake_start:ws_wake_end]
-    ws_sleep_start = ws_handler.index('if (action == "on")', ws_handler.index('if (command == "sleep"'))
+    ws_sleep_start = ws_handler.index(
+        'if (websocketEqualsIgnoreCase(action, "on"))',
+        ws_handler.index(ws_sleep_command),
+    )
     ws_sleep_end = ws_handler.index('sendWebsocketStatus(client, "ok");', ws_sleep_start)
     ws_sleep = ws_handler[ws_sleep_start:ws_sleep_end]
     if "b_softSleep = true;" in ws_sleep or "b_u8g2Sleep = true;" in ws_sleep:
@@ -132,7 +140,6 @@ def main():
     assert_ordered(
         ws_wake,
         [
-            'if (action == "off" || action == "wake")',
             "wsReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);",
         ],
     )

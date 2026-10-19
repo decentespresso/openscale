@@ -1,6 +1,7 @@
 import argparse
 import configparser
 import hashlib
+import html
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -8,27 +9,36 @@ import re
 import shutil
 import subprocess
 
+from plugin_presentation import presentationMetadata, publishPresentationFiles
+
 
 SCRIPT_ROOT = Path(globals().get("__file__", Path.cwd() / "tools" / "configure_custom_build.py")).resolve().parents[1]
 ROOT = Path(os.environ.get("HDS_CUSTOM_BUILD_CATALOG_ROOT", SCRIPT_ROOT)).resolve()
 ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 PATH_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
-FIRMWARE_REFS = ("main",)
+TAGGED_FIRMWARE_REF_PATTERN = re.compile(r"^v?([0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9]+(?:[.-][a-z0-9]+)*)?)$")
+DEFAULT_FIRMWARE_VERSION_PATTERN = re.compile(
+    r'^\s*#define\s+HDS_FIRMWARE_VERSION\s+"([0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9]+(?:[.-][a-z0-9]+)*)?)"\s*$',
+    re.MULTILINE,
+)
+FIRMWARE_REFS = ("v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main", "v3.1.15")
+BROWSER_FIRMWARE_REFS = ("v3.1.15", "v3.1.14", "main")
 FEATURES = {
-    "wifi": ("HDS_FEATURE_WIFI", ()),
-    "mdns": ("HDS_FEATURE_MDNS", ("wifi",)),
-    "webserver": ("HDS_FEATURE_WEBSERVER", ("wifi",)),
-    "websocket": ("HDS_FEATURE_WEBSOCKET", ("wifi", "webserver")),
-    "littlefs": ("HDS_FEATURE_LITTLEFS", ()),
-    "elegant-ota": ("HDS_FEATURE_ELEGANT_OTA", ("wifi", "webserver")),
-    "pull-ota": ("HDS_FEATURE_PULL_OTA", ("wifi",)),
-    "grinder": ("HDS_FEATURE_GRINDER", ("wifi", "mdns")),
+    "wifi": ("HDS_FEATURE_WIFI", ("webserver",), FIRMWARE_REFS),
+    "mdns": ("HDS_FEATURE_MDNS", ("wifi",), FIRMWARE_REFS),
+    "webserver": ("HDS_FEATURE_WEBSERVER", ("wifi",), FIRMWARE_REFS),
+    "websocket": ("HDS_FEATURE_WEBSOCKET", ("wifi", "webserver"), FIRMWARE_REFS),
+    "littlefs": ("HDS_FEATURE_LITTLEFS", (), FIRMWARE_REFS),
+    "elegant-ota": ("HDS_FEATURE_ELEGANT_OTA", ("wifi", "webserver"), FIRMWARE_REFS),
+    "pull-ota": ("HDS_FEATURE_PULL_OTA", ("wifi",), FIRMWARE_REFS),
+    "grinder": ("HDS_FEATURE_GRINDER", ("wifi", "mdns"), FIRMWARE_REFS),
+    "energy-menu": ("HDS_FEATURE_ENERGY_MENU", (), FIRMWARE_REFS),
 }
 FEATURE_PRESENTATION = {
     "wifi": (
         "WiFi",
-        "Wireless networking support for connected features.",
-        "Provides the WiFi stack used by OTA updates, discovery, web tools, and connected plugins.",
+        "Wireless networking with inline configuration support.",
+        "Provides WiFi and the embedded web server used to configure the network and device name.",
     ),
     "mdns": (
         "mDNS",
@@ -56,25 +66,38 @@ FEATURE_PRESENTATION = {
         "Adds ElegantOTA and includes WiFi and the web server.",
     ),
     "pull-ota": (
-        "OLED Pull OTA",
-        "Install official releases from the scale display.",
-        "Downloads signed firmware and LittleFS release assets over WiFi from the OLED update flow.",
+        "Wifi Pull OTA",
+        "Install official releases from the scale display. Updates replace custom builds.",
+        "Downloads signed firmware and LittleFS release assets over WiFi. Installing an official release replaces the custom build.",
     ),
     "grinder": (
-        "Grind by weight",
-        "Stop a supported grinder automatically at the target dose.",
-        "Controls a supported grinder plug and includes WiFi and mDNS.",
+        "Grind by weight core",
+        "Enable the built-in grinder integration.",
+        "Internal compile gate selected by the Grind by weight plugin.",
+    ),
+    "energy-menu": (
+        "Energy Saving Beta",
+        "Enable optional energy-saving controls.",
+        "Adds Energy Saving settings under Power and saves your selections.",
     ),
 }
-DEFAULT_FEATURES = {"pull-ota"}
+HIDDEN_FEATURES = {"grinder"}
+DEFAULT_FEATURES = {
+    "wifi", "mdns", "webserver", "websocket", "littlefs", "elegant-ota", "pull-ota",
+}
+DEFAULT_PLUGINS = {"default-web-apps"}
 CONFIG_KEYS = {"firmware_ref", "features", "plugins"}
 PLUGIN_KEYS = {
     "schema", "id", "name", "description", "tooltip", "version",
-    "firmware_refs", "requires", "conflicts", "patches", "assets", "budget",
+    "firmware_refs", "requires", "conflicts", "patches", "budget",
 }
+OPTIONAL_PLUGIN_KEYS = {"depends_on", "recommends", "conflicts_features", "presentation"}
+RECOMMENDATION_KEYS = {"features", "plugins"}
 BUDGET_KEYS = {"firmware_flash_bytes", "static_ram_bytes", "littlefs_bytes"}
-BUILD_CONTRACT_SCHEMA = 1
+BUILD_CONTRACT_SCHEMA = 2
+CUSTOM_OTA_SIGNING_KEY_GENERATION = 1
 PLATFORMIO_ENVIRONMENT = "esp32s3-custom"
+ENERGY_MENU_PLATFORMIO_ENVIRONMENT = "esp32s3-energy-menu-custom"
 PUBLIC_BINARIES = ("firmware.bin", "bootloader.bin", "partitions.bin", "littlefs.bin")
 FIRMWARE_ARCHIVE = "HDS_FW_custom.zip"
 
@@ -103,13 +126,51 @@ def safeRelativePath(value, name):
     return path
 
 
+def assetTargetCollision(targets):
+    targetSet = set(targets)
+    return len(targets) != len(targetSet) or any(
+        "/".join(target.split("/")[:depth]) in targetSet
+        for target in targets
+        for depth in range(1, len(target.split("/")))
+    )
+
+
+def pluginAssetSources(pluginDir, pluginId):
+    assetsDir = pluginDir / "assets"
+    if assetsDir.is_symlink() or (assetsDir.exists() and not assetsDir.is_dir()):
+        raise ValueError(f"invalid assets directory: {pluginId}")
+    if not assetsDir.exists():
+        return []
+    if (assetsDir / "index.html").exists() and not (assetsDir / "index.html").is_file():
+        raise ValueError(f"invalid app entrypoint: {pluginId}")
+    if (ROOT / ".git").exists():
+        result = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--",
+             f"plugins/{pluginId}/assets"],
+            cwd=ROOT, capture_output=True, check=True,
+        )
+        sources = [ROOT.joinpath(*PurePosixPath(os.fsdecode(path)).parts)
+                   for path in result.stdout.split(b"\0") if path]
+    else:
+        sources = list(assetsDir.rglob("*"))
+    return sorted(sources, key=lambda source: source.as_posix())
+
+
 def loadPlugin(pluginId, firmwareRef=None):
     if not ID_PATTERN.fullmatch(pluginId):
         raise ValueError(f"invalid plugin id: {pluginId}")
     pluginDir = ROOT / "plugins" / pluginId
-    manifest = readJson(pluginDir / "plugin.json")
-    if not isinstance(manifest, dict) or set(manifest) != PLUGIN_KEYS:
+    storedManifest = readJson(pluginDir / "plugin.json")
+    if (not isinstance(storedManifest, dict) or
+            not PLUGIN_KEYS.issubset(storedManifest) or
+            set(storedManifest) - PLUGIN_KEYS - OPTIONAL_PLUGIN_KEYS):
         raise ValueError(f"invalid plugin manifest keys: {pluginId}")
+    manifest = {
+        **storedManifest,
+        "depends_on": storedManifest.get("depends_on", []),
+        "recommends": storedManifest.get("recommends", {"features": [], "plugins": []}),
+        "conflicts_features": storedManifest.get("conflicts_features", []),
+    }
     if manifest["schema"] != 2 or manifest["id"] != pluginId:
         raise ValueError(f"invalid plugin identity: {pluginId}")
     for field in ("name", "description", "tooltip", "version"):
@@ -122,32 +183,77 @@ def loadPlugin(pluginId, firmwareRef=None):
     if firmwareRef is not None and firmwareRef not in firmwareRefs:
         raise ValueError(f"plugin {pluginId} does not support {firmwareRef}")
     requires = requireStringList(manifest["requires"], f"{pluginId}.requires")
+    dependsOn = requireStringList(manifest["depends_on"], f"{pluginId}.depends_on")
     conflicts = requireStringList(manifest["conflicts"], f"{pluginId}.conflicts")
+    conflictsFeatures = requireStringList(
+        manifest["conflicts_features"], f"{pluginId}.conflicts_features"
+    )
     unknownFeatures = set(requires) - set(FEATURES)
     if unknownFeatures:
         raise ValueError(f"unknown plugin features: {sorted(unknownFeatures)}")
+    unknownConflictFeatures = set(conflictsFeatures) - set(FEATURES)
+    if unknownConflictFeatures:
+        raise ValueError(f"unknown plugin feature conflicts: {sorted(unknownConflictFeatures)}")
+    if any(not ID_PATTERN.fullmatch(dependency) for dependency in dependsOn) or pluginId in dependsOn:
+        raise ValueError(f"invalid plugin dependencies: {pluginId}")
     if any(not ID_PATTERN.fullmatch(conflict) for conflict in conflicts) or pluginId in conflicts:
         raise ValueError(f"invalid plugin conflicts: {pluginId}")
+    recommendations = manifest["recommends"]
+    if not isinstance(recommendations, dict) or set(recommendations) != RECOMMENDATION_KEYS:
+        raise ValueError(f"invalid plugin recommendations: {pluginId}")
+    recommendedFeatures = requireStringList(
+        recommendations["features"], f"{pluginId}.recommends.features"
+    )
+    recommendedPlugins = requireStringList(
+        recommendations["plugins"], f"{pluginId}.recommends.plugins"
+    )
+    unknownRecommendedFeatures = set(recommendedFeatures) - set(FEATURES)
+    if unknownRecommendedFeatures:
+        raise ValueError(f"unknown recommended features: {sorted(unknownRecommendedFeatures)}")
+    if (any(not ID_PATTERN.fullmatch(recommended) for recommended in recommendedPlugins) or
+            pluginId in recommendedPlugins):
+        raise ValueError(f"invalid recommended plugins: {pluginId}")
     budget = manifest["budget"]
     if not isinstance(budget, dict) or set(budget) != BUDGET_KEYS:
         raise ValueError(f"invalid plugin budget: {pluginId}")
     if any(type(budget[key]) is not int or budget[key] < 0 for key in BUDGET_KEYS):
         raise ValueError(f"invalid plugin budget values: {pluginId}")
-    assets = manifest["assets"]
-    if not isinstance(assets, list):
-        raise ValueError(f"invalid plugin assets: {pluginId}")
     checkedAssets = []
-    for asset in assets:
-        if not isinstance(asset, dict) or set(asset) != {"source", "target"}:
-            raise ValueError(f"invalid plugin asset: {pluginId}")
-        sourceRelative = safeRelativePath(asset["source"], f"{pluginId}.source")
-        targetRelative = safeRelativePath(asset["target"], f"{pluginId}.target")
-        source = pluginDir.joinpath(*sourceRelative.parts).resolve()
-        if pluginDir.resolve() not in source.parents or not source.is_file():
-            raise ValueError(f"missing plugin asset: {pluginId}/{sourceRelative}")
-        checkedAssets.append((source, targetRelative))
+    for source in pluginAssetSources(pluginDir, pluginId):
+        if source.is_symlink():
+            raise ValueError(f"invalid plugin asset: {pluginId}/{source}")
+        if source.is_dir():
+            continue
+        sourceRelative = source.relative_to(pluginDir / "assets").as_posix()
+        targetRelative = safeRelativePath(sourceRelative, f"{pluginId}.asset")
+        if targetRelative.parts[0] in {"apps", "webapps.json"} or (
+            targetRelative.parts[0] == "index.html" and len(targetRelative.parts) > 1
+        ):
+            raise ValueError(f"reserved plugin asset target: {pluginId}/{targetRelative}")
+        if not source.is_file() or (pluginDir / "assets").resolve() not in source.resolve().parents:
+            raise ValueError(f"invalid plugin asset: {pluginId}/{sourceRelative}")
+        checkedAssets.append((source.resolve(), targetRelative))
+    webappDir = pluginDir / "webapp"
+    if webappDir.exists() or webappDir.is_symlink():
+        raise ValueError(f"webapp/ is unsupported; use assets/: {pluginId}")
+    rootAsset = any(target.as_posix() == "index.html" for _, target in checkedAssets)
+    if rootAsset and pluginId != "default-web-apps":
+        checkedAssets = [
+            (source, PurePosixPath("apps", pluginId, *target.parts))
+            for source, target in checkedAssets
+        ]
+    for _, target in checkedAssets:
+        if target.suffix.lower() == ".gz" and target.with_suffix("").suffix.lower() in {
+            ".html", ".js", ".css", ".svg"
+        }:
+            raise ValueError(f"precompressed plugin asset is managed by the build: {pluginId}/{target}")
+    if rootAsset and pluginId != "default-web-apps":
+        manifest["webapp"] = {
+            "name": manifest["name"],
+            "href": f"/apps/{pluginId}/index.html",
+        }
     assetTargets = [target.as_posix() for _, target in checkedAssets]
-    if len(assetTargets) != len(set(assetTargets)):
+    if assetTargetCollision(assetTargets):
         raise ValueError(f"duplicate plugin asset target: {pluginId}")
     patches = manifest["patches"]
     if not isinstance(patches, dict) or any(not isinstance(ref, str) for ref in patches):
@@ -167,21 +273,217 @@ def loadPlugin(pluginId, firmwareRef=None):
     return manifest, checkedAssets, checkedPatches
 
 
-def loadPluginCatalog():
+def pluginOrder(pluginCatalog, requestedIds):
+    closure = set()
+    pending = list(requestedIds)
+    while pending:
+        pluginId = pending.pop()
+        if pluginId in closure:
+            continue
+        if pluginId not in pluginCatalog:
+            raise ValueError(f"unknown plugin dependency: {pluginId}")
+        closure.add(pluginId)
+        pending.extend(pluginCatalog[pluginId][0]["depends_on"])
+
+    ordered = []
+    visiting = set()
+    visited = set()
+
+    def visit(pluginId):
+        if pluginId in visiting:
+            raise ValueError(f"plugin dependency cycle: {pluginId}")
+        if pluginId in visited:
+            return
+        if pluginId not in pluginCatalog:
+            raise ValueError(f"unknown plugin dependency: {pluginId}")
+        visiting.add(pluginId)
+        for dependency in sorted(pluginCatalog[pluginId][0]["depends_on"]):
+            visit(dependency)
+        visiting.remove(pluginId)
+        visited.add(pluginId)
+        ordered.append(pluginId)
+
+    for pluginId in sorted(closure):
+        visit(pluginId)
+    return ordered
+
+
+def resolveFeatureIds(featureIds, firmwareRef):
+    resolved = set(featureIds)
+    changed = True
+    while changed:
+        previous = set(resolved)
+        for featureId in previous:
+            if featureId not in FEATURES:
+                raise ValueError(f"unknown feature: {featureId}")
+            resolved.update(FEATURES[featureId][1])
+        changed = resolved != previous
+    unsupported = sorted(
+        featureId for featureId in resolved if firmwareRef not in FEATURES[featureId][2]
+    )
+    if unsupported:
+        raise ValueError(f"features do not support {firmwareRef}: {unsupported}")
+    return sorted(resolved)
+
+
+def pluginCompatibilityPackages(pluginCatalog, pluginIds):
+    selected = set(pluginIds)
+    return [
+        set(pluginOrder(pluginCatalog, [
+            pluginId,
+            *(
+                recommended
+                for recommended in pluginCatalog[pluginId][0]["recommends"]["plugins"]
+                if recommended in selected
+            ),
+        ]))
+        for pluginId in pluginIds
+    ]
+
+
+def resolveCatalogSelection(pluginCatalog, requestedPluginIds, requestedFeatures, firmwareRef):
+    pluginIds = pluginOrder(pluginCatalog, requestedPluginIds)
+    unsupportedPlugins = sorted(
+        pluginId
+        for pluginId in pluginIds
+        if firmwareRef not in pluginCatalog[pluginId][0]["firmware_refs"]
+    )
+    if unsupportedPlugins:
+        raise ValueError(f"plugins do not support {firmwareRef}: {unsupportedPlugins}")
+    featureIds = resolveFeatureIds(
+        [
+            *requestedFeatures,
+            *(
+                featureId
+                for pluginId in pluginIds
+                for featureId in pluginCatalog[pluginId][0]["requires"]
+            ),
+        ],
+        firmwareRef,
+    )
+    selectedPlugins = set(pluginIds)
+    selectedFeatures = set(featureIds)
+    compatibilityPackages = pluginCompatibilityPackages(pluginCatalog, pluginIds)
+    for pluginId in pluginIds:
+        manifest = pluginCatalog[pluginId][0]
+        pluginConflicts = sorted(
+            conflict
+            for conflict in selectedPlugins.intersection(manifest["conflicts"])
+            if not any({pluginId, conflict} <= package for package in compatibilityPackages)
+        )
+        if pluginConflicts:
+            raise ValueError(f"plugin {pluginId} conflicts with {pluginConflicts}")
+        featureConflicts = sorted(selectedFeatures.intersection(manifest["conflicts_features"]))
+        if featureConflicts:
+            raise ValueError(f"plugin {pluginId} conflicts with features {featureConflicts}")
+    targets = [
+        target.as_posix()
+        for pluginId in pluginIds
+        for _, target in pluginCatalog[pluginId][1]
+    ]
+    if assetTargetCollision(targets):
+        raise ValueError("plugin asset target collision")
+    return pluginIds, featureIds
+
+
+def recommendedPluginSelection(pluginCatalog, pluginId, firmwareRef):
+    recommendations = pluginCatalog[pluginId][0]["recommends"]
+    selection = {
+        "firmware_ref": firmwareRef,
+        "features": recommendations["features"],
+        "plugins": [pluginId, *recommendations["plugins"]],
+    }
+    resolveCatalogSelection(
+        pluginCatalog, selection["plugins"], selection["features"], firmwareRef
+    )
+    return selection
+
+
+def loadPluginCatalog(validateDefaults=False):
     pluginIds = [path.parent.name for path in sorted((ROOT / "plugins").glob("*/plugin.json"))]
     plugins = {pluginId: loadPlugin(pluginId) for pluginId in pluginIds}
     knownIds = set(plugins)
+    for featureId, (_, dependencies, firmwareRefs) in FEATURES.items():
+        if (not firmwareRefs or len(firmwareRefs) != len(set(firmwareRefs)) or
+                set(firmwareRefs) - set(FIRMWARE_REFS)):
+            raise ValueError(f"invalid firmware refs for feature {featureId}")
+        unknownDependencies = set(dependencies) - set(FEATURES)
+        if unknownDependencies:
+            raise ValueError(f"unknown dependencies for feature {featureId}: {sorted(unknownDependencies)}")
+        for firmwareRef in firmwareRefs:
+            resolveFeatureIds([featureId], firmwareRef)
     for pluginId, (manifest, _, _) in plugins.items():
-        unknownConflicts = set(manifest["conflicts"]) - knownIds
-        if unknownConflicts:
-            raise ValueError(f"unknown plugin conflicts for {pluginId}: {sorted(unknownConflicts)}")
+        for field in ("conflicts", "depends_on"):
+            unknownIds = set(manifest[field]) - knownIds
+            if unknownIds:
+                raise ValueError(f"unknown plugin {field} for {pluginId}: {sorted(unknownIds)}")
+        unknownRecommendations = set(manifest["recommends"]["plugins"]) - knownIds
+        if unknownRecommendations:
+            raise ValueError(
+                f"unknown recommended plugins for {pluginId}: {sorted(unknownRecommendations)}"
+            )
+    pluginOrder(plugins, knownIds)
+    for pluginId, (manifest, _, _) in plugins.items():
+        for firmwareRef in manifest["firmware_refs"]:
+            try:
+                resolveCatalogSelection(plugins, [pluginId], [], firmwareRef)
+            except ValueError as error:
+                raise ValueError(f"impossible plugin {pluginId} on {firmwareRef}: {error}") from error
+            try:
+                recommendedPluginSelection(plugins, pluginId, firmwareRef)
+            except ValueError as error:
+                raise ValueError(
+                    f"invalid recommendations for {pluginId} on {firmwareRef}: {error}"
+                ) from error
+    if validateDefaults:
+        try:
+            resolveCatalogSelection(plugins, DEFAULT_PLUGINS, DEFAULT_FEATURES, "main")
+        except ValueError as error:
+            raise ValueError(f"invalid default selection: {error}") from error
+    for pluginId, (manifest, _, _) in plugins.items():
+        if "webapp" not in manifest:
+            continue
+        requirements = {
+            feature
+            for dependencyId in pluginOrder(plugins, [pluginId])
+            for feature in plugins[dependencyId][0]["requires"]
+        }
+        if not {"littlefs", "webserver"}.issubset(resolveFeatureIds(requirements, manifest["firmware_refs"][0])):
+            raise ValueError(f"webapp plugin lacks runtime features: {pluginId}")
     return plugins
 
 
+def catalogRevision(plugins):
+    contract = {
+        "schema": BUILD_CONTRACT_SCHEMA,
+        "custom_ota_signing_key_generation": CUSTOM_OTA_SIGNING_KEY_GENERATION,
+        "firmware_refs": list(FIRMWARE_REFS),
+        "features": {
+            featureId: {
+                "requires": list(dependencies),
+                "firmware_refs": list(firmwareRefs),
+            }
+            for featureId, (_, dependencies, firmwareRefs) in FEATURES.items()
+        },
+        "plugins": {
+            pluginId: {
+                key: manifest[key]
+                for key in (
+                    "version", "firmware_refs", "requires", "depends_on", "conflicts",
+                    "conflicts_features", "recommends",
+                )
+            }
+            for pluginId, (manifest, _, _) in plugins.items()
+        },
+    }
+    payload = json.dumps(contract, sort_keys=True, separators=(",", ":")).encode("ascii")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def buildBrowserCatalog():
-    plugins = loadPluginCatalog()
+    plugins = loadPluginCatalog(validateDefaults=True)
     features = []
-    for featureId, (_, dependencies) in FEATURES.items():
+    for featureId, (_, dependencies, firmwareRefs) in FEATURES.items():
         name, description, tooltip = FEATURE_PRESENTATION[featureId]
         feature = {
             "id": featureId,
@@ -189,54 +491,82 @@ def buildBrowserCatalog():
             "description": description,
             "tooltip": tooltip,
             "requires": list(dependencies),
+            "firmware_refs": list(firmwareRefs),
         }
         if featureId in DEFAULT_FEATURES:
             feature["default"] = True
-        if featureId == "grinder":
+        if featureId in HIDDEN_FEATURES:
             feature["hidden"] = True
         features.append(feature)
-    return {
-        "firmware_refs": list(FIRMWARE_REFS),
-        "features": features,
-        "plugins": [
-            {
+    browserPlugins = []
+    for manifest, assets, _ in plugins.values():
+        presentation, _ = presentationMetadata(
+            manifest["id"], manifest, ROOT / "plugins" / manifest["id"], safeRelativePath
+        )
+        browserPlugins.append({
+            **{
                 key: manifest[key]
                 for key in (
                     "id", "name", "description", "tooltip", "version",
-                    "firmware_refs", "requires", "conflicts",
+                    "firmware_refs", "requires", "depends_on", "conflicts",
+                    "conflicts_features", "recommends",
                 )
-            }
-            for manifest, _, _ in plugins.values()
-        ],
+            },
+            "asset_targets": sorted(target.as_posix() for _, target in assets),
+            **({"webapp": manifest["webapp"]} if "webapp" in manifest else {}),
+            **({"presentation": presentation} if presentation else {}),
+            **({"default": True} if manifest["id"] in DEFAULT_PLUGINS else {}),
+        })
+    return {
+        "catalog_revision": catalogRevision(plugins),
+        "custom_ota_signing_key_generation": CUSTOM_OTA_SIGNING_KEY_GENERATION,
+        "firmware_refs": list(BROWSER_FIRMWARE_REFS),
+        "features": features,
+        "plugins": browserPlugins,
     }
 
 
 def writeBrowserCatalog(path):
+    catalog = buildBrowserCatalog()
+    presentationFiles = []
+    for manifest, _, _ in loadPluginCatalog().values():
+        _, files = presentationMetadata(
+            manifest["id"], manifest, ROOT / "plugins" / manifest["id"], safeRelativePath
+        )
+        presentationFiles.extend(files)
+    publishPresentationFiles(presentationFiles, path.parent / "plugin-media")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes((json.dumps(buildBrowserCatalog(), indent=2) + "\n").encode("utf-8"))
+    path.write_bytes((json.dumps(catalog, indent=2) + "\n").encode("utf-8"))
 
 
 def buildServiceCatalog(sourceRoot=ROOT):
-    plugins = loadPluginCatalog()
-    partition = partitionMetadata(sourceRoot)
+    plugins = loadPluginCatalog(validateDefaults=True)
     return {
         "schema": BUILD_CONTRACT_SCHEMA,
+        "custom_ota_signing_key_generation": CUSTOM_OTA_SIGNING_KEY_GENERATION,
+        "catalog_revision": catalogRevision(plugins),
         "firmware_refs": list(FIRMWARE_REFS),
         "platformio_environment": PLATFORMIO_ENVIRONMENT,
-        "partition_schema": {
-            "path": partition["path"],
-            "sha256": partition["sha256"],
+        "firmware": {
+            firmwareRef: firmwareMetadata(firmwareRef, sourceRoot)
+            for firmwareRef in FIRMWARE_REFS
         },
         "features": {
-            featureId: list(dependencies)
-            for featureId, (_, dependencies) in FEATURES.items()
+            featureId: {
+                "requires": list(dependencies),
+                "firmware_refs": list(firmwareRefs),
+            }
+            for featureId, (_, dependencies, firmwareRefs) in FEATURES.items()
         },
         "plugins": {
             pluginId: {
                 "version": manifest["version"],
                 "firmware_refs": manifest["firmware_refs"],
                 "requires": manifest["requires"],
+                "depends_on": manifest["depends_on"],
                 "conflicts": manifest["conflicts"],
+                "conflicts_features": manifest["conflicts_features"],
+                "recommends": manifest["recommends"],
                 "patches": {
                     firmwareRef: {"sha256": fileMetadata(path)["sha256"]}
                     for firmwareRef, path in sorted(patches.items())
@@ -251,6 +581,7 @@ def buildServiceCatalog(sourceRoot=ROOT):
                     ],
                     key=lambda asset: (asset["target"], asset["sha256"]),
                 ),
+                **({"webapp": manifest["webapp"]} if "webapp" in manifest else {}),
             }
             for pluginId, (manifest, assets, patches) in plugins.items()
         },
@@ -273,44 +604,28 @@ def resolveConfiguration(configPath):
     unknownFeatures = set(requestedFeatures) - set(FEATURES)
     if unknownFeatures:
         raise ValueError(f"unknown features: {sorted(unknownFeatures)}")
-    pluginIds = sorted(requireStringList(config["plugins"], "plugins"))
+    requestedPluginIds = requireStringList(config["plugins"], "plugins")
     pluginCatalog = loadPluginCatalog()
-    unknownPlugins = set(pluginIds) - set(pluginCatalog)
+    unknownPlugins = set(requestedPluginIds) - set(pluginCatalog)
     if unknownPlugins:
         raise ValueError(f"unknown plugins: {sorted(unknownPlugins)}")
+    pluginIds, resolved = resolveCatalogSelection(
+        pluginCatalog, requestedPluginIds, requestedFeatures, firmwareRef
+    )
     plugins = []
     assets = []
     patches = []
-    resolved = set(requestedFeatures)
     for pluginId in pluginIds:
         manifest, pluginAssets, pluginPatches = pluginCatalog[pluginId]
-        if firmwareRef not in manifest["firmware_refs"]:
-            raise ValueError(f"plugin {pluginId} does not support {firmwareRef}")
         plugins.append(manifest)
         assets.extend(pluginAssets)
         if firmwareRef in pluginPatches:
             patches.append((pluginId, pluginPatches[firmwareRef]))
-        resolved.update(manifest["requires"])
-    changed = True
-    while changed:
-        previous = set(resolved)
-        for feature in previous:
-            resolved.update(FEATURES[feature][1])
-        changed = resolved != previous
-    selectedPlugins = set(pluginIds)
-    for plugin in plugins:
-        conflicts = selectedPlugins.intersection(plugin["conflicts"])
-        if conflicts:
-            raise ValueError(f"plugin {plugin['id']} conflicts with {sorted(conflicts)}")
-    targets = [target.as_posix() for _, target in assets]
-    if len(targets) != len(set(targets)):
-        raise ValueError("plugin asset target collision")
-    existingTargets = [target for target in targets if (ROOT / "web_apps" / target).exists()]
-    if existingTargets:
-        raise ValueError(f"plugin asset target collides with web asset: {existingTargets}")
     return {
         "firmware_ref": firmwareRef,
-        "features": sorted(resolved),
+        "requested_features": sorted(requestedFeatures),
+        "requested_plugins": sorted(requestedPluginIds),
+        "features": resolved,
         "plugins": plugins,
         "assets": assets,
         "patches": patches,
@@ -321,26 +636,52 @@ def writeHeader(configuration, outputDir):
     outputDir.mkdir(parents=True, exist_ok=True)
     enabled = set(configuration["features"])
     lines = ["#ifndef HDS_GENERATED_FEATURES_H", "#define HDS_GENERATED_FEATURES_H", ""]
-    for feature, (macro, _) in FEATURES.items():
+    for feature, (macro, _, _) in FEATURES.items():
         lines.append(f"#define {macro} {int(feature in enabled)}")
     lines.extend(("", "#endif", ""))
     (outputDir / "generated_features.h").write_text("\n".join(lines), encoding="ascii")
 
 
-def stageAssets(configuration, stageDir, firmwareRoot=ROOT):
-    targets = [target for _, target in configuration["assets"]]
-    collisions = [target.as_posix() for target in targets if firmwareRoot.joinpath("web_apps", *target.parts).exists()]
-    if collisions:
-        raise ValueError(f"plugin asset target collides with selected firmware asset: {collisions}")
+def stageAssets(configuration, stageDir):
     if stageDir.exists():
         shutil.rmtree(stageDir)
     stageDir.mkdir(parents=True)
-    if "littlefs" in configuration["features"]:
-        shutil.copytree(firmwareRoot / "web_apps", stageDir, dirs_exist_ok=True)
     for source, target in configuration["assets"]:
         destination = stageDir.joinpath(*target.parts)
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
+    apps = [
+        {"id": plugin["id"], **plugin["webapp"]}
+        for plugin in configuration["plugins"]
+        if "webapp" in plugin
+    ]
+    if apps:
+        (stageDir / "webapps.json").write_text(
+            json.dumps({"schema": 1, "apps": sorted(apps, key=lambda app: app["id"])},
+                       separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+    if any(plugin["id"] == "default-web-apps" for plugin in configuration["plugins"]):
+        return
+    if len(apps) == 1:
+        name = html.escape(apps[0]["name"])
+        href = html.escape(apps[0]["href"], quote=True)
+        page = ("<!doctype html><html lang=\"en\"><meta charset=\"utf-8\">"
+                f"<meta http-equiv=\"refresh\" content=\"0;url={href}\">"
+                f"<title>OpenScale</title><p><a href=\"{href}\">Open {name}</a></p></html>\n")
+        (stageDir / "index.html").write_text(page, encoding="utf-8")
+    elif len(apps) > 1:
+        links = "".join(
+            f'<li><a href="{html.escape(app["href"], quote=True)}">'
+            f'{html.escape(app["name"])}</a></li>'
+            for app in sorted(apps, key=lambda app: app["id"])
+        )
+        page = ("<!doctype html><html lang=\"en\"><meta charset=\"utf-8\">"
+                "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                "<title>OpenScale apps</title><style>body{font:16px system-ui,sans-serif;"
+                "max-width:32rem;margin:2rem auto;padding:0 1rem}li{margin:.75rem 0}</style>"
+                f"<h1>OpenScale</h1><ul>{links}</ul></html>\n")
+        (stageDir / "index.html").write_text(page, encoding="utf-8")
 
 
 def serializableConfiguration(configuration):
@@ -354,10 +695,16 @@ def serializableConfiguration(configuration):
     }
 
 
-def configure(configPath, workspaceDir, firmwareRoot=ROOT):
+def platformioEnvironment(configuration):
+    if "energy-menu" in configuration["features"]:
+        return ENERGY_MENU_PLATFORMIO_ENVIRONMENT
+    return PLATFORMIO_ENVIRONMENT
+
+
+def configure(configPath, workspaceDir):
     configuration = resolveConfiguration(configPath)
     writeHeader(configuration, workspaceDir / "generated" / "include")
-    stageAssets(configuration, workspaceDir / "custom-data", firmwareRoot)
+    stageAssets(configuration, workspaceDir / "custom-data")
     resolvedPath = workspaceDir / "custom-build-resolved.json"
     resolvedPath.parent.mkdir(parents=True, exist_ok=True)
     resolvedPath.write_text(
@@ -371,6 +718,77 @@ def fileMetadata(path):
     return {
         "bytes": path.stat().st_size,
         "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
+
+
+def bytesMetadata(payload):
+    return {
+        "bytes": len(payload),
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
+def firmwareFileBytes(firmwareRef, relativePath, sourceRoot=ROOT):
+    relative = safeRelativePath(relativePath, "firmware path")
+    if sourceRoot.resolve() != ROOT or firmwareRef == "main":
+        path = sourceRoot.joinpath(*relative.parts).resolve()
+        if sourceRoot.resolve() not in path.parents or not path.is_file():
+            raise ValueError(f"selected firmware is missing {relative}")
+        return path.read_bytes()
+    try:
+        return subprocess.run(
+            ["git", "show", f"refs/tags/{firmwareRef}:{relative.as_posix()}"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+        ).stdout
+    except subprocess.CalledProcessError as error:
+        raise ValueError(f"cannot read {relative} from {firmwareRef}") from error
+
+
+def customFirmwareVersion(firmwareRef, configHeader):
+    tagged = TAGGED_FIRMWARE_REF_PATTERN.fullmatch(firmwareRef)
+    if tagged:
+        return f"{tagged.group(1)}-custom"
+    match = DEFAULT_FIRMWARE_VERSION_PATTERN.search(configHeader)
+    if not match:
+        raise ValueError("selected firmware has no valid HDS_FIRMWARE_VERSION")
+    return f"{match.group(1)}-main-custom"
+
+
+def partitionMetadataFromBytes(platformioBytes, readPartition):
+    config = configparser.ConfigParser(interpolation=None)
+    try:
+        config.read_string(platformioBytes.decode("utf-8"))
+    except (UnicodeDecodeError, configparser.Error) as error:
+        raise ValueError("selected firmware has an invalid platformio.ini") from error
+    section = "env:esp32s3-custom"
+    visited = set()
+    while section not in visited and config.has_section(section):
+        visited.add(section)
+        if config.has_option(section, "board_build.partitions"):
+            relative = safeRelativePath(
+                config.get(section, "board_build.partitions").strip(), "partition schema"
+            )
+            payload = readPartition(relative.as_posix())
+            return {"path": relative.as_posix(), **bytesMetadata(payload)}
+        parent = config.get(section, "extends", fallback="").strip()
+        section = parent if parent.startswith("env:") else f"env:{parent}"
+    raise ValueError("esp32s3-custom has no partition schema")
+
+
+def firmwareMetadata(firmwareRef, sourceRoot=ROOT):
+    partition = partitionMetadataFromBytes(
+        firmwareFileBytes(firmwareRef, "platformio.ini", sourceRoot),
+        lambda path: firmwareFileBytes(firmwareRef, path, sourceRoot),
+    )
+    configHeader = firmwareFileBytes(firmwareRef, "include/config.h", sourceRoot).decode("utf-8")
+    return {
+        "custom_version": customFirmwareVersion(firmwareRef, configHeader),
+        "partition_schema": {
+            "path": partition["path"],
+            "sha256": partition["sha256"],
+        },
     }
 
 
@@ -408,27 +826,16 @@ def packageMetadata(configuration):
 
 
 def partitionMetadata(sourceRoot):
-    config = configparser.ConfigParser(interpolation=None)
-    if not config.read(sourceRoot / "platformio.ini", encoding="utf-8"):
-        raise ValueError("selected firmware has no platformio.ini")
-    section = "env:esp32s3-custom"
-    visited = set()
-    while section not in visited and config.has_section(section):
-        visited.add(section)
-        if config.has_option(section, "board_build.partitions"):
-            relative = safeRelativePath(config.get(section, "board_build.partitions").strip(), "partition schema")
-            path = sourceRoot.joinpath(*relative.parts).resolve()
-            if sourceRoot.resolve() not in path.parents or not path.is_file():
-                raise ValueError(f"missing partition schema: {relative}")
-            return {"path": relative.as_posix(), **fileMetadata(path)}
-        parent = config.get(section, "extends", fallback="").strip()
-        section = parent if parent.startswith("env:") else f"env:{parent}"
-    raise ValueError("esp32s3-custom has no partition schema")
+    return partitionMetadataFromBytes(
+        (sourceRoot / "platformio.ini").read_bytes(),
+        lambda path: sourceRoot.joinpath(*PurePosixPath(path).parts).read_bytes(),
+    )
 
 
-def combinationInput(configuration, commitSha, sourceRoot=ROOT):
+def combinationInput(configuration, commitSha, sourceRoot=ROOT, builderCommit=None):
     packages = []
     for package in packageMetadata(configuration):
+        plugin = next(plugin for plugin in configuration["plugins"] if plugin["id"] == package["id"])
         packages.append({
             "id": package["id"],
             "version": package["version"],
@@ -450,24 +857,33 @@ def combinationInput(configuration, commitSha, sourceRoot=ROOT):
                 ],
                 key=lambda asset: (asset["target"], asset["sha256"]),
             ),
+            **({"webapp": plugin["webapp"]} if "webapp" in plugin else {}),
         })
-    partition = partitionMetadata(sourceRoot)
+    firmware = firmwareMetadata(configuration["firmware_ref"], sourceRoot)
     return {
         "schema": BUILD_CONTRACT_SCHEMA,
+        "custom_ota_signing_key_generation": CUSTOM_OTA_SIGNING_KEY_GENERATION,
+        "firmware_ref": configuration["firmware_ref"],
+        "firmware_version": firmware["custom_version"],
         "base_source": commitSha,
+        "builder_source": builderCommit or commitSha,
         "features": sorted(configuration["features"]),
-        "plugins": sorted(packages, key=lambda package: package["id"]),
-        "platformio_environment": PLATFORMIO_ENVIRONMENT,
-        "partition_schema": {
-            "path": partition["path"],
-            "sha256": partition["sha256"],
-        },
+        "plugins": packages,
+        "platformio_environment": platformioEnvironment(configuration),
+        "partition_schema": firmware["partition_schema"],
     }
 
 
 def combinationHash(value):
     canonical = json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
+
+
+def forwardRecoveryVersion(configuration, sourceRoot):
+    header = sourceRoot / "include" / "pull_ota_version.h"
+    if "pull-ota" not in configuration["features"] or not header.is_file():
+        return 0
+    return int("#define HDS_OTA_FORWARD_RECOVERY_VERSION 1" in header.read_text(encoding="utf-8").splitlines())
 
 
 def writeBuildManifest(
@@ -487,7 +903,10 @@ def writeBuildManifest(
     manifest = {
         **serializableConfiguration(configuration),
         "base_source": commitSha,
-        "platformio_environment": PLATFORMIO_ENVIRONMENT,
+        "builder_source": identity["builder_source"],
+        "firmware_version": identity["firmware_version"],
+        "forward_recovery": forwardRecoveryVersion(configuration, sourceRoot),
+        "platformio_environment": platformioEnvironment(configuration),
         "partition_schema": partitionMetadata(sourceRoot),
         "packages": packageMetadata(configuration),
         "combination_input": identity,
@@ -536,8 +955,7 @@ except NameError:
         main()
 else:
     if not env.IsCleanTarget():
-        projectRoot = Path(env.subst("$PROJECT_DIR")).resolve()
-        workspace = projectRoot / ".pio.nosync"
+        workspace = Path(env.subst("$PROJECT_DIR")).resolve() / ".pio.nosync"
         configPath = Path(os.environ.get("HDS_CUSTOM_BUILD_CONFIG", ROOT / "custom-build.json")).resolve()
-        configure(configPath, workspace, projectRoot)
+        configure(configPath, workspace)
         env.Replace(PROJECT_DATA_DIR=str(workspace / "custom-data"))

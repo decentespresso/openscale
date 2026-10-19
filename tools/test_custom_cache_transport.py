@@ -45,8 +45,14 @@ def createEntry(root):
         "archive": customBuild.fileMetadata(entry / customBuild.FIRMWARE_ARCHIVE),
         "dependencies": customBuild.fileMetadata(entry / "dependencies.txt"),
     }
+    (entry / "ota-manifest.json").write_text("{}\n", encoding="utf-8")
+    (entry / "ota-manifest.sig").write_bytes(b"signature")
+    manifest["custom_ota"] = {
+        "manifest": customBuild.fileMetadata(entry / "ota-manifest.json"),
+        "signature": customBuild.fileMetadata(entry / "ota-manifest.sig"),
+    }
     (entry / "build-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    for name in customBuild.PUBLIC_BINARIES:
+    for name in ("bootloader.bin", "partitions.bin"):
         (entry / name).unlink()
     return entry, manifest
 
@@ -80,6 +86,10 @@ def main():
         assert [Path(request.full_url).name for request in requests] == [
             "HDS_FW_custom.zip",
             "dependencies.txt",
+            "firmware.bin",
+            "littlefs.bin",
+            "ota-manifest.json",
+            "ota-manifest.sig",
             "build-manifest.json",
         ]
         for request in requests:
@@ -96,6 +106,23 @@ def main():
         assert json.loads(request.data) == {"state": "building", "attempt_id": attemptId}
         assert request.get_header("Authorization") == f"Bearer {'x' * 32}"
         assert request.get_header("User-agent") == "OpenScale-Custom-Build/1.0"
+        with patch.object(
+            statusUpdater.urllib.request, "urlopen", return_value=StatusResponse()
+        ) as failedRequest:
+            statusUpdater.updateStatus(
+                baseUrl, "x" * 32, entry.name, attemptId, "failed", "build_failed"
+            )
+        assert json.loads(failedRequest.call_args.args[0].data) == {
+            "state": "failed",
+            "attempt_id": attemptId,
+            "failure_code": "build_failed",
+        }
+        try:
+            statusUpdater.updateStatus(baseUrl, "x" * 32, entry.name, attemptId, "failed")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("failed status accepted without a failure code")
     print("custom cache transport tests passed")
 
 

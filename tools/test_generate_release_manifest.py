@@ -20,6 +20,23 @@ def load_module():
 
 
 class GenerateReleaseManifestTest(unittest.TestCase):
+    def test_prerelease_recovery_manifest_stays_out_of_stable_catalog(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            build_dir = Path(temp_dir)
+            (build_dir / "firmware.bin").write_bytes(b"firmware")
+            (build_dir / "littlefs.bin").write_bytes(b"filesystem")
+            for tag in ("v3.1.14-preview.4", "3.1.14-rc.1"):
+                manifest = module.build_manifest(
+                    build_dir, tag, "decentespresso/openscale", "hds", "3.0.0"
+                )
+                self.assertEqual(manifest["version"], tag.removeprefix("v"))
+                self.assertIn(f"/{tag}/littlefs.bin", manifest["littlefs"]["url"])
+                self.assertTrue(manifest["littlefs"]["required"])
+                catalog = module.build_catalog_manifest(manifest, [])
+                self.assertEqual(catalog["version"], manifest["version"])
+                self.assertEqual(catalog["releases"], [])
+
     def test_manifest_contains_release_assets(self):
         module = load_module()
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -122,7 +139,7 @@ class GenerateReleaseManifestTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 module.build_manifest(
                     build_dir=build_dir,
-                    tag="v3.1.0-preview.1",
+                    tag="v3.1.0-preview/1",
                     repository="decentespresso/openscale",
                     model="hds",
                     min_from="3.0.0",

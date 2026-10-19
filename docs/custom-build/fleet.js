@@ -1,0 +1,533 @@
+import {buildLabel, buildSummary, deploymentState, lastSeenLabel, shortHash} from "./fleet-state.mjs?v=3";
+import {startFleetPolling} from "./fleet-polling.mjs";
+
+const storageKey = "hds-custom-build-fleet-v2";
+const legacyStorageKey = "hds-custom-build-fleet-v1";
+const fleetPattern = /^[A-Z2-7]{32}$/;
+const pairPattern = /^[0-9A-F]{6}-[0-9]{6}$/;
+
+const normalizedFleetKey = value => String(value || "").replaceAll("-", "").trim().toUpperCase();
+const formattedFleetKey = value => normalizedFleetKey(value).match(/.{1,4}/g)?.join("-") || "";
+
+const encodeBase32 = bytes => {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = 0;
+  let value = 0;
+  let result = "";
+  bytes.forEach(byte => {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      result += alphabet[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  });
+  if (bits) result += alphabet[(value << (5 - bits)) & 31];
+  return result;
+};
+
+const readStoredKey = (storage, key, version) => {
+  try {
+    const stored = JSON.parse(storage.getItem(key));
+    const fleetKey = normalizedFleetKey(stored?.key);
+    return stored?.version === version && fleetPattern.test(fleetKey) ? fleetKey : "";
+  } catch {
+    return "";
+  }
+};
+
+const removeStoredKey = (storage, key) => {
+  try {
+    storage.removeItem(key);
+  } catch {
+  }
+};
+
+const saveKey = key => {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify({version: 2, key}));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const loadStoredKey = () => {
+  const current = readStoredKey(localStorage, storageKey, 2);
+  if (current) return current;
+  const legacy = readStoredKey(sessionStorage, storageKey, 2)
+    || readStoredKey(localStorage, legacyStorageKey, 1);
+  if (legacy && saveKey(legacy)) {
+    removeStoredKey(sessionStorage, storageKey);
+    removeStoredKey(localStorage, legacyStorageKey);
+  }
+  return legacy;
+};
+
+export function initFleet({apiBase, getReadyHash, showToast}) {
+  const onboarding = document.querySelector("#fleet-onboarding");
+  const consoleRoot = document.querySelector("#fleet-console");
+  const settings = document.querySelector("#fleet-settings");
+  const settingsToggle = document.querySelector("#fleet-settings-toggle");
+  const useFleet = document.querySelector("#use-fleet");
+  const recovery = document.querySelector("#fleet-recovery");
+  const recoveryKey = document.querySelector("#fleet-recovery-key");
+  const fleetStatus = document.querySelector("#fleet-status");
+  const buildStatus = document.querySelector("#fleet-build-status");
+  const buildList = document.querySelector("#fleet-builds");
+  const scaleRows = document.querySelector("#fleet-scale-rows");
+  const selectAll = document.querySelector("#select-all-scales");
+  const buildSelect = document.querySelector("#fleet-build-select");
+  const selectedCount = document.querySelector("#selected-scale-count");
+  const addBuild = document.querySelector("#add-fleet-build");
+  const assignSelected = document.querySelector("#assign-selected");
+  const clearSelected = document.querySelector("#clear-selected");
+  const pairInput = document.querySelector("#pair-code");
+  const existingInput = document.querySelector("#existing-fleet-key");
+  const forgetDialog = document.querySelector("#forget-fleet-dialog");
+  const confirmDialog = document.querySelector("#fleet-confirm-dialog");
+  let fleetKey = loadStoredKey();
+  let generation = 0;
+  let scales = [];
+  let builds = [];
+  let buildStates = {};
+  let selectedDeviceIds = new Set();
+  let savingBuild = false;
+  let activeRequests = 0;
+
+  const setSettingsOpen = open => {
+    settings.hidden = !open;
+    settingsToggle.setAttribute("aria-expanded", String(open));
+  };
+
+  const api = async (path, options = {}) => {
+    activeRequests += 1;
+    if (options.method && options.method !== "GET") generation += 1;
+    try {
+      const response = await fetch(`${apiBase}${path}`, {
+        ...options,
+        cache: "no-store",
+        headers: {
+          Authorization: `Bearer ${fleetKey}`,
+          ...(options.body ? {"Content-Type": "application/json"} : {}),
+        },
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = new Error(result.error || `request failed: ${response.status}`);
+        error.code = result.error;
+        throw error;
+      }
+      return result;
+    } finally {
+      activeRequests -= 1;
+    }
+  };
+
+  const setMode = linked => {
+    onboarding.hidden = linked;
+    consoleRoot.hidden = !linked;
+    useFleet.hidden = linked;
+    recovery.hidden = !linked;
+    recoveryKey.value = formattedFleetKey(fleetKey);
+  };
+
+  const confirm = (title, description, action) => new Promise(resolve => {
+    document.querySelector("#fleet-confirm-heading").textContent = title;
+    document.querySelector("#fleet-confirm-description").textContent = description;
+    document.querySelector("#fleet-confirm-action").textContent = action;
+    const closed = () => {
+      confirmDialog.removeEventListener("close", closed);
+      resolve(confirmDialog.returnValue === "confirm");
+    };
+    confirmDialog.addEventListener("close", closed);
+    confirmDialog.showModal();
+  });
+
+  const labelForBuild = hash => {
+    const index = builds.findIndex(build => build.combination_hash === hash);
+    return index < 0 ? "Custom build" : buildLabel(builds[index], index);
+  };
+
+  const identityForBuild = hash => `${labelForBuild(hash)} · ${shortHash(hash, 8)}`;
+
+  const showApiError = error => {
+    const messages = {
+      build_assigned: "Clear this build from assigned scales before removing it",
+      build_not_ready: "Only ready custom builds can be added or assigned",
+      cross_fleet_device: "One or more scales are linked elsewhere",
+      device_not_found: "One or more scales are no longer linked",
+      empty_target_set: "Select at least one scale",
+    };
+    showToast(messages[error.code] || "Change could not be saved");
+  };
+
+  const renderControls = () => {
+    const selected = selectedDeviceIds.size;
+    const readyBuilds = builds.filter(build => build.state === "ready");
+    const previousHash = buildSelect.value;
+    buildSelect.replaceChildren(...readyBuilds.map(build =>
+      new Option(identityForBuild(build.combination_hash), build.combination_hash)));
+    if (readyBuilds.some(build => build.combination_hash === previousHash)) {
+      buildSelect.value = previousHash;
+    }
+    buildSelect.disabled = !readyBuilds.length;
+    selectedCount.textContent = `${selected} selected`;
+    assignSelected.disabled = !selected || !readyBuilds.length;
+    clearSelected.disabled = !selected;
+    selectAll.checked = Boolean(scales.length) && selected === scales.length;
+    selectAll.indeterminate = selected > 0 && selected < scales.length;
+    const readyHash = getReadyHash();
+    const alreadyAdded = builds.some(build => build.combination_hash === readyHash);
+    addBuild.hidden = !readyHash;
+    addBuild.disabled = !readyHash || savingBuild;
+    addBuild.textContent = savingBuild ? "Saving..." : alreadyAdded ? "My scales" : "Save build";
+  };
+
+  const editingFleet = () => Boolean(consoleRoot.querySelector("input:not([type=checkbox]):focus, select:focus")) ||
+    Boolean(consoleRoot.querySelector("input:disabled, details[open]")) ||
+    confirmDialog.open || forgetDialog.open;
+
+  const loadFleet = async (background = false) => {
+    const currentGeneration = ++generation;
+    if (!background) {
+      fleetStatus.textContent = "Loading scales";
+      buildStatus.textContent = "";
+    }
+    try {
+      const result = await api("/api/v1/fleet/overview");
+      if (currentGeneration !== generation) return;
+      if (background && document.hidden) return;
+      scales = Array.isArray(result.scales) ? result.scales : [];
+      builds = Array.isArray(result.builds) ? result.builds : [];
+      buildStates = result.build_states || {};
+      selectedDeviceIds = new Set([...selectedDeviceIds].filter(deviceId =>
+        scales.some(scale => scale.device_id === deviceId)));
+      if (background && editingFleet()) {
+        for (const row of [...scaleRows.children]) {
+          const scale = scales.find(item => item.device_id === row.dataset.deviceId);
+          if (scale) renderScaleStatus(row, scale);
+          else row.remove();
+        }
+        renderControls();
+      } else {
+        renderBuilds();
+        renderScales();
+      }
+      fleetStatus.textContent = scales.length
+        ? `${scales.length} scale${scales.length === 1 ? "" : "s"}` : "No scales linked yet";
+      buildStatus.textContent = builds.length
+        ? `${builds.length} saved build${builds.length === 1 ? "" : "s"}` : "No saved builds";
+      return true;
+    } catch {
+      if (currentGeneration !== generation) return;
+      fleetStatus.textContent = "Scales could not be loaded";
+      return false;
+    }
+  };
+
+  const renderBuilds = () => {
+    if (!builds.length) {
+      const empty = document.createElement("li");
+      empty.className = "fleet-empty-row";
+      empty.textContent = "No saved builds";
+      buildList.replaceChildren(empty);
+      renderControls();
+      return;
+    }
+    buildList.replaceChildren(...builds.map(build => {
+      const row = document.createElement("li");
+      row.className = "fleet-build-row";
+      row.innerHTML = `
+        <div class="fleet-build-name"><input class="build-label" maxlength="40" aria-label="Build label"><span class="build-hash"></span></div>
+        <div class="fleet-build-version"><strong></strong><details><summary>Options</summary><span></span></details></div>
+        <span class="deployment-state"></span>
+        <div class="fleet-row-actions">
+          <button class="ghost-button remove-build" type="button">Remove</button>
+        </div>`;
+      const label = row.querySelector(".build-label");
+      label.value = labelForBuild(build.combination_hash);
+      row.querySelector(".build-hash").textContent = shortHash(build.combination_hash, 8);
+      label.addEventListener("keydown", event => { if (event.key === "Enter") label.blur(); });
+      row.querySelector(".fleet-build-version strong").textContent = build.firmware_version;
+      row.querySelector(".fleet-build-version span").textContent = buildSummary(build);
+      const state = row.querySelector(".deployment-state");
+      state.textContent = build.state === "ready" ? "Ready" : "Unavailable";
+      state.dataset.state = build.state;
+      label.addEventListener("change", async () => {
+        const previous = labelForBuild(build.combination_hash);
+        const next = label.value.trim();
+        if (!next || next === previous) { label.value = previous; return; }
+        label.disabled = true;
+        try {
+          await api(`/api/v1/fleet/builds/${build.combination_hash}`, {
+            method: "PATCH",
+            body: JSON.stringify({label: next}),
+          });
+          if (!row.isConnected) return;
+          builds = builds.map(item => item.combination_hash === build.combination_hash ? {...item, label: next} : item);
+          label.value = next;
+          renderControls();
+          for (const scaleRow of scaleRows.children) {
+            const scale = scales.find(item => item.device_id === scaleRow.dataset.deviceId);
+            if (scale) renderScaleStatus(scaleRow, scale);
+          }
+          showToast("Build label saved");
+        } catch (error) {
+          label.value = previous;
+          showApiError(error);
+        } finally {
+          label.disabled = false;
+        }
+      });
+      row.querySelector(".remove-build").addEventListener("click", async () => {
+        if (!(await confirm("Remove saved build?", `${labelForBuild(build.combination_hash)} will remain available to existing installations.`, "Remove"))) return;
+        try {
+          await api(`/api/v1/fleet/builds/${build.combination_hash}`, {method: "DELETE"});
+          showToast("Saved build removed");
+          await loadFleet();
+        } catch (error) {
+          showApiError(error);
+        }
+      });
+      return row;
+    }));
+    renderControls();
+  };
+
+  const renderScaleStatus = (row, scale) => {
+    const installed = row.querySelector(".scale-build");
+    installed.querySelector("strong").textContent = scale.firmware_version || "Unknown";
+    installed.querySelector("span").textContent = scale.installed_combination
+      ? identityForBuild(scale.installed_combination) : (scale.last_seen_at ? "Official" : "Unknown");
+    row.querySelector(".desired-build strong").textContent = scale.desired_combination
+      ? identityForBuild(scale.desired_combination) : "None";
+    const state = row.querySelector(".deployment-state");
+    state.textContent = deploymentState(scale, buildStates);
+    state.dataset.state = state.textContent.toLowerCase().replaceAll(" ", "-");
+    row.querySelector(".last-seen").textContent = lastSeenLabel(scale.last_seen_at);
+  };
+
+  const renderScales = () => {
+    scaleRows.replaceChildren(...scales.map(scale => {
+      const row = document.createElement("tr");
+      row.dataset.deviceId = scale.device_id;
+      row.innerHTML = `
+        <td class="scale-select"><input type="checkbox"></td>
+        <td class="scale-identity"><input class="scale-name" maxlength="40"><span class="scale-hint"></span></td>
+        <td class="scale-build" data-label="Installed"><strong></strong><span></span></td>
+        <td class="scale-build desired-build" data-label="Desired"><strong></strong></td>
+        <td data-label="Deployment"><span class="deployment-state"></span></td>
+        <td class="last-seen" data-label="Last seen"></td>
+        <td class="scale-actions"><button class="icon-button unpair-scale" type="button" title="Unpair scale"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></td>`;
+      const checkbox = row.querySelector('[type="checkbox"]');
+      checkbox.checked = selectedDeviceIds.has(scale.device_id);
+      checkbox.setAttribute("aria-label", `Select ${scale.name}`);
+      checkbox.addEventListener("change", () => {
+        selectedDeviceIds = checkbox.checked
+          ? new Set([...selectedDeviceIds, scale.device_id])
+          : new Set([...selectedDeviceIds].filter(deviceId => deviceId !== scale.device_id));
+        renderControls();
+      });
+      const name = row.querySelector(".scale-name");
+      name.setAttribute("aria-label", "Scale name");
+      name.value = scale.name;
+      name.addEventListener("keydown", event => { if (event.key === "Enter") name.blur(); });
+      row.querySelector(".scale-hint").textContent = scale.serial_hint;
+      renderScaleStatus(row, scale);
+      name.addEventListener("change", async () => {
+        const previous = scales.find(item => item.device_id === scale.device_id)?.name || scale.name;
+        const next = name.value.trim();
+        if (!next || next === previous) { name.value = previous; return; }
+        name.disabled = true;
+        try {
+          await api(`/api/v1/fleet/scales/${scale.device_id}`, {
+            method: "PATCH",
+            body: JSON.stringify({name: next}),
+          });
+          if (!row.isConnected) return;
+          scales = scales.map(item => item.device_id === scale.device_id ? {...item, name: next} : item);
+          name.value = next;
+          checkbox.setAttribute("aria-label", `Select ${next}`);
+          unpair.setAttribute("aria-label", `Unpair ${next}`);
+          showToast("Scale name saved");
+        } catch (error) {
+          name.value = previous;
+          showApiError(error);
+        } finally {
+          name.disabled = false;
+        }
+      });
+      const unpair = row.querySelector(".unpair-scale");
+      unpair.setAttribute("aria-label", `Unpair ${scale.name}`);
+      unpair.addEventListener("click", async () => {
+        unpair.disabled = true;
+        try {
+          const currentName = scales.find(item => item.device_id === scale.device_id)?.name || scale.name;
+          if (!(await confirm("Unpair scale?", `${currentName} will be removed from My scales. Its installed firmware will not change.`, "Unpair"))) return;
+          await api(`/api/v1/fleet/scales/${scale.device_id}`, {method: "DELETE"});
+          scales = scales.filter(item => item.device_id !== scale.device_id);
+          selectedDeviceIds = new Set([...selectedDeviceIds].filter(id => id !== scale.device_id));
+          renderScales();
+          showToast("Scale unpaired");
+          await loadFleet();
+        } catch (error) {
+          showApiError(error);
+        } finally {
+          unpair.disabled = false;
+        }
+      });
+      return row;
+    }));
+    renderControls();
+  };
+
+  const assign = async (targets, combinationHash, label) => {
+    const count = targets.all ? scales.length : targets.device_ids.length;
+    if (count > 1 && !(await confirm(
+      `${label} ${count} scales?`,
+      combinationHash ? "The selected build will become their desired deployment." : "Their desired deployment will be cleared.",
+      label,
+    ))) return;
+    try {
+      await api("/api/v1/fleet/assignments", {
+        method: "POST",
+        body: JSON.stringify({combination_hash: combinationHash, ...targets}),
+      });
+      selectedDeviceIds = new Set();
+      showToast(`${label} complete`);
+      await loadFleet();
+    } catch (error) {
+      showApiError(error);
+    }
+  };
+
+  const activateKey = key => {
+    const candidateKey = normalizedFleetKey(key);
+    if (!fleetPattern.test(candidateKey)) {
+      showToast("Enter a valid recovery key");
+      return false;
+    }
+    if (!saveKey(candidateKey)) {
+      showToast("Scale access could not be saved. Allow browser storage and try again.");
+      return false;
+    }
+    fleetKey = candidateKey;
+    setMode(true);
+    setSettingsOpen(false);
+    loadFleet();
+    return true;
+  };
+
+  document.querySelector("#start-fleet").addEventListener("click", () => {
+    const key = encodeBase32(crypto.getRandomValues(new Uint8Array(20)));
+    if (activateKey(key)) showToast("Recovery key created");
+  });
+  settingsToggle.addEventListener("click", () => setSettingsOpen(settings.hidden));
+  useFleet.addEventListener("submit", event => {
+    event.preventDefault();
+    activateKey(existingInput.value);
+  });
+  document.querySelector("#copy-fleet-key").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(formattedFleetKey(fleetKey));
+      showToast("Recovery key copied");
+    } catch {
+      showToast("Recovery key could not be copied");
+    }
+  });
+  document.querySelector("#forget-fleet").addEventListener("click", () => forgetDialog.showModal());
+  forgetDialog.addEventListener("close", () => {
+    if (forgetDialog.returnValue !== "confirm") return;
+    removeStoredKey(sessionStorage, storageKey);
+    removeStoredKey(localStorage, storageKey);
+    removeStoredKey(localStorage, legacyStorageKey);
+    fleetKey = "";
+    generation += 1;
+    scales = [];
+    builds = [];
+    selectedDeviceIds = new Set();
+    buildList.replaceChildren();
+    scaleRows.replaceChildren();
+    setMode(false);
+    renderControls();
+  });
+  document.querySelector("#pair-scale").addEventListener("submit", async event => {
+    event.preventDefault();
+    const pairCode = pairInput.value.trim().toUpperCase();
+    if (!pairPattern.test(pairCode)) {
+      showToast("Enter the pairing code shown on the scale");
+      return;
+    }
+    try {
+      await api("/api/v1/fleet/claim", {
+        method: "POST",
+        body: JSON.stringify({pair_code: pairCode}),
+      });
+      pairInput.value = "";
+      showToast("Scale linked");
+      await loadFleet();
+    } catch {
+      showToast("Pairing code is invalid or expired");
+    }
+  });
+  addBuild.addEventListener("click", async () => {
+    const combinationHash = getReadyHash();
+    if (!combinationHash || savingBuild) return;
+    if (!fleetKey && !activateKey(encodeBase32(crypto.getRandomValues(new Uint8Array(20))))) return;
+    const showScales = () => {
+      buildSelect.value = combinationHash;
+      document.querySelector(".fleet-scales-section").scrollIntoView({
+        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+        block: "start",
+      });
+      buildSelect.focus({preventScroll: true});
+    };
+    if (builds.some(build => build.combination_hash === combinationHash)) {
+      showScales();
+      return;
+    }
+    savingBuild = true;
+    renderControls();
+    try {
+      await api("/api/v1/fleet/builds", {
+        method: "POST",
+        body: JSON.stringify({combination_hash: combinationHash}),
+      });
+      showToast("Build saved");
+      if (await loadFleet() && getReadyHash() === combinationHash) showScales();
+    } catch (error) {
+      showApiError(error);
+    } finally {
+      savingBuild = false;
+      renderControls();
+    }
+  });
+  selectAll.addEventListener("change", () => {
+    selectedDeviceIds = selectAll.checked ? new Set(scales.map(scale => scale.device_id)) : new Set();
+    renderScales();
+  });
+  buildSelect.addEventListener("change", renderControls);
+  assignSelected.addEventListener("click", () => assign(
+    {device_ids: [...selectedDeviceIds]}, buildSelect.value, "Assign",
+  ));
+  clearSelected.addEventListener("click", () => assign(
+    {device_ids: [...selectedDeviceIds]}, null, "Clear assignment for",
+  ));
+  document.addEventListener("openscale-build-status", renderControls);
+  const refreshFleetOnReturn = () => {
+    if (fleetKey && !document.hidden && !activeRequests) loadFleet(true);
+  };
+  window.addEventListener("focus", refreshFleetOnReturn);
+  document.addEventListener("visibilitychange", refreshFleetOnReturn);
+  startFleetPolling(
+    () => Boolean(fleetKey) && !document.hidden && !activeRequests &&
+      scales.some(scale => scale.desired_combination &&
+        scale.desired_combination !== scale.installed_combination),
+    () => loadFleet(true),
+  );
+
+  setMode(Boolean(fleetKey));
+  renderControls();
+  if (fleetKey) loadFleet();
+}

@@ -29,64 +29,51 @@ import sys
 from ads_debug_protocol import format_hex, xor_checksum
 
 def decode_ads_debug_packet(data):
-    """Decode a 41-byte ADS debug packet"""
     if len(data) != 41:
         print(f"Error: Expected 41 bytes, got {len(data)}")
         return None
-    
+
     checksum = xor_checksum(data[:40])
-    
+
     if checksum != data[40]:
         print(f"Error: Checksum mismatch! Calculated: 0x{checksum:02X}, Got: 0x{data[40]:02X}")
         return None
-    
-    # Verify header
+
     if data[0] != 0x03 or data[1] != 0x25:
         print(f"Error: Invalid header! Expected 0x03 0x25, got 0x{data[0]:02X} 0x{data[1]:02X}")
         return None
-    
-    # Decode fields
+
     info = {}
-    
-    # Timestamp (4 bytes, big-endian unsigned)
+
     info['timestamp'] = struct.unpack('>I', bytes(data[2:6]))[0]
-    
-    # Raw value (4 bytes, big-endian signed)
+
     info['rawValue'] = struct.unpack('>i', bytes(data[6:10]))[0]
-    
-    # Smoothed value (4 bytes, big-endian signed)
+
     info['smoothedValue'] = struct.unpack('>i', bytes(data[10:14]))[0]
-    
-    # Tare offset (4 bytes, big-endian signed)
+
     info['tareOffset'] = struct.unpack('>i', bytes(data[14:18]))[0]
-    
-    # Conversion time (2 bytes, big-endian unsigned, divide by 100)
+
     convTime = struct.unpack('>H', bytes(data[18:20]))[0]
     info['conversionTime'] = convTime / 100.0
-    
-    # SPS (2 bytes, big-endian unsigned, divide by 100)
+
     sps = struct.unpack('>H', bytes(data[20:22]))[0]
     info['sps'] = sps / 100.0
-    
-    # Read index (1 byte)
+
     info['readIndex'] = data[22]
-    
-    # Samples in use (1 byte)
+
     info['samplesInUse'] = data[23]
-    
+
     info['resetReason'] = data[24]
     info['reserved'] = bytes(data[25:38])
-    
-    # Flags (1 byte)
+
     flags = data[38]
     info['dataOutOfRange'] = bool(flags & 0x01)
     info['signalTimeout'] = bool(flags & 0x02)
     info['reservedByte'] = data[39]
-    
+
     return info
 
 def print_debug_info(info):
-    """Pretty print debug info"""
     print("\n=== ADS1232 Debug Info ===")
     print(f"Timestamp:      {info['timestamp']} ms")
     print(f"Raw Value:      {info['rawValue']}")
@@ -105,32 +92,21 @@ def print_debug_info(info):
     print("==========================\n")
 
 def decode_ads_reset_response(data):
-    """Decode a 5-byte ADS reset response packet
-    
-    Packet format (5 bytes):
-    [0] = 0x03 (model byte)
-    [1] = 0x26 (reset response type)
-    [2] = mode (0x00=refresh, 0x01=refresh, 0x02=refresh+tare complete)
-    [3] = status (0x00=success, 0x01=fail)
-    [4] = checksum (XOR of bytes 0-3)
-    """
     if len(data) != 5:
         print(f"Error: Expected 5 bytes, got {len(data)}")
         return None
-    
-    # Verify header
+
     if data[0] != 0x03 or data[1] != 0x26:
         print(f"Error: Invalid header! Expected 0x03 0x26, got 0x{data[0]:02X} 0x{data[1]:02X}")
         return None
-    
-    # Verify checksum
+
     checksum = xor_checksum(data[:4])
     if checksum != data[4]:
         print(f"Error: Checksum mismatch! Calculated: 0x{checksum:02X}, Got: 0x{data[4]:02X}")
         return None
-    
+
     mode_names = {0x00: "Reset + refresh", 0x01: "Reset + refresh", 0x02: "Reset + refresh + tare complete"}
-    
+
     return {
         'mode': data[2],
         'mode_name': mode_names.get(data[2], f"Unknown (0x{data[2]:02X})"),
@@ -139,7 +115,6 @@ def decode_ads_reset_response(data):
     }
 
 def print_reset_response(info):
-    """Pretty print reset response"""
     status_str = "SUCCESS" if info['success'] else "FAILED (DOUT timeout)"
     print(f"\n=== ADS1232 Reset Response ===")
     print(f"Mode:   0x{info['mode']:02X} ({info['mode_name']})")
@@ -148,9 +123,7 @@ def print_reset_response(info):
 
 
 if __name__ == "__main__":
-    # When run directly, decode from stdin or command line
     if len(sys.argv) > 1:
-        # Decode hex string from command line
         hex_str = sys.argv[1].replace(" ", "").replace("0x", "")
         try:
             data = bytes.fromhex(hex_str)

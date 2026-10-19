@@ -4,13 +4,13 @@ Read this before creating, reviewing, or updating an approved compile-time plugi
 
 ## Plugin Model
 
-The normal firmware tree stays unchanged. An approved plugin is stored under `plugins/<plugin-id>/` as metadata, optional LittleFS assets, and version-specific patch files. `tools/build_custom_firmware.py` checks out an allowed firmware revision into a temporary directory, applies selected patches in plugin-ID order, and builds there.
+The normal firmware tree stays unchanged. An approved plugin is stored under `plugins/<plugin-id>/` as metadata, optional LittleFS assets, and version-specific patch files. `tools/build_custom_firmware.py` checks out an allowed firmware revision into a temporary directory, applies dependencies before their dependents, and builds there.
 
 Only repository-owned plugin IDs are accepted. Never add uploaded archives, arbitrary URLs, external patch locations, or build-request-supplied code.
 
 Three package forms are supported:
 
-- Asset-only plugins add files below the staged LittleFS data directory. `plugins/hello-web/` is the reference.
+- Asset-only plugins add files below the staged LittleFS data directory. `plugins/default-web-apps/` is the reference.
 - Patch plugins add compile-time firmware behavior through an approved package under `plugins/<plugin-id>/`.
 - Built-in selector plugins expose an existing gated firmware feature in the plugin catalog without duplicating its source. `plugins/grind-by-weight/` is the reference.
 
@@ -25,7 +25,7 @@ plugins/<plugin-id>/
 `-- assets/
 ```
 
-`plugin.json` declares the stable ID, plugin version, compatible firmware refs, feature requirements, plugin conflicts, patch mapping, asset mapping, and resource budgets. A patch filename is not a compatibility claim by itself; it must be mapped by the manifest.
+`plugin.json` declares the stable ID, plugin version, compatible firmware refs, feature requirements, plugin dependencies, recommendations, plugin and feature conflicts, patch mapping, asset mapping, and resource budgets. A patch filename is not a compatibility claim by itself; it must be mapped by the manifest.
 
 ## Compile Gate Pattern
 
@@ -33,7 +33,7 @@ Patch plugins must be absent from an unmodified checkout and disabled when their
 
 ```c
 #ifndef HDS_ENABLE_EXAMPLE
-#ifdef HDS_CUSTOM_BUILD
+#if HDS_CUSTOM_BUILD
 #define HDS_ENABLE_EXAMPLE 1
 #else
 #define HDS_ENABLE_EXAMPLE 0
@@ -81,19 +81,25 @@ Declare only dependencies exercised by the plugin:
 - `littlefs` for runtime filesystem files.
 - other existing feature IDs only when their code is required.
 
+Use `depends_on` for required plugin IDs. Dependency patches are applied before dependent patches, cycles are rejected, and the dependency order is part of the build identity. Use `recommends` only for a complete combination that has been tested together. The configurator's Recommended button replaces the current selection with that combination rather than retaining untested extras.
+
+Use `conflicts` for plugin IDs and optional `conflicts_features` for feature IDs. A selected plugin's dependency and recommended package overrides older plugin-to-plugin conflicts inside that package because the owning plugin declares the combination compatible. Unrelated plugin conflicts and all feature conflicts remain strict. Runtime validation checks conflicts only after all plugin and feature dependencies have been resolved.
+
 Do not infer WiFi, WebServer, or runtime LittleFS from the fact that a custom ZIP contains `littlefs.bin`. Runtime filesystem use and staged filesystem replacement are separate concerns. Pull OTA continues to use its mandatory staged `littlefs.bin` transaction independently of `HDS_FEATURE_LITTLEFS`.
 
 ## Version Compatibility
 
 Every patch is generated against one allowed firmware ref and must pass `git apply --check --whitespace=error` on that ref. There is no fuzzy merge, three-way fallback, or automatic conflict resolution.
 
-For a moving `main`, update `patches/main.patch` whenever upstream changes make it fail or invalidate its behavior. For a supported release, add a separate patch and manifest mapping for that exact release ref. Changing patch bytes or dependency declarations changes the custom-build combination hash.
+For a moving `main`, update `patches/main.patch` whenever upstream changes make it fail or invalidate its behavior. For a supported release, add a separate patch and manifest mapping for that exact release ref. Changing patch bytes, dependency declarations, the selected firmware commit, or the trusted builder commit changes the custom-build combination hash. Stable custom firmware reports `X.Y.Z-custom`; development builds retain their base suffix and append `-custom`.
 
 ## CI Contract
 
-Patch-plugin pull requests compile the normal `esp32s3` environment and every changed patch plugin as `esp32s3-<plugin-id>`. The custom-build workflow derives a small matrix from plugin packages changed across the complete pull request and verifies every mapped firmware ref. Asset-only plugins are covered by the package and catalog contracts without an unnecessary firmware build. The plugin environment activates its own gate and any environment-level requirements. Do not add a permanent full feature matrix or duplicate the normal build in OTA contracts.
+The Python contract checks validate the Pressensor patch against the candidate checkout, including pull requests that change firmware without changing plugin files.
 
-`tools/build_custom_firmware.py --verify-plugin-environment esp32s3-<plugin-id>` requires exactly one selected patch plugin, enforces the environment naming convention, applies the trusted patch in an isolated checkout, runs matching `tools/test_<plugin-id>_*.py` files from the applied patch, and compiles the plugin environment.
+Patch-plugin pull requests compile the normal `esp32s3` environment and every changed or transitively affected patch plugin as `esp32s3-<plugin-id>`. The custom-build workflow derives a small reverse-dependency matrix from plugin packages changed across the complete pull request and verifies mapped main and stable firmware refs, not preview refs. A plugin with recommendations is verified with that recommended feature and plugin selection; a plugin without recommendations uses its minimal selection. The workflow also builds one minimal `esp32s3-custom` selection to cover generated feature configuration, builder-tool injection, empty filesystem staging, and the WiFi-disabled firmware. Asset-only plugins do not receive their own dedicated firmware build. The plugin environment activates its own gate and any environment-level requirements. Do not add a permanent full feature matrix or duplicate the normal build in OTA contracts.
+
+`tools/build_custom_firmware.py --verify-plugin-environment esp32s3-<plugin-id>` requires the target plugin's recommended selection, or its minimal selection when no recommendations exist. It resolves dependencies, enforces the environment naming convention, applies the trusted patches in an isolated checkout, runs matching `tools/test_<plugin-id>_*.py` files from the applied patch, and compiles the plugin environment.
 
 Make each patch-plugin pull request run its own targeted environment. Do not grow an all-plugin matrix on every unrelated pull request.
 

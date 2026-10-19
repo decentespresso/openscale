@@ -6,12 +6,20 @@
 #include "esp32-hal.h"
 #include "esp_system.h"  // esp_restart() for the heap watchdog
 #include "mdns_name.h"
+#include "timing.h"
 #include <Arduino.h>
+#include "wifi_setup.h"
+#include "wifi_settings.h"
 #if HDS_FEATURE_MDNS
 #include <ESPmDNS.h>
 #endif
 #include <Preferences.h>
 #include <WiFi.h>
+#if HDS_ENABLE_ENERGY_MENU
+#include "energy_policy.h"
+
+extern EnergyPolicy energyPolicy;
+#endif
 
 volatile bool b_wifiEnabled = false;
 #if HDS_FEATURE_MDNS
@@ -20,75 +28,58 @@ static bool g_mdnsReady = false;
 static const unsigned long MDNS_GOODBYE_DRAIN_MS = 60;
 #endif
 extern volatile bool deviceConnected;
+extern volatile bool b_ota;
 
 const char *wifiPrefsKey = "wifi";
 const char *wifiSSIDKey = "ssid";
 const char *wifiPassKey = "pass";
 const char *wifiMdnsNameKey = "mdns_name";
 
-class WiFiParams {
-private:
-  String ssid = "";
-  String pass = "";
-  char mdnsName[MDNS_NAME_BUFFER_BYTES] = {0};
-  Preferences preferences;
-  bool initialized = false;
-  bool writeCredentialsToNvs(const String &ssid, const String &pass);
-
-public:
-  const String &getSSID() const { return ssid; }
-  const String &getPass() const { return pass; }
-  const char *getMdnsName() const {
-    return mdnsName[0] != 0 ? mdnsName : mdnsNameDefault();
-  }
-  bool hasCredentials() const { return ssid != ""; };
-  void saveCredentials(const String &ssid, const String &pass);
-  bool saveCredentialsForRestart(const String &ssid, const String &pass);
-  bool saveMdnsNameForRestart(const char *name, char *stored, size_t storedSize);
-  void init();
-  void reset();
-};
-
 WiFiParams params;
 
+static void mdnsWithdraw();
+#if HDS_FEATURE_MDNS
+bool setupMdns();
+#endif
+
 void setupAP() {
+  const bool accessPointStarted = (WiFi.getMode() & WIFI_AP) != 0;
+  mdnsWithdraw();
+  WiFi.disconnect(false, false);
   WiFi.mode(WIFI_AP);
-  delay(100);
-  WiFi.softAP("DecentScale", "12345678");
-  WiFi.softAPConfig(IPAddress(192, 168, 1, 1), IPAddress(192, 168, 1, 1),
-                    IPAddress(255, 255, 255, 0));
-
+  if (!accessPointStarted) {
+    delay(100);
+    WiFi.softAPConfig(IPAddress(192, 168, 1, 1), IPAddress(192, 168, 1, 1),
+                      IPAddress(255, 255, 255, 0));
+    if (!WiFi.softAP("DecentScale", "12345678")) {
+      Serial.println("[wifi] access point startup failed");
+    }
+  }
   WiFi.setTxPower(WIFI_POWER_8_5dBm);
-
-  WiFi.printDiag(Serial);
   Serial.println("WiFi: DecentScale");
   Serial.print("IP: ");
   Serial.println(WiFi.softAPIP());
   b_wifiEnabled = true;
+#if HDS_FEATURE_MDNS
+  setupMdns();
+#endif
 }
 
-void connectToWifi() {
-  WiFi.mode(WIFI_STA);
-
-  WiFi.begin(params.getSSID(), params.getPass());
+void wifiStartStation(const char *ssid, const char *pass, bool keepSetupAp) {
+  mdnsWithdraw();
+  if (!keepSetupAp && (WiFi.getMode() & WIFI_AP)) WiFi.softAPdisconnect(false);
+  if (!WiFi.disconnect(false, false, 1000) && !keepSetupAp) WiFi.mode(WIFI_OFF);
+  WiFi.mode(keepSetupAp ? WIFI_AP_STA : WIFI_STA);
+  portENTER_CRITICAL(&wifiSetupMux);
+  wifiSetupRuntime.ipBaseline = wifiGotIpGeneration;
+  wifiDisconnectReason = 0;
+  wifiStaAssociated = false;
+  portEXIT_CRITICAL(&wifiSetupMux);
+  WiFi.setMinSecurity(pass[0] == 0 ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK);
+  WiFi.begin(ssid, pass);
+  wifiSetupRuntime.stationStartedAt = millis();
   WiFi.setTxPower(WIFI_POWER_18_5dBm);
-  int wifiCounter = 0;
-  while (WiFi.status() != WL_CONNECTED) {
-    wifiCounter++;
-    delay(1000);
-    Serial.println(".");
-    if (wifiCounter > 15) {
-      Serial.println("WiFi not up yet; continuing to retry in background");
-      break;
-    }
-  }
   b_wifiEnabled = true;
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("Connected to ");
-    Serial.println(WiFi.SSID().c_str());
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP().toString().c_str());
-  }
 }
 
 #if HDS_FEATURE_MDNS
@@ -106,10 +97,19 @@ static void mdnsWithdraw() {}
 #endif
 
 void stopWifi() {
+  wifiInitLocks();
+  portENTER_CRITICAL(&wifiSetupMux);
+  wifiWorkerStopRequested = true;
+  wifiWorkerStartRequested = false;
+  portEXIT_CRITICAL(&wifiSetupMux);
+  xSemaphoreTake(wifiRadioMutex, portMAX_DELAY);
+  wifiCancelSetup();
   const wifi_mode_t mode = WiFi.getMode();
   if (mode == WIFI_MODE_NULL) {
     mdnsWithdraw();
     b_wifiEnabled = false;
+    wifiPublishSetupStatus();
+    xSemaphoreGive(wifiRadioMutex);
     return;
   }
 
@@ -122,6 +122,8 @@ void stopWifi() {
   }
   WiFi.mode(WIFI_OFF);
   b_wifiEnabled = false;
+  wifiPublishSetupStatus();
+  xSemaphoreGive(wifiRadioMutex);
 }
 
 static volatile uint32_t g_wifiDisconnects = 0;
@@ -150,7 +152,6 @@ bool setupMdns() {
     snprintf(instance, sizeof(instance), "Half Decent Scale (%s)", name);
     MDNS.setInstanceName(instance);
   }
-#if HDS_FEATURE_WEBSERVER
   MDNS.addService("decentscale", "tcp", 80);
   MDNS.addServiceTxt("decentscale", "tcp", "fw", (const char *)FIRMWARE_VER);
   MDNS.addServiceTxt("decentscale", "tcp", "model", "hds");
@@ -159,41 +160,48 @@ bool setupMdns() {
   MDNS.addServiceTxt("decentscale", "tcp", "proto", "ws");
   MDNS.addServiceTxt("decentscale", "tcp", "path", "/snapshot");
 #endif
-#endif
-#if HDS_FEATURE_WEBSERVER
   Serial.printf("DNS-SD: advertised %s.local _decentscale._tcp on port 80\n", name);
-#else
-  Serial.printf("mDNS: advertised %s.local\n", name);
-#endif
   g_mdnsReady = true;
   return true;
 }
 
 bool wifiEnsureMdnsReadyForSta() {
+  wifiInitLocks();
+  xSemaphoreTake(wifiRadioMutex, portMAX_DELAY);
   if (WiFi.status() != WL_CONNECTED || (uint32_t)WiFi.localIP() == 0) {
     Serial.printf("[wifi] MDNS not ready wifi=%d ip=%s\n",
                   (int)WiFi.status(),
                   WiFi.localIP().toString().c_str());
     g_mdnsReady = false;
+    xSemaphoreGive(wifiRadioMutex);
     return false;
   }
   if (g_mdnsReady) {
+    xSemaphoreGive(wifiRadioMutex);
     return true;
   }
   MDNS.end();
   g_mdnsReady = false;
-  return setupMdns();
+  const bool ready = setupMdns();
+  xSemaphoreGive(wifiRadioMutex);
+  return ready;
 }
 #endif
 
 void onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) {
   switch (event) {
     case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+      portENTER_CRITICAL(&wifiSetupMux);
+      wifiStaAssociated = true;
+      portEXIT_CRITICAL(&wifiSetupMux);
       Serial.printf("[wifi] STA connected ch=%u heap=%lu\n",
                     info.wifi_sta_connected.channel,
                     (unsigned long)ESP.getFreeHeap());
       break;
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+      portENTER_CRITICAL(&wifiSetupMux);
+      wifiGotIpGeneration = wifiGotIpGeneration + 1;
+      portEXIT_CRITICAL(&wifiSetupMux);
       Serial.printf("[wifi] GOT_IP %s heap=%lu\n",
                     WiFi.localIP().toString().c_str(),
                     (unsigned long)ESP.getFreeHeap());
@@ -202,6 +210,11 @@ void onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) {
 #endif
       break;
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+      portENTER_CRITICAL(&wifiSetupMux);
+      wifiDisconnectGeneration = wifiDisconnectGeneration + 1;
+      wifiDisconnectReason = info.wifi_sta_disconnected.reason;
+      wifiStaAssociated = false;
+      portEXIT_CRITICAL(&wifiSetupMux);
 #if HDS_FEATURE_MDNS
       g_mdnsReady = false;
 #endif
@@ -219,12 +232,22 @@ void onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) {
 }
 
 void setupWifi() {
+  wifiInitLocks();
+  xSemaphoreTake(wifiRadioMutex, portMAX_DELAY);
+  if (wifiWorkerStopRequested) {
+    xSemaphoreGive(wifiRadioMutex);
+    return;
+  }
   params.init();
 
   WiFi.setHostname(params.getMdnsName());
   WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE, INADDR_NONE);
 
-  WiFi.onEvent(onWifiEvent);
+  static bool eventsRegistered = false;
+  if (!eventsRegistered) {
+    WiFi.onEvent(onWifiEvent);
+    eventsRegistered = true;
+  }
   WiFi.setAutoReconnect(false);
 
   WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
@@ -233,27 +256,67 @@ void setupWifi() {
 
   if (params.hasCredentials()) {
     Serial.printf("trying to connect to wifi: %s\n", params.getSSID().c_str());
-    connectToWifi();
+    wifiStartStation(params.getSSID().c_str(), params.getPass().c_str());
   } else {
     Serial.println("no wifi data found, setting up AP");
     setupAP();
-#if HDS_FEATURE_MDNS
-    setupMdns();
-#endif
   }
 
   g_wifiInitDone = true;
+  wifiPublishSetupStatus();
+  xSemaphoreGive(wifiRadioMutex);
 }
 
-void wifiSupervise() {
-  static unsigned long lastLog = 0;
+static void wifiReconnectSavedNetwork(unsigned long now) {
   static unsigned long downSince = 0;
   static unsigned long lastAttempt = 0;
   static unsigned long backoffMs = 0;
+  if (!b_wifiEnabled || !g_wifiInitDone || !params.hasCredentials() ||
+      WiFi.status() == WL_CONNECTED || WiFi.getMode() != WIFI_STA ||
+      (!b_ota && wifiSetupBusy())) {
+    downSince = 0;
+    backoffMs = 0;
+    return;
+  }
+  if (downSince == 0 && now - wifiSetupRuntime.stationStartedAt < 20000) return;
+  if (downSince == 0) {
+    downSince = now;
+    backoffMs = 5000;
+    lastAttempt = now - backoffMs;
+    Serial.printf("[wifi] link down @%lu status=%d\n", now, (int)WiFi.status());
+  }
+  if (now - lastAttempt >= backoffMs) {
+    g_wifiReconnects++;
+    lastAttempt = now;
+    Serial.printf("[wifi] down %lums (status=%d) -> reconnect #%lu backoff=%lums heap=%lu\n",
+                  now - downSince, (int)WiFi.status(), (unsigned long)g_wifiReconnects,
+                  backoffMs, (unsigned long)ESP.getFreeHeap());
+    wifiStartStation(params.getSSID().c_str(), params.getPass().c_str());
+    backoffMs = backoffMs < 60000 ? backoffMs * 2 : 60000;
+  }
+}
+
+void wifiSupervise() {
+  if (xTaskGetCurrentTaskHandle() != wifiWorkerTask) return;
+  static unsigned long lastRun = 0;
+  static unsigned long lastLog = 0;
   static unsigned long lowHeapSince = 0;
   static unsigned long lastDeferLog = 0;
   unsigned long now = millis();
+  if (!hdsIntervalElapsed(now, lastRun, WIFI_SUPERVISE_INTERVAL_MS)) {
+    return;
+  }
+  lastRun = now;
+  xSemaphoreTake(wifiRadioMutex, portMAX_DELAY);
+  if (!b_wifiEnabled || b_ota) {
+    wifiReconnectSavedNetwork(now);
+    xSemaphoreGive(wifiRadioMutex);
+    return;
+  }
+  wifiProcessSetup();
+  now = millis();
   bool up = WiFi.status() == WL_CONNECTED;
+  wifiPublishSetupStatus();
 
 #if HDS_FEATURE_MDNS
   if (g_mdnsAdvertisePending) {
@@ -300,41 +363,26 @@ void wifiSupervise() {
                   (unsigned long)g_wifiDisconnects, (unsigned long)g_wifiReconnects);
   }
 
-  if (g_wifiInitDone && params.hasCredentials() && !up) {
-    if (downSince == 0) {
-      downSince = now;
-      backoffMs = 5000;
-      lastAttempt = now - backoffMs;
-      Serial.printf("[wifi] link down @%lu status=%d\n", now, (int)WiFi.status());
-    }
-    if (now - lastAttempt >= backoffMs) {
-      g_wifiReconnects++;
-      lastAttempt = now;
-      Serial.printf("[wifi] down %lums (status=%d) -> reconnect #%lu backoff=%lums heap=%lu\n",
-                    now - downSince, (int)WiFi.status(), (unsigned long)g_wifiReconnects,
-                    backoffMs, (unsigned long)ESP.getFreeHeap());
-      WiFi.disconnect();
-      WiFi.mode(WIFI_STA);
-      WiFi.begin(params.getSSID(), params.getPass());
-      backoffMs = backoffMs < 60000 ? backoffMs * 2 : 60000;
-    }
-  } else if (up) {
-    downSince = 0;
-    backoffMs = 0;
-  }
+  wifiReconnectSavedNetwork(now);
+  xSemaphoreGive(wifiRadioMutex);
 }
 
-void saveCredentials(const String &ssid, const String &pass) {
-  params.saveCredentials(ssid, pass);
-}
-
-bool saveCredentialsForRestart(const String &ssid, const String &pass) {
-  return params.saveCredentialsForRestart(ssid, pass);
+bool saveCredentials(const String &ssid, const String &pass) {
+  wifiInitLocks();
+  xSemaphoreTake(wifiRadioMutex, portMAX_DELAY);
+  const bool saved = params.saveCredentials(ssid, pass);
+  if (saved) wifiCancelSetup();
+  wifiPublishSetupStatus();
+  xSemaphoreGive(wifiRadioMutex);
+  return saved;
 }
 
 bool wifiCredentialsSaved() {
   params.init();
-  return params.hasCredentials();
+  xSemaphoreTake(wifiSettingsMutex, portMAX_DELAY);
+  const bool saved = params.hasCredentials();
+  xSemaphoreGive(wifiSettingsMutex);
+  return saved;
 }
 
 const char *wifiDeviceName() {
@@ -346,97 +394,5 @@ bool saveDeviceNameForRestart(const char *name, char *stored, size_t storedSize)
   return params.saveMdnsNameForRestart(name, stored, storedSize);
 }
 
-
-void WiFiParams::saveCredentials(const String &ssid, const String &pass) {
-  if (!initialized) {
-    init();
-  }
-  if (!initialized) {
-    Serial.println("[prefs] could not save credentials -- NVS namespace unavailable");
-    return;
-  }
-
-  if (this->ssid == ssid && this->pass == pass)
-    return;
-
-  this->ssid = ssid;
-  this->pass = pass;
-  writeCredentialsToNvs(ssid, pass);
-}
-
-bool WiFiParams::saveCredentialsForRestart(const String &ssid, const String &pass) {
-  if (!initialized) {
-    init();
-  }
-  if (!initialized) {
-    Serial.println("[prefs] could not save credentials -- NVS namespace unavailable");
-    return false;
-  }
-
-  return writeCredentialsToNvs(ssid, pass);
-}
-
-bool WiFiParams::writeCredentialsToNvs(const String &ssid, const String &pass) {
-  size_t wroteSsid = preferences.putString(wifiSSIDKey, ssid.c_str());
-  size_t wrotePass = preferences.putString(wifiPassKey, pass.c_str());
-  String storedSsid = preferences.getString(wifiSSIDKey, "\x01");
-  String storedPass = preferences.getString(wifiPassKey, "\x01");
-  bool saved = storedSsid == ssid && storedPass == pass;
-  if (!saved) {
-    Serial.printf("[prefs] NVS write FAILED (ssid=%u pass=%u) -- credentials did not persist\n",
-                  (unsigned)wroteSsid, (unsigned)wrotePass);
-  }
-  return saved;
-}
-
-bool WiFiParams::saveMdnsNameForRestart(const char *name, char *stored, size_t storedSize) {
-  if (!initialized) {
-    init();
-  }
-  if (!initialized) {
-    Serial.println("[prefs] could not save device name -- NVS namespace unavailable");
-    return false;
-  }
-  if (!mdnsNameNormalize(name, stored, storedSize)) {
-    return false;
-  }
-
-  preferences.putString(wifiMdnsNameKey, stored);
-  return preferences.getString(wifiMdnsNameKey, "\x01") == stored;
-}
-
-void WiFiParams::init() {
-  if (initialized) {
-    return;
-  }
-  if (!preferences.begin(wifiPrefsKey)) {
-    Serial.println("[prefs] could not open NVS namespace 'wifi' -- no stored credentials");
-    return;
-  }
-  initialized = true;
-  if (!hasCredentials()) {
-    this->ssid = preferences.getString(wifiSSIDKey, "");
-    this->pass = preferences.getString(wifiPassKey, "");
-  }
-  if (mdnsName[0] == 0) {
-    char storedName[MDNS_NAME_BUFFER_BYTES] = {0};
-    size_t length = preferences.getString(wifiMdnsNameKey, storedName, sizeof(storedName));
-    if (length == 0 || !mdnsNameNormalize(storedName, mdnsName, sizeof(mdnsName))) {
-      mdnsNameCopyDefault(mdnsName, sizeof(mdnsName));
-    }
-  }
-}
-
-void WiFiParams::reset() {
-  ssid = "";
-  pass = "";
-  if (!initialized) {
-    init();
-  }
-  if (initialized) {
-    preferences.clear();
-  }
-  mdnsNameCopyDefault(mdnsName, sizeof(mdnsName));
-}
 
 #endif

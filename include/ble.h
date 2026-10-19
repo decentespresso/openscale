@@ -44,6 +44,7 @@ void resetBleFff4StateLocked(uint16_t subscriptionHandle) {
   bleVoltageResponsesPending = 0;
   bleStatusRequestAt = 0;
   bleNotifyFailureLogged = false;
+  bleDirectNotifyRequired = false;
 }
 
 void setBleFff4Connection(uint16_t connectionHandle, uint16_t subscriptionHandle) {
@@ -51,6 +52,16 @@ void setBleFff4Connection(uint16_t connectionHandle, uint16_t subscriptionHandle
   bleFff4ConnectionGeneration = bleFff4ConnectionGeneration + 1;
   connId = connectionHandle;
   resetBleFff4StateLocked(subscriptionHandle);
+  portEXIT_CRITICAL(&bleFff4Mux);
+}
+
+void adoptBleFff4ConnectionFromSubscription(uint16_t connectionHandle) {
+  portENTER_CRITICAL(&bleFff4Mux);
+  bleFff4ConnectionGeneration = bleFff4ConnectionGeneration + 1;
+  connId = connectionHandle;
+  bleFff4SubscriptionHandle = connectionHandle;
+  bleNotifyFailureLogged = false;
+  bleDirectNotifyRequired = true;
   portEXIT_CRITICAL(&bleFff4Mux);
 }
 
@@ -81,6 +92,9 @@ class MyServerCallbacks : public BLEServerCallbacks {
     t_heartBeat = millis();
     bleState = CONNECTED;
     deviceConnected = true;
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
 #ifdef BUZZER
     b_beep = false;
 #endif
@@ -97,6 +111,12 @@ class MyServerCallbacks : public BLEServerCallbacks {
     }
     deviceConnected = false;
     bleState = DISCONNECTED;
+    if (b_ota) {
+      Serial.print("Device disconnected (connId: ");
+      Serial.print(desc->conn_handle);
+      Serial.println("), OTA active, advertising paused");
+      return;
+    }
 #ifdef BUZZER
     b_beep = storageGetInt(KEY_BEEP, 1);
 #endif
@@ -115,6 +135,9 @@ class MyServerCallbacks : public BLEServerCallbacks {
     t_heartBeat = millis();
     bleState = CONNECTED;
     deviceConnected = true;
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
 #ifdef BUZZER
     b_beep = false;
 #endif
@@ -127,6 +150,10 @@ class MyServerCallbacks : public BLEServerCallbacks {
     setBleFff4Connection(0xFFFF, 0xFFFF);
     deviceConnected = false;
     bleState = DISCONNECTED;
+    if (b_ota) {
+      Serial.println("Device disconnected, OTA active, advertising paused");
+      return;
+    }
 #ifdef BUZZER
     b_beep = storageGetInt(KEY_BEEP, 1);
 #endif
@@ -147,13 +174,21 @@ struct BleDecentCommandSink {
   }
 
   void displayOff() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyDisplay(false);
+#else
     b_u8g2Sleep = true;
+#endif
     remoteReplacePending(WSP_DISPLAY_OFF, WSP_DISPLAY_ON);
     queueBleStatusResponse();
   }
 
   void displayOn() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyDisplay(true);
+#else
     b_u8g2Sleep = false;
+#endif
     remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
     queueBleStatusResponse();
   }
@@ -163,12 +198,20 @@ struct BleDecentCommandSink {
   }
 
   void lowPowerOn() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyLowPower(true);
+#else
     b_websocketLowPowerEnabled = true;
+#endif
     remoteReplacePending(WSP_LOWPWR_ON, WSP_LOWPWR_OFF);
   }
 
   void lowPowerOff() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyLowPower(false);
+#else
     b_websocketLowPowerEnabled = false;
+#endif
     remoteReplacePending(WSP_LOWPWR_OFF, WSP_LOWPWR_ON);
   }
 
@@ -192,11 +235,19 @@ struct BleDecentCommandSink {
     remoteReplacePending(WSP_TIMER_ZERO, WSP_TIMER_START | WSP_TIMER_STOP);
   }
 
-  void wifiUpdate() {
+  void wifiUpdate(const PullOtaTargetVersion &target) {
 #if HDS_FEATURE_PULL_OTA
+    if (b_pullOtaRunning || b_ota) {
+      Serial.println("WiFi OTA already running; start ignored.");
+      return;
+    }
+    if (!remoteQueueWifiUpdate(target)) {
+      Serial.println("WiFi OTA start already queued; start ignored.");
+      return;
+    }
     Serial.println("Start WiFi OTA queued.");
-    remoteQueuePending(WSP_WIFI_UPDATE);
 #else
+    (void)target;
     Serial.println("WiFi OTA unavailable.");
 #endif
   }
@@ -260,6 +311,7 @@ struct BleDecentCommandSink {
 
 class MyCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pWriteCharacteristic) {
+    if (b_ota) return;
     Serial.print("Timer");
     Serial.print(millis());
     Serial.print(" onWrite counter:");
@@ -296,6 +348,14 @@ class Fff4Callbacks : public BLECharacteristicCallbacks {
 #if defined(CONFIG_NIMBLE_ENABLED)
   void onSubscribe(BLECharacteristic *pCharacteristic, ble_gap_conn_desc *desc, uint16_t subValue) {
     if (desc == nullptr) return;
+    if (subValue != 0 && connId == 0xFFFF) {
+      pServer->removePeerDevice(desc->conn_handle, false);
+      adoptBleFff4ConnectionFromSubscription(desc->conn_handle);
+      t_firstConnect = millis();
+      t_heartBeat = millis();
+      bleState = CONNECTED;
+      deviceConnected = true;
+    }
     const uint16_t nextHandle = subValue == 0 ? 0xFFFF : desc->conn_handle;
     portENTER_CRITICAL(&bleFff4Mux);
     const bool changed = desc->conn_handle == connId && bleFff4SubscriptionHandle != nextHandle;
@@ -372,10 +432,45 @@ void bleShutdown() {
 
 static bool bleHasLiveClient() {
 #if defined(CONFIG_NIMBLE_ENABLED)
-  return pServer != nullptr && pServer->getConnectedCount() > 0;
+  return pServer != nullptr && connId != 0xFFFF;
 #else
   return deviceConnected;
 #endif
+}
+
+bool blePauseForOta() {
+  bleDebugMode = DEBUG_OFF;
+  const bool disconnectedClient = bleHasLiveClient();
+  if (pAdvertising != nullptr) {
+    pAdvertising->stop();
+  }
+  if (pServer != nullptr && disconnectedClient && connId != 0xFFFF) {
+    pServer->disconnect(connId, 0x13);
+  }
+  return disconnectedClient;
+}
+
+void bleResumeAfterOta(bool restoreDisconnectedClient) {
+#ifdef BUZZER
+  if (restoreDisconnectedClient) {
+    b_beep = storageGetInt(KEY_BEEP, 1);
+  }
+#else
+  (void)restoreDisconnectedClient;
+#endif
+  if (b_ble_enabled && pAdvertising != nullptr && !bleHasLiveClient()) {
+    pAdvertising->start();
+  }
+}
+
+static void logBleDirectNotifyFailure(uint16_t connectionHandle, int rc) {
+  portENTER_CRITICAL(&bleFff4Mux);
+  const bool shouldLog = !bleNotifyFailureLogged && bleDirectNotifyRequired && connId == connectionHandle;
+  if (shouldLog) bleNotifyFailureLogged = true;
+  portEXIT_CRITICAL(&bleFff4Mux);
+  if (!shouldLog) return;
+  Serial.printf("FFF4 direct notification failure for connId: %u, code: %d\n",
+                static_cast<unsigned int>(connectionHandle), rc);
 }
 
 static bool bleCanNotifyCurrent() {
@@ -392,6 +487,9 @@ void queueBleVoltageResponse() {
   portENTER_CRITICAL(&bleFff4Mux);
   if (bleVoltageResponsesPending != UINT16_MAX) bleVoltageResponsesPending = bleVoltageResponsesPending + 1;
   portEXIT_CRITICAL(&bleFff4Mux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 void processBleVoltageResponse() {
@@ -411,9 +509,13 @@ void queueBleStatusResponse() {
   bleStatusRequestAt = now;
   if (bleStatusResponsesPending != UINT16_MAX) bleStatusResponsesPending = bleStatusResponsesPending + 1;
   portEXIT_CRITICAL(&bleFff4Mux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 void processBleStatusResponse() {
+  if (bleStatusResponsesPending == 0) return;
   const unsigned long now = millis();
   bool sendStatus = false;
   bool disconnectCurrent = false;
@@ -455,20 +557,37 @@ void processBleStatusResponse() {
   pServer->disconnect(currentConnId, 0x13);
 }
 
+static void bleNotifyReadPacket(uint8_t *data, size_t len) {
+  portENTER_CRITICAL(&bleFff4Mux);
+  const bool directNotifyRequired = bleDirectNotifyRequired;
+  const uint16_t connectionHandle = connId;
+  portEXIT_CRITICAL(&bleFff4Mux);
+  pReadCharacteristic->setValue(data, len);
+  if (!directNotifyRequired) {
+    pReadCharacteristic->notify();
+    return;
+  }
+  struct os_mbuf *om = ble_hs_mbuf_from_flat(data, len);
+  if (om == nullptr) {
+    logBleDirectNotifyFailure(connectionHandle, BLE_HS_ENOMEM);
+    return;
+  }
+  const int rc = ble_gatts_notify_custom(connectionHandle, pReadCharacteristic->getHandle(), om);
+  if (rc != 0) logBleDirectNotifyFailure(connectionHandle, rc);
+}
+
 void sendBleVoltage() {
   if (!bleCanNotifyCurrent()) return;
   byte data[7];
   buildVoltagePacket(data);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
+  bleNotifyReadPacket(data, 7);
 }
 
 void sendBleHeartBeat() {
   if (!bleCanNotifyCurrent()) return;
   byte data[7];
   buildHeartBeatPacket(data);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
+  bleNotifyReadPacket(data, 7);
 }
 
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
@@ -476,8 +595,7 @@ void sendBleGyro() {
   if (!bleCanNotifyCurrent()) return;
   byte data[7];
   buildGyroPacket(data);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
+  bleNotifyReadPacket(data, 7);
 }
 #endif
 
@@ -485,16 +603,14 @@ void sendBleWeight() {
   if (!bleCanNotifyCurrent()) return;
   byte data[7];
   buildWeightPacket(data);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
+  bleNotifyReadPacket(data, 7);
 }
 
 void sendBleButton(int buttonNumber, int buttonShortPress) {
   if (!bleCanNotifyCurrent()) return;
   byte data[7];
   buildButtonPacket(data, buttonNumber, buttonShortPress);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
+  bleNotifyReadPacket(data, 7);
 }
 
 void sendBlePowerOff(int i_reason) {
@@ -503,8 +619,7 @@ void sendBlePowerOff(int i_reason) {
   byte data[7];
   buildPowerOffPacket(data, i_reason);
 
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
+  bleNotifyReadPacket(data, 7);
 }
 
 
@@ -513,8 +628,7 @@ void sendBleLedResponse() {
 
   byte data[7];
   buildLedResponsePacket(data);
-  pReadCharacteristic->setValue(data, 7);
-  pReadCharacteristic->notify();
+  bleNotifyReadPacket(data, 7);
 }
 
 void sendAdsDebugInfoBLE() {
@@ -523,8 +637,7 @@ void sendAdsDebugInfoBLE() {
 
   byte data[41];
   buildAdsDebugPacket(data);
-  pReadCharacteristic->setValue(data, 41);
-  pReadCharacteristic->notify();
+  bleNotifyReadPacket(data, 41);
 
   if (bleDebugMode == DEBUG_SINGLE) {
     bleDebugMode = DEBUG_OFF;

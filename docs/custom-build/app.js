@@ -1,22 +1,91 @@
+import {
+  SelectionError,
+  catalogRevisionChanged,
+  defaultSelection,
+  firmwareRefLabel,
+  optionReason,
+  parseSelection,
+  resolveSelection,
+  selectableFirmwareRefs,
+  selectionQuery,
+} from "./selection.mjs?v=6";
+import {initFleet} from "./fleet.js?v=15";
+import {buildEstimate} from "./build-estimate.mjs?v=1";
+import {initBuildProgress} from "./build-progress.mjs?v=1";
+
 (async () => {
+  const themeStorageKey = "hds-custom-build-theme-v1";
+  const themeRoot = document.documentElement;
+  const themeToggle = document.querySelector("#theme-toggle");
+  const systemTheme = matchMedia("(prefers-color-scheme: dark)");
+  const applyTheme = preference => {
+    const dark = preference === "dark" || preference === "system" && systemTheme.matches;
+    themeRoot.dataset.themePreference = preference;
+    themeRoot.dataset.theme = dark ? "dark" : "light";
+    const current = preference === "system" ? "System" : dark ? "Dark" : "Light";
+    const label = `${current} theme; switch to ${dark ? "light" : "dark"} theme`;
+    themeToggle.setAttribute("aria-pressed", String(dark));
+    themeToggle.setAttribute("aria-label", label);
+    themeToggle.title = label;
+    document.querySelector("#theme-color").content = dark ? "#111413" : "#0d6b4f";
+  };
+  applyTheme(themeRoot.dataset.themePreference || "system");
+  themeToggle.addEventListener("click", () => {
+    const preference = themeRoot.dataset.theme === "dark" ? "light" : "dark";
+    applyTheme(preference);
+    try {
+      localStorage.setItem(themeStorageKey, JSON.stringify({version: 1, preference}));
+    } catch {
+    }
+  });
+  systemTheme.addEventListener("change", () => {
+    if (themeRoot.dataset.themePreference === "system") applyTheme("system");
+  });
+
   const apiBase = "https://openscale-custom-builds.odevstudio.workers.dev";
-  const response = await fetch("catalog.json", {cache: "no-cache"});
+  const response = await fetch("catalog.json", {cache: "no-store"});
   if (!response.ok) throw new Error(`catalog request failed: ${response.status}`);
   const catalog = await response.json();
   const icons = {
     check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg>',
     info: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>'
   };
-  const state = {
-    requested: new Set(catalog.features.filter(item => item.default).map(item => item.id)),
-    plugins: new Set(catalog.plugins.filter(item => item.default).map(item => item.id))
-  };
+  const defaults = defaultSelection(catalog);
+  const installStorageKey = "hds-custom-build-install-v1";
+  let installMethod = "wifi";
+  try {
+    const storedInstall = JSON.parse(localStorage.getItem(installStorageKey));
+    if (storedInstall?.version === 1 && ["wifi", "usb"].includes(storedInstall.method)) {
+      installMethod = storedInstall.method;
+    }
+  } catch {
+  }
+  const withInstallRequirements = candidate => installMethod === "wifi" ? {
+    ...candidate,
+    features: [...new Set([...candidate.features, "pull-ota"])],
+  } : candidate;
+  let invalidLink = false;
+  let selected = defaults;
+  if (location.search) {
+    try {
+      selected = parseSelection(location.search, catalog);
+    } catch {
+      invalidLink = true;
+    }
+  }
+  selected = withInstallRequirements(selected);
   const refSelect = document.querySelector("#firmware-ref");
   const featureRoot = document.querySelector("#features");
   const pluginRoot = document.querySelector("#plugins");
   const featureById = new Map(catalog.features.map(item => [item.id, item]));
   const pluginById = new Map(catalog.plugins.map(item => [item.id, item]));
+  const previewDialog = document.querySelector("#plugin-preview");
+  const previewTitle = document.querySelector("#plugin-preview-title");
+  const previewImage = document.querySelector("#plugin-preview-image");
+  const previewHandbook = document.querySelector("#plugin-preview-handbook");
   const buildButton = document.querySelector("#request-build");
+  const updateBuildProgress = initBuildProgress(document.querySelector("#build-progress"));
+  const fleetPanel = document.querySelector("#fleet-panel");
   let toastTimer;
   let statusTimer;
   let pollTimer;
@@ -24,16 +93,27 @@
   let selectionGeneration = 0;
   let selectionController;
   let currentSelection;
+  let currentCombinationHash = "";
+  let currentBuildState = "checking";
+  let catalogRetryDelay = 2000;
+  let lastBuildResult;
+  let handbookRequest = 0;
 
   const escapeHtml = value => String(value).replace(/[&<>'"]/g, character => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
   })[character]);
+  const validPreviewPath = (plugin, path) => typeof path === "string" &&
+    new RegExp(`^plugin-media/${plugin.id}/[0-9a-f]{64}\\.(png|jpg|jpeg|webp)$`).test(path);
+  const validHandbookPath = (plugin, value) => typeof value === "string" &&
+    new RegExp(`^plugin-media/${plugin.id}/[0-9a-f]{64}\\.md$`).test(value);
 
   const makeOption = (item, kind) => {
     const wrapper = document.createElement("div");
     const inputId = `${kind}-${item.id}`;
     const tooltipId = `${inputId}-tooltip`;
-    wrapper.className = "option-card";
+    const hasRecommendation = kind === "plugin" &&
+      (item.recommends?.features.length || item.recommends?.plugins.length);
+    wrapper.className = `option-card${hasRecommendation ? " has-recommendation" : ""}`;
     wrapper.dataset.id = item.id;
     wrapper.innerHTML = `
       <input class="native-check" id="${escapeHtml(inputId)}" type="checkbox" data-kind="${kind}" value="${escapeHtml(item.id)}">
@@ -47,31 +127,49 @@
       </label>
       <button class="info-button" type="button" aria-label="More information about ${escapeHtml(item.name)}" aria-describedby="${tooltipId}">${icons.info}</button>
       <span class="tooltip" id="${tooltipId}" role="tooltip">${escapeHtml(item.tooltip || item.description || "More information")}</span>`;
+    if (kind === "plugin") {
+      const actions = document.createElement("div");
+      actions.className = "plugin-actions";
+      if (hasRecommendation) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "recommend-button";
+        button.dataset.recommendPlugin = item.id;
+        button.textContent = "Recommended";
+        actions.append(button);
+      }
+      if (validHandbookPath(item, item.presentation?.handbook)) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "handbook-link";
+        button.dataset.handbookPlugin = item.id;
+        button.textContent = "README";
+        actions.append(button);
+      }
+      if (validPreviewPath(item, item.presentation?.image)) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "preview-button";
+        button.dataset.previewPlugin = item.id;
+        button.textContent = "Preview";
+        actions.append(button);
+      }
+      if (actions.childElementCount) wrapper.append(actions);
+    }
     return wrapper;
   };
 
-  catalog.firmware_refs.forEach(ref => refSelect.add(new Option(ref, ref)));
+  selectableFirmwareRefs(catalog).forEach(ref => refSelect.add(new Option(firmwareRefLabel(ref), ref)));
   catalog.features.filter(item => !item.hidden).forEach(item => featureRoot.append(makeOption(item, "feature")));
   catalog.plugins.forEach(item => pluginRoot.append(makeOption(item, "plugin")));
 
-  const resolveSelection = () => {
-    const resolved = new Set(state.requested);
-    state.plugins.forEach(id => pluginById.get(id)?.requires.forEach(feature => resolved.add(feature)));
-    let previousSize = -1;
-    while (resolved.size !== previousSize) {
-      previousSize = resolved.size;
-      [...resolved].forEach(id => featureById.get(id)?.requires.forEach(required => resolved.add(required)));
-    }
-    return resolved;
-  };
-
   const requirementReason = (featureId, resolved) => {
     const reasons = [];
-    state.plugins.forEach(id => {
+    resolved.plugins.forEach(id => {
       const plugin = pluginById.get(id);
       if (plugin?.requires.includes(featureId)) reasons.push(plugin.name);
     });
-    resolved.forEach(id => {
+    resolved.features.forEach(id => {
       if (id === featureId) return;
       const feature = featureById.get(id);
       if (feature?.requires.includes(featureId)) reasons.push(feature.name);
@@ -80,14 +178,12 @@
     return unique.length ? `Required by ${unique.join(", ")}` : "Included as a dependency";
   };
 
-  const pluginAvailability = plugin => {
-    if (!plugin.firmware_refs.includes(refSelect.value)) return `Unavailable for ${refSelect.value}`;
-    const conflicting = [...state.plugins].find(selectedId => {
-      if (selectedId === plugin.id) return false;
-      const selected = pluginById.get(selectedId);
-      return plugin.conflicts.includes(selectedId) || selected?.conflicts.includes(plugin.id);
-    });
-    return conflicting ? `Conflicts with ${pluginById.get(conflicting).name}` : "";
+  const pluginRequirementReason = (pluginId, resolved) => {
+    const reasons = resolved.plugins
+      .map(id => pluginById.get(id))
+      .filter(plugin => plugin?.depends_on.includes(pluginId))
+      .map(plugin => plugin.name);
+    return reasons.length ? `Required by ${reasons.join(", ")}` : "Included as a dependency";
   };
 
   const showToast = message => {
@@ -102,20 +198,42 @@
     if (generation !== selectionGeneration) return;
     const buildState = document.querySelector("#build-state");
     const combinationHash = result.combination_hash || "";
+    const failureMessages = {
+      dispatch_failed: "The build could not be sent to the build runner.",
+      build_failed: "The firmware build failed.",
+      build_timeout: "The build runner did not finish in time."
+    };
     const messages = {
       missing: "This combination has not been built yet.",
-      queued: "The build is waiting for an available runner.",
+      expired: "This development build has expired. Select the current main revision for a new build.",
+      queued: "",
       building: "The firmware and filesystem images are being built.",
-      ready: "The verified build archive is ready to download.",
-      failed: result.retryable ? "The build did not complete. One retry is available." :
-        "The build did not complete after two attempts.",
+      ready: "The build archive is ready to download.",
+      failed: failureMessages[result.failure_code] || "The build did not complete.",
       unavailable: "The build service is currently unavailable.",
+      updating: "Configurator update in progress.",
+      "rate-limited": "The weekly build limit has been reached. Existing cached builds remain available.",
       checking: "Checking the build cache."
     };
-    buildState.className = `ready state-${result.state}`;
-    buildState.textContent = result.state[0].toUpperCase() + result.state.slice(1);
-    document.querySelector("#combination-hash").textContent = combinationHash ? combinationHash.slice(0, 12) : "";
-    document.querySelector("#status-message").textContent = messages[result.state] || messages.unavailable;
+    const labels = {"rate-limited": "Rate limited", updating: "Updating"};
+    buildState.className = `ready state-${result.connectionLost ? "unavailable" : result.state}`;
+    buildState.textContent = result.connectionLost ? "Reconnecting"
+      : labels[result.state] || result.state[0].toUpperCase() + result.state.slice(1);
+    currentCombinationHash = combinationHash;
+    currentBuildState = result.state;
+    lastBuildResult = result;
+    updateBuildProgress({...result, pollingPaused: pollRemaining <= 0});
+    const updaterLink = document.querySelector("#hds-updater-link");
+    const updaterReady = result.state === "ready" && installMethod === "usb";
+    updaterLink.classList.toggle("is-ready", updaterReady);
+    updaterLink.setAttribute(
+      "aria-label", updaterReady ? "Open HDS Updater for this build" : "Open HDS Updater",
+    );
+    const retryMessage = result.state === "failed" ?
+      (result.retryable ? " One retry is available." : " No retries remain.") : "";
+    document.querySelector("#status-message").textContent =
+      result.connectionLost ? "Waiting for the build service to respond. The last confirmed build state is shown."
+        : [messages[result.state] ?? messages.unavailable, retryMessage, buildEstimate(result, currentSelection)].filter(Boolean).join(" ");
     buildButton.disabled = result.state !== "missing" && !(result.state === "failed" && result.retryable);
     const downloads = document.querySelector("#downloads");
     downloads.replaceChildren();
@@ -130,6 +248,9 @@
     if (["queued", "building"].includes(result.state) && combinationHash) {
       schedulePoll(combinationHash, generation);
     }
+    document.dispatchEvent(new CustomEvent("openscale-build-status", {
+      detail: {state: result.state, combinationHash},
+    }));
   };
 
   const apiRequest = async (path, options = {}) => {
@@ -141,9 +262,49 @@
     if (!apiResponse.ok) {
       const error = new Error(result.error || `request failed: ${apiResponse.status}`);
       error.result = result;
+      error.status = apiResponse.status;
       throw error;
     }
     return result;
+  };
+
+  const clearCatalogReload = () => {
+    catalogRetryDelay = 2000;
+    try {
+      sessionStorage.removeItem("hds-custom-build-catalog-reload");
+    } catch {
+    }
+  };
+
+  const handleCatalogStale = (error, generation, selection) => {
+    if (error.result?.error !== "catalog_stale") return false;
+    setStatus({state: "updating"}, generation);
+    try {
+      if (!sessionStorage.getItem("hds-custom-build-catalog-reload")) {
+        sessionStorage.setItem("hds-custom-build-catalog-reload", "1");
+        location.reload();
+        return true;
+      }
+    } catch {
+    }
+    const retryDelay = catalogRetryDelay;
+    catalogRetryDelay = Math.min(catalogRetryDelay * 2, 30000);
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(async () => {
+      if (generation !== selectionGeneration) return;
+      let revisionChanged = false;
+      try {
+        revisionChanged = await catalogRevisionChanged(fetch, catalog.catalog_revision);
+      } catch {
+      }
+      if (generation !== selectionGeneration) return;
+      if (revisionChanged) {
+        location.reload();
+        return;
+      }
+      await checkStatus(selection, generation);
+    }, retryDelay);
+    return true;
   };
 
   const schedulePoll = (combinationHash, generation) => {
@@ -158,7 +319,7 @@
         if (result.combination_hash === combinationHash) setStatus(result, generation);
       } catch (error) {
         if (error.name !== "AbortError") {
-          setStatus({state: "unavailable", combination_hash: combinationHash}, generation);
+          setStatus({...lastBuildResult, connectionLost: true, combination_hash: combinationHash}, generation);
         }
       }
     }, 10000);
@@ -174,50 +335,74 @@
         body: JSON.stringify(selection),
         signal: selectionController.signal
       });
+      clearCatalogReload();
       setStatus(result, generation);
     } catch (error) {
-      if (error.name !== "AbortError") setStatus({state: "unavailable"}, generation);
+      if (error.name !== "AbortError" && !handleCatalogStale(error, generation, selection)) {
+        setStatus({state: "unavailable"}, generation);
+      }
+    }
+  };
+
+  const recommendationAvailable = plugin => {
+    try {
+      resolveSelection(catalog, {
+        firmware_ref: selected.firmware_ref,
+        features: plugin.recommends.features,
+        plugins: [plugin.id, ...plugin.recommends.plugins]
+      });
+      return true;
+    } catch {
+      return false;
     }
   };
 
   const render = () => {
-    catalog.plugins.forEach(plugin => {
-      if (!plugin.firmware_refs.includes(refSelect.value)) state.plugins.delete(plugin.id);
-    });
-    const resolved = resolveSelection();
+    const resolved = resolveSelection(catalog, selected);
+    refSelect.value = selected.firmware_ref;
     document.querySelectorAll('[data-kind="feature"]').forEach(input => {
       const id = input.value;
       const card = input.closest(".option-card");
-      const isRequested = state.requested.has(id);
-      const isResolved = resolved.has(id);
-      const isRequired = isResolved && !isRequested;
+      const isRequested = selected.features.includes(id);
+      const isResolved = resolved.features.includes(id);
+      const installRequired = id === "pull-ota" && installMethod === "wifi";
+      const isRequired = installRequired || isResolved && !isRequested;
+      const unavailableReason = isResolved ? "" : optionReason(catalog, selected, "feature", id);
       input.checked = isResolved;
-      input.disabled = isRequired;
+      input.disabled = isRequired || Boolean(unavailableReason);
       card.classList.toggle("is-checked", isResolved);
       card.classList.toggle("is-required", isRequired);
-      card.classList.toggle("is-disabled", isRequired);
-      card.querySelector(".status-badge").textContent = isRequired ? requirementReason(id, resolved) : "";
+      card.classList.toggle("is-disabled", input.disabled);
+      card.classList.toggle("is-unavailable", Boolean(unavailableReason));
+      card.querySelector(".status-badge").textContent = installRequired ?
+        "Required for scale install" : isRequired ? requirementReason(id, resolved) : unavailableReason;
     });
     document.querySelectorAll('[data-kind="plugin"]').forEach(input => {
       const plugin = pluginById.get(input.value);
       const card = input.closest(".option-card");
-      const unavailableReason = pluginAvailability(plugin);
-      input.checked = state.plugins.has(plugin.id);
-      input.disabled = Boolean(unavailableReason) && !input.checked;
-      card.classList.toggle("is-checked", input.checked);
+      const isRequested = selected.plugins.includes(plugin.id);
+      const isResolved = resolved.plugins.includes(plugin.id);
+      const isRequired = isResolved && !isRequested;
+      const unavailableReason = isResolved ? "" : optionReason(catalog, selected, "plugin", plugin.id);
+      input.checked = isResolved;
+      input.disabled = isRequired || Boolean(unavailableReason);
+      card.classList.toggle("is-checked", isResolved);
+      card.classList.toggle("is-required", isRequired);
       card.classList.toggle("is-disabled", input.disabled);
-      card.classList.toggle("is-unavailable", input.disabled);
-      card.querySelector(".status-badge").textContent = input.disabled ? unavailableReason : "";
+      card.classList.toggle("is-unavailable", Boolean(unavailableReason));
+      card.querySelector(".status-badge").textContent = isRequired ?
+        pluginRequirementReason(plugin.id, resolved) : unavailableReason;
+      const recommendationButton = card.querySelector(".recommend-button");
+      if (recommendationButton) recommendationButton.disabled = !recommendationAvailable(plugin);
     });
-    const features = [...resolved].sort();
-    const plugins = [...state.plugins].sort();
+    const visibleFeatures = resolved.features.filter(id => !featureById.get(id)?.hidden);
     const resolvedRoot = document.querySelector("#resolved");
     resolvedRoot.replaceChildren();
-    if (features.length) {
-      features.forEach(id => {
+    if (visibleFeatures.length) {
+      visibleFeatures.forEach(id => {
         const chip = document.createElement("span");
         chip.className = "resolved-chip";
-        chip.textContent = featureById.get(id)?.name || id;
+        chip.textContent = id;
         resolvedRoot.append(chip);
       });
     } else {
@@ -226,41 +411,125 @@
       empty.textContent = "No features selected";
       resolvedRoot.append(empty);
     }
-    document.querySelector("#feature-count").textContent = `${features.length} selected`;
-    document.querySelector("#plugin-count").textContent = `${plugins.length} selected`;
-    document.querySelector("#summary-ref").textContent = refSelect.value;
-    document.querySelector("#summary-plugins").textContent = plugins.length || "None";
+    document.querySelector("#feature-count").textContent = `${visibleFeatures.length} selected`;
+    document.querySelector("#plugin-count").textContent = `${resolved.plugins.length} selected`;
+    document.querySelector("#summary-ref").textContent = firmwareRefLabel(selected.firmware_ref);
+    document.querySelector("#summary-plugins").textContent = resolved.plugins.length || "None";
+    document.querySelector("#pull-ota-warning").hidden = !resolved.features.includes("pull-ota");
+    history.replaceState(null, "", `${location.pathname}${selectionQuery(selected)}${location.hash}`);
     selectionGeneration += 1;
     selectionController?.abort();
     selectionController = new AbortController();
     currentSelection = Object.freeze({
-      firmware_ref: refSelect.value,
-      features: Object.freeze(features),
-      plugins: Object.freeze(plugins)
+      firmware_ref: selected.firmware_ref,
+      features: Object.freeze(resolved.features),
+      plugins: Object.freeze(resolved.plugins),
+      catalog_revision: catalog.catalog_revision
     });
     const generation = selectionGeneration;
-    const selection = currentSelection;
     clearTimeout(statusTimer);
     clearTimeout(pollTimer);
-    statusTimer = setTimeout(() => checkStatus(selection, generation), 350);
+    statusTimer = setTimeout(() => checkStatus(currentSelection, generation), 350);
   };
+
+  const applySelection = (candidate, message) => {
+    try {
+      const requiredCandidate = withInstallRequirements(candidate);
+      resolveSelection(catalog, requiredCandidate);
+      selected = {
+        firmware_ref: requiredCandidate.firmware_ref,
+        features: [...requiredCandidate.features].sort(),
+        plugins: [...requiredCandidate.plugins].sort()
+      };
+      render();
+      if (message) showToast(message);
+    } catch (error) {
+      if (!(error instanceof SelectionError)) throw error;
+      render();
+      showToast("Selection conflicts with the current setup");
+    }
+  };
+
+  document.addEventListener("click", event => {
+    const button = event.target.closest("[data-recommend-plugin]");
+    if (!button) return;
+    const plugin = pluginById.get(button.dataset.recommendPlugin);
+    applySelection({
+      firmware_ref: selected.firmware_ref,
+      features: plugin.recommends.features,
+      plugins: [plugin.id, ...plugin.recommends.plugins]
+    }, `Recommended setup for ${plugin.name} selected`);
+  });
+
+  document.addEventListener("click", event => {
+    const button = event.target.closest("[data-preview-plugin]");
+    if (!button) return;
+    const plugin = pluginById.get(button.dataset.previewPlugin);
+    if (!plugin || !validPreviewPath(plugin, plugin.presentation?.image)) return;
+    handbookRequest += 1;
+    previewTitle.textContent = plugin.name;
+    previewHandbook.hidden = true;
+    previewImage.hidden = false;
+    previewImage.alt = plugin.presentation.image_alt;
+    previewImage.src = plugin.presentation.image;
+    previewDialog.showModal();
+  });
+  document.addEventListener("click", async event => {
+    const button = event.target.closest("[data-handbook-plugin]");
+    if (!button) return;
+    const plugin = pluginById.get(button.dataset.handbookPlugin);
+    if (!plugin || !validHandbookPath(plugin, plugin.presentation?.handbook)) return;
+    const request = ++handbookRequest;
+    previewTitle.textContent = plugin.name;
+    previewImage.hidden = true;
+    previewImage.removeAttribute("src");
+    previewHandbook.hidden = false;
+    previewHandbook.textContent = "Loading...";
+    previewDialog.showModal();
+    try {
+      const response = await fetch(plugin.presentation.handbook);
+      if (!response.ok) throw new Error("Handbook unavailable");
+      const content = await response.text();
+      if (request === handbookRequest && previewDialog.open) previewHandbook.textContent = content;
+    } catch {
+      if (request === handbookRequest && previewDialog.open) previewHandbook.textContent = "Handbook unavailable.";
+    }
+  });
+  document.querySelector("#plugin-preview-close").addEventListener("click", () => previewDialog.close());
+  previewDialog.addEventListener("close", () => {
+    handbookRequest += 1;
+    previewImage.removeAttribute("src");
+    previewHandbook.textContent = "";
+  });
 
   document.addEventListener("change", event => {
     const input = event.target;
-    if (input.matches('[data-kind="feature"]')) {
-      input.checked ? state.requested.add(input.value) : state.requested.delete(input.value);
-    } else if (input.matches('[data-kind="plugin"]')) {
-      input.checked ? state.plugins.add(input.value) : state.plugins.delete(input.value);
-    } else {
-      return;
-    }
-    render();
+    if (!input.matches('[data-kind="feature"], [data-kind="plugin"]')) return;
+    const field = input.dataset.kind === "feature" ? "features" : "plugins";
+    const values = input.checked ? [...selected[field], input.value] :
+      selected[field].filter(value => value !== input.value);
+    applySelection({...selected, [field]: values});
   });
 
-  refSelect.addEventListener("change", render);
+  refSelect.addEventListener("change", () => applySelection({...selected, firmware_ref: refSelect.value}));
+  document.querySelectorAll('[name="install-method"]').forEach(input => {
+    input.checked = input.value === installMethod;
+    input.addEventListener("change", () => {
+      installMethod = input.value;
+      fleetPanel.hidden = installMethod !== "wifi";
+      localStorage.setItem(installStorageKey, JSON.stringify({version: 1, method: installMethod}));
+      const nextSelection = installMethod === "usb"
+        ? {...selected, features: selected.features.filter(feature => feature !== "pull-ota")}
+        : selected;
+      applySelection(nextSelection, installMethod === "wifi" ? "Pull OTA included for scale install" : "USB install selected");
+    });
+  });
+  fleetPanel.hidden = installMethod !== "wifi";
   buildButton.addEventListener("click", async () => {
     const generation = selectionGeneration;
     const selection = currentSelection;
+    if (selection.firmware_ref === "main" &&
+        !window.confirm("Main is only for testing, not normal use. Build testing firmware from main?")) return;
     buildButton.disabled = true;
     setStatus({state: "checking"}, generation);
     try {
@@ -270,13 +539,18 @@
         signal: selectionController.signal
       });
       if (generation !== selectionGeneration) return;
+      clearCatalogReload();
       pollRemaining = 300;
       setStatus(result, generation);
     } catch (error) {
       if (error.name === "AbortError" || generation !== selectionGeneration) return;
-      if (error.result?.state === "failed") {
+      if (handleCatalogStale(error, generation, selection)) return;
+      if (error.status === 429) {
+        setStatus({state: "rate-limited"}, generation);
+        showToast("Weekly build limit reached");
+      } else if (error.result?.state === "failed") {
         setStatus(error.result, generation);
-        showToast("Retry limit reached");
+        showToast("Build could not be completed");
       } else {
         setStatus({state: "unavailable"}, generation);
         showToast("Build request rejected");
@@ -284,14 +558,16 @@
     }
   });
   document.querySelector("#reset").addEventListener("click", () => {
-    state.requested = new Set(catalog.features.filter(item => item.default).map(item => item.id));
-    state.plugins = new Set(catalog.plugins.filter(item => item.default).map(item => item.id));
-    refSelect.value = catalog.firmware_refs[0];
-    render();
-    showToast("Defaults restored");
+    applySelection(defaults, "Defaults restored");
   });
 
+  initFleet({
+    apiBase,
+    getReadyHash: () => installMethod === "wifi" && currentBuildState === "ready" ? currentCombinationHash : "",
+    showToast,
+  });
   render();
+  if (invalidLink) showToast("Invalid selection link discarded");
 })().catch(() => {
   document.querySelector("#feature-count").textContent = "Unavailable";
   document.querySelector("#plugin-count").textContent = "Unavailable";

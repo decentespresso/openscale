@@ -29,6 +29,24 @@ constexpr const char *KEY_QUICK_BOOT = "quick_boot";
 constexpr const char *KEY_DRIFT_MAX = "drift_max";
 constexpr const char *KEY_BAT_PROTECT = "bat_protect";
 constexpr const char *KEY_BAT_CAPACITY_SET = "bat_cap_set";
+constexpr const char *KEY_WOW_INTERVAL = "wow_interval";
+#if HDS_ENABLE_ENERGY_MENU
+constexpr const char *KEY_ENERGY_SCHEMA = "energy_schema";
+constexpr uint16_t ENERGY_SCHEMA_VERSION = 10;
+constexpr const char *KEY_ENERGY_SERIAL_QUIET = "e_serial_quiet";
+constexpr const char *KEY_ENERGY_MOTION_POLL = "e_motion";
+constexpr const char *KEY_ENERGY_ACC_RAIL_OFF = "e_acc_rail";
+constexpr const char *KEY_ENERGY_POWER_CADENCE = "e_power_cad";
+constexpr const char *KEY_ENERGY_OLED_STATIC = "e_oled_static";
+
+constexpr const char *ENERGY_FEATURE_KEYS[] = {
+  "e_oled_redraw", "e_oled_idle", "e_light_sleep", "e_light_plus", "e_usb_sleep"
+};
+static_assert(sizeof(ENERGY_FEATURE_KEYS) / sizeof(ENERGY_FEATURE_KEYS[0]) ==
+              static_cast<size_t>(EnergyFeature::Count));
+#endif
+constexpr const char *KEY_TAP_TARE = "tap_tare";
+constexpr const char *KEY_TAP_TIMER = "tap_timer";
 
 constexpr size_t LEGACY_EEPROM_BYTES = 512;
 constexpr size_t LEGACY_CAL1_ADDRESS = 0;
@@ -93,6 +111,69 @@ inline bool storageGetBool(const char *key, bool defaultValue) {
   return settingsPreferences.getBool(key, defaultValue);
 }
 
+#if HDS_ENABLE_ENERGY_MENU
+inline bool storageLoadValidatedBool(const char *key, bool defaultValue, bool &value) {
+  const uint8_t stored = settingsPreferences.getType(key) == PT_U8
+                           ? settingsPreferences.getUChar(key, 2)
+                           : 2;
+  if (stored <= 1) {
+    value = stored == 1;
+    return true;
+  }
+  value = defaultValue;
+  return storagePutBool(key, defaultValue);
+}
+
+inline bool storageRemoveIfPresent(const char *key) {
+  return !settingsPreferences.isKey(key) || settingsPreferences.remove(key);
+}
+
+inline bool energyLoadSettings(EnergySettings &settings) {
+  const bool schemaTyped = settingsPreferences.getType(KEY_ENERGY_SCHEMA) == PT_U16;
+  const uint16_t storedSchema = schemaTyped
+                                  ? settingsPreferences.getUShort(KEY_ENERGY_SCHEMA, 0)
+                                  : 0;
+  const bool schemaCurrent = storedSchema == ENERGY_SCHEMA_VERSION;
+  const uint8_t lightSleepIndex = static_cast<uint8_t>(EnergyFeature::LightSleep);
+  const uint8_t lightSleepPlusIndex = static_cast<uint8_t>(EnergyFeature::LightSleepPlus);
+  const bool migrateAggressiveLightSleep =
+    storedSchema >= 5 && storedSchema <= 9 &&
+    !settingsPreferences.isKey(ENERGY_FEATURE_KEYS[lightSleepPlusIndex]) &&
+    settingsPreferences.getType(ENERGY_FEATURE_KEYS[lightSleepIndex]) == PT_U8 &&
+    settingsPreferences.getUChar(ENERGY_FEATURE_KEYS[lightSleepIndex], 0) == 1;
+  bool loaded = true;
+  settings.features = 0;
+  for (uint8_t index = 0; index < static_cast<uint8_t>(EnergyFeature::Count); ++index) {
+    const EnergyFeature feature = static_cast<EnergyFeature>(index);
+    const bool defaultEnabled =
+      feature == EnergyFeature::LightSleepPlus && migrateAggressiveLightSleep;
+    bool enabled = false;
+    loaded = storageLoadValidatedBool(
+      ENERGY_FEATURE_KEYS[index], defaultEnabled, enabled) && loaded;
+    settings.select(feature, enabled);
+  }
+  if (!settings.enabled(EnergyFeature::LightSleep) &&
+      settings.enabled(EnergyFeature::LightSleepPlus)) {
+    settings.select(EnergyFeature::LightSleepPlus, false);
+    loaded = storagePutBool(ENERGY_FEATURE_KEYS[lightSleepPlusIndex], false) && loaded;
+  }
+  if (schemaCurrent) return loaded;
+  loaded = storageRemoveIfPresent(KEY_ENERGY_SERIAL_QUIET) && loaded;
+  loaded = storageRemoveIfPresent(KEY_ENERGY_MOTION_POLL) && loaded;
+  loaded = storageRemoveIfPresent(KEY_ENERGY_ACC_RAIL_OFF) && loaded;
+  loaded = storageRemoveIfPresent(KEY_ENERGY_POWER_CADENCE) && loaded;
+  loaded = storageRemoveIfPresent(KEY_ENERGY_OLED_STATIC) && loaded;
+  return loaded &&
+         settingsPreferences.putUShort(KEY_ENERGY_SCHEMA, ENERGY_SCHEMA_VERSION) == sizeof(uint16_t);
+}
+
+inline bool energyStoreFeature(EnergyFeature feature, bool enabled) {
+  const uint8_t index = static_cast<uint8_t>(feature);
+  return index < static_cast<uint8_t>(EnergyFeature::Count) &&
+         storagePutBool(ENERGY_FEATURE_KEYS[index], enabled);
+}
+#endif
+
 inline String storageGetString(const char *key, const String &defaultValue) {
   return settingsPreferences.getString(key, defaultValue);
 }
@@ -118,7 +199,8 @@ inline bool storageHasAllSettings() {
     KEY_CAL1, KEY_CONTAINER, KEY_MODE, KEY_POUROVER, KEY_ESPRESSO,
     KEY_BEEP, KEY_WELCOME, KEY_BAT_CAL, KEY_HEARTBEAT, KEY_SCREEN_FLIP,
     KEY_TIME_ON_TOP, KEY_BTN_CONN, KEY_WIFI_BOOT, KEY_AUTO_SLEEP,
-    KEY_QUICK_BOOT, KEY_DRIFT_MAX, KEY_BAT_PROTECT, KEY_BAT_CAPACITY_SET
+    KEY_QUICK_BOOT, KEY_DRIFT_MAX, KEY_TAP_TARE, KEY_TAP_TIMER,
+    KEY_WOW_INTERVAL, KEY_BAT_PROTECT, KEY_BAT_CAPACITY_SET
   };
   for (const char *key : keys) {
     if (!settingsPreferences.isKey(key)) {
@@ -146,7 +228,10 @@ inline bool storageEnsureDefaults() {
          storageEnsureBool(KEY_QUICK_BOOT, false) &&
          storageEnsureFloat(KEY_DRIFT_MAX, 0.05f) &&
          storageEnsureBool(KEY_BAT_PROTECT, false) &&
-         storageEnsureBool(KEY_BAT_CAPACITY_SET, false);
+         storageEnsureBool(KEY_BAT_CAPACITY_SET, false) &&
+         storageEnsureBool(KEY_TAP_TARE, false) &&
+         storageEnsureBool(KEY_TAP_TIMER, false) &&
+         storageEnsureInt(KEY_WOW_INTERVAL, 0);
 }
 
 inline bool storageLegacyBool(size_t address, bool defaultValue) {
@@ -238,7 +323,10 @@ inline bool storageMigrateLegacyEeprom() {
                   storageEnsureBool(KEY_QUICK_BOOT, storageLegacyBool(LEGACY_QUICK_BOOT_ADDRESS, false)) &&
                   storageEnsureFloat(KEY_DRIFT_MAX, driftMax) &&
                   storageEnsureBool(KEY_BAT_PROTECT, false) &&
-                  storageEnsureBool(KEY_BAT_CAPACITY_SET, false);
+                  storageEnsureBool(KEY_BAT_CAPACITY_SET, false) &&
+                  storageEnsureBool(KEY_TAP_TARE, false) &&
+                  storageEnsureBool(KEY_TAP_TIMER, false) &&
+                  storageEnsureInt(KEY_WOW_INTERVAL, 0);
   EEPROM.end();
   return migrated;
 }

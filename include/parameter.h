@@ -2,12 +2,128 @@
 #define PARAMETER_H
 //declaration
 #include <Arduino.h>
+#include <atomic>
 #include <Preferences.h>
 #include <math.h>
 #include <mutex>
 #include "calibration_validation.h"
+#if HDS_FEATURE_WIFI
+#include "wifi_setup.h"
+
+portMUX_TYPE wifiSetupMux = portMUX_INITIALIZER_UNLOCKED;
+StaticSemaphore_t wifiRadioMutexStorage;
+StaticSemaphore_t wifiSettingsMutexStorage;
+SemaphoreHandle_t wifiRadioMutex = nullptr;
+SemaphoreHandle_t wifiSettingsMutex = nullptr;
+volatile TaskHandle_t wifiWorkerTask = nullptr;
+volatile bool wifiWorkerStarting = false;
+volatile bool wifiWorkerStartRequested = false;
+volatile bool wifiWorkerStopRequested = false;
+volatile bool wifiOperationReserved = false;
+volatile WifiSetupRequest wifiPendingRequest;
+volatile WifiSetupStatus wifiSetupStatus;
+volatile WifiScanResult wifiScanResult;
+volatile uint32_t wifiGotIpGeneration = 0;
+volatile uint32_t wifiDisconnectGeneration = 0;
+volatile uint16_t wifiDisconnectReason = 0;
+volatile bool wifiStaAssociated = false;
+WifiSetupRuntime wifiSetupRuntime;
+#endif
+
+#include "auto_off_activity.h"
+#include "energy_runtime_policy.h"
+#include "pull_ota_target.h"
+#if HDS_ENABLE_ENERGY_MENU
+#include "energy_policy.h"
+#include "energy_power_management.h"
+#endif
 
 Preferences settingsPreferences;
+struct PowerCadenceState {
+  CadenceGate autoOff;
+  CadenceGate chargeCheck;
+  CadenceGate fuelGauge;
+  BatterySampleGate batterySamples;
+  uint32_t batterySampleSequence = 0;
+};
+PowerCadenceState powerCadence;
+AutoOffWeightActivityTracker autoOffWeightActivity;
+#if HDS_ENABLE_ENERGY_MENU
+EnergyPolicy energyPolicy;
+EnergyPowerManagement energyPowerManagement;
+struct EnergyRuntimeState {
+  OledFrameGate oledFrames;
+  CadenceGate oledIdle;
+  DisplayIdleMode displayMode = DisplayIdleMode::Active;
+  volatile bool explicitDisplayOff = false;
+  volatile uint8_t requestedDisplayContrast = 255;
+};
+EnergyRuntimeState energyRuntime;
+struct EnergyIdleState {
+  TaskHandle_t mainTask = nullptr;
+  bool wakeInterruptsAttached = false;
+  bool lightSleepCallbackRegistered = false;
+  bool scaleWakeEnabled = true;
+  bool usbWakeEnabled = true;
+  bool scaleWakeFallback = false;
+  bool circleButtonWakeFallback = false;
+  bool squareButtonWakeFallback = false;
+  bool usbWakeFallback = false;
+  uint64_t rtcWakeMask = 0;
+  volatile bool wakePinsNeedRestore = false;
+  bool buttonGestureActive = false;
+  unsigned long lastButtonActivityAt = 0;
+  unsigned long lastButtonPoll = 0;
+  unsigned long lastScaleData = 0;
+  unsigned long lastScaleRecovery = 0;
+  unsigned long lastWeightTick = 0;
+  uint64_t lastLightSleepWakeMask = 0;
+  unsigned long lastLightSleepButtonWakeAt = 0;
+  unsigned long lastLightSleepButtonPollAt = 0;
+  unsigned long lastLightSleepButtonEventAt = 0;
+  uint32_t lightSleepButtonWakeCount = 0;
+  bool lightSleepButtonTracePending = false;
+};
+EnergyIdleState energyIdle;
+portMUX_TYPE energyActivityMux = portMUX_INITIALIZER_UNLOCKED;
+volatile bool energyActivityPending = false;
+
+inline void notifyEnergyMainLoop() {
+  TaskHandle_t mainTask = energyIdle.mainTask;
+  if (mainTask != nullptr) {
+    xTaskNotifyGive(mainTask);
+  }
+}
+
+inline void clearPendingEnergyActivity() {
+  portENTER_CRITICAL(&energyActivityMux);
+  energyActivityPending = false;
+  portEXIT_CRITICAL(&energyActivityMux);
+}
+
+inline void recordEnergyActivity() {
+  if (!energyPolicy.settings.enabled(EnergyFeature::OledIdle)) return;
+  portENTER_CRITICAL(&energyActivityMux);
+  energyActivityPending = true;
+  portEXIT_CRITICAL(&energyActivityMux);
+}
+
+inline void processEnergyActivities(unsigned long now) {
+  portENTER_CRITICAL(&energyActivityMux);
+  const bool pending = energyActivityPending;
+  energyActivityPending = false;
+  portEXIT_CRITICAL(&energyActivityMux);
+  if (pending) energyPolicy.recordActivity(now);
+}
+
+inline void invalidateEnergyOledFrame() {
+  if (!energyPolicy.settings.enabled(EnergyFeature::OledRedraw)) return;
+  energyRuntime.oledFrames.invalidate();
+}
+#else
+inline void recordEnergyActivity() {}
+inline void invalidateEnergyOledFrame() {}
+#endif
 
 //ble
 // volatile: read by the AsyncTCP task in the WS status frame, written by the
@@ -18,6 +134,7 @@ volatile uint16_t bleStatusResponsesPending = 0;
 volatile uint16_t bleVoltageResponsesPending = 0;
 volatile unsigned long bleStatusRequestAt = 0;
 volatile bool bleNotifyFailureLogged = false;
+volatile bool bleDirectNotifyRequired = false;
 volatile uint32_t bleFff4ConnectionGeneration = 0;
 portMUX_TYPE bleFff4Mux = portMUX_INITIALIZER_UNLOCKED;
 volatile bool b_usbweight_enabled = false;
@@ -38,6 +155,11 @@ const unsigned long WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS = WEBSOCKET_2HZ_NOTIFY_
 volatile unsigned long weightWebsocketNotifyInterval = WEBSOCKET_DEFAULT_NOTIFY_INTERVAL_MS;
 volatile bool b_websocketEventsEnabled = false;
 volatile bool b_websocketLowPowerEnabled = false;
+std::atomic<uint8_t> g_websocketClientCount{0};
+
+inline bool websocketHasClients() {
+  return g_websocketClientCount.load(std::memory_order_relaxed) > 0;
+}
 
 // Snapshot of the stopWatch state, refreshed once per main-loop iteration. The
 // WS status frame is built on the AsyncTCP task (response to {"command":"status"}
@@ -71,6 +193,15 @@ const uint32_t WSP_OTA_RESET   = 1u << 14;
 portMUX_TYPE wsPendingMux = portMUX_INITIALIZER_UNLOCKED;
 volatile uint32_t wsPendingMask = 0;
 volatile uint8_t pendingSamplesInUse = 0;
+volatile uint8_t pendingOtaTargetMajor = 0;
+volatile uint8_t pendingOtaTargetMinor = 0;
+volatile uint8_t pendingOtaTargetPatch = 0;
+volatile bool pendingOtaTargetPresent = false;
+volatile bool pendingOtaDispatching = false;
+volatile uint8_t requestedOtaTargetMajor = 0;
+volatile uint8_t requestedOtaTargetMinor = 0;
+volatile uint8_t requestedOtaTargetPatch = 0;
+volatile bool requestedOtaTargetPresent = false;
 volatile unsigned long pendingResetAt = 0;
 volatile unsigned long pendingOtaResetAt = 0;
 std::mutex otaDispatchMutex;
@@ -79,15 +210,35 @@ const uint8_t OTA_DISPLAY_NONE = 0;
 const uint8_t OTA_DISPLAY_PROGRESS = 1;
 const uint8_t OTA_DISPLAY_SUCCESS = 2;
 const uint8_t OTA_DISPLAY_FAILURE = 3;
+const unsigned long OTA_RUNTIME_PAUSE_TIMEOUT_MS = 2000;
 portMUX_TYPE otaDisplayMux = portMUX_INITIALIZER_UNLOCKED;
 volatile uint8_t otaDisplayState = OTA_DISPLAY_NONE;
 volatile uint8_t otaDisplayPercent = 0;
+volatile unsigned long otaActivityAt = 0;
+volatile bool otaRuntimePaused = false;
+bool elegantOtaUploadClaimed = false;
+
+inline bool otaRuntimeIsPaused() {
+  portENTER_CRITICAL(&otaDisplayMux);
+  const bool paused = otaRuntimePaused;
+  portEXIT_CRITICAL(&otaDisplayMux);
+  return paused;
+}
+
+inline void setOtaRuntimePaused(bool paused) {
+  portENTER_CRITICAL(&otaDisplayMux);
+  otaRuntimePaused = paused;
+  portEXIT_CRITICAL(&otaDisplayMux);
+}
 
 inline void remoteQueueResetAt(unsigned long resetAt) {
   portENTER_CRITICAL(&wsPendingMux);
   pendingResetAt = resetAt;
   wsPendingMask |= WSP_RESET;
   portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 inline void remoteQueueOtaResetAt(unsigned long resetAt) {
@@ -95,6 +246,9 @@ inline void remoteQueueOtaResetAt(unsigned long resetAt) {
   pendingOtaResetAt = resetAt;
   wsPendingMask |= WSP_OTA_RESET;
   portEXIT_CRITICAL(&wsPendingMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+#endif
 }
 
 int i_onWrite_counter = 0;
@@ -106,6 +260,9 @@ volatile bool b_requireHeartBeat = true;
 volatile bool b_screenFlipped = false;
 volatile bool b_timeOnTop = false;
 volatile bool b_btnFuncWhileConnected = false;
+bool b_tapTareEnabled = false;
+bool b_tapTimerEnabled = false;
+bool b_tapTraceEnabled = false;
 
 //
 int windowLength = 5;  // default window length
@@ -123,8 +280,6 @@ int b_beep = 1;
 bool b_about = false;
 bool b_debug = false;
 
-unsigned long t_batteryIcon = 0;
-bool b_showBatteryIcon = true;
 volatile bool b_softSleep = false;
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
 bool b_gyroEnabled = true;
@@ -146,7 +301,6 @@ bool b_grinderMenuDirectEntry = false;
 float INPUTCOFFEEPOUROVER = 20.0;
 float INPUTCOFFEEESPRESSO = 20.0;
 float f_batteryCalibrationFactor = 0.66;
-String str_welcome = "welcome";
 float f_calibration_value = CALIBRATION_VALUE_DEFAULT;   //称重单元校准值
 bool b_calibrationInvalid = false;
 char c_calibrationStatus[32] = "ok";
@@ -165,6 +319,27 @@ unsigned long t_shutdownFailBle = 0;  //for popping up shut down fail due to ble
 bool b_shutdownFailBle = false;
 // volatile: now also written from the AsyncTCP task (WS display/sleep commands).
 volatile bool b_u8g2Sleep = true;
+
+#if HDS_ENABLE_ENERGY_MENU
+inline void requestEnergyDisplay(bool enabled) {
+  energyRuntime.explicitDisplayOff = !enabled;
+  b_u8g2Sleep = !enabled;
+  recordEnergyActivity();
+}
+
+inline void requestEnergyLowPower(bool enabled) {
+  b_websocketLowPowerEnabled = enabled;
+  energyRuntime.requestedDisplayContrast = enabled ? 0 : 255;
+  recordEnergyActivity();
+}
+
+inline void requestEnergyContrast(uint8_t contrast) {
+  b_websocketLowPowerEnabled = false;
+  energyRuntime.requestedDisplayContrast = contrast;
+  recordEnergyActivity();
+}
+#endif
+
 unsigned long t_bootTare = 0;
 bool b_bootTare = false;
 int i_bootTareDelay = 1000;
@@ -204,6 +379,10 @@ void requestRemoteTare() {
   b_tareByBle = true;
   t_tareByBle = now;
   portEXIT_CRITICAL(&remoteTareMux);
+#if HDS_ENABLE_ENERGY_MENU
+  notifyEnergyMainLoop();
+  recordEnergyActivity();
+#endif
 }
 
 bool hasRemoteTareRequest() {
@@ -233,6 +412,24 @@ bool b_ads1115InitFail = true;  //ads1115 not detected flag
 volatile bool b_wifiOnBoot = false;
 volatile bool b_autoSleep = true;
 volatile bool b_quickBoot = false;
+int i_wow_interval = 0;
+#ifdef ADS1232ADC
+struct WowRtcState {
+  uint32_t magic;
+  uint8_t armed;
+  int32_t baselineRaw;
+  int32_t thresholdRaw;
+  uint32_t intervalUs;
+};
+RTC_DATA_ATTR WowRtcState wowRtc;
+bool wowTimerArmedThisBoot = false;
+bool wowButtonWake = false;
+struct WowWakeDiagnostics {
+  uint8_t samplesRead = 0;
+  int32_t raw[3] = {};
+};
+WowWakeDiagnostics wowWakeDiagnostics;
+#endif
 unsigned int i_buttonBootDelay = 500;
 bool b_showChargingUI = false;
 #if HDS_ENABLE_GRINDER
@@ -368,13 +565,38 @@ bool b_extraction = false;  //萃取模式标识
 int b_mode = 0;             //0 = pourover; 1 = espresso;
 
 bool b_menu = false;
+volatile bool b_menuRestartRequired = false;
+bool b_menuCirclePressPending = false;
+bool b_menuSquarePressPending = false;
+bool b_menuCircleLongHandled = false;
+bool b_menuSquareLongHandled = false;
 unsigned long t_menuExitTime = 0;
+
+inline void markMenuRestartRequired() {
+  portENTER_CRITICAL(&wsPendingMux);
+  b_menuRestartRequired = true;
+  portEXIT_CRITICAL(&wsPendingMux);
+}
+
+inline void leaveMenu() {
+  b_menu = false;
+  portENTER_CRITICAL(&wsPendingMux);
+  const bool restartRequired = b_menuRestartRequired;
+  b_menuRestartRequired = false;
+  portEXIT_CRITICAL(&wsPendingMux);
+  if (restartRequired) {
+    remoteQueueResetAt(millis());
+  }
+}
 // Timestamp recording when the menu exit process started
 // Used to implement a protection period preventing unintended operations
 
 bool b_calibration = false;  //Calibration flag
+bool calibrationReturnToMenu = false;
 volatile bool b_ota = false; //wifi ota flag
 volatile bool b_pullOtaRunning = false;
+volatile std::atomic<bool> filesystemRecoveryActive{false};
+volatile std::atomic<bool> webFilesystemReady{false};
 int i_calibration = 0;       //0 for manual cal, 1 for smart cal
 //bool b_set_sample = false;              //开机菜单 设置采样数
 bool b_show_info = false;               //开机菜单 显示信息
@@ -386,6 +608,8 @@ bool b_is_charging = false;             //正在充电标识
 bool b_espnow = false;
 volatile bool b_hasFuelGauge = false;   //BQ27427 电量计存在(9.0.5)
 volatile bool b_batteryProtect = false; //电池保护:充电上限 80%(9.0.5)
+volatile int batteryPercentCached = 0;
+portMUX_TYPE batteryStateMux = portMUX_INITIALIZER_UNLOCKED;
 //bool b_debug = DEBUG;                                //debug信息显示
 #if DEBUG_BATTERY
 bool b_debug_battery = false;  //debug电池信息
@@ -408,6 +632,8 @@ int i_battery = 0;                          //电池充电循环变量
 int i_batteryRefreshTareInterval = 30 * 1000;  //Refresh battery every 30 seconds
 unsigned long t_batteryRefresh = 0;         //Battery refresh timestamp
 float f_batteryVoltage = 0;
+int i_lowBatteryCount = 0;
+int i_lowBatteryCountTotal = 0;
 #ifdef AVR
 float f_vref = 4.72;                  //5V pin true reading
 float f_true_battery_reading = 4.72;  //需测量usb vcc电压（不一定是usb，可以是电池电压）

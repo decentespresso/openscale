@@ -38,14 +38,24 @@ struct UsbDecentCommandSink {
   }
 
   void displayOff() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyDisplay(false);
+    applyEnergyDisplayCommand(false);
+#else
     u8g2.setPowerSave(1);
     b_u8g2Sleep = true;
+#endif
     sendUsbLedResponse();
   }
 
   void displayOn() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyDisplay(true);
+    applyEnergyDisplayCommand(true);
+#else
     u8g2.setPowerSave(0);
     b_u8g2Sleep = false;
+#endif
     sendUsbLedResponse();
   }
 
@@ -54,47 +64,66 @@ struct UsbDecentCommandSink {
   }
 
   void lowPowerOn() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyLowPower(true);
+    applyEnergyLowPowerCommand();
+#else
     u8g2.setContrast(0);
+#endif
   }
 
   void lowPowerOff() {
+#if HDS_ENABLE_ENERGY_MENU
+    requestEnergyLowPower(false);
+    applyEnergyLowPowerCommand();
+#else
     u8g2.setContrast(255);
+#endif
   }
 
   void softSleepOn() {
-    u8g2.setPowerSave(1);
-    b_softSleep = true;
-    digitalWrite(PWR_CTRL, LOW);
-    digitalWrite(ACC_PWR_CTRL, LOW);
+    remoteReplacePending(WSP_SLEEP_ON, WSP_SLEEP_OFF);
   }
 
   void softSleepOff() {
-    if (b_softSleep) {
-      wakeScaleFromSoftSleep("USB soft wake");
-    } else {
-      u8g2.setPowerSave(0);
-      b_u8g2Sleep = false;
-    }
+    remoteReplacePending(WSP_SLEEP_OFF, WSP_SLEEP_ON | WSP_DISPLAY_OFF);
   }
 
   void timerStart() {
     stopWatch.reset();
     stopWatch.start();
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
   }
 
   void timerStop() {
     stopWatch.stop();
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
   }
 
   void timerZero() {
     stopWatch.reset();
+#if HDS_ENABLE_ENERGY_MENU
+    recordEnergyActivity();
+#endif
   }
 
-  void wifiUpdate() {
+  void wifiUpdate(const PullOtaTargetVersion &target) {
 #if HDS_FEATURE_PULL_OTA
-    Serial.println("Start WiFi OTA");
-    ::wifiUpdate();
+    if (b_pullOtaRunning || b_ota) {
+      Serial.println("WiFi OTA already running; start ignored.");
+      return;
+    }
+    if (!remoteQueueWifiUpdate(target)) {
+      Serial.println("WiFi OTA start already queued; start ignored.");
+      return;
+    }
+    Serial.println("Start WiFi OTA queued.");
 #else
+    (void)target;
     Serial.println("WiFi OTA unavailable.");
 #endif
   }
@@ -399,17 +428,32 @@ public:
 
       i_oled_contrast = constrain(i_oled_contrast, 0, 255);
 
+#if HDS_ENABLE_ENERGY_MENU
+      requestEnergyContrast(static_cast<uint8_t>(i_oled_contrast));
+      applyEnergyLowPowerCommand();
+#else
       u8g2.setContrast(i_oled_contrast);
+#endif
 
       Serial.print("OLED contrast set to ");
       Serial.println(i_oled_contrast);
     }
 
     if (inputString.startsWith("oledon")) {
+#if HDS_ENABLE_ENERGY_MENU
+      requestEnergyDisplay(true);
+      applyEnergyDisplayCommand(true);
+#else
       u8g2.setPowerSave(0);
+#endif
     }
     if (inputString.startsWith("oledoff")) {
+#if HDS_ENABLE_ENERGY_MENU
+      requestEnergyDisplay(false);
+      applyEnergyDisplayCommand(false);
+#else
       u8g2.setPowerSave(1);
+#endif
     }
 
     if (inputString.startsWith("reset")) {
@@ -417,7 +461,7 @@ public:
     }
 
     if (inputString.startsWith("cal0")) {
-      b_menu = false;
+      leaveMenu();
       i_cal_weight = 0;
       i_button_cal_status = 1;
       b_calibration = true;
@@ -425,7 +469,7 @@ public:
     }
 
     if (inputString.startsWith("cal1")) {
-      b_menu = false;
+      leaveMenu();
       i_cal_weight = 0;
       i_button_cal_status = 1;
       b_calibration = true;
@@ -456,6 +500,52 @@ public:
       else
         Serial.print("Off ");
     }
+
+    if (inputString == "tapd on" || inputString == "tapd off") {
+      b_tapTraceEnabled = inputString == "tapd on";
+      Serial.printf("[TAPTRACE] enabled=%d tare=%d timer=%d\n",
+                    b_tapTraceEnabled, b_tapTareEnabled, b_tapTimerEnabled);
+    }
+
+#ifdef ESP32
+    if (inputString == "wakeinfo") {
+      Serial.printf("[wake] reset=%u cause=%u ext1=%llu wow=%d charge=%d circle=%d square=%d",
+                    (unsigned)esp_reset_reason(), (unsigned)esp_sleep_get_wakeup_cause(),
+                    (unsigned long long)esp_sleep_get_ext1_wakeup_status(), i_wow_interval,
+                    digitalRead(BATTERY_CHARGING), digitalRead(BUTTON_CIRCLE), digitalRead(BUTTON_SQUARE));
+#ifdef USB_DET
+      Serial.printf(" usb=%d", digitalRead(USB_DET));
+#endif
+      Serial.println();
+#if HDS_ENABLE_ENERGY_MENU
+      const char *lightSleepProfile =
+        !energyPolicy.featureEnabled(EnergyFeature::LightSleep)
+          ? "off"
+          : energyPolicy.settings.lightSleepPlusActive() ? "plus" : "normal";
+      const long buttonPollMs = energyIdle.lastLightSleepButtonPollAt == 0
+                                  ? -1
+                                  : static_cast<long>(energyIdle.lastLightSleepButtonPollAt -
+                                                      energyIdle.lastLightSleepButtonWakeAt);
+      const long buttonEventMs = energyIdle.lastLightSleepButtonEventAt == 0
+                                   ? -1
+                                   : static_cast<long>(energyIdle.lastLightSleepButtonEventAt -
+                                                       energyIdle.lastLightSleepButtonWakeAt);
+      Serial.printf("[lswake] profile=%s mask=%llu buttons=%lu fast_poll_ms=%ld event_ms=%ld\n",
+                    lightSleepProfile,
+                    (unsigned long long)energyIdle.lastLightSleepWakeMask,
+                    (unsigned long)energyIdle.lightSleepButtonWakeCount,
+                    buttonPollMs, buttonEventMs);
+#endif
+#ifdef ADS1232ADC
+      Serial.printf("[wow] source=%d armed=%u baseline=%ld threshold=%ld count=%u raw=%ld,%ld,%ld\n",
+                    GPIO_power_on_with, (unsigned)wowRtc.armed,
+                    (long)wowRtc.baselineRaw, (long)wowRtc.thresholdRaw,
+                    (unsigned)wowWakeDiagnostics.samplesRead,
+                    (long)wowWakeDiagnostics.raw[0], (long)wowWakeDiagnostics.raw[1],
+                    (long)wowWakeDiagnostics.raw[2]);
+#endif
+    }
+#endif
 
     if (inputString.startsWith("adsd ")) {
       String cmd = inputString.substring(5);
@@ -623,6 +713,12 @@ void handleAdsReset(uint8_t mode) {
   Serial.print("ADS reset mode 0x0");
   Serial.println(mode);
 
+#if HDS_ENABLE_GRINDER
+  if (grinderSettings.enabled && grinderRuntime.state != GRINDER_STATE_ERROR &&
+      grinderRuntime.state != GRINDER_STATE_DISABLED) {
+    grinderEnterError("ADS reset");
+  }
+#endif
   scale.powerDown();
   delay(500);
   scale.powerUp();

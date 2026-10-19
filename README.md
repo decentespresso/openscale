@@ -20,17 +20,42 @@ To build and flash the scale from your computer, make sure you have the `pio` co
 After this, one can simply use `$pio run -t upload` and platformio will build and flash the firmware to the connected Esp32s3 chip.
 
 
+# New in 3.1.14
+
+## Custom firmware
+
+The [custom build configurator](https://decentespresso.github.io/openscale/custom-build/) builds approved feature and plugin combinations. Choose `3.1.14 (stable)`, selected by default, for normal use. The other option, `main (development)`, is for testing only and requires confirmation before building. Download the build for USB installation or assign it to linked scales for signed WiFi installation and status tracking.
+
+Plugin authors can use the [plugin development guide](docs/plugin-development.md) for package, webapp, and presentation rules.
+
+## Scale-top tap controls
+
+Optional scale-top gestures can tare with a double tap and start or stop the timer with a triple tap. Both are disabled by default and can be enabled independently under `Setup > Scale`.
+
+## Power and wake
+
+Weight changes during use now refresh the auto-off timer, so active weighing does not require a button press to keep the scale awake. A static load does not keep resetting the timer.
+
+Optional [Wake-on-Weight](docs/wake-on-weight.md) is available under `Setup > Power` and defaults to off. It checks for added or removed weight between deep-sleep intervals. This mode consumes battery during standby and has no ongoing low-voltage cutoff; read its limitations before enabling it.
+
+Custom builds with `Energy Saving Beta` also expose OLED idle/redraw controls and a single `Light Sleep` toggle under `Power`. These remain optional, not part of the standard release build.
+
+
 # New Features in 3.0.0
 
 ## Wifi mode
 
 Decent Scale uses WiFi for web apps, WebSocket data streaming, and OTA updates.
 
-To enable WiFi mode, go to HDS setup menu and find "Wifi settings" entry. From there you can enable/disable WiFi as well as see current WiFi details. If you toggle WiFi on/off, a restart of the scale is required for the new settings to take effect.
+To enable WiFi mode in 3.1.14, open `Setup > Connections` and toggle `WiFi`. Older firmware groups these entries under `WiFi Settings`. A restart is required for changes to take effect; exiting setup applies the queued restart.
 
-**First-time setup:** if no WiFi credentials are stored, the scale opens its own access point — SSID `DecentScale`, password `12345678`, IP `192.168.1.1`. Connect to it and navigate to [hds.local](http://hds.local) to enter your home WiFi credentials. The same page can rename the scale (see **Scale name** below). The scale will restart and connect to your network.
+**First-time setup:** if no WiFi credentials are stored, the scale opens its own access point: SSID `DecentScale`, password `12345678`, IP `192.168.1.1`. Connect to it and open [192.168.1.1](http://192.168.1.1), or [hds.local](http://hds.local) if your device resolves that hostname, to enter your home WiFi credentials. The same page can rename the scale (see **Scale name** below). Published 3.1.14 saves the credentials and restarts; its dashboard retains the manual setup controls.
 
-**Reconnect:** once configured, the scale stays in STA mode and reconnects automatically after signal loss with exponential backoff (5 s → 10 → 20 → 40 → 60 s cap). It no longer falls back to the AP — a configured scale keeps retrying your home network.
+In 3.1.15, enter the network name and password manually while `DecentScale` is active. Network search is hidden in setup AP mode, including AP+STA, because scanning can disconnect the phone from the scale. Find networks remains available when the setup AP is off.
+
+**3.1.15 setup:** Connect opens a progress dialog. For a different network, stay on the original network while the scale tests the new connection without saving credentials, then returns to report the result. When starting from `DecentScale`, the setup AP stays active during the test and reports the result before the final switch. If your phone cannot reach the setup AP while mobile data is enabled, temporarily use airplane mode with WiFi enabled. A successful test offers the scale's tested IP address and starts the final switch. Click that link to show the network-change instructions, join the new network on your phone or computer, then select Continue. IP address is selected by default; hostname is an explicit alternative. The link also opens this address choice after a confirmed connection or same-network reconnect, without asking you to change networks again. If DHCP changes the address, enter the current IP shown on the scale. The destination checks the same scale and operation before confirming that credentials were saved. Navigation never starts automatically, and losing contact does not prove success. A failed switch restores the previous network or opens the setup AP. Retry closes the result dialog and returns to the password field without resubmitting. Choosing a scanned network preserves meaningful spaces in its name and password; manual entry trims edge whitespace.
+
+**Reconnect:** once configured, the scale stays in STA mode and reconnects automatically after signal loss with exponential backoff (5 s → 10 → 20 → 40 → 60 s cap). Ordinary signal loss does not open the AP. After a failed 3.1.15 setup test whose previous network cannot be restored, the recovery AP retries the saved network after ten minutes; a failed retry reopens the AP.
 
 **Discovery:** the scale advertises itself via mDNS (`hds.local` by default) and DNS-SD (`_decentscale._tcp`) so apps can discover it on the LAN without knowing the IP.
 
@@ -259,7 +284,7 @@ Simply run `pio run -t buildfs -t uploadfs` with the Esp32s3 connected to your c
 
 Trunk-based: `main` is the single long-lived branch and is always releasable. Do work on short-lived feature branches and merge into `main` once CI passes.
 
-Releases: tag a known-good commit on `main` with the version (`vX.Y.Z`), then run the "Release firmware" workflow with that tag. The workflow publishes the legacy ZIP plus machine-readable OTA assets:
+`Release firmware` prepares a signed draft from a version tag (`vX.Y.Z`); `Publish firmware` publishes the verified draft without rebuilding. See [release workflow details](docs/AI_RELEASE_NOTES.md#release-model) for inputs and checks. Releases include the legacy USB ZIP, dependency inventory, signed release evidence, and machine-readable OTA assets:
 
 - `firmware.bin`: raw OTA firmware image.
 - `littlefs.bin`: raw filesystem image. WiFi OTA releases always publish and require it so skipped versions and test builds with unknown filesystem state are brought back to the production filesystem.
@@ -270,7 +295,9 @@ Key 1 continues signing releases until firmware containing all three public keys
 
 The scale checks `https://github.com/decentespresso/openscale/releases/latest/download/manifest.json`, downloads `manifest.sig`, verifies the detached signature with the public key compiled into the firmware, then verifies `model`, optional `pcb`, `min_from`, chip, environment, flash size, partition schema, filesystem partition size/schema, HTTPS certificate chain, asset URL prefix, asset size, and SHA-256 before writing firmware. Manifest `version` and `min_from` must be stable numeric `major.minor.patch` values. The workflow builds a signed catalog from `v3.1.13` upward by merging the previous latest stable signed manifest with the new release, deduping compatible entries, and sorting newest to oldest. The WiFi updater lists compatible stable releases except the firmware version already running.
 
-When `littlefs.required` is true, OTA is staged. The current firmware stores both the target and rollback LittleFS metadata in NVS, writes `firmware.bin` to the inactive app OTA slot, and reboots. The new firmware attempts the target LittleFS twice before it is marked valid. If both attempts fail before a filesystem write starts, the application rolls back. If a filesystem write started, the old application restores its matching LittleFS once from the signed catalog. A failed restore stops at `UPDATE ERROR` and directs the user to the HDS updater. Successful target or rollback recovery clears the pending state and reboots. Set `HDS_RELEASE_MIN_FROM` as a repository variable to raise the oldest version that can self-update.
+WiFi OTA always stages the required LittleFS update. With signed rollback metadata available, the current firmware saves both target and rollback metadata, writes the inactive app slot, and reboots. The new firmware verifies or attempts the target filesystem at most twice before accepting normal operation. On failure it rolls back, restoring the previous filesystem once if writing had begun. Firmware with the 3.1.14 recovery support pauses a failed restore, disables unverified web assets, and keeps the embedded WiFi setup page and update menus available for repair. Older rollback firmware can instead stop at `UPDATE ERROR` and require USB recovery. Successful recovery clears the pending state and reboots.
+
+When the installed build has no published recovery assets, firmware that already supports forward recovery may install a signed target declaring `forward_recovery: 1`. It verifies the newly running firmware before attempting filesystem writes, then either completes the update or retains filesystem-free repair access. This cannot add recovery support to already-installed older firmware. See [WiFi OTA updates](docs/wifi-ota.md) for supported source paths. `HDS_RELEASE_MIN_FROM` may raise the minimum source version, but release verification rejects a value that excludes the previous stable release.
 
 The single LittleFS partition has no independent rollback slot, so recovery requires the signed rollback asset to remain available. The firmware records attempt and write state before changing the partition so power loss resumes the same bounded recovery transaction instead of entering normal weighing with a partial installation.
 

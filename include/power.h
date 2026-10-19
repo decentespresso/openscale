@@ -33,6 +33,8 @@ void stopWifi();
 #endif
 #if HDS_FEATURE_WEBSERVER
 void stopWebServer();
+#elif HDS_FEATURE_WIFI
+static void stopWifiConfigServer();
 #endif
 #if HDS_ENABLE_GRINDER
 void beforeDeepSleepFlush();
@@ -57,18 +59,10 @@ const float referenceVoltage = 3.3;
 const float lowBatteryThreshold = 3.2;
 
 int batteryPercent() {
-  if (b_hasFuelGauge) {
-    return fuelGaugeSocPercent();
-  }
-  int p = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000,
-              showFullBatteryAboveVoltage * 1000, 0, 100);
-  if (p < 0) {
-    p = 0;
-  }
-  if (p > 100) {
-    p = 100;
-  }
-  return p;
+  portENTER_CRITICAL(&batteryStateMux);
+  const int percent = batteryPercentCached;
+  portEXIT_CRITICAL(&batteryStateMux);
+  return percent;
 }
 
 void (*resetFunc)(void) = 0;
@@ -78,6 +72,8 @@ void reset() {
   bleShutdown();
 #if HDS_FEATURE_WEBSERVER
   stopWebServer();
+#elif HDS_FEATURE_WIFI
+  stopWifiConfigServer();
 #endif
 #if HDS_FEATURE_WIFI
   stopWifi();
@@ -109,6 +105,7 @@ void ADS_init() {
 
 int i_wakeupPin;
 void configureWakePinForDeepSleep(gpio_num_t pin) {
+  rtc_gpio_hold_dis(pin);
   rtc_gpio_init(pin);
   rtc_gpio_set_direction(pin, RTC_GPIO_MODE_INPUT_ONLY);
   rtc_gpio_pullup_en(pin);
@@ -126,6 +123,8 @@ void releaseWakePinsFromRtcMode() {
   rtc_gpio_deinit((gpio_num_t)BUTTON_SQUARE);
   rtc_gpio_deinit((gpio_num_t)BATTERY_CHARGING);
 }
+
+#include "wake_on_weight.h"
 
 void print_wakeup_reason() {
   esp_sleep_wakeup_cause_t wakeup_reason;
@@ -188,12 +187,19 @@ void print_wakeup_reason() {
 
 
 void esp32_sleep() {
+#if HDS_ENABLE_ENERGY_MENU
+  applyEnergyLightSleepSetting(false);
+  setEnergyIdleWakeEnabled(false);
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+#endif
 #if HDS_ENABLE_GRINDER
   beforeDeepSleepFlush();
 #endif
   bleShutdown();
 #if HDS_FEATURE_WEBSERVER
   stopWebServer();
+#elif HDS_FEATURE_WIFI
+  stopWifiConfigServer();
 #endif
 #if HDS_FEATURE_WIFI
   stopWifi();
@@ -205,6 +211,8 @@ void esp32_sleep() {
     mpu.enableSleep(true);
   }
 #endif
+  wowCaptureBaselineForSleep();
+  wowArmSleepTimer();
   scale.powerDown();
 #ifdef ESP32C3
   esp_deep_sleep_enable_gpio_wakeup(1 << GPIO_NUM_BUTTON_POWER, ESP_GPIO_WAKEUP_GPIO_LOW);
@@ -244,11 +252,18 @@ void esp32_sleep() {
   gpio_hold_en((gpio_num_t)I2C_SCL);
   gpio_hold_en((gpio_num_t)I2C_SDA);
 
-  digitalWrite(ACC_PWR_CTRL, LOW);
-  gpio_hold_en((gpio_num_t)ACC_PWR_CTRL);
+  if (!b_hasFuelGauge) {
+    digitalWrite(ACC_PWR_CTRL, LOW);
+    gpio_hold_en((gpio_num_t)ACC_PWR_CTRL);
+  }
   digitalWrite(PWR_CTRL, LOW);
   gpio_hold_en((gpio_num_t)PWR_CTRL);
   gpio_deep_sleep_hold_en();
+  Serial.printf("[sleep] wow=%d circle=%d square=%d charge=%d\n", i_wow_interval,
+                rtc_gpio_get_level((gpio_num_t)BUTTON_CIRCLE),
+                rtc_gpio_get_level((gpio_num_t)BUTTON_SQUARE),
+                rtc_gpio_get_level((gpio_num_t)BATTERY_CHARGING));
+  Serial.flush();
   esp_deep_sleep_start();
 }
 #endif  //ESP32
@@ -335,7 +350,9 @@ void shut_down_now_accidentTouch() {
 }
 
 void updateBattery(int batteryPin){
-  if (!b_ads1115InitFail) {
+  if (b_hasFuelGauge) {
+    f_batteryVoltage = fuelGaugeVoltageV();
+  } else if (!b_ads1115InitFail) {
     int16_t adc0;
     float volts0;
     adc0 = ads.readADC_SingleEnded(0);
@@ -349,7 +366,16 @@ void updateBattery(int batteryPin){
     float correctedVoltage = batteryVoltage * f_batteryCalibrationFactor;
     f_batteryVoltage = correctedVoltage;
   }
+  const int percent = b_hasFuelGauge
+      ? constrain(static_cast<int>(fuelGaugeSocPercent()), 0, 100)
+      : constrain(static_cast<int>(map(f_batteryVoltage * 1000,
+          showEmptyBatteryBelowVoltage * 1000,
+          showFullBatteryAboveVoltage * 1000, 0, 100)), 0, 100);
+  portENTER_CRITICAL(&batteryStateMux);
+  batteryPercentCached = percent;
+  portEXIT_CRITICAL(&batteryStateMux);
   t_batteryRefresh = millis();
+  powerCadence.batterySampleSequence++;
 }
 
 float getUsbVoltage(int usbPin) {
@@ -359,44 +385,54 @@ float getUsbVoltage(int usbPin) {
   return usbVoltage;
 }
 
-int i_lowBatteryCount = 0;
-int i_lowBatteryCountTotal = 0;
+bool processNewBatterySample() {
+  if (!powerCadence.batterySamples.shouldEvaluate(powerCadence.batterySampleSequence)) {
+    return false;
+  }
+  if (b_is_charging || f_batteryVoltage > lowBatteryThreshold) {
+    i_lowBatteryCount = 0;
+  } else if (f_batteryVoltage < lowBatteryThreshold) {
+    i_lowBatteryCount++;
+    i_lowBatteryCountTotal++;
+    if (!EnergyRuntimePolicy::lowBatteryConfirmed(i_lowBatteryCount) &&
+        i_batteryRefreshTareInterval > 1000) {
+      t_batteryRefresh = millis() - (i_batteryRefreshTareInterval - 1000);
+    }
+  }
+  const bool confirmed = EnergyRuntimePolicy::lowBatteryConfirmed(i_lowBatteryCount);
+  if (confirmed) {
+    shut_down_low_battery(f_batteryVoltage);
+  }
+  return confirmed;
+}
+
+void resetAutoOffTimer(unsigned long now) {
+  t_power_off = now;
+  autoOffWeightActivity.reset(now, f_displayedValue);
+}
+
+void evaluateAutoOff(double seconds, bool showCountdown) {
+  const unsigned long now = millis();
+  if (autoOffWeightActivity.update(now, f_displayedValue)) {
+    t_power_off = now;
+  }
+  if (!powerCadence.autoOff.shouldRun(now, 1000)) return;
+  const double timeLeft = seconds - (now - t_power_off) / 1000;
+  if (showCountdown) {
+    Serial.print(timeLeft);
+    Serial.println(" seconds to power off");
+  }
+  if (timeLeft <= 0 && b_autoSleep) {
+    shut_down_now();
+  }
+}
+
 void power_off(int min) {
-  if (!b_is_charging) {
-    if (!b_softSleep) {
-      if (f_batteryVoltage < lowBatteryThreshold) {
-if (!b_hasFuelGauge) {
-          updateBattery(BATTERY_PIN);
-        } else {
-          f_batteryVoltage = fuelGaugeVoltageV();
-        }
-      }
-      if (f_batteryVoltage > lowBatteryThreshold) {
-        i_lowBatteryCount = 0;
-      }
-
-      if (f_batteryVoltage < lowBatteryThreshold) {
-        i_lowBatteryCount++;
-        i_lowBatteryCountTotal++;
-      }
-
-      if (i_lowBatteryCount > 50) {
-        shut_down_low_battery(f_batteryVoltage);
-        return;
-      }
-    }
-
-    if (min == -1) {
-      t_power_off = millis();
-    }
-    if (min > 0) {
-      double d_timeleft = min * 60 - (millis() - t_power_off) / 1000;
-      Serial.print(d_timeleft);
-      Serial.println(" seconds to power off");
-      if (d_timeleft <= 0 && b_autoSleep == true) {
-        shut_down_now();
-      }
-    }
+  if (processNewBatterySample()) return;
+  if (min == -1) {
+    resetAutoOffTimer(millis());
+  } else if (min > 0 && !b_is_charging) {
+    evaluateAutoOff(min * 60.0, true);
   }
 }
 
@@ -421,39 +457,11 @@ void power_off_gyro(int sec) {
 #endif
 
 void power_off(double sec) {
-  if (!b_is_charging) {
-    if (!b_softSleep) {
-      if (f_batteryVoltage < lowBatteryThreshold) {
-if (!b_hasFuelGauge) {
-          updateBattery(BATTERY_PIN);
-        } else {
-          f_batteryVoltage = fuelGaugeVoltageV();
-        }
-      }
-      if (f_batteryVoltage > lowBatteryThreshold) {
-        i_lowBatteryCount = 0;
-      }
-
-      if (f_batteryVoltage < lowBatteryThreshold) {
-        i_lowBatteryCount++;
-        i_lowBatteryCountTotal++;
-      }
-
-      if (i_lowBatteryCount > 50) {
-        shut_down_low_battery(f_batteryVoltage);
-        return;
-      }
-    }
-
-    if (sec == -1) {
-      t_power_off = millis();
-    }
-    if (sec > 0) {
-      double d_timeleft = sec - (millis() - t_power_off) / 1000;
-      if (d_timeleft <= 0 && b_autoSleep == true) {
-        shut_down_now();
-      }
-    }
+  if (processNewBatterySample()) return;
+  if (sec == -1) {
+    resetAutoOffTimer(millis());
+  } else if (sec > 0 && !b_is_charging) {
+    evaluateAutoOff(sec, false);
   }
 }
 
@@ -477,8 +485,8 @@ float get_bat_voltage() {
 #endif  //CHECKBATTERY
 
 void checkBattery() {
-  float perc = batteryPercent();
-#if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1) || defined(V9_0_5)
+  const int perc = batteryPercent();
+#if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
   if (digitalRead(USB_DET) == LOW) {
 #else
   if (digitalRead(BATTERY_CHARGING) == LOW) {

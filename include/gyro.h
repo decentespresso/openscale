@@ -95,10 +95,10 @@ void ACC_init() {
   delay(100);
 }
 
-double gyro_z() {
-  if (b_gyroEnabled) {
-    sensors_event_t a, g, temp;
-    mpu.getEvent(&a, &g, &temp);
+#if HDS_ENABLE_ENERGY_MENU
+double readGyroZPhysical() {
+  sensors_event_t a, g, temp;
+  mpu.getEvent(&a, &g, &temp);
     // if (millis() > t_gyro_refresh + i_gyro_print_interval) {
     //   //达到设定的gyro刷新频率后进行刷新
     //   t_gyro_refresh = millis();
@@ -109,10 +109,26 @@ double gyro_z() {
     //   Serial.print("\t\t\tESP32 Hall: \t");
     //   Serial.println(hallRead());
     // }
-    return (double)a.acceleration.z;
-  } else
-    return 0.0;
+  return (double)a.acceleration.z;
 }
+
+double gyro_z(bool fresh = false) {
+  (void)fresh;
+  if (!b_gyroEnabled) {
+    return 0.0;
+  }
+  return readGyroZPhysical();
+}
+#else
+double gyro_z() {
+  if (b_gyroEnabled) {
+    sensors_event_t a, g, temp;
+    mpu.getEvent(&a, &g, &temp);
+    return (double)a.acceleration.z;
+  }
+  return 0.0;
+}
+#endif
 
 // float gyro_temp() {
 //   sensors_event_t temp;
@@ -161,14 +177,28 @@ void ACC_init() {
   delay(100);
 }
 
+#if HDS_ENABLE_ENERGY_MENU
+double readGyroZPhysical() {
+  acc.getSensorData();
+  return (double)(acc.data.accelZ * 10);
+}
+
+double gyro_z(bool fresh = false) {
+  (void)fresh;
+  if (!b_gyroEnabled) {
+    return 0.0;
+  }
+  return readGyroZPhysical();
+}
+#else
 double gyro_z() {
   if (b_gyroEnabled) {
     acc.getSensorData();
-    float result = acc.data.accelZ * 10;
-    return (double)result;
-  } else
-    return 0.0;
+    return (double)(acc.data.accelZ * 10);
+  }
+  return 0.0;
 }
+#endif
 
 #endif
 

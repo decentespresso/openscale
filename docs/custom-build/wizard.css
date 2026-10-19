@@ -1,0 +1,29 @@
+.wizard-step-number {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: .75rem;
+  font-weight: 600;
+}
+.wizard-active { outline: 2px solid var(--green); outline-offset: 3px; }
+.wizard-guide {
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--green-line);
+  background: var(--green-soft);
+  color: var(--ink);
+  scroll-margin-top: 90px;
+}
+.wizard-guide[hidden] { display: none; }
+.wizard-guide:not([hidden]) + .fleet-head { margin-top: 24px; }
+.wizard-progress { margin: 0; font-weight: 700; }
+.wizard-explanation { margin: 10px 0 16px; font-size: .875rem; line-height: 1.6; }
+.wizard-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+#start-wizard { flex-shrink: 0; border: 0; padding: 0; cursor: pointer; }
+@media (min-width: 641px) {
+  #start-wizard { background: transparent; }
+}
+@media (max-width: 600px) {
+  .topbar-inner { height: auto; min-height: 72px; flex-wrap: wrap; gap: 10px; padding-block: 10px; }
+  .topbar-actions { flex-wrap: wrap; }
+  .wizard-guide { padding: 16px; scroll-margin-top: 150px; }
+}

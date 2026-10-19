@@ -10,6 +10,7 @@ HDS_SOURCE = ROOT / "src" / "hds.ino"
 WEBSOCKET_HEADER = ROOT / "include" / "websocket.h"
 PARAMETER_HEADER = ROOT / "include" / "parameter.h"
 BLE_HEADER = ROOT / "include" / "ble.h"
+MENU_HEADER = ROOT / "include" / "menu.h"
 
 WSP_DISPLAY_ON = 1 << 0
 WSP_DISPLAY_OFF = 1 << 1
@@ -154,8 +155,19 @@ def main():
     assert_ordered(
         WIFI_OTA_HEADER,
         [
+            "void handleElegantOtaStart(AsyncWebServerRequest *request)",
+            "std::unique_lock<std::mutex> otaDispatchLock(otaDispatchMutex,",
+            "std::try_to_lock",
+            "otaDispatchLock.owns_lock()",
+            "b_pullOtaRunning || b_ota",
+            "onOTAStart();",
+            "Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)",
+        ],
+    )
+    assert_ordered(
+        WIFI_OTA_HEADER,
+        [
             "void onOTAStart()",
-            "std::lock_guard<std::mutex> otaDispatchLock(otaDispatchMutex);",
             "portENTER_CRITICAL(&wsPendingMux);",
             "b_ota = true;",
             "portEXIT_CRITICAL(&wsPendingMux);",
@@ -195,6 +207,40 @@ def main():
     assert_contains(PARAMETER_HEADER, "inline void remoteQueueOtaResetAt(unsigned long resetAt)")
     assert_contains(PARAMETER_HEADER, "std::mutex otaDispatchMutex;")
     assert_contains(BLE_HEADER, "remoteQueuePending(WSP_RESET);")
+    assert_contains(PARAMETER_HEADER, "volatile bool b_menuRestartRequired = false;")
+    assert_contains(
+        PARAMETER_HEADER,
+        "inline void markMenuRestartRequired() {\n"
+        "  portENTER_CRITICAL(&wsPendingMux);\n"
+        "  b_menuRestartRequired = true;\n"
+        "  portEXIT_CRITICAL(&wsPendingMux);\n"
+        "}",
+    )
+    assert_contains(
+        PARAMETER_HEADER,
+        "inline void leaveMenu() {\n"
+        "  b_menu = false;\n"
+        "  portENTER_CRITICAL(&wsPendingMux);\n"
+        "  const bool restartRequired = b_menuRestartRequired;\n"
+        "  b_menuRestartRequired = false;\n"
+        "  portEXIT_CRITICAL(&wsPendingMux);\n"
+        "  if (restartRequired) {\n"
+        "    remoteQueueResetAt(millis());\n"
+        "  }\n"
+        "}",
+    )
+    assert_contains(MENU_HEADER, "void calibrate() {\n  calibrationReturnToMenu = b_menu;\n  b_menu = false;")
+    assert_contains(MENU_HEADER, "pullOtaUpdate(target);\n  }\n}")
+    assert_contains(MENU_HEADER, "if (pullOtaTargetIsAssignedCustomBuild(target)) {\n    customBuildStart(false, false);")
+    assert_contains(MENU_HEADER, "b_debug = true;\n  leaveMenu();")
+    menu_contents = MENU_HEADER.read_text(encoding="utf-8")
+    if menu_contents.count("markMenuRestartRequired();") != 2:
+        raise AssertionError("menu.h expected restart routing for WiFi toggle and reset")
+    for path in [*ROOT.glob("include/*.h"), *ROOT.glob("src/*.ino"), *ROOT.glob("src/*.cpp")]:
+        if path == MENU_HEADER:
+            assert path.read_text(encoding="utf-8").count("b_menu = false;") == 1
+        elif path != PARAMETER_HEADER:
+            assert_not_contains(path, "b_menu = false;")
 
     websocket = WEBSOCKET_HEADER.read_text(encoding="utf-8")
     dispatcher_start = websocket.index("void processWsPendingCmds() {")
@@ -215,25 +261,26 @@ def main():
     for action in ["reset();", "u8g2.", "wakeScaleFromSoftSleep", "stopWatch.", "wifiUpdate();", "b_powerOff = true;"]:
         if action in pre_race:
             raise AssertionError(f"pending action dispatches before OTA recheck: {action}")
-    if "uint32_t deferredMask = mask & ~WSP_OTA_RESET;" not in dispatcher:
+    if "mask & ~(WSP_OTA_RESET | WSP_WIFI_UPDATE)" not in dispatcher:
         raise AssertionError("OTA start race does not restore extracted remote actions")
+    restore_start = websocket.index("inline void remoteRestoreDeferredPendingLocked(")
+    restore = websocket[restore_start:websocket.index("inline void wsQueuePending(", restore_start)]
     for group in [
         "WSP_DISPLAY_ON | WSP_DISPLAY_OFF",
         "WSP_LOWPWR_ON | WSP_LOWPWR_OFF",
         "WSP_SLEEP_ON | WSP_SLEEP_OFF",
         "WSP_TIMER_START | WSP_TIMER_STOP | WSP_TIMER_ZERO",
     ]:
-        if group not in dispatcher:
+        if group not in restore:
             raise AssertionError(f"restoration does not preserve newer replacement group: {group}")
-    assert_ordered(
-        WEBSOCKET_HEADER,
-        [
-            "wifiUpdate();",
-            "if (b_ota) {",
-            "remoteQueuePending(mask & WSP_POWER_OFF);",
-            "if (mask & WSP_POWER_OFF)",
-        ],
-    )
+    wifi_dispatch = dispatcher.index("remoteRestoreDeferredPendingLocked(mask & ~WSP_WIFI_UPDATE")
+    if wifi_dispatch > dispatcher.index("if (mask & WSP_DISPLAY_ON)"):
+        raise AssertionError("WiFi OTA dispatch does not defer hardware actions")
+    wifi_tail = dispatcher[wifi_dispatch:dispatcher.index("#if HDS_ENABLE_ENERGY_MENU", wifi_dispatch)]
+    if wifi_tail.index("wifiUpdate(otaTarget);") > wifi_tail.index("remoteFinishWifiUpdateDispatch();"):
+        raise AssertionError("WiFi OTA dispatch is released before the update starts")
+    if wifi_tail.index("remoteFinishWifiUpdateDispatch();") > wifi_tail.index("return;"):
+        raise AssertionError("WiFi OTA dispatch continues into deferred hardware actions")
 
     print("OTA reboot routing contract tests passed")
 

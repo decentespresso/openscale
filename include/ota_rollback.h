@@ -6,6 +6,7 @@
 #include <Preferences.h>
 #include <esp_ota_ops.h>
 #include <esp_system.h>
+#include "filesystem_recovery.h"
 
 static bool hdsOtaPendingVerify = false;
 static const uint32_t HDS_OTA_MAX_VERIFY_ATTEMPTS = 1;
@@ -60,10 +61,6 @@ static void hdsOtaRollback(const char *reason) {
   Serial.print("[ota-verify] rollback: ");
   Serial.println(reason);
   hdsOtaClearAttempts();
-  // Every rollback caller here runs on the setup()/main task, before loop()
-  // starts -- never from AsyncTCP or the Pull OTA task -- so it's safe to
-  // withdraw mDNS synchronously rather than queue it. A no-op if WiFi/mDNS
-  // was never brought up (e.g. the early boot-attempt checks).
   stopWifi();
   Serial.flush();
   esp_ota_mark_app_invalid_rollback_and_reboot();
@@ -76,6 +73,7 @@ static void hdsOtaRollback(const char *reason) {
 }
 
 void hdsOtaRollbackBegin(esp_reset_reason_t resetReason) {
+  filesystemRecoveryLoad();
   hdsOtaPendingVerify = hdsOtaIsPendingVerify();
   if (!hdsOtaPendingVerify) {
     hdsOtaClearAttempts();
@@ -90,6 +88,19 @@ void hdsOtaRollbackBegin(esp_reset_reason_t resetReason) {
   if (hdsOtaResetLooksCrashy(resetReason)) {
     hdsOtaRollback("reset reason");
   }
+}
+
+bool hdsOtaAcceptFilesystemRecovery() {
+  if (!filesystemRecoveryActive.load()) return false;
+#ifdef CONFIG_APP_ROLLBACK_ENABLE
+  if (hdsOtaPendingVerify && esp_ota_mark_app_valid_cancel_rollback() != ESP_OK) {
+    return false;
+  }
+#endif
+  hdsOtaClearAttempts();
+  hdsOtaPendingVerify = false;
+  Serial.println("[ota-verify] firmware usable; LittleFS recovery still required");
+  return true;
 }
 
 static bool hdsOtaLocalChecksPass() {

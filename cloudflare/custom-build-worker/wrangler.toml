@@ -5,10 +5,16 @@ workers_dev = true
 
 [vars]
 ALLOWED_ORIGIN = "https://decentespresso.github.io"
-ALLOWED_FIRMWARE_REFS = "main"
+ALLOWED_FIRMWARE_REFS = "main,v3.1.14,v3.1.14-preview.3,v3.1.14-preview.4,v3.1.15"
+BUILDER_REF = "main"
 GITHUB_REPOSITORY = "decentespresso/openscale"
 GITHUB_WORKFLOW = "custom-build.yml"
 PUBLIC_BASE_URL = "https://openscale-custom-builds.odevstudio.workers.dev"
+FREE_TIER_GUARDS = "true"
+RETENTION_DRY_RUN = "true"
+
+[triggers]
+crons = ["17 * * * *"]
 
 [[r2_buckets]]
 binding = "BUILDS"

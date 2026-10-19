@@ -108,10 +108,10 @@ def main():
         if snippet not in plugin_notes:
             raise AssertionError(f"AI_PLUGIN_NOTES.md is missing plugin contract: {snippet}")
     for snippet in (
-        "Prompting an AI Contributor",
+        "AI Contributor Prompt",
         "docs/AI_PLUGIN_NOTES.md",
         "--verify-plugin-environment esp32s3-my-plugin",
-        "not converted into a patch package",
+        "Firmware patches are applied only inside a temporary build checkout.",
     ):
         if snippet not in plugin_guide:
             raise AssertionError(f"plugin-development.md is missing contributor guidance: {snippet}")
@@ -140,7 +140,7 @@ def main():
         "src/",
         "docs/",
         "tools/",
-        "web_apps/",
+        "plugins/",
         ".github/",
         "Hardware/",
         "Scale Case/",
@@ -149,6 +149,7 @@ def main():
         reference
         for reference in references
         if "*" not in reference
+        and "<" not in reference
         and (reference.startswith(path_prefixes) or reference in {"platformio.ini", "README.md"})
     }
     missing = sorted(path for path in paths if not (ROOT / path).exists())

@@ -1,80 +1,368 @@
 {
-  "schema": 1,
+  "schema": 2,
+  "custom_ota_signing_key_generation": 1,
+  "catalog_revision": "84bffa6904707413b5cf28fb1fad5a153ffe0fe07a80176ad15c8f851b611de2",
   "firmware_refs": [
-    "main"
+    "v3.1.14",
+    "v3.1.14-preview.3",
+    "v3.1.14-preview.4",
+    "main",
+    "v3.1.15"
   ],
   "platformio_environment": "esp32s3-custom",
-  "partition_schema": {
-    "path": "partitions/default_8MB.csv",
-    "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"
+  "firmware": {
+    "v3.1.14": {
+      "custom_version": "3.1.14-custom",
+      "partition_schema": {
+        "path": "partitions/default_8MB.csv",
+        "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"
+      }
+    },
+    "v3.1.14-preview.3": {
+      "custom_version": "3.1.14-preview.3-custom",
+      "partition_schema": {
+        "path": "partitions/default_8MB.csv",
+        "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"
+      }
+    },
+    "v3.1.14-preview.4": {
+      "custom_version": "3.1.14-preview.4-custom",
+      "partition_schema": {
+        "path": "partitions/default_8MB.csv",
+        "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"
+      }
+    },
+    "main": {
+      "custom_version": "3.1.15-main-custom",
+      "partition_schema": {
+        "path": "partitions/default_8MB.csv",
+        "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"
+      }
+    },
+    "v3.1.15": {
+      "custom_version": "3.1.15-custom",
+      "partition_schema": {
+        "path": "partitions/default_8MB.csv",
+        "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"
+      }
+    }
   },
   "features": {
-    "wifi": [],
-    "mdns": [
-      "wifi"
-    ],
-    "webserver": [
-      "wifi"
-    ],
-    "websocket": [
-      "wifi",
-      "webserver"
-    ],
-    "littlefs": [],
-    "elegant-ota": [
-      "wifi",
-      "webserver"
-    ],
-    "pull-ota": [
-      "wifi"
-    ],
-    "grinder": [
-      "wifi",
-      "mdns"
-    ]
+    "wifi": {
+      "requires": [
+        "webserver"
+      ],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ]
+    },
+    "mdns": {
+      "requires": [
+        "wifi"
+      ],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ]
+    },
+    "webserver": {
+      "requires": [
+        "wifi"
+      ],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ]
+    },
+    "websocket": {
+      "requires": [
+        "wifi",
+        "webserver"
+      ],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ]
+    },
+    "littlefs": {
+      "requires": [],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ]
+    },
+    "elegant-ota": {
+      "requires": [
+        "wifi",
+        "webserver"
+      ],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ]
+    },
+    "pull-ota": {
+      "requires": [
+        "wifi"
+      ],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ]
+    },
+    "grinder": {
+      "requires": [
+        "wifi",
+        "mdns"
+      ],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ]
+    },
+    "energy-menu": {
+      "requires": [],
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ]
+    }
   },
   "plugins": {
+    "default-web-apps": {
+      "version": "1.0.0",
+      "firmware_refs": [
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
+      ],
+      "requires": [
+        "littlefs",
+        "websocket"
+      ],
+      "depends_on": [],
+      "conflicts": [],
+      "conflicts_features": [],
+      "recommends": {
+        "features": [],
+        "plugins": []
+      },
+      "patches": {},
+      "assets": [
+        {
+          "target": "Quality_Control_Assistant/README.md",
+          "sha256": "bc418898ab27593f80eb130e8ca122d955bba096765a19c0a13e553130eb04ff"
+        },
+        {
+          "target": "Quality_Control_Assistant/quality_control.html",
+          "sha256": "654bf35eb2deee85222ba08fe05a6d42eed7ed1151648d55e98b5453ac330c20"
+        },
+        {
+          "target": "Quality_Control_Assistant/quality_control.js",
+          "sha256": "6d42988434521928610307c2ae29496bb3305c26ff27cee0752785c780aebe18"
+        },
+        {
+          "target": "README.md",
+          "sha256": "18e8f0e2e09290889dd772ad3b654fe35c35bb7ef5d745d4cae48d6589344581"
+        },
+        {
+          "target": "Weigh_Save/README.md",
+          "sha256": "3726af16064b3ee68965d8fab16e7e7fb04265cf4aa3da562bbf0df89d0470d0"
+        },
+        {
+          "target": "Weigh_Save/main.js",
+          "sha256": "0d8ef9e028a5d62d5d2fb3099df76365ada9b3dab7f30da242c608ad4090e528"
+        },
+        {
+          "target": "Weigh_Save/modules/export.js",
+          "sha256": "49a6b5b815bad0ab47d953995fceb8fca4ee4041b935d69b8ba743a554987da7"
+        },
+        {
+          "target": "Weigh_Save/modules/scale.js",
+          "sha256": "85ce8ccb12bc3af553a66c86f4f64d12fb84d2cd0ff0a9938b8a45c35bf19d10"
+        },
+        {
+          "target": "Weigh_Save/modules/timer.js",
+          "sha256": "79cee1260022a7524d28e894cf5081a11bb98dc1e96c5fe431a3684a14b6efcd"
+        },
+        {
+          "target": "Weigh_Save/modules/ui-controller.js",
+          "sha256": "f0bbe3b5bcf1146cd1090132e0954a7a29995a6b40a531ff892bf03315284fba"
+        },
+        {
+          "target": "Weigh_Save/weigh_save.html",
+          "sha256": "dd95ab08d6adc03a19453710640e6fb7c4b14d63fc009a70ddbc876cf16ea0f2"
+        },
+        {
+          "target": "dosing_assistant/README.md",
+          "sha256": "e3509438fa2a2c0ba8de9de38c18c44944b62528659d4179f828fc1b50f23e6c"
+        },
+        {
+          "target": "dosing_assistant/dosing_assistant.html",
+          "sha256": "166da1ae80670b9cc7b18c2c39fe19bf2c31a3b8eeffcc8d8e7691dca0056d28"
+        },
+        {
+          "target": "dosing_assistant/dosing_assistant.md",
+          "sha256": "c5004b59495095924a7e35fd48f248ea430c20ff3dd7e662c9d99a52a3faafe2"
+        },
+        {
+          "target": "dosing_assistant/main.js",
+          "sha256": "c4063b6f7c464144bb65a788b1cc18476aea489fb4fdc9c38e1f97dfc9a1ed8b"
+        },
+        {
+          "target": "dosing_assistant/modules/constants.js",
+          "sha256": "eda468128df41758af8364ab105eea22f9c9ce6e74d9026e4ae3243b98af1357"
+        },
+        {
+          "target": "dosing_assistant/modules/export.js",
+          "sha256": "e501cace8354cf40d1841eb9cf84f48db379b77bf42ed59ac8d546308a8de2ab"
+        },
+        {
+          "target": "dosing_assistant/modules/scale.js",
+          "sha256": "ce06167026588ab1fd9dde70dc3a576576f125cd8e66ecac6242a6221d9f5acf"
+        },
+        {
+          "target": "dosing_assistant/modules/state-machine.js",
+          "sha256": "212db756f7a1f34360e0b0a6f189a0aeafc2a6257bb7a801c69f85efe44bf431"
+        },
+        {
+          "target": "dosing_assistant/modules/ui-controller.js",
+          "sha256": "1364a74d5dcf1ca59204415b4c5a3ada3c03c94a3b1dafd9ab7d5e08a380c9b8"
+        },
+        {
+          "target": "index.html",
+          "sha256": "564f79487de67be2e14bc4874a47efdd5d3b02e46076804e207170c9aa2c832a"
+        },
+        {
+          "target": "shared/app.css",
+          "sha256": "cf8c8c83cc20bdc33f7ca203cebe5b0708c2ee63134722a00a23cd8cdd01c897"
+        },
+        {
+          "target": "shared/measurement-history.js",
+          "sha256": "328e04f0f34d1776f25757cc9afa86cf27a123018771af1d241d6f51ffe7d8ba"
+        },
+        {
+          "target": "shared/modules/download-file.js",
+          "sha256": "2fdf7bbaf8279fa506d531bee04efa12819702fab33ef5ee6d10337ab2463d05"
+        },
+        {
+          "target": "shared/modules/presets.js",
+          "sha256": "c9f248e7bafaef3f826b05b13a0919c7997463371d96a1fc063802f739151199"
+        },
+        {
+          "target": "shared/reconnecting-websocket.js",
+          "sha256": "99ff83e53ac31edc4686d6f0fe6013d917bc4600eebbc01699e3d4ddcd46d3e9"
+        },
+        {
+          "target": "shared/theme.css",
+          "sha256": "4b1ef48be6ab000dc1b71667e39a9b05dc4ff59559c4b86f3ea880612d7d9a85"
+        },
+        {
+          "target": "shared/theme.js",
+          "sha256": "c45fdfdd150b5cabc50e13257fee963fd8275fe4f1965a4084c7d2e306116705"
+        },
+        {
+          "target": "shared/wifi-legacy.css",
+          "sha256": "0d7ca978cf67f2c5bf66e651fc8069644a695761c1cd028f150d3f700a381844"
+        },
+        {
+          "target": "shared/wifi-legacy.js",
+          "sha256": "f4eb0d285a0bdae02461250d3812a3f8dc4106634a6b7e4b6f7a09c01c91b341"
+        }
+      ]
+    },
     "grind-by-weight": {
       "version": "1.0.0",
       "firmware_refs": [
-        "main"
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
       ],
       "requires": [
         "grinder"
       ],
-      "conflicts": [],
+      "depends_on": [],
+      "conflicts": [
+        "pressensor"
+      ],
+      "conflicts_features": [],
+      "recommends": {
+        "features": [
+          "pull-ota"
+        ],
+        "plugins": [
+          "default-web-apps"
+        ]
+      },
       "patches": {},
       "assets": []
-    },
-    "hello-web": {
-      "version": "1.0.0",
-      "firmware_refs": [
-        "main"
-      ],
-      "requires": [
-        "wifi",
-        "webserver",
-        "littlefs"
-      ],
-      "conflicts": [],
-      "patches": {},
-      "assets": [
-        {
-          "target": "plugins/hello/index.html",
-          "sha256": "0c56f012349a72135471b5fe3c09a44ddd19ce1b2d2c2d12e1ded6fe0606edc2"
-        }
-      ]
     },
     "pressensor": {
       "version": "1.0.0",
       "firmware_refs": [
-        "main"
+        "v3.1.14",
+        "v3.1.14-preview.3",
+        "v3.1.14-preview.4",
+        "main",
+        "v3.1.15"
       ],
       "requires": [],
-      "conflicts": [],
+      "depends_on": [],
+      "conflicts": [
+        "grind-by-weight"
+      ],
+      "conflicts_features": [],
+      "recommends": {
+        "features": [],
+        "plugins": []
+      },
       "patches": {
         "main": {
-          "sha256": "32c1e4f31e7ff3240d73617e1c3e7824885abf1eccee53d341536971242edce4"
+          "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"
+        },
+        "v3.1.14": {
+          "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"
+        },
+        "v3.1.14-preview.3": {
+          "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"
+        },
+        "v3.1.14-preview.4": {
+          "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"
+        },
+        "v3.1.15": {
+          "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"
         }
       },
       "assets": []

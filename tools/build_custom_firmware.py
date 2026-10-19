@@ -15,6 +15,7 @@ import urllib.request
 import zipfile
 
 import configure_custom_build as customBuild
+import generate_custom_ota_manifest as customOta
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,8 +25,18 @@ BUILD_FILES = (
     customBuild.FIRMWARE_ARCHIVE,
     "build-manifest.json",
     "dependencies.txt",
+    "firmware.bin",
+    "littlefs.bin",
+    "ota-manifest.json",
+    "ota-manifest.sig",
+)
+PROGRAM_BINARIES = tuple(
+    name for name in customBuild.PUBLIC_BINARIES if name != "littlefs.bin"
 )
 MAX_REMOTE_MANIFEST_BYTES = 1024 * 1024
+CUSTOM_OTA_PUBLIC_KEY_NAMES = tuple(
+    f"hds_custom_ota_manifest_public_key_{index}.pem" for index in range(1, 3)
+)
 
 
 def runCommand(command, cwd, capture=False, environment=None):
@@ -72,6 +83,16 @@ def verifySourceCommit(repositoryRoot, sourceCommit):
     return verifiedCommit(repositoryRoot, sourceCommit)
 
 
+def verifyBuilderCommit(repositoryRoot, expectedCommit=None):
+    actualCommit = verifiedCommit(repositoryRoot, "HEAD")
+    if expectedCommit:
+        if not SHA_PATTERN.fullmatch(expectedCommit):
+            raise ValueError("builder commit must be a full lowercase SHA-1")
+        if actualCommit != expectedCommit:
+            raise ValueError("builder checkout does not match the expected commit")
+    return actualCommit
+
+
 def pullRequestCommit():
     if os.environ.get("GITHUB_EVENT_NAME") != "pull_request":
         return None
@@ -110,9 +131,28 @@ def sourceDateEpoch(checkoutRoot):
     ).stdout.strip()
 
 
-def configureReproducibleBuild(checkoutRoot):
+def replaceRequired(value, source, replacement, name):
+    if source not in value:
+        raise ValueError(f"selected firmware has incompatible {name}")
+    return value.replace(source, replacement)
+
+
+def prepareBuildCheckout(
+    checkoutRoot,
+    builderRoot=None,
+    platformioEnvironment=customBuild.PLATFORMIO_ENVIRONMENT,
+):
+    builderRoot = (builderRoot or ROOT).resolve()
     workspace = checkoutRoot / ".pio.nosync"
     workspace.mkdir(parents=True, exist_ok=True)
+    builderTools = workspace / "builder-tools"
+    builderTools.mkdir()
+    shutil.copy2(builderRoot / "tools" / "configure_custom_build.py", builderTools)
+    shutil.copy2(builderRoot / "tools" / "plugin_presentation.py", builderTools)
+    shutil.copy2(builderRoot / "tools" / "write_custom_ota_public_key_header.py", builderTools)
+    shutil.copy2(builderRoot / "git_rev_macro.py", builderTools)
+    for name in CUSTOM_OTA_PUBLIC_KEY_NAMES:
+        shutil.copy2(builderRoot / "keys" / "ota" / name, builderTools)
     compilerScript = workspace / "reproducible_build.py"
     compilerScript.write_text(
         "from pathlib import Path\n"
@@ -141,13 +181,36 @@ def configureReproducibleBuild(checkoutRoot):
     config.optionxform = str
     if not config.read(configPath, encoding="utf-8"):
         raise ValueError("selected firmware has no platformio.ini")
-    section = "env:esp32s3-custom"
+    section = f"env:{platformioEnvironment}"
     scripts = config.get(section, "extra_scripts", fallback="")
+    scripts = replaceRequired(
+        scripts,
+        "pre:tools/configure_custom_build.py",
+        "pre:.pio.nosync/builder-tools/configure_custom_build.py",
+        "custom build configurator",
+    )
+    baseScripts = config.get("env:esp32s3", "extra_scripts", fallback="")
+    customKeySource = "pre:custom_ota_public_key_header.py"
+    customKeyTarget = "pre:.pio.nosync/builder-tools/write_custom_ota_public_key_header.py"
+    if customKeySource in baseScripts:
+        config.set("env:esp32s3", "extra_scripts", baseScripts.replace(customKeySource, customKeyTarget))
+    else:
+        scripts += "\n" + customKeyTarget
+    buildFlags = config.get("env:esp32s3", "build_flags", fallback="")
+    config.set(
+        "env:esp32s3",
+        "build_flags",
+        replaceRequired(
+            buildFlags,
+            "!python3 git_rev_macro.py",
+            "!python3 .pio.nosync/builder-tools/git_rev_macro.py",
+            "firmware version generator",
+        ),
+    )
     config.set(
         section,
         "extra_scripts",
-        scripts
-        + "\npre:.pio.nosync/reproducible_build.py"
+        scripts + "\npre:.pio.nosync/reproducible_build.py"
         + "\npost:.pio.nosync/reproducible_filesystem.py",
     )
     with configPath.open("w", encoding="utf-8") as configFile:
@@ -163,10 +226,15 @@ def createFirmwareArchive(buildDir):
             archive.writestr(info, (buildDir / name).read_bytes())
 
 
-def writeDependencyInventory(buildDir, checkoutRoot, environment):
+def copyBuildFiles(sourceDir, targetDir, names):
+    for name in names:
+        shutil.copy2(sourceDir / name, targetDir / name)
+
+
+def writeDependencyInventory(buildDir, checkoutRoot, environment, platformioEnvironment):
     version = runCommand(["pio", "--version"], checkoutRoot, capture=True, environment=environment).stdout
     packages = runCommand(
-        ["pio", "pkg", "list", "-e", "esp32s3-custom"],
+        ["pio", "pkg", "list", "-e", platformioEnvironment],
         checkoutRoot,
         capture=True,
         environment=environment,
@@ -210,6 +278,14 @@ def completeCacheEntry(entryDir, expectedHash, expectedInput):
     return (
         manifest.get("archive") == customBuild.fileMetadata(entryDir / customBuild.FIRMWARE_ARCHIVE)
         and manifest.get("dependencies") == customBuild.fileMetadata(entryDir / "dependencies.txt")
+        and manifest.get("custom_ota") == {
+            "manifest": customBuild.fileMetadata(entryDir / "ota-manifest.json"),
+            "signature": customBuild.fileMetadata(entryDir / "ota-manifest.sig"),
+        }
+        and all(
+            manifest["binaries"][name] == customBuild.fileMetadata(entryDir / name)
+            for name in ("firmware.bin", "littlefs.bin")
+        )
     )
 
 
@@ -259,14 +335,18 @@ def publishArtifacts(buildDir, outputDir):
 
 def verifyPluginEnvironment(configPath, platformioEnvironment, sourceCommit=None):
     configuration = customBuild.resolveConfiguration(configPath)
-    if len(configuration["plugins"]) != 1 or len(configuration["patches"]) != 1:
-        raise ValueError("plugin verification requires exactly one patch plugin")
-    pluginId = configuration["plugins"][0]["id"]
-    if configuration["patches"][0][0] != pluginId:
-        raise ValueError("plugin verification patch does not match the selected plugin")
-    expectedEnvironment = f"esp32s3-{pluginId}"
-    if platformioEnvironment != expectedEnvironment:
-        raise ValueError(f"plugin environment must be {expectedEnvironment}")
+    if not platformioEnvironment.startswith("esp32s3-"):
+        raise ValueError("invalid plugin environment")
+    pluginId = platformioEnvironment.removeprefix("esp32s3-")
+    target = next((plugin for plugin in configuration["plugins"] if plugin["id"] == pluginId), None)
+    if target is None:
+        raise ValueError("plugin environment does not match the selected plugin")
+    recommendations = target["recommends"]
+    if (configuration["requested_plugins"] != sorted([pluginId, *recommendations["plugins"]]) or
+            configuration["requested_features"] != sorted(recommendations["features"])):
+        raise ValueError("plugin verification requires the target's recommended selection")
+    if pluginId not in [patchPluginId for patchPluginId, _ in configuration["patches"]]:
+        raise ValueError("plugin verification target has no matching patch")
     commitSha = (
         verifySourceCommit(ROOT, sourceCommit)
         if sourceCommit
@@ -290,11 +370,13 @@ def verifyPluginEnvironment(configPath, platformioEnvironment, sourceCommit=None
 
 
 def buildCustomFirmware(
-    configPath, outputRoot, sourceCommit=None, cacheUrl=None, expectedHash=None
+    configPath, outputRoot, sourceCommit=None, cacheUrl=None, expectedHash=None,
+    builderCommit=None,
 ):
     configuration = customBuild.resolveConfiguration(configPath)
     if expectedHash is not None and not HASH_PATTERN.fullmatch(expectedHash):
         raise ValueError("expected combination hash must be 64 lowercase hex characters")
+    builderSha = verifyBuilderCommit(ROOT, builderCommit)
     commitSha = (
         verifySourceCommit(ROOT, sourceCommit)
         if sourceCommit
@@ -303,7 +385,9 @@ def buildCustomFirmware(
     with tempfile.TemporaryDirectory(prefix="openscale-custom-") as temporaryDirectory:
         checkoutRoot = Path(temporaryDirectory) / "source"
         cloneSource(ROOT, commitSha, checkoutRoot)
-        identity = customBuild.combinationInput(configuration, commitSha, checkoutRoot)
+        identity = customBuild.combinationInput(
+            configuration, commitSha, checkoutRoot, builderSha
+        )
         combinationHash = customBuild.combinationHash(identity)
         if expectedHash is not None and combinationHash != expectedHash:
             raise ValueError("build selection does not match the expected combination hash")
@@ -311,6 +395,7 @@ def buildCustomFirmware(
         if completeCacheEntry(outputDir, combinationHash, identity):
             return {
                 "base_source": commitSha,
+                "builder_source": builderSha,
                 "cache_hit": True,
                 "combination_hash": combinationHash,
                 "output": str(outputDir),
@@ -320,27 +405,43 @@ def buildCustomFirmware(
         if cacheUrl and remoteCacheHit(cacheUrl, combinationHash, identity):
             return {
                 "base_source": commitSha,
+                "builder_source": builderSha,
                 "cache_hit": True,
                 "combination_hash": combinationHash,
                 "output": str(outputDir),
             }
         applyPatches(configuration, checkoutRoot)
-        configureReproducibleBuild(checkoutRoot)
+        platformioEnvironment = customBuild.platformioEnvironment(configuration)
+        prepareBuildCheckout(checkoutRoot, platformioEnvironment=platformioEnvironment)
         sourceEpoch = sourceDateEpoch(checkoutRoot)
+        trustedTools = checkoutRoot / ".pio.nosync" / "builder-tools"
         environment = {
-            **os.environ,
+            **{
+                key: value for key, value in os.environ.items()
+                if key != "HDS_CUSTOM_OTA_SIGNING_KEY_PEM"
+            },
             "HDS_CUSTOM_BUILD_CATALOG_ROOT": str(ROOT),
             "HDS_CUSTOM_BUILD_CONFIG": str(configPath),
+            "HDS_FIRMWARE_VERSION": identity["firmware_version"],
+            "HDS_CUSTOM_BUILD_COMBINATION_HASH": combinationHash,
+            **{
+                f"HDS_CUSTOM_OTA_PUBLIC_KEY_{index}_FILE": str(trustedTools / name)
+                for index, name in enumerate(CUSTOM_OTA_PUBLIC_KEY_NAMES, 1)
+            },
             "SOURCE_DATE_EPOCH": sourceEpoch,
         }
-        runCommand(["pio", "run", "-e", "esp32s3-custom"], checkoutRoot, environment=environment)
-        runCommand(
-            ["pio", "run", "-e", "esp32s3-custom", "-t", "buildfs"],
-            checkoutRoot,
-            environment=environment,
-        )
-        buildDir = checkoutRoot / ".pio.nosync" / "build" / "esp32s3-custom"
-        writeDependencyInventory(buildDir, checkoutRoot, environment)
+        buildDir = checkoutRoot / ".pio.nosync" / "build" / platformioEnvironment
+        runCommand(["pio", "run", "-e", platformioEnvironment], checkoutRoot, environment=environment)
+        with tempfile.TemporaryDirectory(prefix="custom-program-") as programDirectory:
+            preservedBinaries = Path(programDirectory)
+            copyBuildFiles(buildDir, preservedBinaries, PROGRAM_BINARIES)
+            runCommand(
+                ["pio", "run", "-e", platformioEnvironment, "-t", "buildfs"],
+                checkoutRoot,
+                environment=environment,
+            )
+            copyBuildFiles(preservedBinaries, buildDir, PROGRAM_BINARIES)
+        writeDependencyInventory(buildDir, checkoutRoot, environment, platformioEnvironment)
         createFirmwareArchive(buildDir)
         customBuild.writeBuildManifest(
             configuration,
@@ -350,10 +451,20 @@ def buildCustomFirmware(
             checkoutRoot,
             identity,
         )
+        customOta.writeArtifacts(
+            buildDir,
+            buildDir / "build-manifest.json",
+            os.environ.get(
+                "HDS_CUSTOM_OTA_BASE_URL",
+                "https://openscale-custom-builds.odevstudio.workers.dev",
+            ),
+            os.environ.get("HDS_CUSTOM_OTA_SIGNING_KEY_PEM", ""),
+        )
         requireBuildFiles(buildDir)
         publishArtifacts(buildDir, outputDir)
     return {
         "base_source": commitSha,
+        "builder_source": builderSha,
         "cache_hit": False,
         "combination_hash": combinationHash,
         "output": str(outputDir),
@@ -372,6 +483,7 @@ def main():
     parser.add_argument("--output", type=Path, default=ROOT / ".pio.nosync" / "custom-output")
     parser.add_argument("--github-output", type=Path)
     parser.add_argument("--cache-url")
+    parser.add_argument("--builder-commit")
     parser.add_argument("--source-commit")
     parser.add_argument("--expected-hash")
     parser.add_argument("--verify-plugin-environment")
@@ -391,6 +503,7 @@ def main():
                 sourceCommit,
                 args.cache_url,
                 args.expected_hash or None,
+                args.builder_commit or None,
             )
     except (ValueError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"custom build failed: {error}\n")

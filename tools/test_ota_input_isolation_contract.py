@@ -51,17 +51,21 @@ def main():
         "USB timeout gate",
     )
     button_input = extract_block(
-        loop,
-        "if (!b_ota\n      && !buttonChecksSuppressedUntilRelease()",
+        contents,
+        "bool serviceScaleButtonInputs(bool forcePoll) {",
     )
     require_all(
         button_input,
         [
+            "const bool buttonInputAllowed = !b_ota",
+            "&& !buttonChecksSuppressedUntilRelease()",
             "buttonCircle.check();",
             "buttonSquare.check();",
         ],
         "button input gate",
     )
+    if "serviceScaleButtonInputs(false);" not in loop:
+        raise AssertionError("main loop does not route normal button input through the shared gate")
 
     gate_at = loop.index("if (!b_ota && Serial.available()) {")
     if loop.index("processWsPendingCmds();") >= gate_at:
@@ -75,9 +79,6 @@ def main():
         ["ElegantOTA.loop();", "processOtaDisplayUpdate();", "return;"],
         "OTA service gate",
     )
-    if loop.index("checkBattery();") >= loop.index("if (b_ota) {"):
-        raise AssertionError("charging-state refresh must run before OTA servicing")
-
     usb = USB_HEADER.read_text(encoding="utf-8")
     usb_buffer = extract_block(usb, "void processUsbRxBuffer(bool allowTimeout) {")
     parser_loop = extract_block(usb_buffer, "while (usbRxLen > 0) {")

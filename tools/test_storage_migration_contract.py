@@ -32,8 +32,15 @@ for key, value in {
     "KEY_AUTO_SLEEP": "auto_sleep",
     "KEY_QUICK_BOOT": "quick_boot",
     "KEY_DRIFT_MAX": "drift_max",
+    "KEY_BAT_PROTECT": "bat_protect",
+    "KEY_BAT_CAPACITY_SET": "bat_cap_set",
 }.items():
     require(f'{key} = "{value}"')
+
+for key in ("KEY_BAT_PROTECT", "KEY_BAT_CAPACITY_SET"):
+    assert STORAGE.count(f"storageEnsureBool({key}, false)") == 2
+    required = STORAGE[STORAGE.index("inline bool storageHasAllSettings()") :]
+    require(key, required[:required.index("return true;")])
 
 for address, value in {
     "LEGACY_CAL1_ADDRESS": "0",

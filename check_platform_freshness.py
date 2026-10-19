@@ -15,12 +15,8 @@ import os
 import re
 import urllib.request
 
-# PlatformIO exec's extra_scripts without a module __file__; it runs from the
-# project root, so resolve platformio.ini relative to the working directory.
 PLATFORMIO_INI = os.path.join(os.getcwd(), "platformio.ini")
 LATEST_API = "https://api.github.com/repos/pioarduino/platform-espressif32/releases/latest"
-# Matches an explicitly versioned pioarduino platform pin; the rolling `stable`
-# tag deliberately does NOT match, so this stays quiet until we pin a version.
 PIN_RE = re.compile(
     r"pioarduino/platform-espressif32/releases/download/"
     r"([0-9]+\.[0-9]+\.[0-9]+[^/]*)/platform-espressif32\.zip"
@@ -48,7 +44,7 @@ def main():
 
     match = PIN_RE.search(ini)
     if not match:
-        return  # not pinned to an explicit version -> nothing to compare
+        return
     pinned = match.group(1)
 
     try:
@@ -61,7 +57,7 @@ def main():
         with urllib.request.urlopen(req, timeout=4) as resp:
             latest = json.load(resp).get("tag_name", "")
     except Exception:
-        return  # offline / rate-limited / API change -> never block the build
+        return
 
     if latest and _version_tuple(latest) > _version_tuple(pinned):
         _warn(
@@ -76,5 +72,4 @@ def main():
 try:
     main()
 except Exception:
-    # Advisory only -- never let a bug in this check fail the build.
     pass

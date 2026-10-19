@@ -68,5 +68,5 @@ else:
 
 if __name__ == "__main__":
     projectDir = Path(__file__).resolve().parent
-    written, removed = syncGzipAssets(projectDir / "web_apps")
+    written, removed = syncGzipAssets(projectDir / "plugins" / "default-web-apps" / "assets")
     print("[gzip-assets] wrote={}, removed={}".format(written, removed))
