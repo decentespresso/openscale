@@ -29,6 +29,8 @@ def main():
 @COMMANDS@
 bool b_softSleep = false, b_u8g2Sleep = false, b_wifiEnabled = true;
 bool b_ota = false, b_powerOff = false, pendingOtaDispatching = false;
+bool b_hasFuelGauge = false;
+bool fuelGaugeLegacyHardware() { return !b_hasFuelGauge; }
 bool rail = true, accessory = true, oled = true;
 int wakes = 0, sleeps = 0, supervises = 0, adcRefreshes = 0, outputResets = 0;
 constexpr int PWR_CTRL = 3, ACC_PWR_CTRL = 14, LOW = 0, HIGH = 1;
@@ -340,6 +342,18 @@ int main() {
     assert(!b_softSleep && rail && accessory);
     assertDisplay(true);
     assert(wakes == wakesBefore + 1 && adcRefreshes == refreshesBefore + 1);
+  }
+  b_hasFuelGauge = true;
+  for (transport = 0; transport < 3; ++transport) {
+    for (const bool gpout : {false, true}) {
+      accessory = gpout;
+      sleepCommand();
+      dispatch();
+      assert(b_softSleep && !rail && accessory == gpout);
+      wakeCommand();
+      dispatch();
+      assert(!b_softSleep && rail && accessory == gpout);
+    }
   }
   b_softSleep = true;
   supervise();

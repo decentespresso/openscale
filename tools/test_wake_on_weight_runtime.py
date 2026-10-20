@@ -22,11 +22,13 @@ using std::max;
 using std::isfinite;
 #define ADS1232ADC
 #define RTC_DATA_ATTR
+#define USB_DET 8
 constexpr int LOW = 0, HIGH = 1, INPUT = 0, OUTPUT = 1;
 constexpr int BUTTON_CIRCLE = 1, BUTTON_SQUARE = 2, BATTERY_CHARGING = 10;
 constexpr int SCALE_DOUT = 11, SCALE_SCLK = 12, SCALE_PDWN = 13, SCALE_A0 = -1, PWR_CTRL = 3;
 constexpr int ESP_SLEEP_WAKEUP_TIMER = 1, ESP_SLEEP_WAKEUP_EXT1 = 2, ESP_EXT1_WAKEUP_ANY_LOW = 0;
 constexpr uint64_t PIN_BITMASK = (1ULL << 1) | (1ULL << 2) | (1ULL << 10);
+uint64_t deepSleepWakeMask() { return PIN_BITMASK | (1ULL << USB_DET); }
 constexpr float lowBatteryThreshold = 3.2f;
 using gpio_num_t = int;
 int i_wow_interval = 1, i_lowBatteryCount = 0, GPIO_power_on_with = -1;
@@ -77,7 +79,7 @@ void gpio_deep_sleep_hold_en() {}
 void gpio_deep_sleep_hold_dis() {}
 void configureWakePinsForDeepSleep() { rtcInputsReady = true; }
 void esp_sleep_enable_ext1_wakeup_io(uint64_t mask, int) {
-  assert(mask == PIN_BITMASK);
+  assert(mask == deepSleepWakeMask());
   ext1 = true;
   if (pressOnRearm) pressAt = nowMs;
 }
@@ -154,12 +156,12 @@ int main() {
     }
   }
   for (bool missing : {false, true}) {
-    for (int pin : {BUTTON_CIRCLE, BUTTON_SQUARE, BATTERY_CHARGING}) {
+    for (int pin : {BUTTON_CIRCLE, BUTTON_SQUARE, BATTERY_CHARGING, USB_DET}) {
       for (unsigned long start = 0; start <= (missing ? 998UL : 700UL); start += 2) {
         resetBoot(); arm(); pressAt = start; pressPin = pin; sampleAvailable = !missing;
         assert(tick());
-        assert(GPIO_power_on_with == pin && !wowRtc.armed);
-        assert(wowButtonWake == (pin != BATTERY_CHARGING));
+        assert(GPIO_power_on_with == (pin == USB_DET ? BATTERY_CHARGING : pin) && !wowRtc.armed);
+        assert(wowButtonWake == (pin == BUTTON_CIRCLE || pin == BUTTON_SQUARE));
         assert(nowMs <= start + 2);
       }
     }

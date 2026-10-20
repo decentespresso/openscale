@@ -49,6 +49,7 @@ const Menu *currentSelection = &menuCalibrate;
 int currentMenuSize = 2, currentIndex = 0;
 template <typename T, unsigned N> int getMenuSize(T (&)[N]) { return N; }
 int connectionsMenuSize() { return 1; }
+int powerMenuSize() { return 1; }
 void invalidateMenuFrame() {}
 void backMenu() {}
 void selectMenu() { @SELECT@ }

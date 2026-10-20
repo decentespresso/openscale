@@ -68,6 +68,8 @@ jobs:
   build:
     name: firmware (esp32s3, esp32s3-grinder)
     runs-on: ubuntu-latest
+    env:
+      UV_CONSTRAINT: ${{ github.workspace }}/constraints-pioarduino.txt
 
     steps:
       - uses: actions/checkout@v7

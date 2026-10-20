@@ -63,6 +63,14 @@ def main():
         r"#if HDS_ENABLE_ENERGY_MENU\s+&menuEnergyOledRedraw", menu
     )
     assert "void backMenu()" in menu
+    assert '&menuAbout, &menuBatInfo' in menu
+    assert 'showBatInfo, NULL, &menuInfo' in menu
+    power_rows = menu[menu.index("const Menu *const powerMenu[]") :]
+    assert power_rows[:power_rows.index("};")].rstrip().endswith("&menuBatteryProtect,")
+    assert "return getMenuSize(powerMenu) - (b_hasFuelGauge ? 0 : 1);" in menu
+    assert "currentMenuSize = powerMenuSize();" in menu
+    assert "toggleStoredBool(b_batteryProtect, KEY_BAT_PROTECT" in menu
+    assert "compactMainMenu" not in menu
     assert "navigateMenu(-1);" in sketch
     for view in ("showWifiStatus", "showStatus", "showAbout", "showLogo"):
         body = menu[menu.rindex(f"void {view}()") :]
