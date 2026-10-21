@@ -176,10 +176,17 @@ jobs:
       - name: Build plugin environment
         env:
           PLUGIN_ID: ${{ matrix.plugin }}
-        run: >-
-          python tools/build_custom_firmware.py
-          --config .pio.nosync/plugin-ci.json
-          --verify-plugin-environment "esp32s3-$PLUGIN_ID"
+          FIRMWARE_REF: ${{ matrix.firmware_ref }}
+          CANDIDATE_COMMIT: ${{ github.sha }}
+        run: |
+          source_args=()
+          if [ "$FIRMWARE_REF" = "main" ]; then
+            source_args+=(--source-commit "$CANDIDATE_COMMIT")
+          fi
+          python tools/build_custom_firmware.py \
+            --config .pio.nosync/plugin-ci.json \
+            --verify-plugin-environment "esp32s3-$PLUGIN_ID" \
+            "${source_args[@]}"
 
   compile_custom:
     if: github.event_name != 'workflow_dispatch' || inputs.commit != ''

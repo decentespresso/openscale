@@ -24,6 +24,11 @@ App Text defaults Off and remembers the local setting across boots. No remote
 command can turn it On. Displayed text remains transient. Clear restores the
 normal screen without disabling the setting or resetting the timer.
 
+For cocktail testing, leave both Pressensor and Grind by Weight Off (integration
+None), with App Text On. Active Grind by Weight keeps its existing tare-to-arm
+behavior, including tare commands from the browser. App Text does not suppress
+dosing.
+
 ## Update The Website
 
 Review `webapp/build-info.json` for the exact `deweb` baseline commit and script

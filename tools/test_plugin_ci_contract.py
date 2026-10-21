@@ -1,7 +1,10 @@
 import json
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
+import textwrap
 import tomllib
 
 import list_changed_patch_plugins as changedPlugins
@@ -55,7 +58,21 @@ def main():
     assert '--verify-plugin-environment "esp32s3-$PLUGIN_ID"' in customWorkflow
     assert "recommendedPluginSelection" in customWorkflow
     verifyPlugins = customWorkflow.split("\n  verify_plugins:\n", 1)[1].split("\n  compile_custom:\n", 1)[0]
-    assert "--source-commit" not in verifyPlugins
+    assert 'CANDIDATE_COMMIT: ${{ github.sha }}' in verifyPlugins
+    assert 'if [ "$FIRMWARE_REF" = "main" ]; then\n            source_args+=(--source-commit "$CANDIDATE_COMMIT")\n          fi' in verifyPlugins
+    assert '"${source_args[@]}"' in verifyPlugins
+    assert 'python tools/build_custom_firmware.py \\\n' in verifyPlugins
+    bash = shutil.which("bash") if os.name != "nt" else None
+    if bash:
+        pluginStep = verifyPlugins.split("- name: Build plugin environment", 1)[1]
+        script = textwrap.dedent(pluginStep.split("run: |\n", 1)[1])
+        for ref in ("main", "v3.1.14", "v3.1.15"):
+            result = subprocess.run([bash, "-c", "python() { printf '%s\\n' \"$@\"; }\n" + script],
+                env={**os.environ, "PLUGIN_ID": "pressensor", "FIRMWARE_REF": ref, "CANDIDATE_COMMIT": "1" * 40},
+                capture_output=True, text=True, check=True)
+            expected = ["tools/build_custom_firmware.py", "--config", ".pio.nosync/plugin-ci.json",
+                        "--verify-plugin-environment", "esp32s3-pressensor"]
+            assert result.stdout.splitlines() == expected + (["--source-commit", "1" * 40] if ref == "main" else [])
     assert "verify-pressensor:" not in customWorkflow
     assert "compile-matrix:" not in customWorkflow
     dispatchBuild = customWorkflow.split("\n  build:\n", 1)[1]

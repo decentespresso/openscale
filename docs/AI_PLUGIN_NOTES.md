@@ -103,6 +103,8 @@ For a moving `main`, update `patches/main.patch` whenever upstream changes make 
 ## CI Contract
 
 The Python contract checks validate the Pressensor patch against the candidate checkout, including pull requests that change firmware without changing plugin files.
+The main plugin compile job uses that candidate commit too. Release jobs resolve
+their actual tags and must not receive the candidate source override.
 
 Patch-plugin pull requests compile the normal `esp32s3` environment and every changed or transitively affected patch plugin as `esp32s3-<plugin-id>`. The custom-build workflow derives a small reverse-dependency matrix from plugin packages changed across the complete pull request and verifies mapped main and stable firmware refs, not preview refs. A plugin with recommendations is verified with that recommended feature and plugin selection; a plugin without recommendations uses its minimal selection. The workflow also builds one minimal `esp32s3-custom` selection to cover generated feature configuration, builder-tool injection, empty filesystem staging, and the WiFi-disabled firmware. Asset-only plugins do not receive their own dedicated firmware build. The plugin environment activates its own gate and any environment-level requirements. Do not add a permanent full feature matrix or duplicate the normal build in OTA contracts.
 

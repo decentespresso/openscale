@@ -26,6 +26,8 @@ priority. Pressensor retains its display while active. The grinder retains its
 display and controls while armed, grinding, stopping, awaiting removal/zero, or
 reporting an error. Fresh app text can appear on the idle weighing screen.
 App Text does not enable, disable, or control either integration.
+Tare-to-arm behavior in Grind by Weight still applies, including browser tares.
+Select neither integration when using the cocktail maker.
 
 ## BLE Contract
 
