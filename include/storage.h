@@ -22,6 +22,7 @@ constexpr const char *KEY_BAT_CAL = "bat_cal";
 constexpr const char *KEY_HEARTBEAT = "heartbeat";
 constexpr const char *KEY_SCREEN_FLIP = "screen_flip";
 constexpr const char *KEY_TIME_ON_TOP = "time_on_top";
+constexpr const char *KEY_APP_TEXT = "app_text";
 constexpr const char *KEY_BTN_CONN = "btn_conn";
 constexpr const char *KEY_WIFI_BOOT = "wifi_boot";
 constexpr const char *KEY_AUTO_SLEEP = "auto_sleep";
@@ -112,7 +113,6 @@ inline bool storageGetBool(const char *key, bool defaultValue) {
   return settingsPreferences.getBool(key, defaultValue);
 }
 
-#if HDS_ENABLE_ENERGY_MENU
 inline bool storageLoadValidatedBool(const char *key, bool defaultValue, bool &value) {
   const uint8_t stored = settingsPreferences.getType(key) == PT_U8
                            ? settingsPreferences.getUChar(key, 2)
@@ -125,6 +125,7 @@ inline bool storageLoadValidatedBool(const char *key, bool defaultValue, bool &v
   return storagePutBool(key, defaultValue);
 }
 
+#if HDS_ENABLE_ENERGY_MENU
 inline bool storageRemoveIfPresent(const char *key) {
   return !settingsPreferences.isKey(key) || settingsPreferences.remove(key);
 }
@@ -201,7 +202,7 @@ inline bool storageHasAllSettings() {
     KEY_BEEP, KEY_WELCOME, KEY_BAT_CAL, KEY_HEARTBEAT, KEY_SCREEN_FLIP,
     KEY_TIME_ON_TOP, KEY_BTN_CONN, KEY_WIFI_BOOT, KEY_AUTO_SLEEP,
     KEY_QUICK_BOOT, KEY_DRIFT_MAX, KEY_TAP_TARE, KEY_TAP_TIMER,
-    KEY_WOW_INTERVAL, KEY_BAT_PROTECT, KEY_BAT_CAPACITY_SET, KEY_BAT_CAPACITY
+    KEY_WOW_INTERVAL, KEY_BAT_PROTECT, KEY_BAT_CAPACITY_SET, KEY_BAT_CAPACITY, KEY_APP_TEXT
   };
   for (const char *key : keys) {
     if (!settingsPreferences.isKey(key)) {
@@ -223,6 +224,7 @@ inline bool storageEnsureDefaults() {
          storageEnsureBool(KEY_HEARTBEAT, true) &&
          storageEnsureBool(KEY_SCREEN_FLIP, false) &&
          storageEnsureBool(KEY_TIME_ON_TOP, false) &&
+         storageEnsureBool(KEY_APP_TEXT, false) &&
          storageEnsureBool(KEY_BTN_CONN, false) &&
          storageEnsureBool(KEY_WIFI_BOOT, false) &&
          storageEnsureBool(KEY_AUTO_SLEEP, true) &&
@@ -319,6 +321,7 @@ inline bool storageMigrateLegacyEeprom() {
                   storageEnsureBool(KEY_HEARTBEAT, storageLegacyBool(LEGACY_HEARTBEAT_ADDRESS, true)) &&
                   storageEnsureBool(KEY_SCREEN_FLIP, storageLegacyBool(LEGACY_SCREEN_FLIP_ADDRESS, false)) &&
                   storageEnsureBool(KEY_TIME_ON_TOP, storageLegacyBool(LEGACY_TIME_ON_TOP_ADDRESS, false)) &&
+                  storageEnsureBool(KEY_APP_TEXT, false) &&
                   storageEnsureBool(KEY_BTN_CONN, storageLegacyBool(LEGACY_BTN_CONN_ADDRESS, false)) &&
                   storageEnsureBool(KEY_WIFI_BOOT, storageLegacyBool(LEGACY_WIFI_BOOT_ADDRESS, false)) &&
                   storageEnsureBool(KEY_AUTO_SLEEP, storageLegacyBool(LEGACY_AUTO_SLEEP_ADDRESS, true)) &&

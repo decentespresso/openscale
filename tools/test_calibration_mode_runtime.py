@@ -29,6 +29,9 @@ bool b_u8g2Sleep = false, b_softSleep = false, b_websocketLowPowerEnabled = fals
 bool b_menuCirclePressPending = false, b_menuSquarePressPending = false;
 bool b_menuCircleLongHandled = false, b_menuSquareLongHandled = false;
 bool b_chargingOLED = true, bleClientLive = false;
+struct { int value = 0; } circle_press_data;
+bool appTextScreenAvailable() { return !b_menu && !b_calibration && !b_showChargingUI; }
+bool cancelAppPrompt() { assert(!b_calibration); return false; }
 int i_cal_weight = 0, i_button_cal_status = 1, i_calibration = 0, i_buttonBootDelay = 0;
 int GPIO_power_on_with = BATTERY_CHARGING, chargingPin = LOW, usbPin = LOW;
 int sampledPresses = 0, releasedPresses = 0, timerToggles = 0, chargingWakes = 0;

@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import subprocess
+import tempfile
 import tomllib
 
 import list_changed_patch_plugins as changedPlugins
@@ -71,9 +72,9 @@ def main():
     assert "#if HDS_CUSTOM_BUILD" in patch
     assert "#ifdef HDS_CUSTOM_BUILD" not in patch
     assert manifest["patches"] == {
-        "v3.1.14": "patches/main.patch",
-        "v3.1.14-preview.3": "patches/main.patch",
-        "v3.1.14-preview.4": "patches/main.patch",
+        "v3.1.14": "patches/legacy-main.patch",
+        "v3.1.14-preview.3": "patches/legacy-main.patch",
+        "v3.1.14-preview.4": "patches/legacy-main.patch",
         "main": "patches/main.patch",
         "v3.1.15": "patches/v3.1.15.patch",
     }
@@ -132,12 +133,14 @@ def main():
         cwd=ROOT,
         check=True,
     )
-    subprocess.run(
-        ["git", "apply", "--check", "--whitespace=error",
-         str(ROOT / "plugins" / "pressensor" / "patches" / "v3.1.15.patch")],
-        cwd=ROOT,
-        check=True,
-    )
+    with tempfile.TemporaryDirectory(prefix="hds-release-patches-") as directory:
+        subprocess.run(["git", "clone", "--shared", "--quiet", "--no-checkout", str(ROOT), directory], check=True)
+        for ref, path in manifest["patches"].items():
+            if ref == "main":
+                continue
+            subprocess.run(["git", "checkout", "--quiet", "--detach", ref], cwd=directory, check=True)
+            subprocess.run(["git", "apply", "--check", "--whitespace=error",
+                            str(ROOT / "plugins" / "pressensor" / path)], cwd=directory, check=True)
 
     print("plugin CI contract tests passed")
 

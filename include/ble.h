@@ -37,6 +37,7 @@ void buildAdsDebugPacket(byte data[41]);
 void sendBleGyro();
 #endif
 volatile uint16_t connId = 0xFFFF;
+#include "app_prompt_ble.h"
 
 void resetBleFff4StateLocked(uint16_t subscriptionHandle) {
   bleFff4SubscriptionHandle = subscriptionHandle;
@@ -53,6 +54,7 @@ void setBleFff4Connection(uint16_t connectionHandle, uint16_t subscriptionHandle
   connId = connectionHandle;
   resetBleFff4StateLocked(subscriptionHandle);
   portEXIT_CRITICAL(&bleFff4Mux);
+  setAppPromptConnection(connectionHandle);
 }
 
 void adoptBleFff4ConnectionFromSubscription(uint16_t connectionHandle) {
@@ -74,6 +76,7 @@ bool clearBleFff4Connection(uint16_t connectionHandle) {
     resetBleFff4StateLocked(0xFFFF);
   }
   portEXIT_CRITICAL(&bleFff4Mux);
+  if (isCurrent) setAppPromptConnection(APP_PROMPT_NO_CONNECTION);
   return isCurrent;
 }
 
@@ -337,6 +340,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
       Serial.print(" ");
 
       if (data[0] == 0x03) {
+        recordAppPromptHeartbeat(data, len);
         BleDecentCommandSink sink;
         handleDecentBinaryCommand(sink, data, len);
       }
@@ -357,6 +361,7 @@ class Fff4Callbacks : public BLECharacteristicCallbacks {
       deviceConnected = true;
     }
     const uint16_t nextHandle = subValue == 0 ? 0xFFFF : desc->conn_handle;
+    if (subValue != 0 && desc->conn_handle == connId) syncAppPromptConnection(desc->conn_handle);
     portENTER_CRITICAL(&bleFff4Mux);
     const bool changed = desc->conn_handle == connId && bleFff4SubscriptionHandle != nextHandle;
     if (changed) bleFff4SubscriptionHandle = nextHandle;
@@ -395,6 +400,7 @@ void ble_init() {
     BLECharacteristic::PROPERTY_READ
       | BLECharacteristic::PROPERTY_NOTIFY);
   pReadCharacteristic->setCallbacks(new Fff4Callbacks());
+  setupAppPromptCharacteristic(pService);
   pService->start();
   pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(pService->getUUID());
@@ -419,6 +425,7 @@ void disconnectBLE() {
 }
 
 void bleShutdown() {
+  setAppPromptConnection(APP_PROMPT_NO_CONNECTION);
   if (pServer == nullptr) return;
   if (bleHasLiveClient() && connId != 0xFFFF) {
     pServer->disconnect(connId, 0x13);

@@ -94,6 +94,7 @@ void selectMenu();
 void enableDebug();
 void toggleFlipScreen();
 void toggleTimeOnTop();
+void toggleAppText();
 void toggleBtnFuncWhileConnected();
 void toggleAutoSleep();
 void toggleQuickBoot();
@@ -145,6 +146,7 @@ char menuHeartbeatLabel[] = "Heartbeat o";
 char menuBleButtonsLabel[] = "BLE Buttons o";
 char menuFlipScreenLabel[] = "Flip Screen o";
 char menuTimeOnTopLabel[] = "Top: Weight";
+char menuAppTextLabel[] = "App Text o";
 char menuAutoSleepLabel[] = "Auto Sleep o";
 char menuQuickBootLabel[] = "Quick Boot o";
 char menuBatteryProtectLabel[] = "Battery Protect o";
@@ -210,11 +212,12 @@ int connectionsMenuSize() {
 const Menu menuDisplayBack = { "Back", NULL, NULL, &menuDisplay };
 const Menu menuFlipScreen = { menuFlipScreenLabel, toggleFlipScreen, NULL, &menuDisplay };
 const Menu menuTimeOnTop = { menuTimeOnTopLabel, toggleTimeOnTop, NULL, &menuDisplay };
+const Menu menuAppText = { menuAppTextLabel, toggleAppText, NULL, &menuDisplay };
 #ifdef BUZZER
 const Menu menuBuzzer = { menuBuzzerLabel, toggleBuzzer, NULL, &menuDisplay };
 #endif
 const Menu *const displayMenu[] = { &menuDisplayBack, &menuFlipScreen,
-                                   &menuTimeOnTop,
+                                   &menuTimeOnTop, &menuAppText,
 #ifdef BUZZER
                                    &menuBuzzer,
 #endif
@@ -322,6 +325,37 @@ inline void showStoredAction(const char *label, bool enabled, bool stored) {
   t_actionMessageDelay = 1000;
 }
 
+void toggleAppText() {
+  const bool enabled = !appTextIsEnabled();
+  const bool stored = saveAppTextEnabled(enabled);
+  updateToggleLabel(menuAppTextLabel, appTextIsEnabled());
+  showStoredAction("App Text", enabled, stored);
+  invalidateEnergyOledFrame();
+}
+
+#if HDS_ENABLE_GRINDER || HDS_ENABLE_PRESSENSOR
+void toggleIntegration(IntegrationMode mode) {
+  if (!integrationCanRestart()) {
+    actionMessage = "Change Blocked";
+    actionMessage2 = "Confirm Stop";
+    menuActionMessageChanged();
+    t_actionMessageDelay = 1500;
+    return;
+  }
+  const IntegrationMode next = activeIntegration == mode ? IntegrationMode::None : mode;
+  if (!storeIntegrationMode(next)) {
+    showStoredAction("Integration", next != IntegrationMode::None, false);
+    return;
+  }
+#if HDS_ENABLE_GRINDER
+  grinderFlushSettingsIfDirty();
+#endif
+  refreshOLED((char *)"Mode Saved", (char *)"Restarting");
+  delay(250);
+  reset();
+}
+#endif
+
 template<typename State>
 bool toggleStoredBool(State &state, const char *key, const char *label,
                       char *row) {
@@ -358,9 +392,11 @@ void toggleWifi() {
   const bool enabled = !b_wifiOnBoot;
 #if HDS_ENABLE_GRINDER
   if (!enabled && grinderSettings.enabled) {
-    grinderSettings.previousWifiOnBoot = false;
-    grinderSettings.previousWifiOnBootSaved = true;
-    grinderSaveSettings();
+    const bool stored = storagePutBool(KEY_WIFI_BOOT, false);
+    if (!stored) {
+      showStoredAction("WiFi", false, false);
+      return;
+    }
     actionMessage = "Grind by weight";
     actionMessage2 = "Needs WiFi";
     menuActionMessageChanged();
@@ -372,13 +408,6 @@ void toggleWifi() {
   const bool stored = storagePutBool(KEY_WIFI_BOOT, enabled);
   if (stored) {
     b_wifiOnBoot = enabled;
-#if HDS_ENABLE_GRINDER
-    if (grinderSettings.enabled) {
-      grinderSettings.previousWifiOnBoot = enabled;
-      grinderSettings.previousWifiOnBootSaved = true;
-      grinderSaveSettings();
-    }
-#endif
     markMenuRestartRequired();
   }
   updateToggleLabel(menuWifiLabel, b_wifiOnBoot);
@@ -616,31 +645,7 @@ void grinderSetActionMessage(const char *line1, const char *line2 = nullptr) {
 }
 
 void toggleGrinder() {
-  if (!grinderSettings.enabled) {
-    if (!grinderSettings.previousWifiOnBootSaved) {
-      grinderSettings.previousWifiOnBoot = b_wifiOnBoot;
-      grinderSettings.previousWifiOnBootSaved = true;
-    }
-    grinderSetEnabled(true);
-    b_wifiOnBoot = true;
-    storagePutBool(KEY_WIFI_BOOT, true);
-    if (!b_wifiEnabled) wifi_init();
-    refreshMenuRows();
-    grinderSetActionMessage("Grind by weight", "Enabled");
-    return;
-  }
-  const bool restoreWifiOnBoot = grinderSettings.previousWifiOnBoot;
-  const bool restoreWifiOnBootSaved = grinderSettings.previousWifiOnBootSaved;
-  grinderSetEnabled(false);
-  if (restoreWifiOnBootSaved) {
-    b_wifiOnBoot = restoreWifiOnBoot;
-    storagePutBool(KEY_WIFI_BOOT, restoreWifiOnBoot);
-    grinderSettings.previousWifiOnBoot = false;
-    grinderSettings.previousWifiOnBootSaved = false;
-    grinderSaveSettings();
-  }
-  refreshMenuRows();
-  grinderSetActionMessage("Grind by weight", "Disabled");
+  toggleIntegration(IntegrationMode::Grinder);
 }
 
 bool grinderEnsureWifiReadyForDiscovery() {
@@ -663,6 +668,10 @@ bool grinderEnsureWifiReadyForDiscovery() {
 }
 
 uint8_t grinderFindPlugsForSelection() {
+  if (!grinderSettings.enabled) {
+    grinderSetActionMessage("Enable Mode", "First");
+    return 0;
+  }
   if (!grinderEnsureWifiReadyForDiscovery()) {
     grinderSetActionMessage("WiFi Wait", "No Plugs");
     return 0;
@@ -1658,6 +1667,7 @@ void calibrateVoltage() {
 }
 
 void refreshMenuRows() {
+  updateToggleLabel(menuAppTextLabel, appTextIsEnabled());
   updateToggleLabel(menuHeartbeatLabel, b_requireHeartBeat);
   updateToggleLabel(menuBleButtonsLabel, b_btnFuncWhileConnected);
   updateToggleLabel(menuFlipScreenLabel, b_screenFlipped);

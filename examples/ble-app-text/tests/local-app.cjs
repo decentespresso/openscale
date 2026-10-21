@@ -5,15 +5,15 @@ const { chromium } = require("playwright");
 const url = process.env.HDS_TEST_APP_URL || "http://localhost:8765/test/";
 const screenshots = process.env.HDS_TEST_SCREENSHOTS;
 
-async function mockBluetooth(page, supported = true) {
-  await page.addInitScript(({ supported }) => {
+async function mockBluetooth(page, supported = true, enabled = true) {
+  await page.addInitScript(({ supported, enabled }) => {
     const writes = [];
     let writing = false;
     let overlap = false;
     class Characteristic extends EventTarget {
       constructor(kind) { super(); this.kind = kind; }
       async startNotifications() { return this; }
-      async readValue() { return new DataView(Uint8Array.of(1, 18, 10).buffer); }
+      async readValue() { return new DataView(Uint8Array.of(1, 18, 10, Number(enabled)).buffer); }
       async writeValueWithResponse(bytes) {
         if (writing) overlap = true;
         writing = true;
@@ -59,7 +59,7 @@ async function mockBluetooth(page, supported = true) {
         weight.dispatchEvent(new Event("characteristicvaluechanged"));
       },
     };
-  }, { supported });
+  }, { supported, enabled });
 }
 
 async function waitText(page, id, text) {
@@ -145,6 +145,18 @@ async function checkLayout(page) {
     await legacy.locator("#connect").click();
     await waitText(legacy, "connection", "Disconnected");
     await legacy.close();
+    const disabled = await browser.newPage();
+    await mockBluetooth(disabled, true, false);
+    await disabled.goto(url);
+    await disabled.locator("#connect").click();
+    await waitText(disabled, "capability", "App Text off on scale");
+    assert.ok(await disabled.locator("#send").isDisabled());
+    await disabled.evaluate(() => ble.weight(42));
+    await waitText(disabled, "weight", "42.0");
+    await disabled.locator("#tare").click();
+    await disabled.waitForFunction(() => ble.writes.some((write) => write.kind === "command" && write.bytes[1] === 15));
+    assert.equal(await disabled.evaluate(() => ble.writes.some((write) => write.kind === "prompt")), false);
+    await disabled.close();
     console.log("PASS: local test app, mocked BLE recipe, tare, signed weight, invalid input, fallback, failed cleanup, serialized writes, desktop/mobile layout");
   } finally {
     await browser.close();

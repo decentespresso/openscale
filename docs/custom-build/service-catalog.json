@@ -1,7 +1,7 @@
 {
   "schema": 2,
   "custom_ota_signing_key_generation": 1,
-  "catalog_revision": "fd8b73b7244182369adcf0266f0d30b06b50cf488c00c3dc2345b8ea5ca050d3",
+  "catalog_revision": "961aaa3309c748934b4ba9ffa31ed67653f09d5ead18e4593ac262f7a53088ac",
   "firmware_refs": [
     "v3.1.14",
     "v3.1.14-preview.3",
@@ -157,26 +157,6 @@
     }
   },
   "plugins": {
-    "app-prompts": {
-      "version": "1.0.0",
-      "firmware_refs": [
-        "main"
-      ],
-      "requires": [],
-      "depends_on": [],
-      "conflicts": [],
-      "conflicts_features": [],
-      "recommends": {
-        "features": [],
-        "plugins": []
-      },
-      "patches": {
-        "main": {
-          "sha256": "3ba3a72c3a2f6be93c39fb373a6dabfdc1addeffd7d970eb47a53413489c1392"
-        }
-      },
-      "assets": []
-    },
     "default-web-apps": {
       "version": "1.0.0",
       "firmware_refs": [
@@ -192,6 +172,7 @@
       ],
       "depends_on": [],
       "conflicts": [],
+      "conflicts_by_ref": {},
       "conflicts_features": [],
       "recommends": {
         "features": [],
@@ -337,6 +318,9 @@
       "conflicts": [
         "pressensor"
       ],
+      "conflicts_by_ref": {
+        "main": []
+      },
       "conflicts_features": [],
       "recommends": {
         "features": [
@@ -363,6 +347,9 @@
       "conflicts": [
         "grind-by-weight"
       ],
+      "conflicts_by_ref": {
+        "main": []
+      },
       "conflicts_features": [],
       "recommends": {
         "features": [],
@@ -370,7 +357,7 @@
       },
       "patches": {
         "main": {
-          "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"
+          "sha256": "491cecc7b575e921be5c692685686c69f8cf831fee5305176202231ed20434f8"
         },
         "v3.1.14": {
           "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"

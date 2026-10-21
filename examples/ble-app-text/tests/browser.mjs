@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { APP_PROMPTS_UUID, connectAppPrompts, ingredientPrompt } from "../browser/hds-app-prompts.mjs";
-import { connectCocktailPrompts } from "../examples/cocktail-integration.mjs";
 
 assert.equal(APP_PROMPTS_UUID, "8b8dc7c0-6bf7-4bdf-9a2c-0ba9cb9a4a01");
 const heartbeat = [3, 10, 3, 255, 255, 0, 10];
 
-function scale({ present = true, capabilities = [1, 18, 10], failPrompt = false, afterClear = null } = {}) {
+function scale({ present = true, capabilities = [1, 18, 10, 1], failPrompt = false, afterClear = null } = {}) {
   const writes = [];
   let inFlight = 0;
   let promptFailures = failPrompt ? Infinity : 0, displayed = "";
@@ -42,6 +41,7 @@ function scale({ present = true, capabilities = [1, 18, 10], failPrompt = false,
 const supportedScale = scale();
 const supported = await connectAppPrompts(supportedScale.server);
 assert.equal(supported.supported, true);
+assert.equal(supported.enabled, true);
 assert.deepEqual(await Promise.all([
   supported.showPrompt("Add Gin: 35g"), supported.send([3, 15, 1]), supported.clearPrompt(),
 ]), [true, undefined, true]);
@@ -136,15 +136,17 @@ assert.ok(longPrompt.length <= 18 && longPrompt.endsWith(": 135.5g"));
 assert.equal(ingredientPrompt("Add", "B\u00e9n\u00e9dictine", "5g"), "Add Benedictin: 5g");
 assert.throws(() => ingredientPrompt("Add", "Gin", "A".repeat(18)), RangeError);
 
-const cocktailScale = scale();
-const cocktail = await connectCocktailPrompts(cocktailScale.server);
-await cocktail.placeGlass();
-await cocktail.ingredient("Add", "Gin", "35g");
-await cocktail.ingredient("Add", "Bitters", "2 dashes");
-await cocktail.ingredient("Rinse", "Absinthe", "1 dash");
-await cocktail.serve();
-await cocktail.complete();
-await cocktail.close();
-assert.equal(cocktail.supported, false);
-assert.deepEqual(cocktailScale.writes.at(-1), ["prompt", 0]);
-console.log("App Prompts browser checks passed");
+const disabledScale = scale({ capabilities: [1, 18, 10, 0] });
+const disabled = await connectAppPrompts(disabledScale.server);
+assert.equal(disabled.supported, true);
+assert.equal(disabled.enabled, false);
+assert.equal(await disabled.showPrompt("Add Gin: 35g"), false);
+await disabled.send(heartbeat);
+assert.equal(disabledScale.writes.some(([kind, operation]) => kind === "prompt" && operation === 1), false);
+assert.equal(await disabled.clearPrompt(), true);
+disabled.dispose();
+const prototype = await connectAppPrompts(scale({ capabilities: [1, 18, 10] }).server);
+assert.equal(prototype.enabled, true);
+assert.equal(await prototype.showPrompt("Prototype"), true);
+prototype.dispose();
+console.log("App Text browser checks passed");

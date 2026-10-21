@@ -42,7 +42,7 @@ function render() {
   byId("connect").textContent = connecting || connected ? "Disconnect" : "Connect scale";
   byId("connect").disabled = !window.isSecureContext || !navigator.bluetooth;
   byId("tare").disabled = !connected || busy;
-  byId("send").disabled = !session?.helper?.supported || busy || !validPrompt();
+  byId("send").disabled = !session?.helper?.enabled || busy || !validPrompt();
   byId("clear").disabled = !connected || busy;
   byId("previous").disabled = stepIndex === 0 || busy;
   byId("next").disabled = busy || (!finished && stepIndex === steps.length - 1);
@@ -152,12 +152,13 @@ async function connect() {
     current.helper = helper;
     await sendHeartbeat(current);
     assertCurrent(current);
-    byId("capability").textContent = helper.supported ? "App Prompts v1 / 18 characters" : "Unsupported / browser only";
+    byId("capability").textContent = !helper.supported ? "Unsupported / browser only" :
+      helper.enabled ? "App Text v1 / 18 characters" : "App Text off on scale";
     if (!finished) await showPrompt(current, steps[stepIndex].prompt);
     assertCurrent(current);
     connecting = false;
     byId("connection").textContent = device.name || "Connected";
-    log(helper.supported ? "Connected; App Prompts v1 detected" : "Connected; using browser-only steps");
+    log(helper.enabled ? "Connected; App Text enabled" : "Connected; using browser-only steps");
     scheduleHeartbeat(current);
     render();
   } catch (error) {
@@ -185,7 +186,7 @@ async function operate(operation) {
 }
 
 async function showPrompt(current, text) {
-  if (!current?.helper?.supported) return;
+  if (!current?.helper?.enabled) return;
   const sent = await current.helper.showPrompt(text);
   if (session !== current) return;
   if (sent) {

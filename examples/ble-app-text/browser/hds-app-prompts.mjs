@@ -12,6 +12,7 @@ export async function connectAppPrompts(server) {
   let active = true;
   let queue = Promise.resolve();
   let promptCharacteristic = null;
+  let locallyEnabled = false;
   let promptsEnabled = false, clearPending = false;
   const enqueue = (operation) => {
     const result = queue.then(() => {
@@ -25,6 +26,7 @@ export async function connectAppPrompts(server) {
     active = false;
     promptCharacteristic = null;
     promptsEnabled = false;
+    locallyEnabled = false;
     clearPending = false;
     server.device.removeEventListener("gattserverdisconnected", disconnected);
   };
@@ -38,10 +40,12 @@ export async function connectAppPrompts(server) {
       try {
         const characteristic = await enqueue(() => service.getCharacteristic(APP_PROMPTS_UUID));
         const capabilities = await enqueue(() => characteristic.readValue());
-        if (active && server.connected && capabilities.byteLength === 3 && capabilities.getUint8(0) === 1 &&
+        if (active && server.connected && (capabilities.byteLength === 3 ||
+            (capabilities.byteLength === 4 && capabilities.getUint8(3) <= 1)) && capabilities.getUint8(0) === 1 &&
             capabilities.getUint8(1) === MAX_PROMPT_BYTES && capabilities.getUint8(2) === 10) {
           promptCharacteristic = characteristic;
           promptsEnabled = true;
+          locallyEnabled = capabilities.byteLength === 3 || capabilities.getUint8(3) === 1;
         }
       } catch {}
     };
@@ -78,7 +82,7 @@ export async function connectAppPrompts(server) {
     }
   };
   const sendPrompt = async (bytes) => {
-    if (!promptsEnabled || !active) return false;
+    if (!promptsEnabled || !active || !locallyEnabled) return false;
     try {
       return await enqueue(async () => {
         if (!promptsEnabled) return false;
@@ -96,6 +100,7 @@ export async function connectAppPrompts(server) {
   };
   return Object.freeze({
     get supported() { return active && server.connected && promptsEnabled; },
+    get enabled() { return active && server.connected && promptsEnabled && locallyEnabled; },
     send(bytes) {
       const frame = Uint8Array.from(bytes);
       return enqueue(async () => {

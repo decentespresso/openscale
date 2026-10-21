@@ -48,6 +48,7 @@ Manual WiFi input trims Unicode whitespace and invisible characters at both edge
 | `heartbeat` | bool | `true` |
 | `screen_flip` | bool | `false` |
 | `time_on_top` | bool | `false` |
+| `app_text` | bool | `false` |
 | `btn_conn` | bool | `false` |
 | `wifi_boot` | bool | `false` |
 | `auto_sleep` | bool | `true` |
@@ -60,6 +61,21 @@ Manual WiFi input trims Unicode whitespace and invisible characters at both edge
 `schema` is a `uint16_t`, currently `1`. Do not rename a key or change its stored type in place. Add an explicit migration, preserve old data until the new schema is complete, then increment the schema version.
 
 Energy-menu settings use `energy_schema` and `ENERGY_FEATURE_KEYS` in `include/storage.h`, independently of the base settings schema. Missing or invalid booleans receive validated defaults.
+
+App Text stores only its local opt-in. Its text, cancellation, and BLE session
+remain in protected RAM. Missing or invalid `app_text` receives the Off default;
+the menu saves before applying a runtime change.
+
+`include/integration_settings.h` owns `hds/integration` (UChar): None `0`,
+Pressensor `1`, or Grinder `2`. When absent, it migrates the legacy `enabled`
+booleans in the separate `pressensor` and `grinder` namespaces. Exactly one enabled
+integration survives migration; ambiguous, invalid, or unavailable choices become
+None. The authoritative selection supplies runtime enable flags. Integration
+changes save/read back the choice and restart only after confirmed grinder
+shutdown. Sensor, plug, and tuning keys remain in their existing namespaces.
+Migration restores the pre-grinder WiFi boot preference from the legacy settings.
+Selected Grinder forces WiFi in RAM at startup without overwriting that preference.
+Run `python tools/test_app_text.py` for migration, failed-save, and restart guards.
 
 ## Legacy EEPROM Migration
 

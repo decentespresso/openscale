@@ -128,6 +128,11 @@ def testTemporaryPluginValidation():
 
             writePlugin(root, pluginManifest(conflicts=["missing-plugin"]))
             assertRejected(customBuild.loadPluginCatalog)
+            for overrides in (None, [], {"unknown": []}, {firmwareRef: "bad"},
+                              {firmwareRef: ["code-plugin"]}, {firmwareRef: ["bad/id"]},
+                              {firmwareRef: ["other", "other"]}, {firmwareRef: ["missing-plugin"]}):
+                writePlugin(root, pluginManifest(conflicts_by_ref=overrides))
+                assertRejected(customBuild.loadPluginCatalog)
 
             invalidBudget = {
                 "firmware_flash_bytes": True,
@@ -381,6 +386,14 @@ def main():
         assertRejected(lambda: customBuild.resolveConfiguration(
             writeConfig(root, [], ["grind-by-weight", "pressensor"])
         ))
+        combined = customBuild.resolveConfiguration(
+            writeConfig(root, [], ["grind-by-weight", "pressensor"], "main")
+        )
+        assert {plugin["id"] for plugin in combined["plugins"]} == {"grind-by-weight", "pressensor"}
+        for ref in ("v3.1.15", "v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4"):
+            assertRejected(lambda ref=ref: customBuild.resolveConfiguration(
+                writeConfig(root, [], ["grind-by-weight", "pressensor"], ref)
+            ))
     testTemporaryPluginValidation()
     print("plugin catalog tests passed")
 
