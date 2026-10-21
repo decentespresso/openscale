@@ -246,6 +246,8 @@ jobs:
         run: pio run -e esp32s3
       - name: Check both About layouts
         run: python tools/check_about_layout.py
+      - name: Check App Text in both rotations
+        run: python tools/check_app_text_layout.py
       - name: Build multi-webapp filesystem fixture
         run: python tools/test_webapp_contract.py --buildfs
       - name: Build changed webapp filesystems

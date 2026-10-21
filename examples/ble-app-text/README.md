@@ -88,11 +88,14 @@ refs retain their existing build conflicts and patches.
 
 ```sh
 python tools/test_app_text.py
+python tools/check_app_text_layout.py
 ```
 
 The native checks exercise text validation, expiry, cancellation, opt-in, callback
 interleaving, integration migration, and restart guards. Browser checks cover
 capability negotiation and serialized command writes. They use simulated hardware.
+The layout check needs the U8g2 sources from an `esp32s3` build. It checks rendered
+pixels and font bounds in both rotations without claiming a physical OLED test.
 
 Serve only the browser directory, not the repository or firmware binaries:
 
