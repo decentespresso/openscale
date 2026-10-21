@@ -47,6 +47,7 @@ void waitForEnergyMainLoopWork();
 #include "menu.h"
 #include "ble.h"
 #include "usbcomm.h"
+#include "fuel_gauge.h"
 #include "finger_detection.h"
 #include "timing.h"
 #include "tap_detection.h"
@@ -941,13 +942,12 @@ void setup() {
 #endif
   button_init();
   pinMode(BATTERY_CHARGING, INPUT_PULLUP);
-#if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
+#if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1) || defined(V9_0_5)
   pinMode(USB_DET, INPUT_PULLUP);
   pinMode(OLED_CS, OUTPUT);
   pinMode(OLED_DC, OUTPUT);
   pinMode(SCALE_PDWN, OUTPUT);
   pinMode(SCALE_SCLK, OUTPUT);
-  pinMode(ACC_PWR_CTRL, OUTPUT);
   pinMode(PWR_CTRL, OUTPUT);
 #endif
   print_wakeup_reason();
@@ -964,6 +964,7 @@ void setup() {
     b_ble_enabled = true;
   }
   while (true && GPIO_power_on_with > 0) {
+    if (GPIO_power_on_with == BATTERY_CHARGING && usbPowerKeepsAwake()) break;
 #ifdef ADS1232ADC
     if (wowButtonWake) break;
 #endif
@@ -992,8 +993,6 @@ void setup() {
   }
   pinMode(PWR_CTRL, OUTPUT);
   digitalWrite(PWR_CTRL, HIGH);
-  pinMode(ACC_PWR_CTRL, OUTPUT);
-  digitalWrite(ACC_PWR_CTRL, HIGH);
   pinMode(OLED_SDIN, OUTPUT);
   digitalWrite(OLED_SDIN, LOW);
   pinMode(OLED_SCLK, OUTPUT);
@@ -1031,19 +1030,29 @@ void setup() {
   gpio_hold_dis((gpio_num_t)I2C_SDA);
   gpio_hold_dis((gpio_num_t)PWR_CTRL);
 
-#if defined(V7_3) || defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
+#if defined(V7_3) || defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1) || defined(V9_0_5)
   gpio_hold_dis((gpio_num_t)ACC_PWR_CTRL);
 #endif
   gpio_deep_sleep_hold_dis();
-  Serial.println("ACC_PWR_CTRL = HIGH");
 #ifdef ESP32
   Wire.begin(I2C_SDA, I2C_SCL);
 #endif
+  b_batteryProtect = storageGetBool(KEY_BAT_PROTECT, false);
+  const int storedBatteryCapacity = storageGetInt(KEY_BAT_CAPACITY, 0);
+  const uint16_t batteryCapacity = storedBatteryCapacity >= 300 && storedBatteryCapacity <= 2000
+      ? static_cast<uint16_t>(storedBatteryCapacity) : 0;
+  fuelGaugeBegin(batteryCapacity, storageGetBool(KEY_BAT_CAPACITY_SET, false));
+  if (fuelGaugeLegacyHardware()) {
+    pinMode(ACC_PWR_CTRL, OUTPUT);
+    digitalWrite(ACC_PWR_CTRL, HIGH);
+  }
 #ifdef HW_SPI
   SPI.begin(OLED_SCLK, -1, OLED_SDIN, OLED_CS);
 #endif
 #ifdef ADS1115ADC
-  ADS_init();
+  if (fuelGaugeLegacyHardware()) {
+    ADS_init();
+  }
 #endif
   delay(50);
   b_requireHeartBeat = storageGetBool(KEY_HEARTBEAT, true);
@@ -1728,7 +1737,9 @@ void resetStableOutput() {
 
 bool wakeScaleFromSoftSleep(const char *context) {
   digitalWrite(PWR_CTRL, HIGH);
-  digitalWrite(ACC_PWR_CTRL, HIGH);
+  if (fuelGaugeLegacyHardware()) {
+    digitalWrite(ACC_PWR_CTRL, HIGH);
+  }
   delay(5);
   scale.powerUp();
 #if HDS_ENABLE_ENERGY_MENU
@@ -2073,14 +2084,12 @@ uint32_t energyDisplaySignature(unsigned long now) {
 #else
   const bool wifiBlink = false;
 #endif
-  const int batteryPercent = map(f_batteryVoltage * 1000,
-                                 showEmptyBatteryBelowVoltage * 1000,
-                                 showFullBatteryAboveVoltage * 1000, 0, 100);
+  const int percent = batteryPercent();
   bool chargingNow = digitalRead(BATTERY_CHARGING) == LOW;
 #ifdef USB_DET
   chargingNow = digitalRead(USB_DET) == LOW;
 #endif
-  const uint8_t batteryBucket = EnergyRuntimePolicy::batteryDisplayBucket(batteryPercent);
+  const uint8_t batteryBucket = EnergyRuntimePolicy::batteryDisplayBucket(percent);
   const uint8_t displayedBattery = chargingNow ? 5 : batteryBucket;
   const bool tareVisible = now - t_tareStatus < 500;
   const bool shutdownWarningVisible = b_shutdownFailBle && now - t_shutdownFailBle < 3000;
@@ -2244,6 +2253,7 @@ void loop() {
 #endif
   processWsPendingCmds();
   if (b_ota) {
+    fuelGaugePauseCharging();
     if (!otaRuntimeIsPaused()) {
       if (!otaTransportsStopped) {
         otaBleClientDisconnected =
@@ -2288,6 +2298,7 @@ void loop() {
 
   processBleStatusResponse();
   processBleVoltageResponse();
+  serviceFuelGauge();
 #if HDS_ENABLE_ENERGY_MENU
   serviceEnergyPowerManagement();
   serviceEnergyHousekeeping(millis());
@@ -2385,8 +2396,8 @@ void loop() {
       showMenu();
     } else if (GPIO_power_on_with == BATTERY_CHARGING && !b_calibration) {
       if (b_chargingOLED) {
-        if (digitalRead(BATTERY_CHARGING) == LOW && !b_calibration) {
-          float perc = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
+        if ((digitalRead(BATTERY_CHARGING) == LOW || usbPowerKeepsAwake()) && !b_calibration) {
+          float perc = batteryPercent();
           chargingOLED((int)perc, f_batteryVoltage);
           b_showChargingUI = true;
         } else {
@@ -2723,7 +2734,7 @@ void drawBattery(unsigned long now) {
     u8g2.drawXBM(121, 51, 7, 12, image_battery_charging);
   } else {
     b_is_charging = false;
-    int i_batteryPercent = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
+    int i_batteryPercent = batteryPercent();
     switch (EnergyRuntimePolicy::batteryDisplayBucket(i_batteryPercent)) {
       case 0:
         if ((now / 500) & 1) u8g2.drawXBM(121, 52, 7, 12, image_battery_0);
@@ -2793,7 +2804,7 @@ void drawDebug() {
       snprintf(chargingText, sizeof(chargingText), "Not charging");
 
     char batteryText[10];
-    int perc = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
+    int perc = batteryPercent();
     snprintf(batteryText, sizeof(batteryText), "%d%%", (perc > 100) ? 100 : perc);
 
     char voltageText[10];
