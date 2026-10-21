@@ -294,6 +294,7 @@ int GPIO_power_on_with = -1;
 unsigned long t_power_on_button = 0;  // Variable to store the timestamp when the button is pressed
 bool b_button_pressed = false;        // Boolean flag to indicate whether the button is currently pressed
 bool b_buttonChordSuppressUntilRelease = false;
+unsigned long menuChordPressedAt = 0;
 #if HDS_ENABLE_GRINDER
 bool b_grinderMenuDirectEntry = false;
 #endif

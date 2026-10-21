@@ -157,7 +157,7 @@ class IdleOptimizationContractTests(unittest.TestCase):
         self.assertLess(buttons.index(stock_gate), buttons.index("buttonCircle.check();"))
         self.assertLess(buttons.index(stock_gate), buttons.index("buttonSquare.check();"))
         self.assertLess(
-            buttons.index("handleGrinderMenuChord()"),
+            buttons.index("handleMenuChord()"),
             buttons.index("const unsigned long buttonNow = millis();"),
         )
         self.assertIn("serviceScaleButtonInputs(false);", loop)
