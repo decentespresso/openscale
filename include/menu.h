@@ -334,12 +334,21 @@ void toggleAppText() {
 }
 
 #if HDS_ENABLE_GRINDER || HDS_ENABLE_PRESSENSOR
+void blockIntegrationChange() {
+#if HDS_ENABLE_GRINDER
+  if (grinderRuntime.shutdownUnconfirmed && grinderRuntime.state == GRINDER_STATE_ERROR) {
+    grinderRuntimeReset();
+  }
+#endif
+  actionMessage = "Change Blocked";
+  actionMessage2 = "Confirm Stop";
+  menuActionMessageChanged();
+  t_actionMessageDelay = 1500;
+}
+
 void toggleIntegration(IntegrationMode mode) {
   if (!integrationCanRestart()) {
-    actionMessage = "Change Blocked";
-    actionMessage2 = "Confirm Stop";
-    menuActionMessageChanged();
-    t_actionMessageDelay = 1500;
+    blockIntegrationChange();
     return;
   }
   const IntegrationMode next = activeIntegration == mode ? IntegrationMode::None : mode;
@@ -670,6 +679,10 @@ bool grinderEnsureWifiReadyForDiscovery() {
 uint8_t grinderFindPlugsForSelection() {
   if (!grinderSettings.enabled) {
     grinderSetActionMessage("Enable Mode", "First");
+    return 0;
+  }
+  if (!integrationCanRestart()) {
+    blockIntegrationChange();
     return 0;
   }
   if (!grinderEnsureWifiReadyForDiscovery()) {

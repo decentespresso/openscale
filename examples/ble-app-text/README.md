@@ -81,6 +81,8 @@ Sensor/plug selections and dose tuning remain saved. App Text stays independent.
 
 A pending or unconfirmed grinder stop blocks the switch. Leave the menu to let
 the existing connection recovery run, then retry after the plug confirms Off.
+An attempted integration or plug change retries the current plug after a latched
+stop error. HDS blocks plug selection until that plug's shutdown is confirmed.
 Disconnection alone does not prove that the grinder stopped. Older firmware
 refs retain their existing build conflicts and patches.
 

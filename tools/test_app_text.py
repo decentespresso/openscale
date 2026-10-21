@@ -41,6 +41,12 @@ def main():
     assert "u8g2" not in runtime and "delay(" not in runtime
     assert "appTextEnabled || (length == 1 && bytes[0] == 0)" in ble
     assert "static_cast<uint8_t>(appTextIsEnabled())" in ble
+    selectPlug = block_after(menu, "uint8_t grinderFindPlugsForSelection()")
+    assert selectPlug.index("if (!integrationCanRestart())") < selectPlug.index("grinderReleaseClientForDiscovery();")
+    blocked = block_after(menu, "void blockIntegrationChange()")
+    assert "grinderRuntime.shutdownUnconfirmed && grinderRuntime.state == GRINDER_STATE_ERROR" in blocked
+    assert "grinderRuntimeReset();" in blocked
+    assert "grinderSaveSelectedDiscovery" not in blocked
     compiler = shutil.which("g++") or shutil.which("clang++")
     if not compiler:
         raise RuntimeError("g++ or clang++ is required")
