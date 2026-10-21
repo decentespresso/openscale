@@ -31,6 +31,7 @@ def main():
     assert "const bool showPrompt = promptFrame.active && appTextScreenAvailable();" in sketch
     assert "if (appTextScreenAvailable() && cancelAppPrompt())" in sketch
     assert "grinderRuntime.state >= GRINDER_STATE_ARMED" in sketch
+    assert "if (grinderSettings.enabled) grinderRuntimeBegin();" in sketch
     assert "drawWeightAt(f_displayedValue, LCDHeight - 30);" in sketch
     assert "if (!showPrompt) drawButton();" in sketch
     assert "setAppTextEnabled(textEnabled);" in sketch

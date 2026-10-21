@@ -1262,7 +1262,7 @@ void setup() {
   if (grinderSettings.enabled && !b_wifiOnBoot) {
     b_wifiOnBoot = true;
   }
-  grinderRuntimeBegin();
+  if (grinderSettings.enabled) grinderRuntimeBegin();
 #endif
   refreshMenuRows();
 #if HDS_FEATURE_PULL_OTA
