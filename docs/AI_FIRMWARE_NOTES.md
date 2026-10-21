@@ -58,6 +58,10 @@ Hold either button to return to weighing, or tap with Quick Boot enabled. Wake
 presses are consumed rather than interpreted as tare or timer actions. Holding
 both buttons for 500 ms opens the menu on USB without unplugging or rebooting;
 the existing grinder shortcut still opens its own menu when active.
+Consumed releases reset and prime AceButton's click state before normal input
+resumes. Ignored short presses and BLE disconnects leave a blank charging screen
+off. BLE disconnect display restoration is queued and checked on the main loop.
+USB text tare/set routing identifies charging mode independently of OLED visibility.
 
 With USB absent, deep sleep holds the charger disabled. USB detection is an EXT1
 wake source alongside the buttons and charger-status pin, including when Battery

@@ -191,6 +191,7 @@ const uint32_t WSP_WIFI_UPDATE = 1u << 11;
 const uint32_t WSP_RESET       = 1u << 12;
 const uint32_t WSP_BLE_GYRO    = 1u << 13;
 const uint32_t WSP_OTA_RESET   = 1u << 14;
+const uint32_t WSP_DISPLAY_RESTORE = 1u << 15;
 portMUX_TYPE wsPendingMux = portMUX_INITIALIZER_UNLOCKED;
 volatile uint32_t wsPendingMask = 0;
 volatile uint8_t pendingSamplesInUse = 0;
@@ -594,6 +595,11 @@ inline void leaveMenu() {
 // Used to implement a protection period preventing unintended operations
 
 bool b_calibration = false;  //Calibration flag
+inline bool chargingUiActive() {
+  return !b_menu && !b_calibration &&
+    (GPIO_power_on_with == BATTERY_CHARGING || b_showChargingUI);
+}
+
 bool calibrationReturnToMenu = false;
 volatile bool b_ota = false; //wifi ota flag
 volatile bool b_pullOtaRunning = false;

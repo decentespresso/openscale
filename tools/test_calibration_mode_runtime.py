@@ -33,6 +33,7 @@ bool b_buttonChordSuppressUntilRelease = false;
 struct { bool active = false; } circle_press_data, square_press_data;
 int i_cal_weight = 0, i_button_cal_status = 1, i_calibration = 0, i_buttonBootDelay = 0;
 int GPIO_power_on_with = BATTERY_CHARGING, chargingPin = LOW, usbPin = LOW;
+bool chargingUiActive() { @CHARGING_UI@ }
 int sampledPresses = 0, releasedPresses = 0, timerToggles = 0, chargingWakes = 0;
 int calibrationFrames = 0, chargingFrames = 0, adcWakes = 0, adcResets = 0;
 int restartRequests = 0, restoredSamples = 0, menuInvalidations = 0;
@@ -294,6 +295,7 @@ int main() {
 }
 '''
     replacements = {
+        "CHARGING_UI": block_after((Path(__file__).resolve().parents[1] / "include/parameter.h").read_text(encoding="utf-8"), "inline bool chargingUiActive()"),
         "USB_AWAKE": block_after((Path(__file__).resolve().parents[1] / "include/power.h").read_text(encoding="utf-8"), "bool usbPowerKeepsAwake()"),
         "ENTRY": block_after(menu, "void calibrate() {"),
         "FINISH": block_after(menu, "void calibrationFinish("),

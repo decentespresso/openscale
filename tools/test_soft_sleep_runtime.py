@@ -28,6 +28,8 @@ def main():
 #include <mutex>
 @COMMANDS@
 bool b_softSleep = false, b_u8g2Sleep = false, b_wifiEnabled = true;
+bool chargingUi = false;
+bool chargingUiActive() { return chargingUi; }
 bool b_ota = false, b_powerOff = false, pendingOtaDispatching = false;
 bool b_hasFuelGauge = false;
 bool fuelGaugeLegacyHardware() { return !b_hasFuelGauge; }
@@ -365,6 +367,21 @@ int main() {
   b_softSleep = false;
   supervise();
   assert(supervises == 1);
+  for (bool charging : {false, true}) {
+    for (bool asleep : {false, true}) {
+      for (uint32_t explicitDisplay : {0u, WSP_DISPLAY_ON, WSP_DISPLAY_OFF}) {
+        chargingUi = charging;
+        b_softSleep = asleep;
+        oled = false;
+        b_u8g2Sleep = true;
+        wsPendingMask = WSP_DISPLAY_RESTORE | explicitDisplay;
+        dispatch();
+        const bool expected = explicitDisplay == WSP_DISPLAY_ON ||
+          (explicitDisplay == 0 && !charging && !asleep);
+        assert(oled == expected && b_u8g2Sleep != expected && wsPendingMask == 0);
+      }
+    }
+  }
 }
 '''
     replacements = {

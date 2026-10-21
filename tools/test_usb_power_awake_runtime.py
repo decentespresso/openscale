@@ -86,6 +86,8 @@ template<typename T, unsigned N> int getMenuSize(T (&)[N]) { return N; }
 unsigned long clockMs = 1000, menuChordPressedAt = 0;
 unsigned long millis() { return clockMs; }
 int effects = 0, i_wakeupPin = -1, GPIO_power_on_with = -1, i_wow_interval = 0;
+bool chargingUiActive() { @CHARGING_UI@ }
+void resetReleasedScaleButtons() {}
 unsigned long t_batteryRefresh = 1;
 uint64_t GPIO_reason = 0, wakeStatus = 0, armedMask = 0;
 esp_sleep_wakeup_cause_t wakeCause = ESP_SLEEP_WAKEUP_EXT1;
@@ -291,6 +293,8 @@ def main():
         "@PIN_MASK@", re.search(r"^#define PIN_BITMASK .*", power, re.MULTILINE)[0]
     )
     hds = (ROOT / "src/hds.ino").read_text(encoding="utf-8")
+    source = source.replace("@CHARGING_UI@", block_after(
+        (ROOT / "include/parameter.h").read_text(encoding="utf-8"), "inline bool chargingUiActive()"))
     standby = ["bool anyScaleButtonPressed()", "bool buttonChecksSuppressedUntilRelease()",
                "void enterUsbStandby()", "void wakeFromChargingUi(uint8_t buttonPin)", "bool handleMenuChord()"]
     source = source.replace("@STANDBY_FUNCTIONS@", "\n".join(

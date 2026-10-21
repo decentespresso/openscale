@@ -23,6 +23,7 @@ int i_buttonBootDelay = 0;
 const int BUTTON_SQUARE = 1;
 const int BATTERY_CHARGING = 10;
 int GPIO_power_on_with = BUTTON_SQUARE;
+bool chargingUiActive() { @CHARGING_UI@ }
 unsigned long t_shutdownFailBle = 0, t_menuExitTime = 0;
 int sampledPresses = 0, chargingWakes = 0, menuActions = 0, timerToggles = 0;
 unsigned long millis() { return 10000; }
@@ -117,6 +118,7 @@ int main() {
 }
 '''
     replacements = {
+        "CHARGING_UI": block_after((root / "include/parameter.h").read_text(encoding="utf-8"), "inline bool chargingUiActive()"),
         "ENTRY": block_after(menu, "void calibrate() {"),
         "SELECT": block_after(menu, "void selectMenu() {"),
         "PRESS": block_after(hds, "void buttonSquare_Pressed() {"),

@@ -114,11 +114,14 @@ def main():
     assert_ordered(
         ble_disconnect_display,
         [
-            "if (b_softSleep) return;",
-            "b_u8g2Sleep = false;",
-            "remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);",
+            "remoteQueuePending(WSP_DISPLAY_RESTORE);",
         ],
     )
+    if "b_u8g2Sleep =" in ble_disconnect_display or "u8g2." in ble_disconnect_display:
+        raise AssertionError("BLE disconnect display changes must remain on the main loop")
+    restore = method_body(WEBSOCKET_HEADER, "processWsPendingCmds")
+    assert "if (mask & WSP_DISPLAY_RESTORE)" in restore
+    assert "!b_softSleep && !chargingUiActive()" in restore
     if read(BLE_HEADER).count("restoreDisplayAfterBleDisconnect();") != 2:
         raise AssertionError("all BLE disconnect callbacks must preserve soft sleep")
 

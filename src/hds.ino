@@ -65,11 +65,24 @@ bool anyScaleButtonPressed() {
   return digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW;
 }
 
+void resetReleasedScaleButtons() {
+  const uint16_t debounceDelay = config1.getDebounceDelay();
+  config1.setDebounceDelay(0);
+  buttonCircle.init(BUTTON_CIRCLE);
+  buttonCircle.checkState(HIGH);
+  buttonCircle.checkState(HIGH);
+  buttonSquare.init(BUTTON_SQUARE);
+  buttonSquare.checkState(HIGH);
+  buttonSquare.checkState(HIGH);
+  config1.setDebounceDelay(debounceDelay);
+}
+
 bool buttonChecksSuppressedUntilRelease() {
   if (!b_buttonChordSuppressUntilRelease) {
     return false;
   }
   if (!anyScaleButtonPressed()) {
+    resetReleasedScaleButtons();
     b_buttonChordSuppressUntilRelease = false;
   }
   return true;
@@ -466,30 +479,33 @@ void adsDebugCallback(const ADS1232DebugInfo& info) {
 
 void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonState) {
   power_off(-1);
+  const bool chargingUi = chargingUiActive();
 #if HDS_ENABLE_ENERGY_MENU
-  if (b_u8g2Sleep && !energyRuntime.explicitDisplayOff) {
+  if (!chargingUi && b_u8g2Sleep && !energyRuntime.explicitDisplayOff) {
     u8g2.setPowerSave(0);
     b_u8g2Sleep = false;
   }
 #else
-  if (b_u8g2Sleep) {
+  if (!chargingUi && b_u8g2Sleep) {
     u8g2.setPowerSave(0);
     b_u8g2Sleep = false;
   }
 #endif
-  if (b_softSleep) {
+  if (!chargingUi && b_softSleep) {
     Serial.println("Exit Soft Sleep.");
     wakeScaleFromSoftSleep("button soft wake");
   }
 #if HDS_ENABLE_ENERGY_MENU
-  if (!energyRuntime.explicitDisplayOff) {
+  if (!chargingUi && !energyRuntime.explicitDisplayOff) {
     u8g2.setContrast(255);
     b_websocketLowPowerEnabled = false;
     energyRuntime.requestedDisplayContrast = 255;
   }
 #else
-  u8g2.setContrast(255);
-  b_websocketLowPowerEnabled = false;
+  if (!chargingUi) {
+    u8g2.setContrast(255);
+    b_websocketLowPowerEnabled = false;
+  }
 #endif
   int pin = button->getPin();
   switch (eventType) {
@@ -633,10 +649,8 @@ void enterUsbStandby() {
 }
 
 void wakeFromChargingUi(uint8_t buttonPin) {
-  if (b_menu || b_calibration ||
-      (GPIO_power_on_with != BATTERY_CHARGING && !b_showChargingUI)) {
-    return;
-  }
+  if (!chargingUiActive()) return;
+  if (b_softSleep) wakeScaleFromSoftSleep("charging button wake");
   GPIO_power_on_with = buttonPin;
   b_showChargingUI = false;
   b_is_charging = false;
@@ -671,8 +685,7 @@ void buttonCircle_Released() {
 
 void buttonCircle_Pressed() {
   recordEnergyActivity();
-  if (!b_menu && !b_calibration &&
-      (GPIO_power_on_with == BATTERY_CHARGING || b_showChargingUI)) {
+  if (chargingUiActive()) {
     if (i_buttonBootDelay == 0) wakeFromChargingUi(BUTTON_CIRCLE);
     return;
   }
@@ -701,8 +714,7 @@ void buttonSquare_Released() {
 
 void buttonSquare_Pressed() {
   recordEnergyActivity();
-  if (!b_menu && !b_calibration &&
-      (GPIO_power_on_with == BATTERY_CHARGING || b_showChargingUI)) {
+  if (chargingUiActive()) {
     if (i_buttonBootDelay == 0) wakeFromChargingUi(BUTTON_SQUARE);
     return;
   }
