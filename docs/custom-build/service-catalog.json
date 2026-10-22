@@ -1,7 +1,7 @@
 {
   "schema": 2,
   "custom_ota_signing_key_generation": 1,
-  "catalog_revision": "84bffa6904707413b5cf28fb1fad5a153ffe0fe07a80176ad15c8f851b611de2",
+  "catalog_revision": "961aaa3309c748934b4ba9ffa31ed67653f09d5ead18e4593ac262f7a53088ac",
   "firmware_refs": [
     "v3.1.14",
     "v3.1.14-preview.3",
@@ -172,6 +172,7 @@
       ],
       "depends_on": [],
       "conflicts": [],
+      "conflicts_by_ref": {},
       "conflicts_features": [],
       "recommends": {
         "features": [],
@@ -317,6 +318,9 @@
       "conflicts": [
         "pressensor"
       ],
+      "conflicts_by_ref": {
+        "main": []
+      },
       "conflicts_features": [],
       "recommends": {
         "features": [
@@ -343,6 +347,9 @@
       "conflicts": [
         "grind-by-weight"
       ],
+      "conflicts_by_ref": {
+        "main": []
+      },
       "conflicts_features": [],
       "recommends": {
         "features": [],
@@ -350,7 +357,7 @@
       },
       "patches": {
         "main": {
-          "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"
+          "sha256": "5efaa1664da4e785d0fe63fe3102abae8b01c7b70155bcb4bda0011903dcd9f2"
         },
         "v3.1.14": {
           "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"

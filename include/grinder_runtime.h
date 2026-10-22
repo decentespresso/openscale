@@ -72,6 +72,7 @@ struct GrinderRuntime {
   uint16_t rxLength = 0;
   bool pendingCr = false;
   bool relayOn = false;
+  bool shutdownUnconfirmed = false;
   bool removalSeen = false;
   bool zeroTracking = false;
   bool settingsDirty = false;
@@ -332,6 +333,7 @@ static inline bool grinderSendLine(const char *line, GrinderPendingCommand comma
   if (!grinderRuntime.client.connected()) {
     return false;
   }
+  if (command == GRINDER_COMMAND_ON) grinderRuntime.shutdownUnconfirmed = true;
   grinderRuntime.client.print(line);
   grinderRuntime.client.print('\n');
   grinderRuntime.pendingCommand = command;
@@ -464,6 +466,7 @@ static inline void grinderHandleOkResponse(const GrinderTcpResponse &response, f
   }
   switch (grinderRuntime.pendingCommand) {
     case GRINDER_COMMAND_HELLO:
+      grinderRuntime.shutdownUnconfirmed = response.relayOn;
       grinderRuntime.pendingCommand = GRINDER_COMMAND_NONE;
       grinderRuntime.recovery = grinderRecoveryComplete();
       grinderRuntime.tareRequestArmsGrinder = false;
@@ -494,6 +497,7 @@ static inline void grinderHandleOkResponse(const GrinderTcpResponse &response, f
       break;
     case GRINDER_COMMAND_OFF:
       if (!response.relayOn) {
+        grinderRuntime.shutdownUnconfirmed = false;
         grinderRuntime.pendingCommand = GRINDER_COMMAND_NONE;
         grinderMarkAdaptiveShotOff(weight);
         grinderRuntime.stopWeight = weight;
@@ -931,15 +935,6 @@ static inline void grinderShortStatus(char *output, size_t outputSize) {
            outputSize,
            "Gr:%s",
            grinderRuntime.status[0] ? grinderRuntime.status : grinderStateText(grinderRuntime.state));
-}
-
-static inline void grinderSetEnabled(bool enabled) {
-  if (!enabled && grinderRuntime.client.connected()) {
-    grinderSendOff();
-  }
-  grinderSettings.enabled = enabled;
-  grinderSaveSettings();
-  grinderRuntimeReset();
 }
 
 #endif

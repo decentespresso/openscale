@@ -7,6 +7,15 @@
 #include <math.h>
 #include <mutex>
 #include "calibration_validation.h"
+#include "integration_state.h"
+
+IntegrationMode activeIntegration = IntegrationMode::None;
+IntegrationMode selectedIntegration = IntegrationMode::None;
+#include "app_prompt_state.h"
+
+portMUX_TYPE appPromptMux = portMUX_INITIALIZER_UNLOCKED;
+volatile AppPromptState appPromptState;
+volatile bool appTextEnabled = false;
 #if HDS_FEATURE_WIFI
 #include "wifi_setup.h"
 
