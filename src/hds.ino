@@ -61,8 +61,8 @@ void waitForEnergyMainLoopWork();
 #ifndef GRINDER_MENU_CHORD_HOLD_MS
 #define GRINDER_MENU_CHORD_HOLD_MS 500
 #endif
-bool handleGrinderMenuChord();
 #endif
+bool handleMenuChord();
 
 constexpr unsigned long BUTTON_POLL_INTERVAL_MS = 2;
 
@@ -70,11 +70,24 @@ bool anyScaleButtonPressed() {
   return digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW;
 }
 
+void resetReleasedScaleButtons() {
+  const uint16_t debounceDelay = config1.getDebounceDelay();
+  config1.setDebounceDelay(0);
+  buttonCircle.init(BUTTON_CIRCLE);
+  buttonCircle.checkState(HIGH);
+  buttonCircle.checkState(HIGH);
+  buttonSquare.init(BUTTON_SQUARE);
+  buttonSquare.checkState(HIGH);
+  buttonSquare.checkState(HIGH);
+  config1.setDebounceDelay(debounceDelay);
+}
+
 bool buttonChecksSuppressedUntilRelease() {
   if (!b_buttonChordSuppressUntilRelease) {
     return false;
   }
   if (!anyScaleButtonPressed()) {
+    resetReleasedScaleButtons();
     b_buttonChordSuppressUntilRelease = false;
   }
   return true;
@@ -390,9 +403,7 @@ void waitForEnergyMainLoopWork() {
 bool serviceScaleButtonInputs(bool forcePoll) {
   const bool buttonInputAllowed = !b_ota
       && !buttonChecksSuppressedUntilRelease()
-#if HDS_ENABLE_GRINDER
-      && !handleGrinderMenuChord()
-#endif
+      && !handleMenuChord()
       ;
   if (!buttonInputAllowed) return false;
   const unsigned long buttonNow = millis();
@@ -473,30 +484,33 @@ void adsDebugCallback(const ADS1232DebugInfo& info) {
 
 void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonState) {
   power_off(-1);
+  const bool chargingUi = chargingUiActive();
 #if HDS_ENABLE_ENERGY_MENU
-  if (b_u8g2Sleep && !energyRuntime.explicitDisplayOff) {
+  if (!chargingUi && b_u8g2Sleep && !energyRuntime.explicitDisplayOff) {
     u8g2.setPowerSave(0);
     b_u8g2Sleep = false;
   }
 #else
-  if (b_u8g2Sleep) {
+  if (!chargingUi && b_u8g2Sleep) {
     u8g2.setPowerSave(0);
     b_u8g2Sleep = false;
   }
 #endif
-  if (b_softSleep) {
+  if (!chargingUi && b_softSleep) {
     Serial.println("Exit Soft Sleep.");
     wakeScaleFromSoftSleep("button soft wake");
   }
 #if HDS_ENABLE_ENERGY_MENU
-  if (!energyRuntime.explicitDisplayOff) {
+  if (!chargingUi && !energyRuntime.explicitDisplayOff) {
     u8g2.setContrast(255);
     b_websocketLowPowerEnabled = false;
     energyRuntime.requestedDisplayContrast = 255;
   }
 #else
-  u8g2.setContrast(255);
-  b_websocketLowPowerEnabled = false;
+  if (!chargingUi) {
+    u8g2.setContrast(255);
+    b_websocketLowPowerEnabled = false;
+  }
 #endif
   int pin = button->getPin();
   switch (eventType) {
@@ -605,14 +619,59 @@ void scaleTimer() {
   }
 }
 
-void wakeFromChargingUi(uint8_t buttonPin) {
-  if (b_menu || b_calibration ||
-      (GPIO_power_on_with != BATTERY_CHARGING && !b_showChargingUI)) {
+void enterUsbStandby() {
+  b_powerOff = false;
+  if (b_menu || b_calibration) return;
+#if HDS_ENABLE_GRINDER
+  if (grinderSettings.enabled &&
+      (grinderRuntime.state == GRINDER_STATE_ARMED ||
+       grinderRuntime.state == GRINDER_STATE_GRINDING ||
+       grinderRuntime.state == GRINDER_STATE_STOPPING ||
+       grinderRuntime.state == GRINDER_STATE_ERROR ||
+       grinderRuntime.relayOn || grinderRuntime.recovery.active)) {
+    Serial.println("USB standby blocked: stop grinder first");
     return;
   }
+#endif
+  if (b_softSleep) wakeScaleFromSoftSleep("USB standby");
+  b_shutdownFailBle = false;
+  GPIO_power_on_with = BATTERY_CHARGING;
+  b_showChargingUI = b_chargingOLED;
+  b_buttonChordSuppressUntilRelease = true;
+  circle_press_data = {};
+  square_press_data = {};
+#if HDS_ENABLE_GRINDER
+  grinderPauseForMenu();
+#endif
+#if HDS_ENABLE_ENERGY_MENU
+  requestEnergyDisplay(b_chargingOLED);
+  applyEnergyDisplayCommand(b_chargingOLED);
+#else
+  b_u8g2Sleep = !b_chargingOLED;
+  u8g2.setPowerSave(!b_chargingOLED);
+#endif
+  Serial.println("USB charging standby");
+}
+
+void wakeFromChargingUi(uint8_t buttonPin) {
+  if (!chargingUiActive()) return;
+  if (b_softSleep) wakeScaleFromSoftSleep("charging button wake");
   GPIO_power_on_with = buttonPin;
   b_showChargingUI = false;
   b_is_charging = false;
+  b_buttonChordSuppressUntilRelease = true;
+  circle_press_data = {};
+  square_press_data = {};
+#if HDS_ENABLE_GRINDER
+  grinderResumeAfterMenu();
+#endif
+#if HDS_ENABLE_ENERGY_MENU
+  requestEnergyDisplay(true);
+  applyEnergyDisplayCommand(true);
+#else
+  b_u8g2Sleep = false;
+  u8g2.setPowerSave(0);
+#endif
   if (!b_ble_enabled) {
     b_ble_enabled = true;
     ble_init();
@@ -631,8 +690,9 @@ void buttonCircle_Released() {
 
 void buttonCircle_Pressed() {
   recordEnergyActivity();
-  if (b_showChargingUI && i_buttonBootDelay == 0) {
-    wakeFromChargingUi(BUTTON_CIRCLE);
+  if (chargingUiActive()) {
+    if (i_buttonBootDelay == 0) wakeFromChargingUi(BUTTON_CIRCLE);
+    return;
   }
 
   if (b_menu) {
@@ -659,8 +719,9 @@ void buttonSquare_Released() {
 
 void buttonSquare_Pressed() {
   recordEnergyActivity();
-  if (b_showChargingUI && !b_calibration && i_buttonBootDelay == 0) {
-    wakeFromChargingUi(BUTTON_SQUARE);
+  if (chargingUiActive()) {
+    if (i_buttonBootDelay == 0) wakeFromChargingUi(BUTTON_SQUARE);
+    return;
   }
   if (b_menu) {
     selectMenu();
@@ -789,44 +850,50 @@ void buttonSquare_LongPressed() {
   }
 }
 
-#if HDS_ENABLE_GRINDER
-bool handleGrinderMenuChord() {
-  static bool handled = false;
-  static uint32_t pressedAt = 0;
+bool handleMenuChord() {
   const bool bothPressed = digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW;
-  if (!bothPressed) {
-    handled = false;
-    pressedAt = 0;
+#if HDS_ENABLE_GRINDER
+  const bool grinderMenuRequested = grinderSettings.enabled && GPIO_power_on_with != BATTERY_CHARGING;
+  const unsigned long holdMs = GRINDER_MENU_CHORD_HOLD_MS;
+#else
+  const bool grinderMenuRequested = false;
+  const unsigned long holdMs = 500;
+#endif
+  if (!bothPressed || b_menu || b_calibration ||
+      (!grinderMenuRequested && !usbPowerKeepsAwake())) {
+    menuChordPressedAt = 0;
     return false;
   }
-  if (handled) {
+  const unsigned long now = millis();
+  if (menuChordPressedAt == 0) {
+    menuChordPressedAt = now;
     return true;
   }
-  if (!grinderSettings.enabled || b_menu || b_calibration || GPIO_power_on_with == BATTERY_CHARGING) {
-    return false;
-  }
-  const uint32_t now = millis();
-  if (pressedAt == 0) {
-    pressedAt = now;
+  if (now - menuChordPressedAt < holdMs) {
     return true;
   }
-  if (now - pressedAt < GRINDER_MENU_CHORD_HOLD_MS) {
-    return true;
-  }
+  wakeFromChargingUi(BUTTON_SQUARE);
   b_menu = true;
   invalidateMenuFrame();
-  b_grinderMenuDirectEntry = true;
   b_buttonChordSuppressUntilRelease = true;
-  currentMenu = grinderMenu;
-  currentMenuSize = getMenuSize(grinderMenu);
+  circle_press_data = {};
+  square_press_data = {};
+  currentMenu = mainMenu;
+  currentMenuSize = getMenuSize(mainMenu);
+#if HDS_ENABLE_GRINDER
+  b_grinderMenuDirectEntry = grinderMenuRequested;
+  if (grinderMenuRequested) {
+    currentMenu = grinderMenu;
+    currentMenuSize = getMenuSize(grinderMenu);
+  }
+  grinderPauseForMenu();
+#endif
   currentIndex = 0;
   currentSelection = currentMenu[currentIndex];
-  grinderPauseForMenu();
-  handled = true;
-  Serial.println("[grinder] menu chord");
+  menuChordPressedAt = 0;
+  Serial.println("Menu chord");
   return true;
 }
-#endif
 
 
 void button_init() {
@@ -2433,35 +2500,37 @@ void loop() {
 #endif
       showMenu();
     } else if (GPIO_power_on_with == BATTERY_CHARGING && !b_calibration) {
-      if (b_chargingOLED) {
-        if ((digitalRead(BATTERY_CHARGING) == LOW || usbPowerKeepsAwake()) && !b_calibration) {
+#if HDS_ENABLE_GRINDER
+      grinderRuntimeTick(f_displayedValue);
+#endif
+      if ((digitalRead(BATTERY_CHARGING) == LOW || usbPowerKeepsAwake()) && !b_calibration) {
+        b_showChargingUI = b_chargingOLED;
+        if (b_chargingOLED) {
           float perc = batteryPercent();
           chargingOLED((int)perc, f_batteryVoltage);
-          b_showChargingUI = true;
-        } else {
-          b_showChargingUI = false;
-          bool b_usbDisconnected = false;
+        }
+      } else {
+        b_showChargingUI = false;
+        bool b_usbDisconnected = false;
 #ifdef USB_DET
-          b_usbDisconnected = digitalRead(USB_DET) == HIGH;
+        b_usbDisconnected = digitalRead(USB_DET) == HIGH;
 #endif
-          if (b_usbDisconnected) {
-            Serial.println("USB unplugged. Entering scale mode.");
-            GPIO_power_on_with = BUTTON_SQUARE;
-            b_is_charging = false;
-            scale.powerUp();
-            if (refreshScaleDatasetAfterDiscontinuity("charging wake") &&
-                tareScaleWhenAdcReady("charging wake tare")) {
-              resetScaleOutputAfterAdcDiscontinuity();
-            }
-          } else {
-            if (f_batteryVoltage > 4.1) {
-              Serial.println("Charging complete.");
-            } else {
-              Serial.println("Charging stopped before full.");
-            }
-            b_powerOff = true;
-            Serial.println("Going to sleep now by BatteryFull");
+        if (b_usbDisconnected) {
+          Serial.println("USB unplugged. Entering scale mode.");
+          wakeFromChargingUi(BUTTON_SQUARE);
+          scale.powerUp();
+          if (refreshScaleDatasetAfterDiscontinuity("charging wake") &&
+              tareScaleWhenAdcReady("charging wake tare")) {
+            resetScaleOutputAfterAdcDiscontinuity();
           }
+        } else {
+          if (f_batteryVoltage > 4.1) {
+            Serial.println("Charging complete.");
+          } else {
+            Serial.println("Charging stopped before full.");
+          }
+          b_powerOff = true;
+          Serial.println("Going to sleep now by BatteryFull");
         }
       }
     } else {

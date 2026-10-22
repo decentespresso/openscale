@@ -47,9 +47,21 @@ confirmation. Configuration and OTA pauses also keep charging disabled.
 
 Battery Protect stops charging at 80% and resumes at 75%. USB presence keeps the
 ESP32 awake even when charging pauses or completes, so the normal loop continues
-sampling and controlling the charger. Shutdown requests are cancelled before
-display or hardware teardown while USB is connected. The charging screen remains
-active until USB is unplugged or the user enters scale mode.
+sampling and controlling the charger. Automatic shutdown requests are cancelled
+before display or hardware teardown while USB is connected. Explicit Off enters
+charging standby instead of deep sleep; the charging-display preference still
+controls whether its screen is visible. Charging and Battery Protect remain
+active. An armed, running, stopping, failed, or recovering grinder blocks USB
+standby; its normal controls and stop handling remain available. Idle standby
+pauses grinder progression and retains its connection supervision.
+Hold either button to return to weighing, or tap with Quick Boot enabled. Wake
+presses are consumed rather than interpreted as tare or timer actions. Holding
+both buttons for 500 ms opens the menu on USB without unplugging or rebooting;
+the existing grinder shortcut still opens its own menu when active.
+Consumed releases reset and prime AceButton's click state before normal input
+resumes. Ignored short presses and BLE disconnects leave a blank charging screen
+off. BLE disconnect display restoration is queued and checked on the main loop.
+USB text tare/set routing identifies charging mode independently of OLED visibility.
 
 With USB absent, deep sleep holds the charger disabled. USB detection is an EXT1
 wake source alongside the buttons and charger-status pin, including when Battery

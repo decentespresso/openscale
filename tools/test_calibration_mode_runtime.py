@@ -29,11 +29,13 @@ bool b_u8g2Sleep = false, b_softSleep = false, b_websocketLowPowerEnabled = fals
 bool b_menuCirclePressPending = false, b_menuSquarePressPending = false;
 bool b_menuCircleLongHandled = false, b_menuSquareLongHandled = false;
 bool b_chargingOLED = true, bleClientLive = false;
-struct { int value = 0; } circle_press_data;
+bool b_buttonChordSuppressUntilRelease = false;
+struct { bool active = false; } circle_press_data, square_press_data;
 bool appTextScreenAvailable() { return !b_menu && !b_calibration && !b_showChargingUI; }
 bool cancelAppPrompt() { assert(!b_calibration); return false; }
 int i_cal_weight = 0, i_button_cal_status = 1, i_calibration = 0, i_buttonBootDelay = 0;
 int GPIO_power_on_with = BATTERY_CHARGING, chargingPin = LOW, usbPin = LOW;
+bool chargingUiActive() { @CHARGING_UI@ }
 int sampledPresses = 0, releasedPresses = 0, timerToggles = 0, chargingWakes = 0;
 int calibrationFrames = 0, chargingFrames = 0, adcWakes = 0, adcResets = 0;
 int restartRequests = 0, restoredSamples = 0, menuInvalidations = 0;
@@ -49,7 +51,7 @@ void recordEnergyActivity() {}
 void power_off(int) {}
 void wakeScaleFromSoftSleep(const char*) {}
 void ble_init() { ++chargingWakes; }
-void wakeFromChargingUi(uint8_t buttonPin) { @WAKE@ }
+void wakeFromChargingUi(uint8_t buttonPin);
 void startPressSampling(int) { ++sampledPresses; }
 void onButtonReleased(int pin) { assert(pin == BUTTON_SQUARE); ++releasedPresses; ++timerToggles; }
 void leaveMenu() {
@@ -89,6 +91,7 @@ struct {
   void setPowerSave(int) {}
   void setContrast(int) {}
 } u8g2;
+void wakeFromChargingUi(uint8_t buttonPin) { @WAKE@ }
 struct {
   void print(const char*) {}
   void println(const char*) {}
@@ -129,6 +132,9 @@ void squareEvent(uint8_t event) { aceButtonHandleEvent(&buttonSquare, event, HIG
 void resetRuntime(bool ble) {
   bleClientLive = ble;
   b_menu = b_calibration = b_showChargingUI = b_powerOff = false;
+  b_buttonChordSuppressUntilRelease = false;
+  b_chargingOLED = true;
+  i_buttonBootDelay = 0;
   calibrationReturnToMenu = b_ble_enabled = restartRequired = false;
   restartRequests = restoredSamples = menuInvalidations = 0;
   b_ota = false;
@@ -190,10 +196,29 @@ void testChargingAndWeighing() {
   b_showChargingUI = true;
   squareEvent(AceButton::kEventPressed);
   assert(chargingWakes == 1 && !b_showChargingUI && !b_is_charging);
-  assert(GPIO_power_on_with == BUTTON_SQUARE && sampledPresses == 1);
+  assert(GPIO_power_on_with == BUTTON_SQUARE && sampledPresses == 0);
+  assert(b_buttonChordSuppressUntilRelease);
   resetRuntime(true);
   squareEvent(AceButton::kEventPressed);
-  assert(b_powerOff && sampledPresses == 1);
+  assert(!b_powerOff && sampledPresses == 0 && GPIO_power_on_with == BUTTON_SQUARE);
+  for (bool display : {false, true}) {
+    resetRuntime(false);
+    b_chargingOLED = display;
+    serviceUi();
+    assert(chargingFrames == int(display) && b_showChargingUI == display);
+    chargingPin = usbPin = HIGH;
+    serviceUi();
+    assert(GPIO_power_on_with == BUTTON_SQUARE && !b_u8g2Sleep && !b_showChargingUI);
+    assert(adcWakes == 1 && adcResets == 1);
+    resetRuntime(false);
+    b_chargingOLED = display;
+    i_buttonBootDelay = 500;
+    squareEvent(AceButton::kEventPressed);
+    assert(GPIO_power_on_with == BATTERY_CHARGING && sampledPresses == 0);
+    squareEvent(AceButton::kEventLongPressed);
+    assert(GPIO_power_on_with == BUTTON_SQUARE && sampledPresses == 0);
+    assert(b_buttonChordSuppressUntilRelease && !b_u8g2Sleep);
+  }
 }
 void testCalibrationMenuReturn() {
   for (int origin : {BATTERY_CHARGING, BUTTON_CIRCLE, BUTTON_SQUARE, -1}) {
@@ -272,6 +297,7 @@ int main() {
 }
 '''
     replacements = {
+        "CHARGING_UI": block_after((Path(__file__).resolve().parents[1] / "include/parameter.h").read_text(encoding="utf-8"), "inline bool chargingUiActive()"),
         "USB_AWAKE": block_after((Path(__file__).resolve().parents[1] / "include/power.h").read_text(encoding="utf-8"), "bool usbPowerKeepsAwake()"),
         "ENTRY": block_after(menu, "void calibrate() {"),
         "FINISH": block_after(menu, "void calibrationFinish("),

@@ -484,7 +484,7 @@ public:
     }
 
     if (inputString.startsWith("tare")) {
-      if ((b_menu || b_calibration || b_showChargingUI) && buttonCircle_Pressed != NULL) {
+      if ((b_menu || b_calibration || chargingUiActive()) && buttonCircle_Pressed != NULL) {
         buttonCircle_Pressed();
       } else {
         requestRemoteTare();
@@ -492,7 +492,7 @@ public:
     }
 
     if (inputString.startsWith("set")) {
-      if ((b_menu || b_calibration || b_showChargingUI) && buttonSquare_Pressed != NULL) {
+      if ((b_menu || b_calibration || chargingUiActive()) && buttonSquare_Pressed != NULL) {
         buttonSquare_Pressed();
       } else if (toggleTimer != NULL) {
         toggleTimer();

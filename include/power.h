@@ -29,6 +29,7 @@ void sendBlePowerOff(int i_reason);
 void sendWebsocketPowerOff(int i_reason);
 #endif
 void bleShutdown();
+void enterUsbStandby();
 #if HDS_FEATURE_WIFI
 void stopWifi();
 #endif
@@ -360,7 +361,10 @@ void shut_down_low_battery(float voltage) {
 }
 
 void shut_down_now_nobeep() {
-  if (cancelUsbPoweredShutdown()) return;
+  if (usbPowerKeepsAwake()) {
+    enterUsbStandby();
+    return;
+  }
   Serial.println("power off no beep");
   u8g2.setFontDirection(0);
   if (b_screenFlipped)

@@ -81,9 +81,7 @@ bool clearBleFff4Connection(uint16_t connectionHandle) {
 }
 
 void restoreDisplayAfterBleDisconnect() {
-  if (b_softSleep) return;
-  b_u8g2Sleep = false;
-  remoteReplacePending(WSP_DISPLAY_ON, WSP_DISPLAY_OFF);
+  remoteQueuePending(WSP_DISPLAY_RESTORE);
 }
 
 

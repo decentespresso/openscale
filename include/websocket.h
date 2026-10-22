@@ -352,6 +352,12 @@ void processWsPendingCmds() {
       b_u8g2Sleep = false;
     }
   }
+  if (mask & WSP_DISPLAY_RESTORE) {
+    if (!b_softSleep && !chargingUiActive() &&
+        !(mask & (WSP_DISPLAY_ON | WSP_DISPLAY_OFF))) {
+      mask |= WSP_DISPLAY_ON;
+    }
+  }
 #if HDS_ENABLE_ENERGY_MENU
   if (mask & WSP_DISPLAY_ON)  { applyEnergyDisplayCommand(true); }
   if (mask & WSP_DISPLAY_OFF) { applyEnergyDisplayCommand(false); }

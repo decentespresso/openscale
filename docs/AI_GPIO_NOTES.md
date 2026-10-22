@@ -90,6 +90,8 @@ are never touched by the micro path; the normal `setup()` release block
 path already released.
 
 USB presence keeps the CPU awake, including during Battery Protect's 80% pause.
+Manual Off enters charging standby without cutting the rails or charger service.
+Buttons can wake weighing or open the menu without disconnecting USB.
 On detected 9.0.5 hardware, actual deep sleep holds charger GPIO6 disabled;
 GPIO14 remains input. USB attachment wakes through GPIO8 even if charger-status
 GPIO10 stays high. Normal wake releases GPIO8 from RTC mode before digital USB

@@ -164,7 +164,9 @@ jobs:
         run: pio run -e esp32s3-energy-menu
 
       - name: Check button wake and energy migration regressions
-        run: python tools/check_energy_button_regressions.py
+        run: |
+          python tools/check_energy_button_regressions.py
+          python tools/check_usb_standby_regressions.py
 
   release-ready:
     if: always()
