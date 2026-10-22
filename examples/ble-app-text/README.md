@@ -78,11 +78,15 @@ Recipes, translations, quantities, and step progression belong in the app.
 
 On updated `main`, custom builds can include both Pressensor and Grind by Weight.
 Use either integration's Enabled menu control to select it or select neither.
-HDS saves one selection and restarts; only that integration runs after boot.
+HDS saves one selection and updates both Enabled rows immediately, but keeps the
+current integration running until you exit the menu and the scale restarts.
+Only the selected integration runs after boot.
 Sensor/plug selections and dose tuning remain saved. App Text stays independent.
 
-A pending or unconfirmed grinder stop blocks the switch. Leave the menu to let
-the existing connection recovery run, then retry after the plug confirms Off.
+A pending or unconfirmed grinder stop blocks the change and is checked again
+before restarting on exit. If shutdown becomes unconfirmed after saving, HDS
+keeps the saved selection but does not restart. Connection recovery continues
+outside the menu; re-enter and exit the menu after the plug confirms Off.
 An attempted integration or plug change retries the current plug after a latched
 stop error. HDS blocks plug selection until that plug's shutdown is confirmed.
 Disconnection alone does not prove that the grinder stopped. Older firmware

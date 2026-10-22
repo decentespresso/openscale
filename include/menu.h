@@ -351,7 +351,7 @@ void toggleIntegration(IntegrationMode mode) {
     blockIntegrationChange();
     return;
   }
-  const IntegrationMode next = activeIntegration == mode ? IntegrationMode::None : mode;
+  const IntegrationMode next = selectedIntegration == mode ? IntegrationMode::None : mode;
   if (!storeIntegrationMode(next)) {
     showStoredAction("Integration", next != IntegrationMode::None, false);
     return;
@@ -359,9 +359,13 @@ void toggleIntegration(IntegrationMode mode) {
 #if HDS_ENABLE_GRINDER
   grinderFlushSettingsIfDirty();
 #endif
-  refreshOLED((char *)"Mode Saved", (char *)"Restarting");
-  delay(250);
-  reset();
+  selectedIntegration = next;
+  markMenuRestartRequired();
+  refreshMenuRows();
+  actionMessage = "Mode Saved";
+  actionMessage2 = "Restart on exit";
+  menuActionMessageChanged();
+  t_actionMessageDelay = 1500;
 }
 #endif
 
@@ -1709,7 +1713,7 @@ void refreshMenuRows() {
   updateToggleLabel(menuWifiLabel, b_wifiOnBoot);
 #endif
 #if HDS_ENABLE_GRINDER
-  updateToggleLabel(menuGrinderEnabledLabel, grinderSettings.enabled);
+  updateToggleLabel(menuGrinderEnabledLabel, selectedIntegration == IntegrationMode::Grinder);
   snprintf(menuGrinderTargetLabel, sizeof(menuGrinderTargetLabel),
            "Target: %.1fg", grinderSettings.targetGrams);
   snprintf(menuGrinderSafetyLabel, sizeof(menuGrinderSafetyLabel),

@@ -260,7 +260,7 @@ index b3c0569..916909c 100644
             "Zero Range: %.1fg", grinderSettings.zeroMaxGrams);
  #endif
 +#if HDS_ENABLE_PRESSENSOR
-+  updateToggleLabel(menuPressensorEnabledLabel, pressensorSettings.enabled);
++  updateToggleLabel(menuPressensorEnabledLabel, selectedIntegration == IntegrationMode::Pressensor);
 +  updateToggleLabel(menuPressensorAutoStartLabel, pressensorSettings.autoStart);
 +  updateToggleLabel(menuPressensorAutoStopLabel, pressensorSettings.autoStop);
 +#endif

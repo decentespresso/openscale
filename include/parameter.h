@@ -10,6 +10,7 @@
 #include "integration_state.h"
 
 IntegrationMode activeIntegration = IntegrationMode::None;
+IntegrationMode selectedIntegration = IntegrationMode::None;
 #include "app_prompt_state.h"
 
 portMUX_TYPE appPromptMux = portMUX_INITIALIZER_UNLOCKED;

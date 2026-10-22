@@ -49,6 +49,7 @@ inline bool loadIntegrationSelection() {
 #endif
   if ((!stored || value != static_cast<uint8_t>(mode)) && !storeIntegrationMode(mode)) return false;
   activeIntegration = mode;
+  selectedIntegration = mode;
 #if HDS_ENABLE_GRINDER
   grinderSettings.enabled = mode == IntegrationMode::Grinder;
 #endif

@@ -27,6 +27,8 @@ def main():
     menu = (ROOT / "include/menu.h").read_text(encoding="utf-8")
     runtime = (ROOT / "include/app_prompt.h").read_text(encoding="utf-8")
     ble = (ROOT / "include/app_prompt_ble.h").read_text(encoding="utf-8")
+    parameters = (ROOT / "include/parameter.h").read_text(encoding="utf-8")
+    websocket = (ROOT / "include/websocket.h").read_text(encoding="utf-8")
     assert "processAppPromptSession();" in sketch
     assert "const bool showPrompt = promptFrame.active && appTextScreenAvailable();" in sketch
     assert "if (appTextScreenAvailable() && cancelAppPrompt())" in sketch
@@ -47,6 +49,9 @@ def main():
     assert "grinderRuntime.shutdownUnconfirmed && grinderRuntime.state == GRINDER_STATE_ERROR" in blocked
     assert "grinderRuntimeReset();" in blocked
     assert "grinderSaveSelectedDiscovery" not in blocked
+    assert "updateToggleLabel(menuGrinderEnabledLabel, selectedIntegration == IntegrationMode::Grinder);" in menu
+    patch = (ROOT / "plugins/pressensor/patches/main.patch").read_text(encoding="utf-8")
+    assert "updateToggleLabel(menuPressensorEnabledLabel, selectedIntegration == IntegrationMode::Pressensor);" in patch
     compiler = shutil.which("g++") or shutil.which("clang++")
     if not compiler:
         raise RuntimeError("g++ or clang++ is required")
@@ -54,6 +59,18 @@ def main():
         for name in ("state", "runtime", "integration", "grinder_safety"):
             binary = Path(temporary) / (name + (".exe" if os.name == "nt" else ""))
             source = EXAMPLE / "tests" / f"{name}.cpp"
+            if name == "integration":
+                template = source.read_text(encoding="utf-8")
+                replacements = {
+                    "MARK": block_after(parameters, "inline void markMenuRestartRequired()"),
+                    "LEAVE": block_after(parameters, "inline void leaveMenu()"),
+                    "TOGGLE": block_after(menu, "void toggleIntegration(IntegrationMode mode)"),
+                    "RESET": block_after(websocket[websocket.rindex("if (mask & WSP_RESET)"):], "if (mask & WSP_RESET)"),
+                }
+                for marker, contents in replacements.items():
+                    template = template.replace(f"@{marker}@", contents)
+                source = Path(temporary) / "integration.cpp"
+                source.write_text(template, encoding="utf-8")
             if name == "grinder_safety":
                 template = source.read_text(encoding="utf-8")
                 grinder = (ROOT / "include/grinder_runtime.h").read_text(encoding="utf-8")
