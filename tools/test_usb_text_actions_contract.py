@@ -27,13 +27,13 @@ def main():
     tare = block_after(usb, 'if (inputString.startsWith("tare"))')
     if "requestRemoteTare();" not in tare:
         raise AssertionError("USB text tare does not request a remote tare")
-    if "b_menu || b_calibration || b_showChargingUI" not in tare:
+    if "b_menu || b_calibration || chargingUiActive()" not in tare:
         raise AssertionError("USB text tare lost non-weighing button behavior")
 
     timer = block_after(usb, 'if (inputString.startsWith("set"))')
     if "toggleTimer();" not in timer:
         raise AssertionError("USB text set does not toggle the timer")
-    if "b_menu || b_calibration || b_showChargingUI" not in timer:
+    if "b_menu || b_calibration || chargingUiActive()" not in timer:
         raise AssertionError("USB text set lost non-weighing button behavior")
 
     if "usbCallbacks.toggleTimer = scaleTimer;" not in hds:
