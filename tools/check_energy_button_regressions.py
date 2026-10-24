@@ -99,6 +99,38 @@ void settle() {
   delay(config1.getDebounceDelay());
   serviceScaleButtonInputs(true);
 }
+void pollFor(unsigned long duration, unsigned long cadence) {
+  const auto started = now;
+  while (now - started < duration) {
+    serviceScaleButtonInputs(false);
+    delay(cadence);
+  }
+}
+void testIsolatedClicks() {
+  for (bool plus : {false, true}) {
+    for (int pin : {1, 2}) {
+      for (unsigned long cadence : {2UL, 3UL, 7UL}) {
+        for (unsigned long offset = 0; offset <= 700; offset += 25) {
+          boot(plus);
+          pins[pin] = LOW;
+          pollFor(80, cadence);
+          pins[pin] = HIGH;
+          pollFor(1000, cadence);
+          assert(!energyIdle.buttonGestureActive);
+          const auto released = now;
+          now = 10020 + 65536 + offset;
+          assert(now > released);
+          pins[pin] = LOW;
+          pollFor(80, cadence);
+          pins[pin] = HIGH;
+          pollFor(1000, cadence);
+          assert(presses[pin] == 2 && releases[pin] == 2);
+          assert(doubles[pin] == 0);
+        }
+      }
+    }
+  }
+}
 void testButtons() {
   for (bool plus : {false, true}) {
     boot(plus);
@@ -256,7 +288,7 @@ void testMigration() {
     assert(energyLoadSettings(settings) && !settings.lightSleepPlusActive());
   }
 }
-int main() { testButtons(); testMigration(); }
+int main() { testButtons(); testIsolatedClicks(); testMigration(); }
 '''
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory)
