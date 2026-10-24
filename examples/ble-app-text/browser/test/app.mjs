@@ -1,4 +1,4 @@
-import { connectAppPrompts, MAX_PROMPT_BYTES } from "../hds-app-prompts.mjs";
+import { connectAppPrompts, MAX_PROMPT_BYTES } from "../hds-app-prompts.mjs?v=1";
 
 const byId = (id) => document.getElementById(id);
 const heartbeat = Object.freeze([3, 10, 3, 255, 255, 0, 10]);

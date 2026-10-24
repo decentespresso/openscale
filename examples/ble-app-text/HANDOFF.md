@@ -8,7 +8,7 @@ for checking BLE and the OLED; it is not a replacement cocktail website.
 
 1. Extract the package. Open https://decentespresso.github.io/hds-updater/ in
    desktop Chrome or Edge and connect HDS 2.1 with a data-capable USB cable.
-2. Load the inner `firmware/HDS_FW_app-text_hds21_20261021.zip`, not this outer ZIP.
+2. Load the inner `firmware/HDS_FW_app-text_hds21_<date>.zip`, not this outer ZIP.
 3. Leave full-flash erase Off. Select the scale's port and flash. Keep power
    connected until the updater finishes, then close its serial connection.
 4. On HDS, enable **Display > App Text** before connecting your browser.
@@ -28,6 +28,10 @@ For cocktail testing, leave both Pressensor and Grind by Weight Off (integration
 None), with App Text On. Active Grind by Weight keeps its existing tare-to-arm
 behavior, including tare commands from the browser. App Text does not suppress
 dosing.
+
+With **Connections > BLE Buttons** Off, use the browser's Tare button. Enable
+that setting to also tare with a short Circle press. Holding Circle cancels App
+Text until reconnection; it does not tare.
 
 ## Update The Website
 
@@ -67,13 +71,19 @@ changing App Text on the scale.
   loss, expired heartbeat, and Circle cancellation. Check both display rotations
   and a running timer. Confirm priority screens keep their controls.
 - If both integrations are included, selecting Pressensor or Grind by Weight
-  saves the exclusive choice and restarts. App Text remains independent. A lost
+  saves the exclusive choice without restarting. Restart happens only when
+  leaving the menu. App Text remains independent. A lost
   or pending grinder stop must block switching until shutdown is confirmed.
 
 `SHA256SUMS.txt` covers the package contents. `firmware/build-info.json` records
 the source, selections, and binary hashes. The package validators check ZIP
-layout, binary images, offsets, hashes, and patch/replacement agreement. Physical
-OLED, recipe, and updater-flashing validation remain separate checks.
+layout, binary images, offsets, hashes, and patch/replacement agreement. The
+manifest records completed physical checks separately from pending recipe,
+display, integration-switching, and updater-installation checks.
+
+The diagnostic app uses versioned script URLs. If a tablet still has a prototype
+tab open, fully reload it before reconnecting. The old three-byte-only helper
+reports "Unsupported / browser only" against the new four-byte capability read.
 
 The HDS changes belong to the firmware PR; the cocktail changes belong to
 `deweb`. Neither this package nor the PR deploys your website or publishes a
