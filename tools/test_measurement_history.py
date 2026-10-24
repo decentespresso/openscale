@@ -21,7 +21,8 @@ function page(relativeHtml) {
   const warnings = [];
   const downloads = [];
   const sockets = [];
-  const timers = [];
+  const timers = new Map();
+  let timerId = 0;
   const blobs = new Map();
   function element(tag, attributes = '') {
     const handlers = new Map();
@@ -78,15 +79,16 @@ function page(relativeHtml) {
       revokeObjectURL() {}
     },
     requestAnimationFrame(callback) { callback(); },
-    setTimeout(callback) { timers.push(callback); return timers.length; },
-    clearTimeout() {},
+    setTimeout(callback) { const id = ++timerId; timers.set(id, callback); return id; },
+    clearTimeout(id) { timers.delete(id); },
     window: {location: {host: 'scale.test'}},
     WebSocket: {OPEN: 1},
     ReconnectingWebSocket: class {
-      constructor() { this.handlers = new Map(); this.readyState = 1; sockets.push(this); }
+      constructor() { this.handlers = new Map(); this.sent = []; this.readyState = 1; sockets.push(this); }
       addEventListener(name, callback) { this.handlers.set(name, callback); }
-      send() {}
-      weight(grams) { now += 500; this.handlers.get('message')({data: JSON.stringify({grams})}); }
+      send(value) { this.sent.push(value); }
+      emit(name) { this.handlers.get(name)?.(); }
+      weight(grams, advance = 500) { now += advance; this.handlers.get('message')({data: JSON.stringify({grams})}); }
     }
   });
   Object.defineProperty(context, 'localStorage', {
@@ -101,7 +103,8 @@ function page(relativeHtml) {
     await module.evaluate();
     return module;
   }
-  return {html, context, document, elements, warnings, downloads, sockets, timers, load};
+  return {html, context, document, elements, warnings, downloads, sockets, timers, load,
+    advanceTime(amount) { now += amount; }};
 }
 
 async function dosing() {
@@ -169,6 +172,82 @@ async function checkExports(app, expected) {
   }
 }
 
+function checkQCLifecycle() {
+  storage.clear();
+  const invalid = qc();
+  const button = invalid.elements.get('toggleQC');
+  button.textContent = 'Start QC Mode';
+  const valid = {goalWeight: '10', lowThreshold: '9', highThreshold: '11', minWeight: '1'};
+  for (const values of [{}, {...valid, goalWeight: ''}, {...valid, lowThreshold: '12'},
+    {...valid, minWeight: '0.2'}]) {
+    for (const [key, value] of Object.entries(values)) invalid.elements.get(key).value = value;
+    button.click();
+    for (let index = 0; index < 8; ++index) invalid.sockets[0].weight(0);
+    assert.equal(invalid.scale.qcMode, false);
+    assert.equal(button.textContent, 'Start QC Mode');
+    assert.equal(invalid.scale.weightData.length, 0);
+    assert.equal(invalid.sockets[0].sent.length, 0);
+  }
+  function active() {
+    storage.clear();
+    const app = qc();
+    for (const [key, value] of Object.entries(valid)) app.elements.get(key).value = value;
+    app.elements.get('toggleQC').click();
+    assert.equal(app.scale.qcMode, true);
+    return app;
+  }
+  for (const interval of [100, 200, 500]) {
+    const app = active();
+    const socket = app.sockets[0];
+    for (let index = 0; index < 40; ++index) socket.weight(10 + index * 0.1, interval);
+    assert.equal(app.scale.weightData.length, 0);
+    for (let index = 0; index < 2500 / interval; ++index) socket.weight(10, interval);
+    socket.weight(10.1, interval);
+    assert.equal(app.scale.weightData.length, 1);
+    assert.equal(app.scale.weightData[0].weight, 10.1);
+    socket.emit('close');
+    socket.emit('open');
+    for (let index = 0; index < 8; ++index) socket.weight(10.1);
+    assert.equal(app.scale.weightData.length, 1);
+  }
+  for (const interruption of ['gap', 'close', 'error']) {
+    const app = active();
+    const socket = app.sockets[0];
+    socket.weight(10);
+    socket.weight(10);
+    if (interruption !== 'gap') socket.emit(interruption);
+    socket.weight(10, interruption === 'gap' ? 10000 : 500);
+    assert.equal(app.scale.weightData.length, 0);
+    for (let index = 0; index < 5; ++index) socket.weight(10);
+    assert.equal(app.scale.weightData.length, 1);
+  }
+  for (const removedWeight of [0, -10]) {
+    const app = active();
+    app.sockets[0].weight(10);
+    for (let index = 0; index < 8; ++index) app.sockets[0].weight(removedWeight);
+    assert.equal(app.scale.weightData.length, 0);
+    assert.equal(app.scale.currentQCState, app.scale.QC_STATES.WAITING_FOR_NEXT);
+    for (let index = 0; index < 7; ++index) app.sockets[0].weight(10);
+    assert.equal(app.scale.weightData.length, 1);
+    app.sockets[0].weight(0);
+    assert.equal(app.timers.size, 0);
+    app.sockets[0].weight(10);
+    for (let index = 0; index < 6; ++index) app.sockets[0].weight(0.5);
+    assert.equal(app.scale.weightData.length, 2);
+    assert.equal(app.scale.weightData[1].result, 'fail');
+    app.elements.get('toggleQC').click();
+    const status = app.elements.get('qcStatus').textContent;
+    assert.equal(status, 'QC Mode: Inactive');
+    assert.equal(app.scale.currentQCState, app.scale.QC_STATES.WAITING_FOR_NEXT);
+    assert.equal(app.timers.size, 0);
+    app.advanceTime(6000);
+    for (const callback of app.timers.values()) callback();
+    assert.equal(app.elements.get('qcStatus').textContent, status);
+    app.elements.get('toggleQC').click();
+    assert.equal(app.timers.size, 0);
+  }
+}
+
 (async () => {
   const first = await dosing();
   const concurrent = await dosing();
@@ -220,7 +299,7 @@ async function checkExports(app, expected) {
     app.elements.get('dosingToggleButton').click();
     app.elements.get('setContainerWeightButton').click();
     for (let index = 0; index < 7; ++index) app.sockets[0].weight(30);
-    for (const callback of app.timers) callback();
+    for (const callback of app.timers.values()) callback();
     assert(app.elements.get('weight').textContent.includes('30.0'));
     await checkExports(app, previous + 1);
     const qcApp = qc();
@@ -228,8 +307,7 @@ async function checkExports(app, expected) {
     const qcPrevious = qcApp.scale.weightData.length;
     if (mode === 'reads' || mode === 'access') assert.equal(qcPrevious, 0);
     qcApp.scale.qcMode = true;
-    qcApp.sockets[0].weight(10);
-    qcApp.sockets[0].weight(10);
+    for (let index = 0; index < 7; ++index) qcApp.sockets[0].weight(10);
     await checkExports(qcApp, qcPrevious + 1);
     for (const instance of [app, qcApp]) {
       instance.elements.get('objectName').value = 'Unsaved preset';
@@ -289,7 +367,8 @@ async function checkExports(app, expected) {
     assert.equal(quality.scale.savePreset(qcPreset), false);
     assert.equal(storage.get('decentScalePresets'), invalid);
   }
-  console.log('History recovery, independent app startup, exports, denied storage and corruption passed');
+  checkQCLifecycle();
+  console.log('History recovery, exports, storage failures and QC lifecycle passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
 '''
 
