@@ -19,6 +19,7 @@ unsigned long t_power_off = 0;
 float f_displayedValue = 0;
 bool b_autoSleep = true;
 bool b_is_charging = false;
+bool b_ota = false;
 bool lowBattery = false;
 int shutdowns = 0;
 AutoOffWeightActivityTracker autoOffWeightActivity;
@@ -31,8 +32,13 @@ unsigned long millis() { return currentTime; }
 bool processNewBatterySample() { return lowBattery; }
 void serviceFuelGauge() {}
 void shut_down_now() { ++shutdowns; }
+bool bleHasLiveClient() { return false; }
 
 FUNCTIONS
+
+void mainLoopAutoOff() {
+MAIN_LOOP_AUTO_OFF
+}
 
 template <typename Timeout>
 void checkAutoOff(Timeout timeout, unsigned long duration) {
@@ -74,6 +80,30 @@ void checkAutoOff(Timeout timeout, unsigned long duration) {
   power_off(timeout);
   assert(t_power_off == previousReset);
   lowBattery = false;
+}
+
+void checkChargingUnplug() {
+  currentTime = 1000;
+  f_displayedValue = 0;
+  shutdowns = 0;
+  powerCadence.autoOff = CadenceGate{};
+  power_off(-1);
+  b_is_charging = true;
+  const unsigned long chargingEndsAt = currentTime + 16 * 60 * 1000;
+  const unsigned long inactivityDeadline = chargingEndsAt + 15 * 60 * 1000;
+  for (; currentTime <= chargingEndsAt; currentTime += 200) {
+    mainLoopAutoOff();
+    assert(shutdowns == 0);
+  }
+  b_is_charging = false;
+  mainLoopAutoOff();
+  assert(shutdowns == 0);
+  currentTime = inactivityDeadline - 1000;
+  mainLoopAutoOff();
+  assert(shutdowns == 0);
+  currentTime = inactivityDeadline;
+  mainLoopAutoOff();
+  assert(shutdowns == 1);
 }
 
 int main() {
@@ -125,6 +155,7 @@ int main() {
   assert(!tracker.update(1100, 20));
   checkAutoOff(1, 60000);
   checkAutoOff(2.0, 2000);
+  checkChargingUnplug();
 }
 """
 
@@ -148,6 +179,7 @@ def main():
     if not compiler:
         raise SystemExit("A C++ compiler is required (g++, clang++, or CXX).")
     power = (ROOT / "include/power.h").read_text(encoding="utf-8")
+    firmware = (ROOT / "src/hds.ino").read_text(encoding="utf-8")
     parameters = (ROOT / "include/parameter.h").read_text(encoding="utf-8")
     assert '#include "auto_off_activity.h"' in parameters
     assert "AutoOffWeightActivityTracker autoOffWeightActivity;" in parameters
@@ -157,10 +189,13 @@ def main():
         "void power_off(int min)",
         "void power_off(double sec)",
     ))
+    loop = extract_function(firmware, "void loop()")
+    main_auto_off = loop[loop.index("if (b_ota ||"):loop.index("if (!b_ota && Serial.available())")]
     with tempfile.TemporaryDirectory(prefix="auto-off-weight-") as directory:
         cpp = Path(directory) / "auto_off_weight.cpp"
         binary = Path(directory) / ("auto-off-test.exe" if os.name == "nt" else "auto-off-test")
-        cpp.write_text(HARNESS.replace("FUNCTIONS", functions), encoding="utf-8")
+        source = HARNESS.replace("FUNCTIONS", functions).replace("MAIN_LOOP_AUTO_OFF", main_auto_off)
+        cpp.write_text(source, encoding="utf-8")
         subprocess.run(
             [compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror",
              "-I", str(ROOT / "include"), str(cpp), "-o", str(binary)],
