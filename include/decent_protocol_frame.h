@@ -88,7 +88,7 @@ static inline size_t decentCommandFrameLength(const uint8_t *data, size_t len, b
         }
         return decentFixedFrameLength(len, 2 + HDS_OTA_TARGET_PAYLOAD_BYTES);
       }
-      return decentFixedFrameLength(len, 2);
+      return len > 2 || allowShort ? 2 : 0;
 #ifdef BUZZER
     case 0x1C:
       return decentFixedFrameLength(len, 3);
