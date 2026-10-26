@@ -56,7 +56,7 @@ def main():
     if not compiler:
         raise RuntimeError("g++ or clang++ is required")
     with tempfile.TemporaryDirectory(prefix="hds-app-text-") as temporary:
-        for name in ("state", "runtime", "integration", "grinder_safety"):
+        for name in ("state", "runtime", "integration", "grinder_safety", "dispatcher"):
             binary = Path(temporary) / (name + (".exe" if os.name == "nt" else ""))
             source = EXAMPLE / "tests" / f"{name}.cpp"
             if name == "integration":
@@ -79,13 +79,35 @@ def main():
                     "SEND": "static inline bool grinderSendLine(",
                     "ERROR": "static inline void grinderEnterError(",
                     "OK": "static inline void grinderHandleOkResponse(",
+                    "RESOLVE": "static inline void grinderResolveAndConnect()",
+                    "STOPPING": "static inline void grinderTickStopping(",
+                    "MENU": "static inline void grinderTickWhileMenuOpen(",
                 }.items():
                     template = template.replace(f"@{marker}@", block_after(grinder, signature))
+                settings = (ROOT / "include/integration_settings.h").read_text(encoding="utf-8")
+                template = template.replace("@GUARD@", block_after(settings, "inline bool integrationCanRestart()"))
                 source = Path(temporary) / "grinder_safety.cpp"
+                source.write_text(template, encoding="utf-8")
+            if name == "dispatcher":
+                template = source.read_text(encoding="utf-8")
+                commands = "\n".join(line for line in parameters.splitlines() if line.startswith("const uint32_t WSP_"))
+                template = template.replace("@COMMANDS@", commands)
+                for marker, signature in {
+                    "QUEUE_OTA": "inline bool remoteQueueWifiUpdate(",
+                    "FINISH_OTA": "inline void remoteFinishWifiUpdateDispatch()",
+                    "RESTORE": "inline void remoteRestoreDeferredPendingLocked(",
+                    "DISPATCH": "void processWsPendingCmds()",
+                }.items():
+                    template = template.replace(f"@{marker}@", block_after(websocket, signature))
+                source = Path(temporary) / "dispatcher.cpp"
                 source.write_text(template, encoding="utf-8")
             run([compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror", "-I", str(ROOT / "include"),
                  str(source), "-o", str(binary)])
             run([str(binary)])
+            if name == "dispatcher":
+                run([compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror", "-DHDS_ENABLE_GRINDER=0",
+                     str(source), "-o", str(binary)])
+                run([str(binary)])
     print("App Text native state, opt-in, interleaving, and integration selection checks passed")
     print(run(["node", str(EXAMPLE / "tests/browser.mjs")]))
 

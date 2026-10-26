@@ -64,6 +64,7 @@ inline bool integrationCanRestart() {
 #if HDS_ENABLE_GRINDER
   return integrationRestartSafe(grinderRuntime.shutdownUnconfirmed, grinderRuntime.relayOn,
     grinderRuntime.state == GRINDER_STATE_STOPPING,
+    grinderRuntime.pendingCommand == GRINDER_COMMAND_HELLO ||
     grinderRuntime.pendingCommand == GRINDER_COMMAND_ON || grinderRuntime.pendingCommand == GRINDER_COMMAND_OFF);
 #else
   return true;

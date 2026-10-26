@@ -327,14 +327,17 @@ void processWsPendingCmds() {
       if (mask == 0) return;
     } else {
 #if HDS_ENABLE_GRINDER || HDS_ENABLE_PRESSENSOR
-      if (!integrationCanRestart()) {
-        markMenuRestartRequired();
-        Serial.println("Integration restart blocked: confirm grinder stop, then exit menu again.");
+      if (integrationCanRestart()) {
+        reset();
         return;
       }
-#endif
+      markMenuRestartRequired();
+      Serial.println("Integration restart blocked: confirm grinder stop, then exit menu again.");
+      mask &= ~WSP_RESET;
+#else
       reset();
       return;
+#endif
     }
   }
   if (mask & WSP_WIFI_UPDATE) {

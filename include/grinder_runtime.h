@@ -833,13 +833,16 @@ static inline void grinderResumeAfterMenu() {
 }
 
 static inline void grinderTickWhileMenuOpen(float weight) {
-  if (!grinderSelectedMacSet() || grinderRuntime.state == GRINDER_STATE_FINDING_PLUG ||
-      grinderRuntime.state == GRINDER_STATE_ERROR) {
+  if (!grinderSelectedMacSet() || grinderRuntime.state == GRINDER_STATE_ERROR) {
     return;
   }
   grinderReadClient(weight);
   grinderCheckConnectionLoss();
   if (grinderRuntime.state == GRINDER_STATE_ERROR) {
+    return;
+  }
+  if (grinderRuntime.state == GRINDER_STATE_FINDING_PLUG) {
+    if (grinderRuntime.pendingCommand == GRINDER_COMMAND_HELLO) grinderResolveAndConnect();
     return;
   }
   if (grinderRuntime.state == GRINDER_STATE_STOPPING) {

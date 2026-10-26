@@ -46,7 +46,7 @@ bool storagePutBool(const char *key, bool value) {
   return settingsPreferences.putUChar(key, value) == 1;
 }
 enum State { GRINDER_STATE_CONNECTED, GRINDER_STATE_STOPPING };
-enum Command { GRINDER_COMMAND_NONE, GRINDER_COMMAND_ON, GRINDER_COMMAND_OFF };
+enum Command { GRINDER_COMMAND_NONE, GRINDER_COMMAND_HELLO, GRINDER_COMMAND_ON, GRINDER_COMMAND_OFF };
 struct {
   bool shutdownUnconfirmed = false, relayOn = false;
   State state = GRINDER_STATE_CONNECTED;
@@ -138,6 +138,9 @@ void testStoredSelection() {
 
 void testRestartGuard() {
   assert(integrationCanRestart());
+  grinderRuntime.pendingCommand = GRINDER_COMMAND_HELLO;
+  assert(!integrationCanRestart());
+  grinderRuntime.pendingCommand = GRINDER_COMMAND_NONE;
   grinderRuntime.shutdownUnconfirmed = true;
   assert(!integrationCanRestart());
   grinderRuntime.relayOn = false;
