@@ -125,6 +125,40 @@ test("main builds require confirmation and cancellation sends no request", async
 });
 
 
+test("USB install preserves the selected features and plugins", async () => {
+  const source = await readFile(new URL("../../../docs/custom-build/app.js", import.meta.url), "utf8");
+  const handler = source.slice(source.indexOf('document.querySelectorAll(\'[name="install-method"]\')'), source.indexOf('buildButton.addEventListener("click"'));
+  for (const features of [["pull-ota", "wifi"], ["wifi"], []]) {
+    const selected = Object.freeze({
+      firmware_ref: "v3.1.15",
+      features: Object.freeze(features),
+      plugins: Object.freeze(["default-web-apps"]),
+    });
+    const stored = new Map();
+    const context = {
+      selected,
+      installMethod: "wifi",
+      installStorageKey: "install-method",
+      fleetPanel: {hidden: false},
+      document: {querySelectorAll: () => [{
+        value: "usb",
+        addEventListener: (event, listener) => { context.change = listener; },
+      }]},
+      localStorage: {setItem: (key, value) => stored.set(key, JSON.parse(value))},
+      applySelection: candidate => { context.selected = candidate; },
+    };
+    runInNewContext(handler, context);
+    context.change();
+    assert.deepEqual([...context.selected.features], features);
+    assert.deepEqual([...context.selected.plugins], [...selected.plugins]);
+    assert.equal(context.selected.firmware_ref, selected.firmware_ref);
+    assert.equal(context.installMethod, "usb");
+    assert.equal(context.fleetPanel.hidden, true);
+    assert.deepEqual(stored.get("install-method"), {version: 1, method: "usb"});
+  }
+});
+
+
 test("blocks new direct and transitive conflicts without blocking removal", () => {
   const current = {firmware_ref: "main", features: [], plugins: ["blocker"]};
   assert.equal(optionReason(catalog, current, "plugin", "blocker"), "");
