@@ -58,6 +58,8 @@ struct {
 } energyRuntime;
 struct {
   bool lightSleepButtonTracePending=false;
+  bool buttonGestureActive=false;
+  unsigned long lastButtonActivityAt=0;
   unsigned long lastButtonPoll=0, lastLightSleepButtonPollAt=0, lastLightSleepButtonEventAt=0;
 } energyIdle;
 struct {

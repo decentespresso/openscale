@@ -405,9 +405,11 @@ bool serviceScaleButtonInputs(bool forcePoll) {
   if (!buttonInputAllowed) return false;
   const unsigned long buttonNow = millis();
 #if HDS_ENABLE_ENERGY_MENU
+  const bool gestureWasActive = energyIdle.buttonGestureActive;
   const bool gestureActive = serviceEnergyButtonGesture(buttonNow);
-  const bool buttonPollDue = (forcePoll || gestureActive) &&
-    (forcePoll ||
+  const bool gestureExpired = gestureWasActive && !gestureActive;
+  const bool buttonPollDue = forcePoll || gestureExpired ||
+    (gestureActive &&
      hdsIntervalElapsed(buttonNow, energyIdle.lastButtonPoll, BUTTON_POLL_INTERVAL_MS));
   if (buttonPollDue) energyIdle.lastButtonPoll = buttonNow;
 #else
@@ -422,9 +424,18 @@ bool serviceScaleButtonInputs(bool forcePoll) {
       energyIdle.lastLightSleepButtonPollAt == 0) {
     energyIdle.lastLightSleepButtonPollAt = buttonNow;
   }
+  const uint8_t previousCircleState = buttonCircle.getLastButtonState();
+  const uint8_t previousSquareState = buttonSquare.getLastButtonState();
 #endif
   buttonCircle.check();
   buttonSquare.check();
+#if HDS_ENABLE_ENERGY_MENU
+  if ((previousCircleState == LOW && buttonCircle.getLastButtonState() == HIGH) ||
+      (previousSquareState == LOW && buttonSquare.getLastButtonState() == HIGH)) {
+    energyIdle.lastButtonActivityAt = millis();
+    energyIdle.buttonGestureActive = true;
+  }
+#endif
   return true;
 }
 
