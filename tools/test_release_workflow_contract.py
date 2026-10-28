@@ -36,6 +36,30 @@ def assert_before(text, left, right):
         raise AssertionError(f"expected {left} before {right}")
 
 
+def testPreflightArtifactSha(nightly):
+    step = nightly.split("        id: slugify\n", 1)[1].split("\n      - name:", 1)[0]
+    command = step.split("run:", 1)[1].strip()
+    script = textwrap.dedent(command[1:]) if command.startswith("|") else command
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    callerSha = ("1" if commit[0] != "1" else "2") * 40
+    bash = "C:/Program Files/Git/bin/bash.exe" if os.name == "nt" else "bash"
+    with tempfile.TemporaryDirectory() as directory:
+        output = Path(directory) / "github-output"
+        subprocess.run(
+            [bash, "-e", "-o", "pipefail", "-c", script],
+            cwd=ROOT,
+            env={**os.environ, "GITHUB_SHA": callerSha, "GITHUB_OUTPUT": output.as_posix()},
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert output.read_text(encoding="utf-8") == f"sha={commit[:7]}\n", (
+            "preflight artifact SHA must identify the checked-out candidate, not the caller"
+        )
+    assert_contains(nightly, "name: HDS-snapshot-esp32s3-${{ steps.slugify.outputs.sha }}")
+    assert_contains(nightly, "name: HDS-dependencies-esp32s3-${{ steps.slugify.outputs.sha }}")
+
+
 def main():
     config = CONFIG.read_text(encoding="utf-8")
     text = WORKFLOW.read_text(encoding="utf-8")
@@ -112,6 +136,7 @@ def main():
     assert_not_contains(publish, 'HDS_OTA_SIGNING_KEY_PEM')
     assert_contains(nightly, 'workflow_call:')
     assert nightly.count('ref: ${{ inputs.commit || github.sha }}') == 4
+    testPreflightArtifactSha(nightly)
     assert_contains(nightly, 'needs: [ai-documentation, native-tests, build, energy-build]')
     assert_contains(nightly, 'if: always()')
     assert_contains(nightly, 'node --test cloudflare/custom-build-worker/test/*.test.mjs')

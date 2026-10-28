@@ -37,6 +37,7 @@ def main():
     assert "!loaded.restore && !loaded.forwardRecovery" in loader
     assert 'preferences.putString("fw_sha", manifest.firmware.sha256)' in ota
     assert 'preferences.putUInt("fw_size", (uint32_t)manifest.firmware.size)' in ota
+    assert 'loaded.installCombinationHash = preferences.getString("install_combo", "");' in loader
 
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
@@ -140,7 +141,7 @@ struct PullOtaPendingLittleFs {
   bool restore = false, restoreAttempted = false, filesystemDirty = false;
   bool forwardRecovery = false;
   uint8_t targetAttempts = 0;
-  String combinationHash, rollbackCombinationHash;
+  String combinationHash, rollbackCombinationHash, installCombinationHash;
   PullOtaAsset rollbackAsset;
   String rollbackVersion = "3.1.14", fsPartitionLabel = "spiffs";
   uint32_t fsPartitionSize = 1, fsSchema = 1;
@@ -161,7 +162,7 @@ bool pullOtaActivateRollbackLittleFs(const PullOtaPendingLittleFs &value) {
   events.push_back("rollback"); return activateOk && activateRollback(value);
 }
 void hdsOtaRollbackMarkValid() { events.push_back("valid"); }
-void customBuildReportInstalled() { assert(!filesystemRecoveryActive.load()); events.push_back("installed"); }
+void customBuildReportInstalled(const String & = "") { assert(!filesystemRecoveryActive.load()); events.push_back("installed"); }
 bool pullOtaClearPendingLittleFs() { events.push_back("clear"); return clearOk; }
 void pullOtaDraw(const char *, const char *) {}
 void delay(int) {}

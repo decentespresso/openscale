@@ -9,7 +9,7 @@ import {
   selectableFirmwareRefs,
   selectionQuery,
 } from "./selection.mjs?v=6";
-import {initFleet} from "./fleet.js?v=15";
+import {initFleet} from "./fleet.js?v=16";
 import {buildEstimate} from "./build-estimate.mjs?v=1";
 import {initBuildProgress} from "./build-progress.mjs?v=1";
 
@@ -517,11 +517,11 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
     input.addEventListener("change", () => {
       installMethod = input.value;
       fleetPanel.hidden = installMethod !== "wifi";
-      localStorage.setItem(installStorageKey, JSON.stringify({version: 1, method: installMethod}));
-      const nextSelection = installMethod === "usb"
-        ? {...selected, features: selected.features.filter(feature => feature !== "pull-ota")}
-        : selected;
-      applySelection(nextSelection, installMethod === "wifi" ? "Pull OTA included for scale install" : "USB install selected");
+      try {
+        localStorage.setItem(installStorageKey, JSON.stringify({version: 1, method: installMethod}));
+      } catch {
+      }
+      applySelection(selected, installMethod === "wifi" ? "Pull OTA included for scale install" : "USB install selected");
     });
   });
   fleetPanel.hidden = installMethod !== "wifi";

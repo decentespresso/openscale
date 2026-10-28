@@ -125,6 +125,40 @@ test("main builds require confirmation and cancellation sends no request", async
 });
 
 
+test("USB install preserves the selected features and plugins", async () => {
+  const source = await readFile(new URL("../../../docs/custom-build/app.js", import.meta.url), "utf8");
+  const handler = source.slice(source.indexOf('document.querySelectorAll(\'[name="install-method"]\')'), source.indexOf('buildButton.addEventListener("click"'));
+  for (const features of [["pull-ota", "wifi"], ["wifi"], []]) {
+    const selected = Object.freeze({
+      firmware_ref: "v3.1.15",
+      features: Object.freeze(features),
+      plugins: Object.freeze(["default-web-apps"]),
+    });
+    const stored = new Map();
+    const context = {
+      selected,
+      installMethod: "wifi",
+      installStorageKey: "install-method",
+      fleetPanel: {hidden: false},
+      document: {querySelectorAll: () => [{
+        value: "usb",
+        addEventListener: (event, listener) => { context.change = listener; },
+      }]},
+      localStorage: {setItem: (key, value) => stored.set(key, JSON.parse(value))},
+      applySelection: candidate => { context.selected = candidate; },
+    };
+    runInNewContext(handler, context);
+    context.change();
+    assert.deepEqual([...context.selected.features], features);
+    assert.deepEqual([...context.selected.plugins], [...selected.plugins]);
+    assert.equal(context.selected.firmware_ref, selected.firmware_ref);
+    assert.equal(context.installMethod, "usb");
+    assert.equal(context.fleetPanel.hidden, true);
+    assert.deepEqual(stored.get("install-method"), {version: 1, method: "usb"});
+  }
+});
+
+
 test("blocks new direct and transitive conflicts without blocking removal", () => {
   const current = {firmware_ref: "main", features: [], plugins: ["blocker"]};
   assert.equal(optionReason(catalog, current, "plugin", "blocker"), "");
@@ -294,6 +328,62 @@ test("fleet access survives new sessions and migrates only after successful pers
   localStorage.setItem("hds-custom-build-fleet-v1", JSON.stringify({version: 1, key}));
   assert.equal(load(localStorage, storage()), key);
   assert.equal(localStorage.getItem("hds-custom-build-fleet-v1"), null);
+});
+
+test("denied storage accessors preserve available legacy access without stopping initialization", async () => {
+  const source = await readFile(new URL("../../../docs/custom-build/fleet.js", import.meta.url), "utf8");
+  const helpers = source.slice(source.indexOf("const storageKey"), source.indexOf("export function initFleet"));
+  const key = "A".repeat(32);
+  const storageKey = "hds-custom-build-fleet-v2";
+  for (const denied of [["localStorage"], ["sessionStorage"], ["localStorage", "sessionStorage"]]) {
+    const local = new Map([["hds-custom-build-fleet-v1", JSON.stringify({version: 1, key})]]);
+    const session = new Map([[storageKey, JSON.stringify({version: 2, key})]]);
+    const storage = data => ({getItem: name => data.get(name) ?? null,
+      setItem: (name, value) => data.set(name, value), removeItem: name => data.delete(name)});
+    const context = {localStorage: storage(local), sessionStorage: storage(session)};
+    const blocked = denied.map(name => `Object.defineProperty(globalThis, "${name}", {
+      get() { throw new Error("Storage denied"); }
+    });`).join("\n");
+    const result = runInNewContext(`${helpers}\n${blocked}\n({key: loadStoredKey(), saved: saveKey("${key}")})`, context);
+    assert.equal(result.key, denied.length === 2 ? "" : key);
+    assert.equal(result.saved, !denied.includes("localStorage"));
+    if (denied.includes("localStorage")) {
+      assert.notEqual(session.get(storageKey), undefined);
+      assert.notEqual(local.get("hds-custom-build-fleet-v1"), undefined);
+    } else {
+      assert.equal(JSON.parse(local.get(storageKey)).key, key);
+      assert.equal(local.has("hds-custom-build-fleet-v1"), false);
+    }
+  }
+});
+
+test("installation method changes apply when preference storage is denied or full", async () => {
+  const source = await readFile(new URL("../../../docs/custom-build/app.js", import.meta.url), "utf8");
+  const start = source.indexOf('document.querySelectorAll(\'[name="install-method"]\')');
+  const registration = source.slice(start, source.indexOf('  buildButton.addEventListener("click"', start));
+  for (const failure of ["accessor", "quota"]) {
+    const selections = [];
+    const input = {value: "usb", addEventListener: (event, listener) => { context.change = listener; }};
+    const context = {
+      installMethod: "wifi", installStorageKey: "preference", fleetPanel: {hidden: false},
+      document: {querySelectorAll: () => [input]},
+      selected: {firmware_ref: "v3.1.15", features: ["wifi", "pull-ota"], plugins: []},
+      applySelection: selection => selections.push(JSON.parse(JSON.stringify(selection))),
+      localStorage: {setItem: () => { throw new Error("Quota exceeded"); }},
+    };
+    const blocked = failure === "accessor"
+      ? 'Object.defineProperty(globalThis, "localStorage", {get() { throw new Error("Storage denied"); }});'
+      : "";
+    runInNewContext(`${blocked}\n${registration}`, context);
+    assert.doesNotThrow(() => context.change());
+    assert.equal(context.installMethod, "usb");
+    assert.equal(context.fleetPanel.hidden, true);
+    assert.deepEqual(selections[0].features, ["wifi", "pull-ota"]);
+    input.value = "wifi";
+    assert.doesNotThrow(() => context.change());
+    assert.equal(context.fleetPanel.hidden, false);
+    assert.deepEqual(selections[1].features, ["wifi", "pull-ota"]);
+  }
 });
 
 test("build labels hide generated hashes without replacing user labels", () => {

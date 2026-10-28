@@ -174,7 +174,7 @@ struct PullOtaManifest {
 };
 
 bool customBuildFetchManifest(const String &combinationHash, PullOtaManifest &manifest);
-void customBuildReportInstalled();
+void customBuildReportInstalled(const String &failedCombinationHash = "");
 void customBuildReportInstallState(const String &combinationHash, const char *state);
 
 struct PullOtaReleaseList {
@@ -198,6 +198,7 @@ struct PullOtaPendingLittleFs {
   String rollbackVersion = "";
   String combinationHash = "";
   String rollbackCombinationHash = "";
+  String installCombinationHash = "";
   String fsPartitionLabel = "";
   uint32_t fsPartitionSize = 0;
   uint32_t fsSchema = 0;
@@ -506,6 +507,10 @@ void pullOtaBuildSelectableReleases(
                                    !pullOtaVersionIsStable(currentVersion.c_str());
   const bool currentIsCustom = pullOtaCurrentCombinationHash().length() > 0;
   for (uint8_t i = 0; i < catalog.count; i++) {
+    if ((currentIsCustom || currentIsPrerelease) &&
+        pullOtaCompareVersions(catalog.releases[i].version, "3.1.13") == 0) {
+      continue;
+    }
     int currentCompare = pullOtaCompareVersions(catalog.releases[i].version, currentVersion);
     if ((currentCompare != 0 || currentIsPrerelease || currentIsCustom || filesystemRecoveryActive.load()) &&
         selection.count < HDS_OTA_MAX_RELEASE_CHOICES) {
@@ -1090,6 +1095,9 @@ bool pullOtaLoadPendingLittleFs(PullOtaPendingLittleFs &pending) {
   loaded.combinationHash = preferences.getString("combo", "");
   loaded.combinationHash.trim();
   loaded.combinationHash.toLowerCase();
+  loaded.installCombinationHash = preferences.getString("install_combo", "");
+  loaded.installCombinationHash.trim();
+  loaded.installCombinationHash.toLowerCase();
   loaded.restore = preferences.getBool("restore", false);
   loaded.restoreAttempted = preferences.getBool("restore_try", false);
   loaded.filesystemDirty = preferences.getBool("fs_dirty", false);
@@ -1580,7 +1588,7 @@ bool pullOtaResumePendingLittleFs() {
     pullOtaFail("FS state failed");
     return pullOtaRecoveryError();
   }
-  customBuildReportInstalled();
+  customBuildReportInstalled(pending.restore ? pending.installCombinationHash : "");
   pullOtaDraw("Update done", "Restarting");
   delay(1500);
   remoteQueueOtaResetAt(millis());

@@ -53,6 +53,7 @@ void delay(unsigned long ms) {
 }
 int digitalRead(uint8_t pin) { return pins[pin]; }
 void pinMode(int, int) {}
+bool handleMenuChord() { return false; }
 void aceButtonHandleEvent(AceButton *button, uint8_t event, uint8_t) {
   int pin = button->getPin();
   if (event == AceButton::kEventPressed) presses[pin]++;
@@ -63,6 +64,7 @@ void aceButtonHandleEvent(AceButton *button, uint8_t event, uint8_t) {
 '''
     for signature in (
         "bool anyScaleButtonPressed()",
+        "void resetReleasedScaleButtons()",
         "bool buttonChecksSuppressedUntilRelease()",
         "bool serviceEnergyButtonGesture(unsigned long now)",
         "bool energyResponsiveButtonBoostActive(unsigned long now)",
