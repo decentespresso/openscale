@@ -942,4 +942,6 @@ static inline void grinderSetEnabled(bool enabled) {
   grinderRuntimeReset();
 }
 
+#include "grinder_shutdown.h"
+
 #endif

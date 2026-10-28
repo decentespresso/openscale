@@ -618,15 +618,7 @@ void enterUsbStandby() {
   b_powerOff = false;
   if (b_menu || b_calibration) return;
 #if HDS_ENABLE_GRINDER
-  if (grinderSettings.enabled &&
-      (grinderRuntime.state == GRINDER_STATE_ARMED ||
-       grinderRuntime.state == GRINDER_STATE_GRINDING ||
-       grinderRuntime.state == GRINDER_STATE_STOPPING ||
-       grinderRuntime.state == GRINDER_STATE_ERROR ||
-       grinderRuntime.relayOn || grinderRuntime.recovery.active)) {
-    Serial.println("USB standby blocked: stop grinder first");
-    return;
-  }
+  grinderPrepareForShutdown();
 #endif
   if (b_softSleep) wakeScaleFromSoftSleep("USB standby");
   b_shutdownFailBle = false;
@@ -635,9 +627,6 @@ void enterUsbStandby() {
   b_buttonChordSuppressUntilRelease = true;
   circle_press_data = {};
   square_press_data = {};
-#if HDS_ENABLE_GRINDER
-  grinderPauseForMenu();
-#endif
 #if HDS_ENABLE_ENERGY_MENU
   requestEnergyDisplay(b_chargingOLED);
   applyEnergyDisplayCommand(b_chargingOLED);

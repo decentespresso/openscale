@@ -51,9 +51,11 @@ sampling and controlling the charger. Automatic shutdown requests are cancelled
 before display or hardware teardown while USB is connected. Explicit Off enters
 charging standby instead of deep sleep; the charging-display preference still
 controls whether its screen is visible. Charging and Battery Protect remain
-active. An armed, running, stopping, failed, or recovering grinder blocks USB
-standby; its normal controls and stop handling remain available. Idle standby
-pauses grinder progression and retains its connection supervision.
+active. Explicit Off remains available in every grinder state. Before USB standby
+or battery shutdown, the scale sends grinder OFF and waits at most 250 ms for a
+matching relay-OFF reply, then closes the connection even without confirmation.
+Standby pauses grinder progression; waking requires a fresh connection and tare
+before grinding can re-arm. The plug must still turn its relay OFF on disconnect.
 Hold either button to return to weighing, or tap with Quick Boot enabled. Wake
 presses are consumed rather than interpreted as tare or timer actions. Holding
 both buttons for 500 ms opens the menu on USB without unplugging or rebooting;

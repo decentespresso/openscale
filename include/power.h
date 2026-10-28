@@ -40,6 +40,7 @@ static void stopWifiConfigServer();
 #endif
 #if HDS_ENABLE_GRINDER
 void beforeDeepSleepFlush();
+void grinderPrepareForShutdown();
 #endif
 
 const int windowSize = 1000;
@@ -77,9 +78,14 @@ bool usbPowerKeepsAwake() {
 #endif
 }
 
-bool cancelUsbPoweredShutdown() {
-  if (!usbPowerKeepsAwake()) return false;
-  b_powerOff = false;
+bool prepareScaleShutdown() {
+  if (usbPowerKeepsAwake()) {
+    b_powerOff = false;
+    return false;
+  }
+#if HDS_ENABLE_GRINDER
+  grinderPrepareForShutdown();
+#endif
   return true;
 }
 
@@ -226,7 +232,7 @@ void print_wakeup_reason() {
 
 
 void esp32_sleep() {
-  if (cancelUsbPoweredShutdown()) return;
+  if (!prepareScaleShutdown()) return;
 #if HDS_ENABLE_ENERGY_MENU
   applyEnergyLightSleepSetting(false);
   setEnergyIdleWakeEnabled(false);
@@ -311,7 +317,7 @@ void esp32_sleep() {
 
 
 void shut_down_now() {
-  if (cancelUsbPoweredShutdown()) return;
+  if (!prepareScaleShutdown()) return;
   Serial.println("power off");
 #ifdef BUZZER
   buzzer.beep(1, BUZZER_DURATION);
@@ -337,7 +343,7 @@ void shut_down_now() {
 
 
 void shut_down_low_battery(float voltage) {
-  if (cancelUsbPoweredShutdown()) return;
+  if (!prepareScaleShutdown()) return;
   if (t_batteryRefresh > 0){
     Serial.print("Low battery, voltage:");
     Serial.println(voltage);
@@ -365,6 +371,7 @@ void shut_down_now_nobeep() {
     enterUsbStandby();
     return;
   }
+  if (!prepareScaleShutdown()) return;
   Serial.println("power off no beep");
   u8g2.setFontDirection(0);
   if (b_screenFlipped)
@@ -386,7 +393,7 @@ void shut_down_now_nobeep() {
 }
 
 void shut_down_now_accidentTouch() {
-  if (cancelUsbPoweredShutdown()) return;
+  if (!prepareScaleShutdown()) return;
   Serial.println("accdient on, power off...");
 #ifdef ESPNOW
   if (b_espnow) {
