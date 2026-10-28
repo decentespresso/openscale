@@ -68,6 +68,8 @@ jobs:
   build:
     name: firmware (esp32s3, esp32s3-grinder)
     runs-on: ubuntu-latest
+    env:
+      UV_CONSTRAINT: ${{ github.workspace }}/constraints-pioarduino.txt
 
     steps:
       - uses: actions/checkout@v7
@@ -115,7 +117,9 @@ jobs:
 
       - name: Shorten commit SHA
         id: slugify
-        run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        run: |
+          commit="$(git rev-parse HEAD)"
+          echo "sha=${commit:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Save firmware file
         uses: actions/upload-artifact@v7
@@ -162,7 +166,9 @@ jobs:
         run: pio run -e esp32s3-energy-menu
 
       - name: Check button wake and energy migration regressions
-        run: python tools/check_energy_button_regressions.py
+        run: |
+          python tools/check_energy_button_regressions.py
+          python tools/check_usb_standby_regressions.py
 
   release-ready:
     if: always()

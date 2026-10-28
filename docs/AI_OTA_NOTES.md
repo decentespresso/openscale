@@ -151,6 +151,11 @@ hash, not merely a `-custom` version suffix. It retains signed custom rollback
 manifest lookup and the shared staged LittleFS installation path.
 
 Compatible older stable releases at `v3.1.13+` may be offered as signed downgrades.
+Official `3.1.13` is excluded when running identified custom firmware or a
+preview/RC release: its recovery loader cannot consume custom rollback URLs or
+prerelease rollback identities. The shared selection excludes it for both the
+picker and unattended requests, including filesystem recovery. Stable-to-stable
+`3.1.13` downgrades remain supported.
 
 ## Unattended Install
 
@@ -183,6 +188,11 @@ Acceptance is not installability. A transport acknowledges only that a well-form
 Staged LittleFS OTA stores target and rollback metadata in NVS namespace `ota_fs`, including custom combination hashes and `target_try`, `fs_dirty`, `restore`, and `restore_try` recovery state. Custom-to-custom rollback fetches the installed combination's signed custom manifest and identifies both app slots by combination hash rather than their shared version string.
 
 `install_combo` retains the original attempted custom target across conversion to a rollback restore. Terminal failure telemetry uses that identity, not the running rollback firmware. Legacy restore transactions without an original target omit failure telemetry rather than attributing it to the wrong build.
+
+Successful rollback restoration also reports the original target as failed alongside
+the verified restored identity. The loader retains `install_combo` in the local
+pending record before transaction cleanup; the completion report uses the existing
+three-attempt limit and never blocks reboot on a telemetry outage.
 
 Flow:
 

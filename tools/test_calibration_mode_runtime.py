@@ -29,8 +29,11 @@ bool b_u8g2Sleep = false, b_softSleep = false, b_websocketLowPowerEnabled = fals
 bool b_menuCirclePressPending = false, b_menuSquarePressPending = false;
 bool b_menuCircleLongHandled = false, b_menuSquareLongHandled = false;
 bool b_chargingOLED = true, bleClientLive = false;
+bool b_buttonChordSuppressUntilRelease = false;
+struct { bool active = false; } circle_press_data, square_press_data;
 int i_cal_weight = 0, i_button_cal_status = 1, i_calibration = 0, i_buttonBootDelay = 0;
 int GPIO_power_on_with = BATTERY_CHARGING, chargingPin = LOW, usbPin = LOW;
+bool chargingUiActive() { @CHARGING_UI@ }
 int sampledPresses = 0, releasedPresses = 0, timerToggles = 0, chargingWakes = 0;
 int calibrationFrames = 0, chargingFrames = 0, adcWakes = 0, adcResets = 0;
 int restartRequests = 0, restoredSamples = 0, menuInvalidations = 0;
@@ -40,12 +43,13 @@ float f_batteryVoltage = 4.2f, showEmptyBatteryBelowVoltage = 3.2f, showFullBatt
 unsigned long millis() { return 10000; }
 bool bleHasLiveClient() { return bleClientLive; }
 int digitalRead(int pin) { return pin == USB_DET ? usbPin : chargingPin; }
+bool usbPowerKeepsAwake() { @USB_AWAKE@ }
 long map(long, long, long, long, long) { return 50; }
 void recordEnergyActivity() {}
 void power_off(int) {}
 void wakeScaleFromSoftSleep(const char*) {}
 void ble_init() { ++chargingWakes; }
-void wakeFromChargingUi(uint8_t buttonPin) { @WAKE@ }
+void wakeFromChargingUi(uint8_t buttonPin);
 void startPressSampling(int) { ++sampledPresses; }
 void onButtonReleased(int pin) { assert(pin == BUTTON_SQUARE); ++releasedPresses; ++timerToggles; }
 void leaveMenu() {
@@ -75,6 +79,7 @@ void buttonSquare_DoubleClicked() {}
 void buttonCircle_LongPressed();
 void buttonSquare_LongPressed();
 void chargingOLED(int, float) { ++chargingFrames; }
+int batteryPercent() { return 50; }
 bool refreshScaleDatasetAfterDiscontinuity(const char*) { return true; }
 bool tareScaleWhenAdcReady(const char*) { return true; }
 void resetScaleOutputAfterAdcDiscontinuity() { ++adcResets; }
@@ -84,6 +89,7 @@ struct {
   void setPowerSave(int) {}
   void setContrast(int) {}
 } u8g2;
+void wakeFromChargingUi(uint8_t buttonPin) { @WAKE@ }
 struct {
   void print(const char*) {}
   void println(const char*) {}
@@ -110,6 +116,7 @@ const Menu *currentSelection = &menuCalibrate;
 int currentMenuSize = 1, currentIndex = 0;
 template <typename T, unsigned N> int getMenuSize(T (&)[N]) { return N; }
 int connectionsMenuSize() { return 1; }
+int powerMenuSize() { return 1; }
 void selectMenu() { @SELECT@ }
 void buttonSquare_Pressed() { @PRESS@ }
 void buttonSquare_Released() { @RELEASE@ }
@@ -123,6 +130,9 @@ void squareEvent(uint8_t event) { aceButtonHandleEvent(&buttonSquare, event, HIG
 void resetRuntime(bool ble) {
   bleClientLive = ble;
   b_menu = b_calibration = b_showChargingUI = b_powerOff = false;
+  b_buttonChordSuppressUntilRelease = false;
+  b_chargingOLED = true;
+  i_buttonBootDelay = 0;
   calibrationReturnToMenu = b_ble_enabled = restartRequired = false;
   restartRequests = restoredSamples = menuInvalidations = 0;
   b_ota = false;
@@ -170,7 +180,7 @@ void testChargingAndWeighing() {
     chargingPin = HIGH;
     f_batteryVoltage = voltage;
     serviceUi();
-    assert(b_powerOff && !b_showChargingUI && calibrationFrames == 0);
+    assert(!b_powerOff && b_showChargingUI && calibrationFrames == 0 && chargingFrames == 1);
   }
   resetRuntime(false);
   chargingPin = usbPin = HIGH;
@@ -184,10 +194,29 @@ void testChargingAndWeighing() {
   b_showChargingUI = true;
   squareEvent(AceButton::kEventPressed);
   assert(chargingWakes == 1 && !b_showChargingUI && !b_is_charging);
-  assert(GPIO_power_on_with == BUTTON_SQUARE && sampledPresses == 1);
+  assert(GPIO_power_on_with == BUTTON_SQUARE && sampledPresses == 0);
+  assert(b_buttonChordSuppressUntilRelease);
   resetRuntime(true);
   squareEvent(AceButton::kEventPressed);
-  assert(b_powerOff && sampledPresses == 1);
+  assert(!b_powerOff && sampledPresses == 0 && GPIO_power_on_with == BUTTON_SQUARE);
+  for (bool display : {false, true}) {
+    resetRuntime(false);
+    b_chargingOLED = display;
+    serviceUi();
+    assert(chargingFrames == int(display) && b_showChargingUI == display);
+    chargingPin = usbPin = HIGH;
+    serviceUi();
+    assert(GPIO_power_on_with == BUTTON_SQUARE && !b_u8g2Sleep && !b_showChargingUI);
+    assert(adcWakes == 1 && adcResets == 1);
+    resetRuntime(false);
+    b_chargingOLED = display;
+    i_buttonBootDelay = 500;
+    squareEvent(AceButton::kEventPressed);
+    assert(GPIO_power_on_with == BATTERY_CHARGING && sampledPresses == 0);
+    squareEvent(AceButton::kEventLongPressed);
+    assert(GPIO_power_on_with == BUTTON_SQUARE && sampledPresses == 0);
+    assert(b_buttonChordSuppressUntilRelease && !b_u8g2Sleep);
+  }
 }
 void testCalibrationMenuReturn() {
   for (int origin : {BATTERY_CHARGING, BUTTON_CIRCLE, BUTTON_SQUARE, -1}) {
@@ -266,6 +295,8 @@ int main() {
 }
 '''
     replacements = {
+        "CHARGING_UI": block_after((Path(__file__).resolve().parents[1] / "include/parameter.h").read_text(encoding="utf-8"), "inline bool chargingUiActive()"),
+        "USB_AWAKE": block_after((Path(__file__).resolve().parents[1] / "include/power.h").read_text(encoding="utf-8"), "bool usbPowerKeepsAwake()"),
         "ENTRY": block_after(menu, "void calibrate() {"),
         "FINISH": block_after(menu, "void calibrationFinish("),
         "OTA": block_after(menu, "void wifiUpdate(const PullOtaTargetVersion &target) {"),

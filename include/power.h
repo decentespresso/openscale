@@ -8,6 +8,8 @@
 #include "gyro.h"
 #endif
 #include "espnow.h"
+#include "fuel_gauge.h"
+#include "storage.h"
 
 #ifdef ESP32
 #include "driver/rtc_io.h"
@@ -27,6 +29,7 @@ void sendBlePowerOff(int i_reason);
 void sendWebsocketPowerOff(int i_reason);
 #endif
 void bleShutdown();
+void enterUsbStandby();
 #if HDS_FEATURE_WIFI
 void stopWifi();
 #endif
@@ -57,7 +60,28 @@ const float referenceVoltage = 3.3;
 
 const float lowBatteryThreshold = 3.2;
 
+int batteryPercent() {
+  portENTER_CRITICAL(&batteryStateMux);
+  const int percent = batteryPercentCached;
+  portEXIT_CRITICAL(&batteryStateMux);
+  return percent;
+}
+
 void (*resetFunc)(void) = 0;
+
+bool usbPowerKeepsAwake() {
+#ifdef USB_DET
+  return digitalRead(USB_DET) == LOW;
+#else
+  return false;
+#endif
+}
+
+bool cancelUsbPoweredShutdown() {
+  if (!usbPowerKeepsAwake()) return false;
+  b_powerOff = false;
+  return true;
+}
 
 void reset() {
 #ifdef ESP32
@@ -108,12 +132,26 @@ void configureWakePinsForDeepSleep() {
   configureWakePinForDeepSleep((gpio_num_t)BUTTON_CIRCLE);
   configureWakePinForDeepSleep((gpio_num_t)BUTTON_SQUARE);
   configureWakePinForDeepSleep((gpio_num_t)BATTERY_CHARGING);
+#ifdef USB_DET
+  configureWakePinForDeepSleep((gpio_num_t)USB_DET);
+#endif
 }
 
 void releaseWakePinsFromRtcMode() {
   rtc_gpio_deinit((gpio_num_t)BUTTON_CIRCLE);
   rtc_gpio_deinit((gpio_num_t)BUTTON_SQUARE);
   rtc_gpio_deinit((gpio_num_t)BATTERY_CHARGING);
+#ifdef USB_DET
+  rtc_gpio_deinit((gpio_num_t)USB_DET);
+#endif
+}
+
+uint64_t deepSleepWakeMask() {
+#ifdef USB_DET
+  return PIN_BITMASK | BUTTON_PIN_BITMASK(USB_DET);
+#else
+  return PIN_BITMASK;
+#endif
 }
 
 #include "wake_on_weight.h"
@@ -143,7 +181,16 @@ void print_wakeup_reason() {
     Serial.println(i_wakeupPin);
 
     Serial.print("GPIO that triggered the wake up using built in definitions: ");
-    switch (GPIO_reason) {
+    const uint64_t wakePins = GPIO_reason & PIN_BITMASK;
+    switch (wakePins) {
+#ifdef USB_DET
+      case 0:
+        if (GPIO_reason & BUTTON_PIN_BITMASK(USB_DET)) {
+          GPIO_power_on_with = BATTERY_CHARGING;
+          Serial.println("USB attached");
+        }
+        break;
+#endif
       case BUTTON_PIN_BITMASK(BATTERY_CHARGING):
         GPIO_power_on_with = BATTERY_CHARGING;
         Serial.println("Only GPIO " + String(BATTERY_CHARGING));
@@ -179,6 +226,7 @@ void print_wakeup_reason() {
 
 
 void esp32_sleep() {
+  if (cancelUsbPoweredShutdown()) return;
 #if HDS_ENABLE_ENERGY_MENU
   applyEnergyLightSleepSetting(false);
   setEnergyIdleWakeEnabled(false);
@@ -210,7 +258,7 @@ void esp32_sleep() {
   esp_deep_sleep_enable_gpio_wakeup(1 << GPIO_NUM_BUTTON_POWER, ESP_GPIO_WAKEUP_GPIO_LOW);
 #else
   configureWakePinsForDeepSleep();
-  esp_sleep_enable_ext1_wakeup_io(PIN_BITMASK, ESP_EXT1_WAKEUP_ANY_LOW);
+  esp_sleep_enable_ext1_wakeup_io(deepSleepWakeMask(), ESP_EXT1_WAKEUP_ANY_LOW);
 #endif
 
 
@@ -244,8 +292,11 @@ void esp32_sleep() {
   gpio_hold_en((gpio_num_t)I2C_SCL);
   gpio_hold_en((gpio_num_t)I2C_SDA);
 
-  digitalWrite(ACC_PWR_CTRL, LOW);
-  gpio_hold_en((gpio_num_t)ACC_PWR_CTRL);
+  fuelGaugeSleep();
+  if (fuelGaugeLegacyHardware()) {
+    digitalWrite(ACC_PWR_CTRL, LOW);
+    gpio_hold_en((gpio_num_t)ACC_PWR_CTRL);
+  }
   digitalWrite(PWR_CTRL, LOW);
   gpio_hold_en((gpio_num_t)PWR_CTRL);
   gpio_deep_sleep_hold_en();
@@ -260,6 +311,7 @@ void esp32_sleep() {
 
 
 void shut_down_now() {
+  if (cancelUsbPoweredShutdown()) return;
   Serial.println("power off");
 #ifdef BUZZER
   buzzer.beep(1, BUZZER_DURATION);
@@ -285,6 +337,7 @@ void shut_down_now() {
 
 
 void shut_down_low_battery(float voltage) {
+  if (cancelUsbPoweredShutdown()) return;
   if (t_batteryRefresh > 0){
     Serial.print("Low battery, voltage:");
     Serial.println(voltage);
@@ -308,6 +361,10 @@ void shut_down_low_battery(float voltage) {
 }
 
 void shut_down_now_nobeep() {
+  if (usbPowerKeepsAwake()) {
+    enterUsbStandby();
+    return;
+  }
   Serial.println("power off no beep");
   u8g2.setFontDirection(0);
   if (b_screenFlipped)
@@ -329,6 +386,7 @@ void shut_down_now_nobeep() {
 }
 
 void shut_down_now_accidentTouch() {
+  if (cancelUsbPoweredShutdown()) return;
   Serial.println("accdient on, power off...");
 #ifdef ESPNOW
   if (b_espnow) {
@@ -340,7 +398,15 @@ void shut_down_now_accidentTouch() {
 }
 
 void updateBattery(int batteryPin){
-  if (!b_ads1115InitFail) {
+  if (b_hasFuelGauge) {
+    fuelGaugeLoop();
+    const FuelGaugeReading reading = fuelGaugeReading();
+    if (!reading.valid || reading.sequence == powerCadence.fuelGaugeSampleSequence) return;
+    f_batteryVoltage = reading.voltageMv / 1000.0f;
+    powerCadence.fuelGaugeSampleSequence = reading.sequence;
+  } else if (!fuelGaugeLegacyHardware()) {
+    return;
+  } else if (!b_ads1115InitFail) {
     int16_t adc0;
     float volts0;
     adc0 = ads.readADC_SingleEnded(0);
@@ -354,8 +420,28 @@ void updateBattery(int batteryPin){
     float correctedVoltage = batteryVoltage * f_batteryCalibrationFactor;
     f_batteryVoltage = correctedVoltage;
   }
+  const int percent = b_hasFuelGauge
+      ? static_cast<int>(fuelGaugeSocPercent())
+      : constrain(static_cast<int>(map(f_batteryVoltage * 1000,
+          showEmptyBatteryBelowVoltage * 1000,
+          showFullBatteryAboveVoltage * 1000, 0, 100)), 0, 100);
+  portENTER_CRITICAL(&batteryStateMux);
+  batteryPercentCached = percent;
+  portEXIT_CRITICAL(&batteryStateMux);
   t_batteryRefresh = millis();
   powerCadence.batterySampleSequence++;
+}
+
+void serviceFuelGauge() {
+  if (!b_hasFuelGauge) return;
+  const uint32_t previousSequence = powerCadence.batterySampleSequence;
+  updateBattery(BATTERY_PIN);
+  if (powerCadence.batterySampleSequence != previousSequence &&
+      fuelGaugeRuntime.capacityPersistPending &&
+      storagePutInt(KEY_BAT_CAPACITY, fuelGaugeRuntime.desiredCapacity)) {
+    fuelGaugeRuntime.capacityPersistPending = false;
+    storagePutBool(KEY_BAT_CAPACITY_SET, true);
+  }
 }
 
 float getUsbVoltage(int usbPin) {
@@ -408,6 +494,7 @@ void evaluateAutoOff(double seconds, bool showCountdown) {
 }
 
 void power_off(int min) {
+  serviceFuelGauge();
   if (processNewBatterySample()) return;
   if (min == -1) {
     resetAutoOffTimer(millis());
@@ -437,6 +524,7 @@ void power_off_gyro(int sec) {
 #endif
 
 void power_off(double sec) {
+  serviceFuelGauge();
   if (processNewBatterySample()) return;
   if (sec == -1) {
     resetAutoOffTimer(millis());
@@ -457,6 +545,8 @@ float get_usb_voltage() {
 }
 
 float get_bat_voltage() {
+  if (b_hasFuelGauge) return fuelGaugeVoltageV();
+  if (!fuelGaugeLegacyHardware()) return 0;
   Serial.print("get_bat_voltage");
   Serial.println(readCheckBatteryVoltage(BATTERY_PIN));
   return readCheckBatteryVoltage(BATTERY_PIN);
@@ -465,7 +555,7 @@ float get_bat_voltage() {
 #endif  //CHECKBATTERY
 
 void checkBattery() {
-  float perc = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
+  const int perc = batteryPercent();
 #if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
   if (digitalRead(USB_DET) == LOW) {
 #else

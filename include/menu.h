@@ -4,6 +4,7 @@
 #include "esp32-hal.h"
 #include "parameter.h"
 #include "timing.h"
+#include "fuel_gauge_menu.h"
 #if HDS_FEATURE_WIFI
 #include "mdns_name.h"
 #include "wifi_setup.h"
@@ -46,6 +47,7 @@ inline void menuActionMessageChanged() {
 
 void waitForMenuButtonRelease() {
   while (digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW) {
+    serviceFuelGauge();
     delay(20);
   }
 }
@@ -72,6 +74,7 @@ void resetWifi();
 void showWifiStatus();
 #endif
 void toggleHeartbeat();
+void toggleBatteryProtect();
 void calibrate();
 void drawButton();
 #if HDS_FEATURE_PULL_OTA
@@ -129,6 +132,7 @@ const Menu menuPower = { "Power", NULL, &menuPowerBack, NULL };
 const Menu menuInfo = { "Info", NULL, &menuInfoBack, NULL };
 const Menu menuStatus = { "Status", showStatus, NULL, &menuInfo };
 const Menu menuAbout = { "About", showAbout, NULL, &menuInfo };
+const Menu menuBatInfo = { "Bat. Info", showBatInfo, NULL, &menuInfo };
 const Menu menuLogo = { "Show Logo", showLogo, NULL, &menuDisplay };
 #if HDS_ENABLE_GRINDER
 const Menu menuGrinder = { "Grind by weight", NULL, &menuGrinderBack, NULL };
@@ -143,6 +147,7 @@ char menuFlipScreenLabel[] = "Flip Screen o";
 char menuTimeOnTopLabel[] = "Top: Weight";
 char menuAutoSleepLabel[] = "Auto Sleep o";
 char menuQuickBootLabel[] = "Quick Boot o";
+char menuBatteryProtectLabel[] = "Battery Protect o";
 #ifdef ADS1232ADC
 char menuWakeOnWeightLabel[24] = "WakeOnWeight o";
 #endif
@@ -218,6 +223,7 @@ const Menu *const displayMenu[] = { &menuDisplayBack, &menuFlipScreen,
 const Menu menuPowerBack = { "Back", NULL, NULL, &menuPower };
 const Menu menuAutoSleep = { menuAutoSleepLabel, toggleAutoSleep, NULL, &menuPower };
 const Menu menuQuickBoot = { menuQuickBootLabel, toggleQuickBoot, NULL, &menuPower };
+const Menu menuBatteryProtect = { menuBatteryProtectLabel, toggleBatteryProtect, NULL, &menuPower };
 #ifdef ADS1232ADC
 const Menu menuWakeOnWeight = { menuWakeOnWeightLabel, cycleWakeOnWeight, NULL, &menuPower };
 #endif
@@ -233,10 +239,15 @@ const Menu *const powerMenu[] = { &menuPowerBack, &menuAutoSleep, &menuQuickBoot
                                   &menuEnergyLightSleep,
                                   &menuEnergyUsbSleepTest,
 #endif
+                                  &menuBatteryProtect,
 };
 
+int powerMenuSize() {
+  return getMenuSize(powerMenu) - (b_hasFuelGauge ? 0 : 1);
+}
+
 const Menu menuInfoBack = { "Back", NULL, NULL, &menuInfo };
-const Menu *const infoMenu[] = { &menuInfoBack, &menuStatus, &menuAbout };
+const Menu *const infoMenu[] = { &menuInfoBack, &menuStatus, &menuAbout, &menuBatInfo };
 
 #if HDS_ENABLE_GRINDER
 const Menu menuGrinderBack = { "Back", NULL, NULL, &menuGrinder };
@@ -322,6 +333,13 @@ bool toggleStoredBool(State &state, const char *key, const char *label,
   return stored;
 }
 
+void toggleBatteryProtect() {
+  if (toggleStoredBool(b_batteryProtect, KEY_BAT_PROTECT, "Battery Protect",
+                       menuBatteryProtectLabel)) {
+    fuelGaugeProtectSet(b_batteryProtect);
+  }
+}
+
 #ifdef BUZZER
 void toggleBuzzer() {
   const bool enabled = !static_cast<bool>(b_beep);
@@ -404,6 +422,8 @@ void showWifiStatus() {
   } while (u8g2.nextPage());
   delay(1000);
   while (b_showWifiData) {
+    power_off(-1);
+    delay(20);
     if (digitalRead(BUTTON_SQUARE) == LOW) {
       b_showWifiData = false;
     }
@@ -473,6 +493,8 @@ void showStatus() {
   } while (u8g2.nextPage());
   delay(1000);
   while (b_showStatusData) {
+    power_off(-1);
+    delay(20);
     if (digitalRead(BUTTON_SQUARE) == LOW) {
       b_showStatusData = false;
     }
@@ -1514,6 +1536,8 @@ void showAbout() {
 #endif
   delay(1000);
   while (b_showAbout) {
+    power_off(-1);
+    delay(20);
     if (digitalRead(BUTTON_SQUARE) == LOW)
       b_showAbout = false;
   }
@@ -1582,6 +1606,8 @@ void showLogo() {
 #endif
   delay(1000);
   while (b_showLogo) {
+    power_off(-1);
+    delay(20);
     if (digitalRead(BUTTON_SQUARE) == LOW) {
       b_showNumber = !b_showNumber;
       b_showLogo = false;
@@ -1606,6 +1632,7 @@ void enableDebug() {
 }
 
 void calibrateVoltage() {
+  if (!fuelGaugeLegacyHardware()) return;
   actionMessage = "Calibrate 4.2v";
   menuActionMessageChanged();
   t_actionMessageDelay = 1000;
@@ -1636,6 +1663,7 @@ void refreshMenuRows() {
   updateToggleLabel(menuFlipScreenLabel, b_screenFlipped);
   updateToggleLabel(menuAutoSleepLabel, b_autoSleep);
   updateToggleLabel(menuQuickBootLabel, b_quickBoot);
+  updateToggleLabel(menuBatteryProtectLabel, b_batteryProtect);
 #ifdef ADS1232ADC
   updateWakeOnWeightLabel();
 #endif
@@ -1720,7 +1748,7 @@ void selectMenu() {
       currentMenuSize = getMenuSize(displayMenu);
     } else if (currentSelection == &menuPower) {
       currentMenu = powerMenu;
-      currentMenuSize = getMenuSize(powerMenu);
+      currentMenuSize = powerMenuSize();
     } else if (currentSelection == &menuInfo) {
       currentMenu = infoMenu;
       currentMenuSize = getMenuSize(infoMenu);

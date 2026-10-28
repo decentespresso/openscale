@@ -90,6 +90,7 @@ async function openSource(browser, html, viewport, options = {}) {
       activations = [...activations, data];
       if (variant === 'activation-rejected') return route.fulfill({ status: 409,
         contentType: 'application/json', body: JSON.stringify({ error: 'wifi_operation_not_ready' }) });
+      if (variant === 'activation-lost') return route.abort('failed');
       activated = true;
       status = { ...status, state: 'succeeded', ssid: status.requested_ssid, connected: true,
         access_point: false, credentials_saved: true, ip: options.finalIp || '192.168.60.40', busy: false };
@@ -354,6 +355,37 @@ async function checkSameNetworkAndRecovery(browser, html, viewport) {
   } finally { await reset.context.close(); }
 }
 
+async function checkLostActivation(browser, html, viewport) {
+  for (const provisioning of [false, true]) {
+    const session = await openSource(browser, html, viewport, { provisioning, variant: 'activation-lost' });
+    try {
+      const originalUrl = session.page.url();
+      await submit(session.page);
+      await session.page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('did not start'),
+        null, { timeout: 3000 });
+      assert.equal(await session.page.locator('#wifi-status').getAttribute('data-tone'), 'error');
+      assert.equal(await session.page.locator('#wifi-connect-button').isEnabled(), true);
+      assert.equal(await session.page.locator('#reset-wifi-button').isEnabled(), true);
+      assert.equal(await session.page.locator('#device-name').isEnabled(), true);
+      assert.equal(await session.page.locator('#wifi-open-scale').isVisible(), false);
+      assert.equal(await session.page.locator('#wifi-check-result').isVisible(), false);
+      assert.equal(await session.page.locator('#wifi-retry').isEnabled(), true);
+      assert.equal(await session.page.locator('#password').inputValue(), '');
+      assert.equal(session.activations().length, 1);
+      assert.equal(session.posts().length, 1);
+      assert.equal(session.page.url(), originalUrl);
+      await session.page.getByRole('button', { name: 'Retry', exact: true }).click();
+      session.variant('success');
+      await session.page.locator('#password').fill('pass word');
+      await session.page.getByRole('button', { name: 'Connect', exact: true }).click();
+      await session.page.locator('#wifi-open-scale').waitFor({ state: 'visible' });
+      assert.equal(session.activations().length, 2);
+      assert.equal(session.posts().length, 2);
+      assert.deepEqual(session.errors, []);
+    } finally { await session.context.close(); }
+  }
+}
+
 async function checkCompletedAddressChoice(browser, html, label, viewport) {
   for (const options of [{}, { useHostname: true, mdnsName: 'kitchen-scale' },
     { finalStatusReachable: true, finalIp: '192.168.60.41', mdns: false }]) {
@@ -478,6 +510,15 @@ async function checkProgressPopup(browser, html, label, viewport) {
   fs.mkdirSync(path.join(root, '.pio.nosync'), { recursive: true });
   const browser = await chromium.launch({ headless: true });
   try {
+    if (process.argv.includes('--activation-loss-only')) {
+      for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+        for (const [label, html] of Object.entries(pages)) {
+          await checkLostActivation(browser, html, viewport);
+          console.log(`${label} ${viewport.width}px: lost activation recovery and explicit retry passed`);
+        }
+      }
+      return;
+    }
     if (process.argv.includes('--address-choice-only')) {
       for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }, { width: 320, height: 568 }]) {
         for (const [label, html] of Object.entries(pages)) {
@@ -501,6 +542,7 @@ async function checkProgressPopup(browser, html, label, viewport) {
         await checkHandoffs(browser, html, label, viewport);
         await checkRejectedResults(browser, html, viewport);
         await checkRejectedTests(browser, html, viewport);
+        await checkLostActivation(browser, html, viewport);
         await checkSameNetworkAndRecovery(browser, html, viewport);
         await checkCompletedAddressChoice(browser, html, label, viewport);
         await checkReloadedTests(browser, html, viewport);

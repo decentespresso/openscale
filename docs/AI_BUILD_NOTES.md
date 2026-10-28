@@ -60,8 +60,9 @@ The SDK builder installs its own Core into the selected core directory's
 `penv`. Version 6.2.0 switches SCons to 4.11.1 during the nested Arduino build,
 conflicting with this platform's SCons 4.8.1. The constraint keeps that Core
 at 6.1.19 without changing the firmware or disabling size checks. CI applies
-it to Energy Menu and custom builds. Constraints do not downgrade an already
-installed Core; use a fresh ignored local core directory in that case.
+it to stock, Energy Menu, and custom builds. The stock 80 MHz profile also
+uses the custom-SDK builder. Constraints do not downgrade an already installed
+Core; use a fresh ignored local core directory in that case.
 
 The PM-capable energy-menu environments compile ESP-IDF libraries. Use a
 short physical worktree path, such as `D:\w180`, with its ignored local

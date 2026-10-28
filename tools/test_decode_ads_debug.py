@@ -1,8 +1,10 @@
 import struct
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 
 from ads_debug_protocol import append_checksum
-from decode_ads_debug import decode_ads_debug_packet, decode_ads_reset_response
+from decode_ads_debug import decode_ads_debug_packet, decode_ads_reset_response, print_reset_response
 
 
 def build_debug_packet():
@@ -43,6 +45,26 @@ class DecodeAdsDebugTest(unittest.TestCase):
         info = decode_ads_reset_response(bytes([0x03, 0x26, 0x02, 0x00, 0x27]))
         self.assertTrue(info["success"])
         self.assertEqual(info["mode"], 0x02)
+
+    def test_reset_response_reports_each_status(self):
+        cases = (
+            (0x00, "SUCCESS"),
+            (0x01, "FAILED (DOUT timeout)"),
+            (0x02, "FAILED (dataset/tare refresh timeout)"),
+            (0xAB, "FAILED (unknown status 0xAB)"),
+        )
+        for status, expected in cases:
+            with self.subTest(status=status):
+                packet = append_checksum(bytes([0x03, 0x26, 0x02, status]))
+                info = decode_ads_reset_response(packet)
+                self.assertEqual(info["status"], status)
+                self.assertEqual(info["success"], status == 0)
+                output = StringIO()
+                with redirect_stdout(output):
+                    print_reset_response(info)
+                self.assertIn(f"Status: {expected}\n", output.getvalue())
+                if status == 0x02:
+                    self.assertNotIn("DOUT timeout", output.getvalue())
 
 
 if __name__ == "__main__":

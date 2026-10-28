@@ -163,11 +163,7 @@ bool websocketIsCharging() {
 }
 
 int websocketBatteryPercent() {
-  float perc = (f_batteryVoltage - showEmptyBatteryBelowVoltage) /
-               (showFullBatteryAboveVoltage - showEmptyBatteryBelowVoltage) * 100.0f;
-  if (perc < 0) perc = 0;
-  if (perc > 100) perc = 100;
-  return (int)perc;
+  return batteryPercent();
 }
 #endif
 
@@ -361,6 +357,12 @@ void processWsPendingCmds() {
       b_u8g2Sleep = false;
     }
   }
+  if (mask & WSP_DISPLAY_RESTORE) {
+    if (!b_softSleep && !chargingUiActive() &&
+        !(mask & (WSP_DISPLAY_ON | WSP_DISPLAY_OFF))) {
+      mask |= WSP_DISPLAY_ON;
+    }
+  }
 #if HDS_ENABLE_ENERGY_MENU
   if (mask & WSP_DISPLAY_ON)  { applyEnergyDisplayCommand(true); }
   if (mask & WSP_DISPLAY_OFF) { applyEnergyDisplayCommand(false); }
@@ -388,7 +390,9 @@ void processWsPendingCmds() {
     b_u8g2Sleep = true;
     u8g2.setPowerSave(1);
     digitalWrite(PWR_CTRL, LOW);
-    digitalWrite(ACC_PWR_CTRL, LOW);
+    if (fuelGaugeLegacyHardware()) {
+      digitalWrite(ACC_PWR_CTRL, LOW);
+    }
 #if HDS_ENABLE_ENERGY_MENU
     refreshEnergyIdleWakeForRuntimeState();
 #endif

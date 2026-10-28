@@ -47,6 +47,7 @@ void waitForEnergyMainLoopWork();
 #include "menu.h"
 #include "ble.h"
 #include "usbcomm.h"
+#include "fuel_gauge.h"
 #include "finger_detection.h"
 #include "timing.h"
 #include "tap_detection.h"
@@ -55,8 +56,8 @@ void waitForEnergyMainLoopWork();
 #ifndef GRINDER_MENU_CHORD_HOLD_MS
 #define GRINDER_MENU_CHORD_HOLD_MS 500
 #endif
-bool handleGrinderMenuChord();
 #endif
+bool handleMenuChord();
 
 constexpr unsigned long BUTTON_POLL_INTERVAL_MS = 2;
 
@@ -64,11 +65,24 @@ bool anyScaleButtonPressed() {
   return digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW;
 }
 
+void resetReleasedScaleButtons() {
+  const uint16_t debounceDelay = config1.getDebounceDelay();
+  config1.setDebounceDelay(0);
+  buttonCircle.init(BUTTON_CIRCLE);
+  buttonCircle.checkState(HIGH);
+  buttonCircle.checkState(HIGH);
+  buttonSquare.init(BUTTON_SQUARE);
+  buttonSquare.checkState(HIGH);
+  buttonSquare.checkState(HIGH);
+  config1.setDebounceDelay(debounceDelay);
+}
+
 bool buttonChecksSuppressedUntilRelease() {
   if (!b_buttonChordSuppressUntilRelease) {
     return false;
   }
   if (!anyScaleButtonPressed()) {
+    resetReleasedScaleButtons();
     b_buttonChordSuppressUntilRelease = false;
   }
   return true;
@@ -267,7 +281,7 @@ bool energyMainLoopHasPendingWork() {
       otaDisplayState != OTA_DISPLAY_NONE || b_powerOff) {
     return true;
   }
-  return hasRemoteTareRequest();
+  return !b_softSleep && hasRemoteTareRequest();
 }
 
 bool energyMainLoopCanBlock() {
@@ -346,9 +360,11 @@ unsigned long energyMainLoopWaitMs(unsigned long now) {
     waitMs = EnergyRuntimePolicy::earlier(waitMs, ENERGY_DISPLAY_DEADLINE_MS);
   }
   waitMs = EnergyRuntimePolicy::earlier(waitMs, 200);
-  waitMs = EnergyRuntimePolicy::earlier(
-    waitMs, EnergyRuntimePolicy::timeUntil(
-      now, t_batteryRefresh, i_batteryRefreshTareInterval));
+  if (!b_softSleep) {
+    waitMs = EnergyRuntimePolicy::earlier(
+      waitMs, EnergyRuntimePolicy::timeUntil(
+        now, t_batteryRefresh, i_batteryRefreshTareInterval));
+  }
 
 #if HDS_FEATURE_WIFI
   if (b_wifiEnabled) {
@@ -384,9 +400,7 @@ void waitForEnergyMainLoopWork() {
 bool serviceScaleButtonInputs(bool forcePoll) {
   const bool buttonInputAllowed = !b_ota
       && !buttonChecksSuppressedUntilRelease()
-#if HDS_ENABLE_GRINDER
-      && !handleGrinderMenuChord()
-#endif
+      && !handleMenuChord()
       ;
   if (!buttonInputAllowed) return false;
   const unsigned long buttonNow = millis();
@@ -467,30 +481,33 @@ void adsDebugCallback(const ADS1232DebugInfo& info) {
 
 void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonState) {
   power_off(-1);
+  const bool chargingUi = chargingUiActive();
 #if HDS_ENABLE_ENERGY_MENU
-  if (b_u8g2Sleep && !energyRuntime.explicitDisplayOff) {
+  if (!chargingUi && b_u8g2Sleep && !energyRuntime.explicitDisplayOff) {
     u8g2.setPowerSave(0);
     b_u8g2Sleep = false;
   }
 #else
-  if (b_u8g2Sleep) {
+  if (!chargingUi && b_u8g2Sleep) {
     u8g2.setPowerSave(0);
     b_u8g2Sleep = false;
   }
 #endif
-  if (b_softSleep) {
+  if (!chargingUi && b_softSleep) {
     Serial.println("Exit Soft Sleep.");
     wakeScaleFromSoftSleep("button soft wake");
   }
 #if HDS_ENABLE_ENERGY_MENU
-  if (!energyRuntime.explicitDisplayOff) {
+  if (!chargingUi && !energyRuntime.explicitDisplayOff) {
     u8g2.setContrast(255);
     b_websocketLowPowerEnabled = false;
     energyRuntime.requestedDisplayContrast = 255;
   }
 #else
-  u8g2.setContrast(255);
-  b_websocketLowPowerEnabled = false;
+  if (!chargingUi) {
+    u8g2.setContrast(255);
+    b_websocketLowPowerEnabled = false;
+  }
 #endif
   int pin = button->getPin();
   switch (eventType) {
@@ -599,14 +616,59 @@ void scaleTimer() {
   }
 }
 
-void wakeFromChargingUi(uint8_t buttonPin) {
-  if (b_menu || b_calibration ||
-      (GPIO_power_on_with != BATTERY_CHARGING && !b_showChargingUI)) {
+void enterUsbStandby() {
+  b_powerOff = false;
+  if (b_menu || b_calibration) return;
+#if HDS_ENABLE_GRINDER
+  if (grinderSettings.enabled &&
+      (grinderRuntime.state == GRINDER_STATE_ARMED ||
+       grinderRuntime.state == GRINDER_STATE_GRINDING ||
+       grinderRuntime.state == GRINDER_STATE_STOPPING ||
+       grinderRuntime.state == GRINDER_STATE_ERROR ||
+       grinderRuntime.relayOn || grinderRuntime.recovery.active)) {
+    Serial.println("USB standby blocked: stop grinder first");
     return;
   }
+#endif
+  if (b_softSleep) wakeScaleFromSoftSleep("USB standby");
+  b_shutdownFailBle = false;
+  GPIO_power_on_with = BATTERY_CHARGING;
+  b_showChargingUI = b_chargingOLED;
+  b_buttonChordSuppressUntilRelease = true;
+  circle_press_data = {};
+  square_press_data = {};
+#if HDS_ENABLE_GRINDER
+  grinderPauseForMenu();
+#endif
+#if HDS_ENABLE_ENERGY_MENU
+  requestEnergyDisplay(b_chargingOLED);
+  applyEnergyDisplayCommand(b_chargingOLED);
+#else
+  b_u8g2Sleep = !b_chargingOLED;
+  u8g2.setPowerSave(!b_chargingOLED);
+#endif
+  Serial.println("USB charging standby");
+}
+
+void wakeFromChargingUi(uint8_t buttonPin) {
+  if (!chargingUiActive()) return;
+  if (b_softSleep) wakeScaleFromSoftSleep("charging button wake");
   GPIO_power_on_with = buttonPin;
   b_showChargingUI = false;
   b_is_charging = false;
+  b_buttonChordSuppressUntilRelease = true;
+  circle_press_data = {};
+  square_press_data = {};
+#if HDS_ENABLE_GRINDER
+  grinderResumeAfterMenu();
+#endif
+#if HDS_ENABLE_ENERGY_MENU
+  requestEnergyDisplay(true);
+  applyEnergyDisplayCommand(true);
+#else
+  b_u8g2Sleep = false;
+  u8g2.setPowerSave(0);
+#endif
   if (!b_ble_enabled) {
     b_ble_enabled = true;
     ble_init();
@@ -625,8 +687,9 @@ void buttonCircle_Released() {
 
 void buttonCircle_Pressed() {
   recordEnergyActivity();
-  if (b_showChargingUI && i_buttonBootDelay == 0) {
-    wakeFromChargingUi(BUTTON_CIRCLE);
+  if (chargingUiActive()) {
+    if (i_buttonBootDelay == 0) wakeFromChargingUi(BUTTON_CIRCLE);
+    return;
   }
 
   if (b_menu) {
@@ -653,8 +716,9 @@ void buttonSquare_Released() {
 
 void buttonSquare_Pressed() {
   recordEnergyActivity();
-  if (b_showChargingUI && !b_calibration && i_buttonBootDelay == 0) {
-    wakeFromChargingUi(BUTTON_SQUARE);
+  if (chargingUiActive()) {
+    if (i_buttonBootDelay == 0) wakeFromChargingUi(BUTTON_SQUARE);
+    return;
   }
   if (b_menu) {
     selectMenu();
@@ -767,44 +831,50 @@ void buttonSquare_LongPressed() {
   }
 }
 
-#if HDS_ENABLE_GRINDER
-bool handleGrinderMenuChord() {
-  static bool handled = false;
-  static uint32_t pressedAt = 0;
+bool handleMenuChord() {
   const bool bothPressed = digitalRead(BUTTON_CIRCLE) == LOW && digitalRead(BUTTON_SQUARE) == LOW;
-  if (!bothPressed) {
-    handled = false;
-    pressedAt = 0;
+#if HDS_ENABLE_GRINDER
+  const bool grinderMenuRequested = grinderSettings.enabled && GPIO_power_on_with != BATTERY_CHARGING;
+  const unsigned long holdMs = GRINDER_MENU_CHORD_HOLD_MS;
+#else
+  const bool grinderMenuRequested = false;
+  const unsigned long holdMs = 500;
+#endif
+  if (!bothPressed || b_menu || b_calibration ||
+      (!grinderMenuRequested && !usbPowerKeepsAwake())) {
+    menuChordPressedAt = 0;
     return false;
   }
-  if (handled) {
+  const unsigned long now = millis();
+  if (menuChordPressedAt == 0) {
+    menuChordPressedAt = now;
     return true;
   }
-  if (!grinderSettings.enabled || b_menu || b_calibration || GPIO_power_on_with == BATTERY_CHARGING) {
-    return false;
-  }
-  const uint32_t now = millis();
-  if (pressedAt == 0) {
-    pressedAt = now;
+  if (now - menuChordPressedAt < holdMs) {
     return true;
   }
-  if (now - pressedAt < GRINDER_MENU_CHORD_HOLD_MS) {
-    return true;
-  }
+  wakeFromChargingUi(BUTTON_SQUARE);
   b_menu = true;
   invalidateMenuFrame();
-  b_grinderMenuDirectEntry = true;
   b_buttonChordSuppressUntilRelease = true;
-  currentMenu = grinderMenu;
-  currentMenuSize = getMenuSize(grinderMenu);
+  circle_press_data = {};
+  square_press_data = {};
+  currentMenu = mainMenu;
+  currentMenuSize = getMenuSize(mainMenu);
+#if HDS_ENABLE_GRINDER
+  b_grinderMenuDirectEntry = grinderMenuRequested;
+  if (grinderMenuRequested) {
+    currentMenu = grinderMenu;
+    currentMenuSize = getMenuSize(grinderMenu);
+  }
+  grinderPauseForMenu();
+#endif
   currentIndex = 0;
   currentSelection = currentMenu[currentIndex];
-  grinderPauseForMenu();
-  handled = true;
-  Serial.println("[grinder] menu chord");
+  menuChordPressedAt = 0;
+  Serial.println("Menu chord");
   return true;
 }
-#endif
 
 
 void button_init() {
@@ -941,13 +1011,12 @@ void setup() {
 #endif
   button_init();
   pinMode(BATTERY_CHARGING, INPUT_PULLUP);
-#if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
+#if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1) || defined(V9_0_5)
   pinMode(USB_DET, INPUT_PULLUP);
   pinMode(OLED_CS, OUTPUT);
   pinMode(OLED_DC, OUTPUT);
   pinMode(SCALE_PDWN, OUTPUT);
   pinMode(SCALE_SCLK, OUTPUT);
-  pinMode(ACC_PWR_CTRL, OUTPUT);
   pinMode(PWR_CTRL, OUTPUT);
 #endif
   print_wakeup_reason();
@@ -964,6 +1033,7 @@ void setup() {
     b_ble_enabled = true;
   }
   while (true && GPIO_power_on_with > 0) {
+    if (GPIO_power_on_with == BATTERY_CHARGING && usbPowerKeepsAwake()) break;
 #ifdef ADS1232ADC
     if (wowButtonWake) break;
 #endif
@@ -992,8 +1062,6 @@ void setup() {
   }
   pinMode(PWR_CTRL, OUTPUT);
   digitalWrite(PWR_CTRL, HIGH);
-  pinMode(ACC_PWR_CTRL, OUTPUT);
-  digitalWrite(ACC_PWR_CTRL, HIGH);
   pinMode(OLED_SDIN, OUTPUT);
   digitalWrite(OLED_SDIN, LOW);
   pinMode(OLED_SCLK, OUTPUT);
@@ -1031,19 +1099,29 @@ void setup() {
   gpio_hold_dis((gpio_num_t)I2C_SDA);
   gpio_hold_dis((gpio_num_t)PWR_CTRL);
 
-#if defined(V7_3) || defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
+#if defined(V7_3) || defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1) || defined(V9_0_5)
   gpio_hold_dis((gpio_num_t)ACC_PWR_CTRL);
 #endif
   gpio_deep_sleep_hold_dis();
-  Serial.println("ACC_PWR_CTRL = HIGH");
 #ifdef ESP32
   Wire.begin(I2C_SDA, I2C_SCL);
 #endif
+  b_batteryProtect = storageGetBool(KEY_BAT_PROTECT, false);
+  const int storedBatteryCapacity = storageGetInt(KEY_BAT_CAPACITY, 0);
+  const uint16_t batteryCapacity = storedBatteryCapacity >= 300 && storedBatteryCapacity <= 2000
+      ? static_cast<uint16_t>(storedBatteryCapacity) : 0;
+  fuelGaugeBegin(batteryCapacity, storageGetBool(KEY_BAT_CAPACITY_SET, false));
+  if (fuelGaugeLegacyHardware()) {
+    pinMode(ACC_PWR_CTRL, OUTPUT);
+    digitalWrite(ACC_PWR_CTRL, HIGH);
+  }
 #ifdef HW_SPI
   SPI.begin(OLED_SCLK, -1, OLED_SDIN, OLED_CS);
 #endif
 #ifdef ADS1115ADC
-  ADS_init();
+  if (fuelGaugeLegacyHardware()) {
+    ADS_init();
+  }
 #endif
   delay(50);
   b_requireHeartBeat = storageGetBool(KEY_HEARTBEAT, true);
@@ -1728,7 +1806,9 @@ void resetStableOutput() {
 
 bool wakeScaleFromSoftSleep(const char *context) {
   digitalWrite(PWR_CTRL, HIGH);
-  digitalWrite(ACC_PWR_CTRL, HIGH);
+  if (fuelGaugeLegacyHardware()) {
+    digitalWrite(ACC_PWR_CTRL, HIGH);
+  }
   delay(5);
   scale.powerUp();
 #if HDS_ENABLE_ENERGY_MENU
@@ -1873,8 +1953,10 @@ bool processBootFreshTare() {
 
 bool tareScaleWhenAdcReady(const char *context, bool userRequested) {
   if (userRequested) recordEnergyActivity();
-  ADS1232DebugInfo info = scale.getDebugInfo();
-  if (info.samplesInUse > 0 && info.validSamples < info.samplesInUse) {
+  const ADS1232DebugInfo info = scale.getDebugInfo();
+  const unsigned long sampleAge = millis() - info.lastConversionTimestamp;
+  if (info.signalTimeout || sampleAge > DEFAULT_SIGNAL_TIMEOUT_MS ||
+      (info.samplesInUse > 0 && info.validSamples < info.samplesInUse)) {
     if (!refreshScaleDatasetAfterDiscontinuity(context)) {
       return false;
     }
@@ -2073,14 +2155,12 @@ uint32_t energyDisplaySignature(unsigned long now) {
 #else
   const bool wifiBlink = false;
 #endif
-  const int batteryPercent = map(f_batteryVoltage * 1000,
-                                 showEmptyBatteryBelowVoltage * 1000,
-                                 showFullBatteryAboveVoltage * 1000, 0, 100);
+  const int percent = batteryPercent();
   bool chargingNow = digitalRead(BATTERY_CHARGING) == LOW;
 #ifdef USB_DET
   chargingNow = digitalRead(USB_DET) == LOW;
 #endif
-  const uint8_t batteryBucket = EnergyRuntimePolicy::batteryDisplayBucket(batteryPercent);
+  const uint8_t batteryBucket = EnergyRuntimePolicy::batteryDisplayBucket(percent);
   const uint8_t displayedBattery = chargingNow ? 5 : batteryBucket;
   const bool tareVisible = now - t_tareStatus < 500;
   const bool shutdownWarningVisible = b_shutdownFailBle && now - t_shutdownFailBle < 3000;
@@ -2244,6 +2324,7 @@ void loop() {
 #endif
   processWsPendingCmds();
   if (b_ota) {
+    fuelGaugePauseCharging();
     if (!otaRuntimeIsPaused()) {
       if (!otaTransportsStopped) {
         otaBleClientDisconnected =
@@ -2288,6 +2369,7 @@ void loop() {
 
   processBleStatusResponse();
   processBleVoltageResponse();
+  serviceFuelGauge();
 #if HDS_ENABLE_ENERGY_MENU
   serviceEnergyPowerManagement();
   serviceEnergyHousekeeping(millis());
@@ -2384,35 +2466,37 @@ void loop() {
 #endif
       showMenu();
     } else if (GPIO_power_on_with == BATTERY_CHARGING && !b_calibration) {
-      if (b_chargingOLED) {
-        if (digitalRead(BATTERY_CHARGING) == LOW && !b_calibration) {
-          float perc = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
-          chargingOLED((int)perc, f_batteryVoltage);
-          b_showChargingUI = true;
-        } else {
-          b_showChargingUI = false;
-          bool b_usbDisconnected = false;
-#ifdef USB_DET
-          b_usbDisconnected = digitalRead(USB_DET) == HIGH;
+#if HDS_ENABLE_GRINDER
+      grinderRuntimeTick(f_displayedValue);
 #endif
-          if (b_usbDisconnected) {
-            Serial.println("USB unplugged. Entering scale mode.");
-            GPIO_power_on_with = BUTTON_SQUARE;
-            b_is_charging = false;
-            scale.powerUp();
-            if (refreshScaleDatasetAfterDiscontinuity("charging wake") &&
-                tareScaleWhenAdcReady("charging wake tare")) {
-              resetScaleOutputAfterAdcDiscontinuity();
-            }
-          } else {
-            if (f_batteryVoltage > 4.1) {
-              Serial.println("Charging complete.");
-            } else {
-              Serial.println("Charging stopped before full.");
-            }
-            b_powerOff = true;
-            Serial.println("Going to sleep now by BatteryFull");
+      if ((digitalRead(BATTERY_CHARGING) == LOW || usbPowerKeepsAwake()) && !b_calibration) {
+        b_showChargingUI = b_chargingOLED;
+        if (b_chargingOLED) {
+          float perc = batteryPercent();
+          chargingOLED((int)perc, f_batteryVoltage);
+        }
+      } else {
+        b_showChargingUI = false;
+        bool b_usbDisconnected = false;
+#ifdef USB_DET
+        b_usbDisconnected = digitalRead(USB_DET) == HIGH;
+#endif
+        if (b_usbDisconnected) {
+          Serial.println("USB unplugged. Entering scale mode.");
+          wakeFromChargingUi(BUTTON_SQUARE);
+          scale.powerUp();
+          if (refreshScaleDatasetAfterDiscontinuity("charging wake") &&
+              tareScaleWhenAdcReady("charging wake tare")) {
+            resetScaleOutputAfterAdcDiscontinuity();
           }
+        } else {
+          if (f_batteryVoltage > 4.1) {
+            Serial.println("Charging complete.");
+          } else {
+            Serial.println("Charging stopped before full.");
+          }
+          b_powerOff = true;
+          Serial.println("Going to sleep now by BatteryFull");
         }
       }
     } else {
@@ -2723,7 +2807,7 @@ void drawBattery(unsigned long now) {
     u8g2.drawXBM(121, 51, 7, 12, image_battery_charging);
   } else {
     b_is_charging = false;
-    int i_batteryPercent = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
+    int i_batteryPercent = batteryPercent();
     switch (EnergyRuntimePolicy::batteryDisplayBucket(i_batteryPercent)) {
       case 0:
         if ((now / 500) & 1) u8g2.drawXBM(121, 52, 7, 12, image_battery_0);
@@ -2793,7 +2877,7 @@ void drawDebug() {
       snprintf(chargingText, sizeof(chargingText), "Not charging");
 
     char batteryText[10];
-    int perc = map(f_batteryVoltage * 1000, showEmptyBatteryBelowVoltage * 1000, showFullBatteryAboveVoltage * 1000, 0, 100);
+    int perc = batteryPercent();
     snprintf(batteryText, sizeof(batteryText), "%d%%", (perc > 100) ? 100 : perc);
 
     char voltageText[10];

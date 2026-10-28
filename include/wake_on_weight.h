@@ -52,6 +52,9 @@ static bool wowPhysicalWakeRequested() {
   const int pin = rtc_gpio_get_level((gpio_num_t)BUTTON_SQUARE) == LOW ? BUTTON_SQUARE
                   : rtc_gpio_get_level((gpio_num_t)BUTTON_CIRCLE) == LOW ? BUTTON_CIRCLE
                   : rtc_gpio_get_level((gpio_num_t)BATTERY_CHARGING) == LOW ? BATTERY_CHARGING
+#ifdef USB_DET
+                  : rtc_gpio_get_level((gpio_num_t)USB_DET) == LOW ? BATTERY_CHARGING
+#endif
                   : -1;
   if (pin < 0) return false;
   GPIO_power_on_with = pin;
@@ -171,7 +174,7 @@ void wowMicroWakeOrContinue() {
   }
 
   configureWakePinsForDeepSleep();
-  esp_sleep_enable_ext1_wakeup_io(PIN_BITMASK, ESP_EXT1_WAKEUP_ANY_LOW);
+  esp_sleep_enable_ext1_wakeup_io(deepSleepWakeMask(), ESP_EXT1_WAKEUP_ANY_LOW);
   if (wowPhysicalWakeRequested()) {
     wowRtc.armed = 0;
     wowSetCpuFrequencyMhz(bootFreqMhz);

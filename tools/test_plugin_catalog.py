@@ -255,7 +255,7 @@ def main():
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
     fleetScript = (pageRoot / "fleet.js").read_text(encoding="utf-8")
-    assert 'type="module" src="app.js?v=36"' in indexPage
+    assert 'type="module" src="app.js?v=38"' in indexPage
     assert 'href="styles.css?v=19"' in indexPage
     assert 'href="fleet.css?v=8"' in indexPage
     assert 'href="preview.css?v=2"' in indexPage
@@ -278,13 +278,13 @@ def main():
     assert "firmwareRefLabel(ref)" in appScript
     assert "firmwareRefLabel(selected.firmware_ref)" in appScript
     assert 'selection.mjs?v=6' in appScript
-    assert 'fleet.js?v=15' in appScript
+    assert 'fleet.js?v=16' in appScript
     assert 'fleetPanel.hidden = installMethod !== "wifi"' in appScript
     assert "sessionStorage.setItem(storageKey" not in fleetScript
     assert "localStorage.setItem(storageKey" in fleetScript
-    assert "readStoredKey(sessionStorage, storageKey, 2)" in fleetScript
-    assert "removeStoredKey(localStorage, storageKey)" in fleetScript
-    assert "removeStoredKey(localStorage, legacyStorageKey)" in fleetScript
+    assert 'readStoredKey("sessionStorage", storageKey, 2)' in fleetScript
+    assert 'removeStoredKey("localStorage", storageKey)' in fleetScript
+    assert 'removeStoredKey("localStorage", legacyStorageKey)' in fleetScript
     assert "manifest_url" not in appScript
     energyMenu = next(feature for feature in generatedCatalog["features"] if feature["id"] == "energy-menu")
     assert energyMenu["name"] == "Energy Saving Beta"
