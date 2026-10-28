@@ -199,6 +199,8 @@ async function runCredentialSpaces(browser, html, label, viewport) {
     assert.equal(await page.locator('#password').getAttribute('type'), 'password');
     assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Cancel');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    assert.equal(await dialog.locator('button').evaluateAll(buttons =>
+      buttons.every(button => button.getBoundingClientRect().height === 44)), true);
     if (choice === 'Keep spaces') await page.screenshot({
       path: path.join(root, '.pio.nosync', `wifi-spaces-${label}-${viewport.width}.png`)
     });
@@ -727,10 +729,10 @@ async function runLegacy(browser, viewport) {
 (async () => {
   const browser = await chromium.launch({ headless: true });
   try {
-    for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+    for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }, { width: 320, height: 640 }]) {
       await runCredentialSpaces(browser, mainPage, 'main', viewport);
       await runCredentialSpaces(browser, inlinePage, 'inline', viewport);
-      if (process.argv.includes('--spaces-only')) continue;
+      if (process.argv.includes('--spaces-only') || viewport.width === 320) continue;
       await runAccessPointScan(browser, mainPage, 'main', viewport);
       await runAccessPointScan(browser, inlinePage, 'inline', viewport);
       await run(browser, mainPage, 'main', viewport);

@@ -520,7 +520,8 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
       button.value = value;
       button.textContent = label;
       button.autofocus = value === 'cancel';
-      button.style.flex = '1 1 120px';
+      button.style.flex = 'none';
+      button.style.minWidth = '120px';
       actions.append(button);
     }
     dialog.append(title, description, actions);
