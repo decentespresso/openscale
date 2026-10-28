@@ -29,6 +29,7 @@ struct {
 } Serial;
 unsigned long millis() { return currentTime; }
 bool processNewBatterySample() { return lowBattery; }
+void serviceFuelGauge() {}
 void shut_down_now() { ++shutdowns; }
 
 FUNCTIONS

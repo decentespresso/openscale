@@ -27,6 +27,9 @@ constexpr const char *KEY_WIFI_BOOT = "wifi_boot";
 constexpr const char *KEY_AUTO_SLEEP = "auto_sleep";
 constexpr const char *KEY_QUICK_BOOT = "quick_boot";
 constexpr const char *KEY_DRIFT_MAX = "drift_max";
+constexpr const char *KEY_BAT_PROTECT = "bat_protect";
+constexpr const char *KEY_BAT_CAPACITY_SET = "bat_cap_set";
+constexpr const char *KEY_BAT_CAPACITY = "bat_capacity";
 constexpr const char *KEY_WOW_INTERVAL = "wow_interval";
 #if HDS_ENABLE_ENERGY_MENU
 constexpr const char *KEY_ENERGY_SCHEMA = "energy_schema";
@@ -198,7 +201,7 @@ inline bool storageHasAllSettings() {
     KEY_BEEP, KEY_WELCOME, KEY_BAT_CAL, KEY_HEARTBEAT, KEY_SCREEN_FLIP,
     KEY_TIME_ON_TOP, KEY_BTN_CONN, KEY_WIFI_BOOT, KEY_AUTO_SLEEP,
     KEY_QUICK_BOOT, KEY_DRIFT_MAX, KEY_TAP_TARE, KEY_TAP_TIMER,
-    KEY_WOW_INTERVAL
+    KEY_WOW_INTERVAL, KEY_BAT_PROTECT, KEY_BAT_CAPACITY_SET, KEY_BAT_CAPACITY
   };
   for (const char *key : keys) {
     if (!settingsPreferences.isKey(key)) {
@@ -225,6 +228,9 @@ inline bool storageEnsureDefaults() {
          storageEnsureBool(KEY_AUTO_SLEEP, true) &&
          storageEnsureBool(KEY_QUICK_BOOT, false) &&
          storageEnsureFloat(KEY_DRIFT_MAX, 0.05f) &&
+         storageEnsureBool(KEY_BAT_PROTECT, false) &&
+         storageEnsureBool(KEY_BAT_CAPACITY_SET, false) &&
+         storageEnsureInt(KEY_BAT_CAPACITY, 0) &&
          storageEnsureBool(KEY_TAP_TARE, false) &&
          storageEnsureBool(KEY_TAP_TIMER, false) &&
          storageEnsureInt(KEY_WOW_INTERVAL, 0);
@@ -318,6 +324,9 @@ inline bool storageMigrateLegacyEeprom() {
                   storageEnsureBool(KEY_AUTO_SLEEP, storageLegacyBool(LEGACY_AUTO_SLEEP_ADDRESS, true)) &&
                   storageEnsureBool(KEY_QUICK_BOOT, storageLegacyBool(LEGACY_QUICK_BOOT_ADDRESS, false)) &&
                   storageEnsureFloat(KEY_DRIFT_MAX, driftMax) &&
+                  storageEnsureBool(KEY_BAT_PROTECT, false) &&
+                  storageEnsureBool(KEY_BAT_CAPACITY_SET, false) &&
+                  storageEnsureInt(KEY_BAT_CAPACITY, 0) &&
                   storageEnsureBool(KEY_TAP_TARE, false) &&
                   storageEnsureBool(KEY_TAP_TIMER, false) &&
                   storageEnsureInt(KEY_WOW_INTERVAL, 0);

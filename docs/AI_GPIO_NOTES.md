@@ -40,7 +40,7 @@ Current active config is `V8_1` with `TWO_BUTTON`.
 | `I2C_SDA` | 5 | I2C data | Held low in deep sleep |
 | `BATTERY_PIN` | 6 | ADC placeholder for voltage helper | Not a real battery pin on V8.1 |
 | `OLED_SDIN` | 7 | OLED SPI data | Held low in deep sleep |
-| `USB_DET` | 8 | USB present detect | Input pull-up |
+| `USB_DET` | 8 | USB present detect and wake source | RTC wake, input pull-up |
 | `SCALE2_PDWN` | 9 | Secondary ADS1232 power-down | Held low in deep sleep |
 | `BATTERY_CHARGING` | 10 | Charger status and wake source | RTC wake, input pull-up |
 | `SCALE_DOUT` | 11 | Primary ADS1232 data | Input, held as input in deep sleep |
@@ -58,10 +58,10 @@ Current active config is `V8_1` with `TWO_BUTTON`.
 
 | Board | Wake pins | Power pins | Primary scale | Secondary scale | OLED pins | Notable hazards |
 | --- | --- | --- | --- | --- | --- | --- |
-| `V8_1` | 1, 2, 10 | 3, 14 | 11, 12, 13 | 47, 48, 9 | 7, 15, 16, 17, 18 | `GPIO3` strapping |
-| `V8_0` | 1, 2, 10 | 3, 14 | 11, 12, 13 | 47, 48, 9 | 7, 15, 16, 17, 18 | `GPIO3` strapping |
-| `V7_5` | 1, 2, 10 | 3, 14 | 11, 12, 13 | 47, 48, 39 | 7, 15, 16, 17, 18 | `GPIO3` strapping |
-| `V7_4` | 1, 2, 6 | 3, 13 | 8, 9, 18 | 47, 48, 35 | 10, 11, 12, 15, 16 | `GPIO3` strapping, `GPIO35` may be flash/PSRAM |
+| `V8_1` | 1, 2, 8, 10 | 3, 14 | 11, 12, 13 | 47, 48, 9 | 7, 15, 16, 17, 18 | `GPIO3` strapping |
+| `V8_0` | 1, 2, 8, 10 | 3, 14 | 11, 12, 13 | 47, 48, 9 | 7, 15, 16, 17, 18 | `GPIO3` strapping |
+| `V7_5` | 1, 2, 8, 10 | 3, 14 | 11, 12, 13 | 47, 48, 39 | 7, 15, 16, 17, 18 | `GPIO3` strapping |
+| `V7_4` | 1, 2, 6, 17 | 3, 13 | 8, 9, 18 | 47, 48, 35 | 10, 11, 12, 15, 16 | `GPIO3` strapping, `GPIO35` may be flash/PSRAM |
 | `V7_3` | 1, 2, 6 | 3, 13 | 47, 48, 18 | 8, 9, missing `SCALE2_PDWN` | 10, 11, 12, 15, 16 | `GPIO3` strapping, legacy macro gap |
 | `V7_2` | 1, 2, 6 | 3 | 8, 9, 13 | not defined | 10, 11, 12, 15, 16 | `GPIO3` strapping, legacy macro gap |
 
@@ -78,7 +78,7 @@ Current active config is `V8_1` with `TWO_BUTTON`.
 | I2C pins | output low, `gpio_hold_en` | yes |
 | `ACC_PWR_CTRL` | output low, `gpio_hold_en` | yes |
 | `PWR_CTRL` | output low, `gpio_hold_en` | yes |
-| `BUTTON_CIRCLE`, `BUTTON_SQUARE`, `BATTERY_CHARGING` | RTC input pull-up, EXT1 wake any-low | RTC mode released in setup |
+| `BUTTON_CIRCLE`, `BUTTON_SQUARE`, `BATTERY_CHARGING`, `USB_DET` when defined | RTC input pull-up, EXT1 wake any-low | RTC mode released in setup |
 
 Wake-on-Weight (`include/wake_on_weight.h`) adds a second release/re-latch
 path: an RTC-timer micro-wakeup releases `gpio_hold` on `SCALE_SCLK`,
@@ -89,13 +89,21 @@ are never touched by the micro path; the normal `setup()` release block
 (`gpio_hold_dis` sequence in `src/hds.ino`) is idempotent on pins the micro
 path already released.
 
-Before its first button/charging check, the timer path releases the three wake pins'
+USB presence keeps the CPU awake, including during Battery Protect's 80% pause.
+Manual Off enters charging standby without cutting the rails or charger service.
+Buttons can wake weighing or open the menu without disconnecting USB.
+On detected 9.0.5 hardware, actual deep sleep holds charger GPIO6 disabled;
+GPIO14 remains input. USB attachment wakes through GPIO8 even if charger-status
+GPIO10 stays high. Normal wake releases GPIO8 from RTC mode before digital USB
+detection resumes. No battery-specific timer or I2C micro-wake path exists.
+
+Before its first button/charging/USB check, the timer path releases the wake pins'
 RTC holds and explicitly restores RTC input mode and pull-ups. A disabled input can
 read low and otherwise be mistaken for a pressed button before ADC sampling begins.
 
 ## Change Checklist
 
-- If a pin is used for wake, verify RTC GPIO support and update `PIN_BITMASK`.
+- If a pin is used for wake, verify RTC GPIO support and update `deepSleepWakeMask()`.
 - If a pin touches the switched power domain, update both the sleep hold and setup release paths.
 - If a pin is a strapping pin, document the external pull/load before changing it.
 - If a pin is `GPIO26-GPIO37`, verify the exact ESP32-S3 module flash/PSRAM wiring.
