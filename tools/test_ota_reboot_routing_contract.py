@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from test_usb_text_actions_contract import block_after
+
 
 ROOT = Path(__file__).resolve().parents[1]
 WIFI_OTA_HEADER = ROOT / "include" / "wifi_ota.h"
@@ -234,8 +236,12 @@ def main():
     assert_contains(MENU_HEADER, "if (pullOtaTargetIsAssignedCustomBuild(target)) {\n    customBuildStart(false, false);")
     assert_contains(MENU_HEADER, "b_debug = true;\n  leaveMenu();")
     menu_contents = MENU_HEADER.read_text(encoding="utf-8")
-    if menu_contents.count("markMenuRestartRequired();") != 3:
-        raise AssertionError("menu.h expected restart routing for integration, WiFi toggle and reset")
+    for action in ("toggleWifi", "resetWifi"):
+        if "markMenuRestartRequired();" not in block_after(menu_contents, f"void {action}() {{"):
+            raise AssertionError(f"{action} must preserve restart-on-exit routing")
+    integration = block_after(menu_contents, "void toggleIntegration(IntegrationMode mode) {")
+    if "markMenuRestartRequired();" in integration or "remoteQueueResetAt(" in integration:
+        raise AssertionError("integration changes must apply without restarting")
     for path in [*ROOT.glob("include/*.h"), *ROOT.glob("src/*.ino"), *ROOT.glob("src/*.cpp")]:
         if path == MENU_HEADER:
             assert path.read_text(encoding="utf-8").count("b_menu = false;") == 1
