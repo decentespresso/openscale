@@ -321,9 +321,10 @@ void wifiSupervise() {
 #if HDS_FEATURE_MDNS
   if (g_mdnsAdvertisePending) {
     g_mdnsAdvertisePending = false;
-    MDNS.end();
-    g_mdnsReady = false;
-    setupMdns();
+    if (!g_mdnsReady) {
+      MDNS.end();
+      setupMdns();
+    }
   }
 #endif
 

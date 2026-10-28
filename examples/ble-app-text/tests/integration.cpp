@@ -49,6 +49,7 @@ enum State { GRINDER_STATE_CONNECTED, GRINDER_STATE_STOPPING };
 enum Command { GRINDER_COMMAND_NONE, GRINDER_COMMAND_HELLO, GRINDER_COMMAND_ON, GRINDER_COMMAND_OFF };
 struct {
   bool shutdownUnconfirmed = false, relayOn = false;
+  bool menuPaused = false;
   State state = GRINDER_STATE_CONNECTED;
   Command pendingCommand = GRINDER_COMMAND_NONE;
 } grinderRuntime;
@@ -74,6 +75,21 @@ void leaveMenu() { @LEAVE@ }
 void blockIntegrationChange() { ++blockedCount; }
 void showStoredAction(const char *, bool, bool stored) { if (!stored) ++failedSaves; }
 void grinderFlushSettingsIfDirty() {}
+bool b_wifiOnBoot = false, b_wifiEnabled = false;
+int wifiStarts = 0, grinderStarts = 0, sensorStarts = 0;
+struct { bool pressureReady = false; } pressensorShot;
+void wifi_init() { assert(b_wifiOnBoot); ++wifiStarts; }
+void grinderRuntimeReset() { assert(!grinderSettings.enabled); }
+void grinderRuntimeBegin() {
+  assert(grinderSettings.enabled && !pressensorSettings.enabled);
+  ++grinderStarts;
+}
+void grinderPauseForMenu() { grinderRuntime.menuPaused = true; }
+void pressensorResetShot() { pressensorShot.pressureReady = false; }
+void pressensorApplyLinkTarget() {
+  assert(!grinderSettings.enabled || !pressensorSettings.enabled);
+  if (pressensorSettings.enabled) ++sensorStarts;
+}
 void refreshMenuRows() {}
 void menuActionMessageChanged() {}
 void toggleIntegration(IntegrationMode mode) { @TOGGLE@ }
@@ -164,7 +180,7 @@ void testRestartGuard() {
   assert(integrationCanRestart());
 }
 
-void testDeferredMenuRestart() {
+void testImmediateMenuSelection() {
   using Mode = IntegrationMode;
   for (const Mode initial : {Mode::None, Mode::Pressensor, Mode::Grinder}) {
     assert(storeIntegrationMode(initial));
@@ -178,43 +194,27 @@ void testDeferredMenuRestart() {
       toggleIntegration(next);
       assert(selectedIntegration == expected);
       assert(settingsPreferences.getUChar(KEY_ACTIVE_INTEGRATION, 255) == static_cast<uint8_t>(expected));
-      assert(activeIntegration == initial);
-      assert(grinderSettings.enabled == (initial == Mode::Grinder));
-      assert(pressensorSettings.enabled == (initial == Mode::Pressensor));
-      assert(b_menu && b_menuRestartRequired && wsPendingMask == 0 && resetCount == 0);
-      assert(actionMessage2 == "Restart on exit");
+      assert(activeIntegration == expected);
+      assert(grinderSettings.enabled == (expected == Mode::Grinder));
+      assert(pressensorSettings.enabled == (expected == Mode::Pressensor));
+      assert(b_menu && !b_menuRestartRequired && wsPendingMask == 0 && resetCount == 0);
+      if (grinderSettings.enabled) assert(b_wifiOnBoot && grinderRuntime.menuPaused);
+      if (pressensorSettings.enabled) assert(pressensorShot.pressureReady);
     }
     const Mode saved = selectedIntegration;
+    const int starts = grinderStarts + sensorStarts + wifiStarts;
     saveFails = true;
     toggleIntegration(Mode::Pressensor);
     saveFails = false;
     assert(failedSaves > 0 && selectedIntegration == saved && resetCount == 0);
+    assert(activeIntegration == saved && starts == grinderStarts + sensorStarts + wifiStarts);
     leaveMenu();
-    assert(!b_menu && !b_menuRestartRequired && wsPendingMask == WSP_RESET && resetCount == 0);
-    dispatchReset();
-    assert(resetCount == 1);
-    assert(loadIntegrationSelection() && activeIntegration == saved && selectedIntegration == saved);
-  }
-  for (const Mode saved : {Mode::Pressensor, Mode::Grinder}) {
-    assert(storeIntegrationMode(Mode::Grinder) && loadIntegrationSelection());
-    b_menu = true;
-    resetCount = 0;
-    toggleIntegration(Mode::Pressensor);
-    if (saved == Mode::Grinder) toggleIntegration(Mode::Grinder);
-    grinderRuntime.shutdownUnconfirmed = true;
-    leaveMenu();
-    dispatchReset();
-    assert(!b_menu && resetCount == 0 && b_menuRestartRequired && wsPendingMask == 0);
-    assert(selectedIntegration == saved && activeIntegration == Mode::Grinder);
-    grinderRuntime.shutdownUnconfirmed = false;
+    assert(!b_menu && !b_menuRestartRequired && wsPendingMask == 0 && resetCount == 0);
     dispatchReset();
     assert(resetCount == 0);
-    b_menu = true;
-    leaveMenu();
-    dispatchReset();
-    assert(resetCount == 1);
-    assert(loadIntegrationSelection() && activeIntegration == saved);
+    assert(loadIntegrationSelection() && activeIntegration == saved && selectedIntegration == saved);
   }
+  assert(grinderStarts > 0 && sensorStarts > 0 && wifiStarts > 0);
   assert(storeIntegrationMode(Mode::Pressensor) && loadIntegrationSelection());
   b_menu = true;
   grinderRuntime.shutdownUnconfirmed = true;
@@ -223,10 +223,28 @@ void testDeferredMenuRestart() {
   grinderRuntime.shutdownUnconfirmed = false;
 }
 
+void testDeferredUnsafeRestart() {
+  b_menu = true;
+  resetCount = 0;
+  markMenuRestartRequired();
+  grinderRuntime.shutdownUnconfirmed = true;
+  leaveMenu();
+  dispatchReset();
+  assert(!b_menu && resetCount == 0 && b_menuRestartRequired && wsPendingMask == 0);
+  grinderRuntime.shutdownUnconfirmed = false;
+  dispatchReset();
+  assert(resetCount == 0);
+  b_menu = true;
+  leaveMenu();
+  dispatchReset();
+  assert(resetCount == 1);
+}
+
 int main() {
   testStoredSelection();
   testRestartGuard();
-  testDeferredMenuRestart();
+  testImmediateMenuSelection();
+  testDeferredUnsafeRestart();
   using Mode = IntegrationMode;
   assert(resolveIntegrationMode(false, 0, false, false, true, true) == Mode::None);
   assert(resolveIntegrationMode(false, 0, true, true, true, true) == Mode::None);

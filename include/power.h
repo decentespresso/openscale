@@ -39,6 +39,7 @@ void stopWebServer();
 static void stopWifiConfigServer();
 #endif
 #if HDS_ENABLE_GRINDER
+bool stopGrinderForShutdown();
 void beforeDeepSleepFlush();
 #endif
 
@@ -365,6 +366,9 @@ void shut_down_now_nobeep() {
     enterUsbStandby();
     return;
   }
+#if HDS_ENABLE_GRINDER
+  if (!stopGrinderForShutdown()) return;
+#endif
   Serial.println("power off no beep");
   u8g2.setFontDirection(0);
   if (b_screenFlipped)

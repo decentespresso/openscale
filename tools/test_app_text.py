@@ -34,6 +34,14 @@ def main():
     assert "if (appTextScreenAvailable() && cancelAppPrompt())" in sketch
     assert "grinderRuntime.state >= GRINDER_STATE_ARMED" in sketch
     assert "if (grinderSettings.enabled) grinderRuntimeBegin();" in sketch
+    standby = block_after(sketch, "void enterUsbStandby()")
+    assert standby.index("stopGrinderForShutdown()") < standby.index("GPIO_power_on_with = BATTERY_CHARGING")
+    power = (ROOT / "include/power.h").read_text(encoding="utf-8")
+    shutdown = block_after(power, "void shut_down_now_nobeep()")
+    assert shutdown.index("stopGrinderForShutdown()") < shutdown.index("esp32_sleep();")
+    wifi = (ROOT / "src/wifi_setup.cpp").read_text(encoding="utf-8")
+    mdns = block_after(wifi, "if (g_mdnsAdvertisePending)")
+    assert mdns.index("if (!g_mdnsReady)") < mdns.index("MDNS.end();")
     assert "drawWeightAt(f_displayedValue, LCDHeight - 30);" in sketch
     assert "if (!showPrompt) drawButton();" in sketch
     assert "setAppTextEnabled(textEnabled);" in sketch
@@ -82,10 +90,12 @@ def main():
                     "RESOLVE": "static inline void grinderResolveAndConnect()",
                     "STOPPING": "static inline void grinderTickStopping(",
                     "MENU": "static inline void grinderTickWhileMenuOpen(",
+                    "PAUSE": "static inline void grinderPauseForMenu()",
                 }.items():
                     template = template.replace(f"@{marker}@", block_after(grinder, signature))
                 settings = (ROOT / "include/integration_settings.h").read_text(encoding="utf-8")
                 template = template.replace("@GUARD@", block_after(settings, "inline bool integrationCanRestart()"))
+                template = template.replace("@SHUTDOWN@", block_after(sketch, "bool stopGrinderForShutdown()"))
                 source = Path(temporary) / "grinder_safety.cpp"
                 source.write_text(template, encoding="utf-8")
             if name == "dispatcher":

@@ -71,10 +71,11 @@ Pressensor `1`, or Grinder `2`. When absent, it migrates the legacy `enabled`
 booleans in the separate `pressensor` and `grinder` namespaces. Exactly one enabled
 integration survives migration; ambiguous, invalid, or unavailable choices become
 None. The authoritative selection supplies runtime enable flags. Integration
-changes save/read back the choice and update both Enabled rows without changing
-the running integration. They restart on menu exit, with grinder shutdown checked
-again immediately before restarting. If shutdown becomes unconfirmed, recovery
-continues without restarting; exit the menu again after the plug confirms Off.
+changes save/read back the choice before stopping the previous integration and
+starting the selected one in the menu. Both Enabled rows reflect the running
+selection; sensor and plug discovery need no restart. A pending or unconfirmed
+grinder stop blocks a mode change. Other restart requests retain the final
+grinder shutdown guard.
 Sensor, plug, and tuning keys remain in their existing namespaces.
 Migration restores the pre-grinder WiFi boot preference from the legacy settings.
 Selected Grinder forces WiFi in RAM at startup without overwriting that preference.

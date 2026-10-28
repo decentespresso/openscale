@@ -58,16 +58,16 @@ bool b_menu = false, b_calibration = false, b_ble_enabled = true;
 bool b_buttonChordSuppressUntilRelease = false, b_grinderMenuDirectEntry = false;
 struct { bool active = false; } circle_press_data, square_press_data;
 struct { bool enabled = false; } grinderSettings;
-enum { GRINDER_STATE_CONNECTED, GRINDER_STATE_ARMED, GRINDER_STATE_GRINDING,
-       GRINDER_STATE_STOPPING, GRINDER_STATE_ERROR };
-struct {
-  int state = GRINDER_STATE_CONNECTED;
-  bool relayOn = false;
-  struct { bool active = false; } recovery;
-} grinderRuntime;
 bool grinderPaused = false, explicitDisplayOff = false;
+bool grinderStopConfirmed = true;
+int grinderStopRequests = 0;
 void grinderPauseForMenu() { grinderPaused = grinderSettings.enabled; }
 void grinderResumeAfterMenu() { grinderPaused = false; }
+bool stopGrinderForShutdown() {
+  ++grinderStopRequests;
+  if (!grinderStopConfirmed) b_powerOff = false;
+  return grinderStopConfirmed;
+}
 void beforeDeepSleepFlush() {}
 void applyEnergyLightSleepSetting(bool) {}
 void setEnergyIdleWakeEnabled(bool) {}
@@ -138,25 +138,25 @@ void enterUsbStandby();
 
 void testStandbyAndMenu() {
 #if HDS_ENABLE_GRINDER
-  for (int state : {GRINDER_STATE_CONNECTED, GRINDER_STATE_ARMED, GRINDER_STATE_GRINDING,
-                    GRINDER_STATE_STOPPING, GRINDER_STATE_ERROR}) {
-    for (bool relayOn : {false, true}) {
-      for (bool recovery : {false, true}) {
-        grinderSettings.enabled = true;
-        grinderRuntime.state = state;
-        grinderRuntime.relayOn = relayOn;
-        grinderRuntime.recovery.active = recovery;
-        GPIO_power_on_with = BUTTON_CIRCLE;
-        b_showChargingUI = false;
-        b_powerOff = true;
-        enterUsbStandby();
-        const bool allowed = state == GRINDER_STATE_CONNECTED && !relayOn && !recovery;
-        assert(!b_powerOff && (GPIO_power_on_with == BATTERY_CHARGING) == allowed);
-      }
+  for (bool confirmed : {false, true}) {
+    for (int usb : {LOW, HIGH}) {
+      levels.fill(HIGH);
+      levels[8] = usb;
+      grinderSettings.enabled = true;
+      grinderStopConfirmed = confirmed;
+      GPIO_power_on_with = BUTTON_CIRCLE;
+      b_showChargingUI = false;
+      b_powerOff = true;
+      const int requests = grinderStopRequests;
+      bool slept = false;
+      try { shut_down_now_nobeep(); } catch (const Sleep&) { slept = true; }
+      assert(grinderStopRequests == requests + 1);
+      assert(slept == (confirmed && usb == HIGH));
+      assert((GPIO_power_on_with == BATTERY_CHARGING) == (confirmed && usb == LOW));
+      if (!confirmed || usb == LOW) assert(!b_powerOff);
     }
   }
-  grinderRuntime.state = GRINDER_STATE_CONNECTED;
-  grinderRuntime.relayOn = grinderRuntime.recovery.active = false;
+  grinderStopConfirmed = true;
 #endif
   for (bool chargingDisplay : {false, true}) {
     levels.fill(HIGH);

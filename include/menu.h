@@ -358,14 +358,32 @@ void toggleIntegration(IntegrationMode mode) {
   }
 #if HDS_ENABLE_GRINDER
   grinderFlushSettingsIfDirty();
+  grinderSettings.enabled = false;
+  grinderRuntimeReset();
 #endif
+#if HDS_ENABLE_PRESSENSOR
+  pressensorSettings.enabled = false;
+  pressensorApplyLinkTarget();
+  pressensorResetShot();
+#endif
+  activeIntegration = next;
   selectedIntegration = next;
-  markMenuRestartRequired();
+#if HDS_ENABLE_GRINDER
+  grinderSettings.enabled = next == IntegrationMode::Grinder;
+  if (grinderSettings.enabled) {
+    grinderRuntimeBegin();
+    grinderPauseForMenu();
+    b_wifiOnBoot = true;
+    if (!b_wifiEnabled) wifi_init();
+  }
+#endif
+#if HDS_ENABLE_PRESSENSOR
+  pressensorSettings.enabled = next == IntegrationMode::Pressensor;
+  pressensorShot.pressureReady = true;
+  if (pressensorSettings.enabled) pressensorApplyLinkTarget();
+#endif
   refreshMenuRows();
-  actionMessage = "Mode Saved";
-  actionMessage2 = "Restart on exit";
-  menuActionMessageChanged();
-  t_actionMessageDelay = 1500;
+  showStoredAction("Integration", next != IntegrationMode::None, true);
 }
 #endif
 
