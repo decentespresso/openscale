@@ -66,8 +66,15 @@ struct {
   struct { bool active = false; } recovery;
 } grinderRuntime;
 bool grinderPaused = false, explicitDisplayOff = false;
+int grinderShutdownCalls = 0;
 void grinderPauseForMenu() { grinderPaused = grinderSettings.enabled; }
 void grinderResumeAfterMenu() { grinderPaused = false; }
+void grinderPrepareForShutdown() {
+  ++grinderShutdownCalls;
+  grinderPaused = true;
+  grinderRuntime.relayOn = false;
+  grinderRuntime.recovery.active = false;
+}
 void beforeDeepSleepFlush() {}
 void applyEnergyLightSleepSetting(bool) {}
 void setEnergyIdleWakeEnabled(bool) {}
@@ -113,7 +120,10 @@ void wowCaptureBaselineForSleep() { ++effects; }
 void wowArmSleepTimer() { ++effects; }
 void fuelGaugeSleep() { ++effects; }
 bool fuelGaugeLegacyHardware() { return false; }
-void refreshOLED(char*, int) { ++effects; }
+void refreshOLED(char*, int) {
+  assert(!HDS_ENABLE_GRINDER || grinderShutdownCalls > 0);
+  ++effects;
+}
 std::string String(int value) { return std::to_string(value); }
 struct {
   template<class T> void print(T) { ++effects; }
@@ -149,9 +159,10 @@ void testStandbyAndMenu() {
         GPIO_power_on_with = BUTTON_CIRCLE;
         b_showChargingUI = false;
         b_powerOff = true;
+        const int callsBefore = grinderShutdownCalls;
         enterUsbStandby();
-        const bool allowed = state == GRINDER_STATE_CONNECTED && !relayOn && !recovery;
-        assert(!b_powerOff && (GPIO_power_on_with == BATTERY_CHARGING) == allowed);
+        assert(!b_powerOff && GPIO_power_on_with == BATTERY_CHARGING);
+        assert(grinderShutdownCalls == callsBefore + 1 && grinderPaused);
       }
     }
   }
@@ -226,6 +237,7 @@ int main() {
       levels.fill(HIGH);
       levels[8] = usb;
       effects = 0;
+      grinderShutdownCalls = 0;
       b_powerOff = true;
       GPIO_power_on_with = BUTTON_CIRCLE;
       bool slept = false;
@@ -237,11 +249,12 @@ int main() {
           assert(b_showChargingUI && !b_u8g2Sleep);
           continue;
         }
-        assert(!slept && !b_powerOff && effects == 0);
+        assert(!slept && !b_powerOff && effects == 0 && grinderShutdownCalls == 0);
         continue;
       }
 #endif
       assert(slept && effects > 0 && armedMask == deepSleepWakeMask());
+      assert(!HDS_ENABLE_GRINDER || grinderShutdownCalls > 0);
     }
   }
   configured.clear();
@@ -280,7 +293,7 @@ int main() {
 def main():
     power = (ROOT / "include/power.h").read_text(encoding="utf-8")
     signatures = [
-        "bool usbPowerKeepsAwake()", "bool cancelUsbPoweredShutdown()",
+        "bool usbPowerKeepsAwake()", "bool prepareScaleShutdown()",
         "void configureWakePinForDeepSleep(gpio_num_t pin)",
         "void configureWakePinsForDeepSleep()", "void releaseWakePinsFromRtcMode()",
         "uint64_t deepSleepWakeMask()", "void print_wakeup_reason()",
