@@ -638,6 +638,16 @@ void enterUsbStandby() {
 #if HDS_ENABLE_GRINDER
   grinderPauseForMenu();
 #endif
+  u8g2.setPowerSave(0);
+  u8g2.setContrast(255);
+  u8g2.setFontDirection(0);
+  u8g2.setDisplayRotation(b_screenFlipped ? U8G2_R0 : U8G2_R2);
+  refreshOLED((char*)"Off", FONT_M);
+  const unsigned long offShownAt = millis();
+  while (millis() - offShownAt < 1000) {
+    serviceFuelGauge();
+    delay(20);
+  }
 #if HDS_ENABLE_ENERGY_MENU
   requestEnergyDisplay(b_chargingOLED);
   applyEnergyDisplayCommand(b_chargingOLED);
