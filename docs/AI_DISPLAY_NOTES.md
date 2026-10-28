@@ -195,6 +195,13 @@ Circle short advances and Circle long moves to the previous row. Square short to
 
 Menu short actions are classified on button release. A recognized long press suppresses its release action, so it cannot also trigger the short action. Normal weighing-mode gestures remain unchanged.
 
+With USB connected, holding both buttons for 500 ms opens Main without an off/on
+cycle. An active grinder retains its direct grinder-menu shortcut. USB standby
+and charging screens support the same chord even with the charging OLED disabled.
+Hold either button to wake weighing; Quick Boot permits a tap. Wake and chord
+presses are consumed until release, without tare or timer actions. Charging
+continues in weighing and menus.
+
 Display order comes from pointer arrays such as `mainMenu[]`, not declaration order.
 
 Adding a category requires all of these:

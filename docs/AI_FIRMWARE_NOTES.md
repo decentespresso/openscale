@@ -24,6 +24,65 @@ Core files:
 - `include/menu.h` and `include/display.h`: OLED UI and menu actions.
 - `include/finger_detection.h`: touch-button press classifier.
 
+## HDS 9.0.5 Battery Safety
+
+`src/fuel_gauge.cpp` owns runtime sampling and charger control on the loop task.
+`src/fuel_gauge_config.cpp` checks I2C acknowledgments, exact read lengths,
+configuration checksums/readback, CFGUPDATE exit, and restoration of the prior
+seal state. It uses one-byte writes and bus-free delays per BQ27427 TRM 3.3.
+Normal measurements are read at most once per second; getters and OLED frames
+use the cached snapshot. Blocking information screens service the same path.
+
+An address acknowledgment retains gauge-board identity even if device-type or
+configuration validation fails. GPIO6 never falls back to ADC and GPIO14 never
+becomes accessory output on that board. Before detection, neither legacy pin
+role is assumed, including an aborted button wake.
+
+Invalid/short reads disable charging, mark telemetry unavailable, and do not
+advance the battery sample sequence or freshness timestamp. The last valid
+value remains cached for existing transports. Sampling retries once per second;
+failed configuration retries after ten seconds. No new automatic shutdown policy
+is applied to invalid data. Fresh low-voltage samples retain existing shutdown
+confirmation. Configuration and OTA pauses also keep charging disabled.
+
+Battery Protect stops charging at 80% and resumes at 75%. USB presence keeps the
+ESP32 awake even when charging pauses or completes, so the normal loop continues
+sampling and controlling the charger. Automatic shutdown requests are cancelled
+before display or hardware teardown while USB is connected. Explicit Off enters
+charging standby instead of deep sleep; the charging-display preference still
+controls whether its screen is visible. Charging and Battery Protect remain
+active. An armed, running, stopping, failed, or recovering grinder blocks USB
+standby; its normal controls and stop handling remain available. Idle standby
+pauses grinder progression and retains its connection supervision.
+Hold either button to return to weighing, or tap with Quick Boot enabled. Wake
+presses are consumed rather than interpreted as tare or timer actions. Holding
+both buttons for 500 ms opens the menu on USB without unplugging or rebooting;
+the existing grinder shortcut still opens its own menu when active.
+Consumed releases reset and prime AceButton's click state before normal input
+resumes. Ignored short presses and BLE disconnects leave a blank charging screen
+off. BLE disconnect display restoration is queued and checked on the main loop.
+USB text tare/set routing identifies charging mode independently of OLED visibility.
+
+With USB absent, deep sleep holds the charger disabled. USB detection is an EXT1
+wake source alongside the buttons and charger-status pin, including when Battery
+Protect has disabled charging. Wake-on-Weight retains its existing timer and
+weight detection; USB attachment interrupts that micro-wake path for a normal
+boot. No battery-specific timer wake or sleep-time I2C access is required.
+
+The integer `bat_capacity` NVS key persists the selected 300-2000 mAh capacity,
+including USB `bc` changes. Zero means migration is pending: adopt an existing
+custom capacity only when the old `bat_cap_set` flag is true and ITPOR is clear;
+otherwise select 700 mAh. Gauge POR triggers restoration of capacity, chemistry,
+and CC_GAIN before measurements or charging are trusted. The old Boolean key
+and storage schema remain compatible. A custom capacity already lost to a gauge
+reset before this migration cannot be recovered from the old Boolean alone.
+
+Host tests: `python tools/test_fuel_gauge_runtime.py` and
+`python tools/test_fuel_gauge_battery.py`. Physical sign-off still requires
+battery/charger specifications plus cold boot, gauge reset, sleep/wake, and
+charging-threshold tests on both 8.x and 9.0.5 boards. Host/CI tests do not provide
+hardware certification.
+
 ## Threading Model
 
 The Arduino sketch runs on the main loop task. `websocket.onEvent(...)` runs on the AsyncTCP task, potentially on another core.

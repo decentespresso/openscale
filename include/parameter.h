@@ -33,6 +33,7 @@ WifiSetupRuntime wifiSetupRuntime;
 #include "auto_off_activity.h"
 #include "energy_runtime_policy.h"
 #include "pull_ota_target.h"
+#include "fuel_gauge.h"
 #if HDS_ENABLE_ENERGY_MENU
 #include "energy_policy.h"
 #include "energy_power_management.h"
@@ -42,6 +43,7 @@ Preferences settingsPreferences;
 struct PowerCadenceState {
   CadenceGate autoOff;
   CadenceGate chargeCheck;
+  uint32_t fuelGaugeSampleSequence = 0;
   BatterySampleGate batterySamples;
   uint32_t batterySampleSequence = 0;
 };
@@ -189,6 +191,7 @@ const uint32_t WSP_WIFI_UPDATE = 1u << 11;
 const uint32_t WSP_RESET       = 1u << 12;
 const uint32_t WSP_BLE_GYRO    = 1u << 13;
 const uint32_t WSP_OTA_RESET   = 1u << 14;
+const uint32_t WSP_DISPLAY_RESTORE = 1u << 15;
 portMUX_TYPE wsPendingMux = portMUX_INITIALIZER_UNLOCKED;
 volatile uint32_t wsPendingMask = 0;
 volatile uint8_t pendingSamplesInUse = 0;
@@ -292,6 +295,7 @@ int GPIO_power_on_with = -1;
 unsigned long t_power_on_button = 0;  // Variable to store the timestamp when the button is pressed
 bool b_button_pressed = false;        // Boolean flag to indicate whether the button is currently pressed
 bool b_buttonChordSuppressUntilRelease = false;
+unsigned long menuChordPressedAt = 0;
 #if HDS_ENABLE_GRINDER
 bool b_grinderMenuDirectEntry = false;
 #endif
@@ -591,6 +595,11 @@ inline void leaveMenu() {
 // Used to implement a protection period preventing unintended operations
 
 bool b_calibration = false;  //Calibration flag
+inline bool chargingUiActive() {
+  return !b_menu && !b_calibration &&
+    (GPIO_power_on_with == BATTERY_CHARGING || b_showChargingUI);
+}
+
 bool calibrationReturnToMenu = false;
 volatile bool b_ota = false; //wifi ota flag
 volatile bool b_pullOtaRunning = false;
@@ -605,6 +614,11 @@ bool b_minus_container_button = false;  //是否减去称豆容器
 bool b_ready_to_brew = false;           //准备冲煮并计时
 bool b_is_charging = false;             //正在充电标识
 bool b_espnow = false;
+volatile bool b_hasFuelGauge = false;   //BQ27427 电量计存在(9.0.5)
+volatile bool b_batteryProtect = false; //电池保护:充电上限 80%(9.0.5)
+FuelGaugeRuntime fuelGaugeRuntime;
+volatile int batteryPercentCached = 0;
+portMUX_TYPE batteryStateMux = portMUX_INITIALIZER_UNLOCKED;
 //bool b_debug = DEBUG;                                //debug信息显示
 #if DEBUG_BATTERY
 bool b_debug_battery = false;  //debug电池信息

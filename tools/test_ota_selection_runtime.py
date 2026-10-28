@@ -188,14 +188,38 @@ void testReleaseSelection() {
     currentHash = hashA;
     selection = PullOtaReleaseSelection{};
     pullOtaBuildSelectableReleases(catalog, selection);
-    assert(selection.count == 3 && selection.indices[1] == 1);
+    assert(selection.count == 2 && selection.indices[0] == 0 && selection.indices[1] == 1);
   }
   for (const String &version : {String("3.1.14-preview.1"), String("3.1.14-rc.1"), String("3.1.14")}) {
     resetProbe(version);
     filesystemRecoveryActive.store(version == "3.1.14");
     PullOtaReleaseSelection selection;
     pullOtaBuildSelectableReleases(catalog, selection);
-    assert(selection.count == 3 && selection.indices[1] == 1);
+    assert(selection.count == (version == "3.1.14" ? 3 : 2) && selection.indices[1] == 1);
+  }
+}
+
+void testLegacyDowngradeCompatibility() {
+  for (const String &version : {String("3.1.14-custom"), String("3.1.14-preview.1"), String("3.1.14-rc.1")}) {
+    for (const bool recovery : {false, true}) {
+      for (const bool interactive : {false, true}) {
+        resetProbe(version, version == "3.1.14-custom" ? hashA : "");
+        filesystemRecoveryActive.store(recovery);
+        offeredCatalog.releases[0].version = "3.1.13";
+        pullOtaRunUpdate(interactive ? pullOtaNoTargetVersion() : pullOtaMakeTargetVersion(3, 1, 13));
+        assert(probe.installs == 0 && probe.streams == 0 && probe.reboots == 0);
+        assert(probe.pickerCalls == 0 && probe.confirms == 0 && probe.legacyPreparations == 0);
+        if (!interactive) assert(probe.message == "Version not offered");
+      }
+    }
+  }
+  for (const bool interactive : {false, true}) {
+    resetProbe("3.1.14");
+    offeredCatalog.releases[0].version = "3.1.13";
+    pullOtaRunUpdate(interactive ? pullOtaNoTargetVersion() : pullOtaMakeTargetVersion(3, 1, 13));
+    assert(probe.installs == 1 && probe.streams == 1 && probe.reboots == 1);
+    assert(probe.targetVersion == "3.1.13" && probe.rollbackVersion == "3.1.14");
+    assert(probe.pickerCalls == int(interactive) && probe.confirms == int(interactive));
   }
 }
 
@@ -292,6 +316,7 @@ void testOfficialRunGuards() {
 }
 
 int main() {
+  testLegacyDowngradeCompatibility();
   testReleaseSelection();
   testOfficialToSameVersionCustom();
   testCustomCombinationIdentity();

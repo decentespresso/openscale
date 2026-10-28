@@ -83,7 +83,7 @@ class WakeOnWeightContractTests(unittest.TestCase):
         self.assertLess(POWER.index("wowArmSleepTimer();"),
                         POWER.index("esp_sleep_enable_ext1_wakeup_io"))
 
-    def test_exactly_two_deep_sleep_call_sites(self):
+    def test_deep_sleep_call_sites(self):
         for name, text in (("POWER", POWER), ("WOW", WOW)):
             self.assertEqual(text.count("esp_deep_sleep_start()"), 1, name)
 
@@ -123,6 +123,8 @@ class WakeOnWeightContractTests(unittest.TestCase):
 
     def test_boot_interceptor_slots_in_setup(self):
         setup = body(FIRMWARE, "void setup()")
+        self.assertNotIn("fuelGaugeMicroWakeOrContinue", setup)
+        self.assertIn("deepSleepWakeMask()", WOW)
         self.assertLess(setup.index("wowMicroWakeOrContinue();"), setup.index("Serial.begin"))
         self.assertLess(FIRMWARE.index("wowMicroWakeOrContinue();"),
                         FIRMWARE.index("storageInit()"))

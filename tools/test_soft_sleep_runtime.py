@@ -28,7 +28,11 @@ def main():
 #include <mutex>
 @COMMANDS@
 bool b_softSleep = false, b_u8g2Sleep = false, b_wifiEnabled = true;
+bool chargingUi = false;
+bool chargingUiActive() { return chargingUi; }
 bool b_ota = false, b_powerOff = false, pendingOtaDispatching = false;
+bool b_hasFuelGauge = false;
+bool fuelGaugeLegacyHardware() { return !b_hasFuelGauge; }
 bool rail = true, accessory = true, oled = true;
 int wakes = 0, sleeps = 0, supervises = 0, adcRefreshes = 0, outputResets = 0;
 constexpr int PWR_CTRL = 3, ACC_PWR_CTRL = 14, LOW = 0, HIGH = 1;
@@ -341,6 +345,18 @@ int main() {
     assertDisplay(true);
     assert(wakes == wakesBefore + 1 && adcRefreshes == refreshesBefore + 1);
   }
+  b_hasFuelGauge = true;
+  for (transport = 0; transport < 3; ++transport) {
+    for (const bool gpout : {false, true}) {
+      accessory = gpout;
+      sleepCommand();
+      dispatch();
+      assert(b_softSleep && !rail && accessory == gpout);
+      wakeCommand();
+      dispatch();
+      assert(!b_softSleep && rail && accessory == gpout);
+    }
+  }
   b_softSleep = true;
   supervise();
   assert(supervises == 1);
@@ -351,6 +367,21 @@ int main() {
   b_softSleep = false;
   supervise();
   assert(supervises == 1);
+  for (bool charging : {false, true}) {
+    for (bool asleep : {false, true}) {
+      for (uint32_t explicitDisplay : {0u, WSP_DISPLAY_ON, WSP_DISPLAY_OFF}) {
+        chargingUi = charging;
+        b_softSleep = asleep;
+        oled = false;
+        b_u8g2Sleep = true;
+        wsPendingMask = WSP_DISPLAY_RESTORE | explicitDisplay;
+        dispatch();
+        const bool expected = explicitDisplay == WSP_DISPLAY_ON ||
+          (explicitDisplay == 0 && !charging && !asleep);
+        assert(oled == expected && b_u8g2Sleep != expected && wsPendingMask == 0);
+      }
+    }
+  }
 }
 '''
     replacements = {

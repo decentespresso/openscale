@@ -521,10 +521,7 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
         localStorage.setItem(installStorageKey, JSON.stringify({version: 1, method: installMethod}));
       } catch {
       }
-      const nextSelection = installMethod === "usb"
-        ? {...selected, features: selected.features.filter(feature => feature !== "pull-ota")}
-        : selected;
-      applySelection(nextSelection, installMethod === "wifi" ? "Pull OTA included for scale install" : "USB install selected");
+      applySelection(selected, installMethod === "wifi" ? "Pull OTA included for scale install" : "USB install selected");
     });
   });
   fleetPanel.hidden = installMethod !== "wifi";

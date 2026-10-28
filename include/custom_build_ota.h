@@ -194,13 +194,15 @@ void customBuildReportInstallState(const String &combinationHash, const char *st
   customBuildCheckIn(pullOtaCurrentCombinationHash(), assignment, combinationHash, state);
 }
 
-void customBuildReportInstalled() {
+void customBuildReportInstalled(const String &failedCombinationHash) {
   if (!customBuildRelinkAvailable()) return;
+  const String failedTarget = pullOtaShaLooksValid(failedCombinationHash)
+      ? failedCombinationHash : "";
   pullOtaDraw("Update done", "Syncing status");
   if (!pullOtaEnsureWifi() || !pullOtaClockReady()) return;
   for (uint8_t attempt = 0; attempt < 3; attempt++) {
     CustomBuildAssignment assignment;
-    if (customBuildCheckIn(pullOtaCurrentCombinationHash(), assignment)) return;
+    if (customBuildCheckIn(pullOtaCurrentCombinationHash(), assignment, failedTarget, "failed")) return;
     if (attempt < 2) delay(1000);
   }
   Serial.println("[custom-ota] Install status report failed");
