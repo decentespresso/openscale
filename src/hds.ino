@@ -623,15 +623,7 @@ void enterUsbStandby() {
   b_powerOff = false;
   if (b_menu || b_calibration) return;
 #if HDS_ENABLE_GRINDER
-  if (grinderSettings.enabled &&
-      (grinderRuntime.state == GRINDER_STATE_ARMED ||
-       grinderRuntime.state == GRINDER_STATE_GRINDING ||
-       grinderRuntime.state == GRINDER_STATE_STOPPING ||
-       grinderRuntime.state == GRINDER_STATE_ERROR ||
-       grinderRuntime.relayOn || grinderRuntime.recovery.active)) {
-    Serial.println("USB standby blocked: stop grinder first");
-    return;
-  }
+  if (!stopGrinderForShutdown()) return;
 #endif
   if (b_softSleep) wakeScaleFromSoftSleep("USB standby");
   b_shutdownFailBle = false;
@@ -966,7 +958,25 @@ const char *resetReasonStr(esp_reset_reason_t r) {
 }
 
 #if HDS_ENABLE_GRINDER
+bool stopGrinderForShutdown() {
+  grinderPauseForMenu();
+  const unsigned long startedAt = millis();
+  while (!integrationCanRestart() && millis() - startedAt < 3000) {
+    grinderRuntimeTick(f_displayedValue);
+    delay(10);
+  }
+  if (!integrationCanRestart()) {
+    b_powerOff = false;
+    grinderResumeAfterMenu();
+    Serial.println("Shutdown blocked: grinder stop unconfirmed");
+    return false;
+  }
+  return true;
+}
+
 void beforeDeepSleepFlush() {
+  grinderSendOff();
+  grinderCloseClient();
   grinderFlushSettingsIfDirty();
 }
 #endif

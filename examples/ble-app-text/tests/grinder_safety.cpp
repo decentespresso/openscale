@@ -1,10 +1,11 @@
 #include <cassert>
+#include <initializer_list>
 #include "grinder_protocol.h"
 #include "integration_state.h"
 
 #define HDS_ENABLE_GRINDER 1
 
-enum GrinderDosingState { GRINDER_STATE_FINDING_PLUG, GRINDER_STATE_CONNECTED, GRINDER_STATE_GRINDING,
+enum GrinderDosingState { GRINDER_STATE_FINDING_PLUG, GRINDER_STATE_CONNECTED, GRINDER_STATE_ARMED, GRINDER_STATE_GRINDING,
   GRINDER_STATE_STOPPING, GRINDER_STATE_AWAIT_REMOVAL, GRINDER_STATE_AWAIT_ZERO, GRINDER_STATE_ERROR };
 enum GrinderPendingCommand { GRINDER_COMMAND_NONE, GRINDER_COMMAND_HELLO,
   GRINDER_COMMAND_PING, GRINDER_COMMAND_ON, GRINDER_COMMAND_OFF, GRINDER_COMMAND_BYE };
@@ -17,6 +18,7 @@ struct Client {
 struct {
   Client client;
   bool relayOn = false, shutdownUnconfirmed = false, resumeAfterRecovery = false;
+  bool menuPaused = false;
   bool tareRequestArmsGrinder = false, tareRearmRequested = false, userTareComplete = false, removalSeen = false;
   char activePlugMac[18] = {};
   unsigned long lastCommandAt = 0, lastPingAt = 0, stateEnteredAt = 0;
@@ -27,13 +29,19 @@ struct {
   GrinderPendingCommand pendingCommand = GRINDER_COMMAND_NONE;
   GrinderRecoveryState recovery = grinderRecoveryComplete();
 } grinderRuntime;
-struct { int lastIp = 1; } grinderSettings;
-struct { template<class... T> void printf(const char *, T...) {} } Serial;
+struct { int lastIp = 1; bool enabled = true; } grinderSettings;
+struct {
+  template<class... T> void printf(const char *, T...) {}
+  void println(const char *) {}
+} Serial;
 unsigned long now = 123;
 bool b_ota = false, b_calibration = false;
+bool b_powerOff = false;
+float f_displayedValue = 0;
 int readCount = 0, connectAttempts = 0, offCount = 0;
 const GrinderTcpResponse *queuedResponse = nullptr;
 unsigned long millis() { return now; }
+void delay(unsigned long duration) { now += duration; }
 const char *grinderStateText(GrinderDosingState) { return "test"; }
 void grinderResetLineReader() {}
 void grinderSetStatus(const char *) {}
@@ -67,6 +75,40 @@ void grinderTrackAdaptiveShot(float) {}
 void grinderTickStopping(float weight) { @STOPPING@ }
 void grinderSendPingIfDue() {}
 void grinderTickWhileMenuOpen(float weight) { @MENU@ }
+bool integrationCanRestart() { return canRestart(); }
+void grinderPauseForMenu() { @PAUSE@ }
+void grinderResumeAfterMenu() { grinderRuntime.menuPaused = false; }
+void grinderRuntimeTick(float weight) {
+  assert(grinderRuntime.menuPaused);
+  grinderTickWhileMenuOpen(weight);
+}
+bool stopGrinderForShutdown() { @SHUTDOWN@ }
+
+void testShutdown() {
+  const GrinderTcpResponse off{};
+  for (const auto state : {GRINDER_STATE_ARMED, GRINDER_STATE_GRINDING}) {
+    grinderRuntime = {};
+    grinderRuntime.state = state;
+    grinderRuntime.relayOn = grinderRuntime.shutdownUnconfirmed = true;
+    queuedResponse = &off;
+    b_powerOff = true;
+    const int stops = offCount;
+    assert(stopGrinderForShutdown());
+    assert(offCount == stops + 1 && grinderRuntime.menuPaused);
+    assert(!grinderRuntime.relayOn && !grinderRuntime.shutdownUnconfirmed);
+  }
+  grinderRuntime = {};
+  grinderRuntime.state = GRINDER_STATE_GRINDING;
+  grinderRuntime.relayOn = grinderRuntime.shutdownUnconfirmed = true;
+  b_powerOff = true;
+  const unsigned long started = now;
+  assert(!stopGrinderForShutdown());
+  assert(now - started >= 3000 && now - started < 3100);
+  assert(!b_powerOff && !grinderRuntime.menuPaused && grinderRuntime.shutdownUnconfirmed);
+  grinderRuntime = {};
+  grinderRuntime.client.live = false;
+  assert(stopGrinderForShutdown());
+}
 
 void startMenuHandshake() {
   grinderRuntime = {};
@@ -139,4 +181,5 @@ int main() {
   assert(!grinderSendLine("ON", GRINDER_COMMAND_ON));
   assert(canRestart());
   testMenuHandshake();
+  testShutdown();
 }
