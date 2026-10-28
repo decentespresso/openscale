@@ -250,6 +250,11 @@ async function runCredentialSpaces(browser, html, label, viewport) {
   console.log(`${label} ${viewport.width}px: explicit space choices, cancellation, secret masking, validation and scanned-name preservation passed`);
 }
 
+async function keepCredentialSpaces(page) {
+  await page.getByRole('button', { name: 'Keep spaces', exact: true }).click();
+  await page.locator('#wifi-spaces-dialog').waitFor({ state: 'detached' });
+}
+
 async function runAccessPointScan(browser, html, label, viewport) {
   for (const connected of [false, true]) {
     const session = await openPage(browser, html, viewport, false, 'http://hds.local', {
@@ -273,7 +278,7 @@ async function runAccessPointScan(browser, html, label, viewport) {
     assert.equal(session.scanPosts(), 0);
     session.variant('ap-failure');
     await page.locator('#wifi-connect-button').click();
-    await page.getByRole('button', { name: 'Keep spaces', exact: true }).click();
+    await keepCredentialSpaces(page);
     await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('password was not accepted'));
     assert.deepEqual(session.posts(), [{ ssid: ' Manual network ', pass: ' password ', preserve_edges: true, test_only: true }]);
     await page.locator('#wifi-retry').click();
@@ -428,7 +433,7 @@ async function run(browser, html, label, viewport) {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   });
-  await page.getByRole('button', { name: 'Keep spaces', exact: true }).click();
+  await keepCredentialSpaces(page);
   await confirmNetwork(page, manualSsid);
   assert.equal(session.context.pages().length, 1);
   assert(session.operationPolls() > 0);
@@ -448,14 +453,14 @@ async function run(browser, html, label, viewport) {
   await page.locator('#wifi-networks').selectOption(' Cafe \u200b ');
   await page.locator('#password').fill(' pass word \ufeff ');
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
-  await page.getByRole('button', { name: 'Keep spaces', exact: true }).click();
+  await keepCredentialSpaces(page);
   await confirmNetwork(page, ' Cafe \u200b ');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
   assert.deepEqual(session.posts().at(-1), { ssid: ' Cafe \u200b ', pass: ' pass word \ufeff ', preserve_edges: true, scanned: true, test_only: true });
   await page.locator('#ssid').fill(' Cafe \u200b ');
   await page.locator('#password').fill(' pass word \ufeff ');
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
-  await page.getByRole('button', { name: 'Keep spaces', exact: true }).click();
+  await keepCredentialSpaces(page);
   await confirmNetwork(page, ' Cafe \u200b ');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
   assert.deepEqual(session.posts().at(-1), { ssid: ' Cafe \u200b ', pass: ' pass word \ufeff ', preserve_edges: true });
