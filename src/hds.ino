@@ -1951,8 +1951,10 @@ bool processBootFreshTare() {
 
 bool tareScaleWhenAdcReady(const char *context, bool userRequested) {
   if (userRequested) recordEnergyActivity();
-  ADS1232DebugInfo info = scale.getDebugInfo();
-  if (info.samplesInUse > 0 && info.validSamples < info.samplesInUse) {
+  const ADS1232DebugInfo info = scale.getDebugInfo();
+  const unsigned long sampleAge = millis() - info.lastConversionTimestamp;
+  if (info.signalTimeout || sampleAge > DEFAULT_SIGNAL_TIMEOUT_MS ||
+      (info.samplesInUse > 0 && info.validSamples < info.samplesInUse)) {
     if (!refreshScaleDatasetAfterDiscontinuity(context)) {
       return false;
     }
