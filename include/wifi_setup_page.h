@@ -489,18 +489,63 @@ static const char HDS_WIFI_SETUP_SCRIPT[] PROGMEM = R"js(
     waitForOperation(accepted.operation_id, kind);
   }
 
-  form.addEventListener('submit', event => {
+  function chooseCredentialSpaces(ssid, pass, scanned) {
+    const fields = [!scanned && ssid !== ssid.trim() ? 'network name' : '',
+      pass !== pass.trim() ? 'password' : ''].filter(Boolean);
+    if (!fields.length) return Promise.resolve('keep');
+    const dialog = document.createElement('dialog');
+    dialog.id = 'wifi-spaces-dialog';
+    dialog.className = 'wifi-setup wifi-dialog';
+    dialog.setAttribute('aria-labelledby', 'wifi-spaces-title');
+    dialog.setAttribute('aria-describedby', 'wifi-spaces-description');
+    const title = document.createElement('h2');
+    title.id = 'wifi-spaces-title';
+    title.textContent = 'Keep leading or trailing spaces?';
+    const description = document.createElement('p');
+    description.id = 'wifi-spaces-description';
+    description.textContent = `Leading or trailing spaces were found in the ${fields.join(' and ')}. Keep them if intentional, or remove them before connecting.`;
+    const actions = document.createElement('form');
+    actions.method = 'dialog';
+    actions.className = 'wifi-dialog-actions';
+    actions.style.flexWrap = 'wrap';
+    for (const [value, label] of [['cancel', 'Cancel'], ['keep', 'Keep spaces'], ['remove', 'Remove spaces']]) {
+      const button = document.createElement('button');
+      button.type = 'submit';
+      button.value = value;
+      button.textContent = label;
+      button.autofocus = value === 'cancel';
+      button.style.flex = '1 1 120px';
+      actions.append(button);
+    }
+    dialog.append(title, description, actions);
+    return new Promise(resolve => {
+      dialog.addEventListener('close', () => {
+        const choice = dialog.returnValue;
+        dialog.remove();
+        resolve(choice);
+      }, { once: true });
+      document.body.append(dialog);
+      dialog.showModal();
+    });
+  }
+
+  form.addEventListener('submit', async event => {
     event.preventDefault();
+    if (busy || document.getElementById('wifi-spaces-dialog')) return;
     const scanned = scannedSsid !== null && ssidInput.value === scannedSsid;
-    const ssid = ssidInput.value;
-    const pass = passwordInput.value;
+    const enteredSsid = ssidInput.value;
+    const enteredPass = passwordInput.value;
+    const choice = await chooseCredentialSpaces(enteredSsid, enteredPass, scanned);
+    if (busy || !['keep', 'remove'].includes(choice)) return;
+    const ssid = choice === 'remove' && !scanned ? enteredSsid.trim() : enteredSsid;
+    const pass = choice === 'remove' ? enteredPass.trim() : enteredPass;
+    ssidInput.value = ssid;
+    passwordInput.value = pass;
     if (!ssid || bytes(ssid) > 32 || invalidText(ssid) || invalidText(pass) ||
         !(pass.length === 0 || (bytes(pass) >= 8 && bytes(pass) <= 63) || /^[a-f0-9]{64}$/i.test(pass))) {
       message(failureText('wifi_credentials_invalid'), 'error');
       return;
     }
-    ssidInput.value = ssid;
-    passwordInput.value = pass;
     changeWifi(ssid, pass, 'switch', scanned);
   });
 

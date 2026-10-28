@@ -180,6 +180,76 @@ async function openPage(browser, html, viewport, legacy = false, startUrl = 'htt
     unsupportedRequests: () => unsupportedRequests, operationPolls: () => polls, errors };
 }
 
+async function runCredentialSpaces(browser, html, label, viewport) {
+  for (const choice of ['Keep spaces', 'Remove spaces', 'Cancel', 'Escape']) {
+    const session = await openPage(browser, html, viewport);
+    const { page } = session;
+    await page.locator('#ssid').fill(' Private network ');
+    await page.locator('#password').fill(' secret password ');
+    await page.locator('#wifi-form').evaluate(form => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    const dialog = page.locator('#wifi-spaces-dialog');
+    await dialog.waitFor({ state: 'visible' });
+    assert.equal(await dialog.count(), 1);
+    assert.equal(session.posts().length, 0);
+    assert.match(await dialog.textContent(), /network name and password/);
+    assert.doesNotMatch(await dialog.textContent(), /Private network|secret password/);
+    assert.equal(await page.locator('#password').getAttribute('type'), 'password');
+    assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Cancel');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    if (choice === 'Keep spaces') await page.screenshot({
+      path: path.join(root, '.pio.nosync', `wifi-spaces-${label}-${viewport.width}.png`)
+    });
+    if (choice === 'Escape') await page.keyboard.press('Escape');
+    else await dialog.getByRole('button', { name: choice, exact: true }).click();
+    await dialog.waitFor({ state: 'detached' });
+    if (choice === 'Cancel' || choice === 'Escape') {
+      assert.equal(session.posts().length, 0);
+      assert.equal(await page.locator('#ssid').inputValue(), ' Private network ');
+      assert.equal(await page.locator('#password').inputValue(), ' secret password ');
+      assert.equal(await page.locator('#wifi-connect-button').isEnabled(), true);
+    } else {
+      await page.waitForFunction(() => document.getElementById('password').value === '');
+      assert.deepEqual(session.posts(), [{
+        ssid: choice === 'Keep spaces' ? ' Private network ' : 'Private network',
+        pass: choice === 'Keep spaces' ? ' secret password ' : 'secret password',
+        preserve_edges: true, test_only: true
+      }]);
+    }
+    assert.deepEqual(session.errors, []);
+    await session.context.close();
+  }
+  for (const [ssid, pass] of [['   ', ''], ['Network', ' short ']]) {
+    const session = await openPage(browser, html, viewport);
+    await session.page.locator('#ssid').fill(ssid);
+    await session.page.locator('#password').fill(pass);
+    await session.page.locator('#wifi-form').evaluate(form =>
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    await session.page.getByRole('button', { name: 'Remove spaces', exact: true }).click();
+    await session.page.waitForFunction(() => document.getElementById('wifi-status').dataset.tone === 'error');
+    assert.equal(session.posts().length, 0);
+    assert.deepEqual(session.errors, []);
+    await session.context.close();
+  }
+  const scanned = await openPage(browser, html, viewport);
+  await scanned.page.getByRole('button', { name: 'Find networks' }).click();
+  await scanned.page.waitForFunction(() => document.getElementById('wifi-networks').options.length === 4);
+  await scanned.page.locator('#wifi-networks').selectOption(' Cafe \u200b ');
+  await scanned.page.locator('#password').fill(' password ');
+  await scanned.page.locator('#wifi-connect-button').click();
+  const dialog = scanned.page.locator('#wifi-spaces-dialog');
+  assert.doesNotMatch(await dialog.textContent(), /network name/);
+  await dialog.getByRole('button', { name: 'Remove spaces', exact: true }).click();
+  await scanned.page.waitForFunction(() => document.getElementById('password').value === '');
+  assert.deepEqual(scanned.posts(), [{ ssid: ' Cafe \u200b ', pass: 'password',
+    preserve_edges: true, scanned: true, test_only: true }]);
+  assert.deepEqual(scanned.errors, []);
+  await scanned.context.close();
+  console.log(`${label} ${viewport.width}px: explicit space choices, cancellation, secret masking, validation and scanned-name preservation passed`);
+}
+
 async function runAccessPointScan(browser, html, label, viewport) {
   for (const connected of [false, true]) {
     const session = await openPage(browser, html, viewport, false, 'http://hds.local', {
@@ -203,6 +273,7 @@ async function runAccessPointScan(browser, html, label, viewport) {
     assert.equal(session.scanPosts(), 0);
     session.variant('ap-failure');
     await page.locator('#wifi-connect-button').click();
+    await page.getByRole('button', { name: 'Keep spaces', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('password was not accepted'));
     assert.deepEqual(session.posts(), [{ ssid: ' Manual network ', pass: ' password ', preserve_edges: true, test_only: true }]);
     await page.locator('#wifi-retry').click();
@@ -357,6 +428,7 @@ async function run(browser, html, label, viewport) {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
   });
+  await page.getByRole('button', { name: 'Keep spaces', exact: true }).click();
   await confirmNetwork(page, manualSsid);
   assert.equal(session.context.pages().length, 1);
   assert(session.operationPolls() > 0);
@@ -376,12 +448,14 @@ async function run(browser, html, label, viewport) {
   await page.locator('#wifi-networks').selectOption(' Cafe \u200b ');
   await page.locator('#password').fill(' pass word \ufeff ');
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
+  await page.getByRole('button', { name: 'Keep spaces', exact: true }).click();
   await confirmNetwork(page, ' Cafe \u200b ');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
   assert.deepEqual(session.posts().at(-1), { ssid: ' Cafe \u200b ', pass: ' pass word \ufeff ', preserve_edges: true, scanned: true, test_only: true });
   await page.locator('#ssid').fill(' Cafe \u200b ');
   await page.locator('#password').fill(' pass word \ufeff ');
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
+  await page.getByRole('button', { name: 'Keep spaces', exact: true }).click();
   await confirmNetwork(page, ' Cafe \u200b ');
   await page.waitForFunction(() => document.getElementById('wifi-status').textContent.includes('WiFi settings saved'));
   assert.deepEqual(session.posts().at(-1), { ssid: ' Cafe \u200b ', pass: ' pass word \ufeff ', preserve_edges: true });
@@ -649,6 +723,9 @@ async function runLegacy(browser, viewport) {
   const browser = await chromium.launch({ headless: true });
   try {
     for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+      await runCredentialSpaces(browser, mainPage, 'main', viewport);
+      await runCredentialSpaces(browser, inlinePage, 'inline', viewport);
+      if (process.argv.includes('--spaces-only')) continue;
       await runAccessPointScan(browser, mainPage, 'main', viewport);
       await runAccessPointScan(browser, inlinePage, 'inline', viewport);
       await run(browser, mainPage, 'main', viewport);
