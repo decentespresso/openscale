@@ -53,7 +53,8 @@ def main():
     assert "wifiExecuteSwitchAction(wifiSetupRuntime.change.restore(now, wifiSetupRuntime.change.error))" in worker
     assert "scanned && !wifiScannedSsid(ssid.c_str(), ssid.size())" in routes
     assert 'object["scanned"].is<bool>()' in routes
-    assert "pass.size(), credentials, !scanned" in routes
+    assert 'object["preserve_edges"].is<bool>()' in routes
+    assert "pass.size(), credentials, !scanned && !preserveEdges" in routes
     assert 'if (url == "/ota/start")' in server
     assert "(wifiSetupBusy() || b_ota)" in server
     assert 'url == "/setup/wifi/scan" && request->method() == HTTP_POST' in server
@@ -85,7 +86,8 @@ def main():
         assert f'id="{element}"' in index
     assert "localStorage" not in script
     assert "innerHTML" not in script
-    assert "Default_Ignorable_Code_Point" in script
+    assert "preserve_edges: true" in script
+    assert "trimEdge" not in script
     assert "data.operation_id !== id" in script
     assert "confirm(" not in script
     assert "resetDialog.showModal()" in script
