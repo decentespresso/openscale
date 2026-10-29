@@ -18,7 +18,15 @@ static bool wifiRequestOriginAllowed(AsyncWebServerRequest *request) {
   if (host.endsWith(":80")) host.remove(host.length() - 3);
   const WifiSetupStatus status = wifiReadSetupStatus();
   const String name = wifiDeviceName();
-  if (host != name && host != name + ".local" && host != status.ip) return false;
+  const bool configuredHost = host == name || host == name + ".local";
+#if HDS_FEATURE_MDNS
+  const String effectiveName = status.mdnsHostname;
+  const bool effectiveHost = effectiveName.length() != 0 &&
+                             (host == effectiveName || host == effectiveName + ".local");
+#else
+  const bool effectiveHost = false;
+#endif
+  if (!configuredHost && !effectiveHost && host != status.ip) return false;
   String origin = request->getHeader("Origin")->value();
   origin.toLowerCase();
   if (origin.endsWith(":80")) origin.remove(origin.length() - 3);
