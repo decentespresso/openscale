@@ -1090,6 +1090,10 @@ bool calibrationCaptureRaw(CalibrationRawCapture &capture,
             stableStartedAt = 0;
           }
           long stableWindowSpread = stableMax - stableMin;
+          if ((float)stableWindowSpread > stabilityLimit) {
+            stableReads = 0;
+            stableStartedAt = 0;
+          }
           if (stableReads >= CALIBRATION_STABLE_READS_REQUIRED &&
               millis() - stableStartedAt >= CALIBRATION_STABLE_HOLD_MS &&
               (float)stableWindowSpread <= stabilityLimit) {
