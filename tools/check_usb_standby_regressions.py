@@ -40,6 +40,7 @@ using namespace ace_button;
 #define HDS_FEATURE_WIFI 0
 #define HDS_FEATURE_WEBSOCKET 0
 constexpr int BUTTON_CIRCLE=1, BUTTON_SQUARE=2, BATTERY_CHARGING=3;
+constexpr int U8G2_R0=0, U8G2_R2=2, FONT_M=0;
 constexpr unsigned long BUTTON_POLL_INTERVAL_MS=2, CLICK_DELAY=180;
 constexpr unsigned long DOUBLECLICK_DELAY=600, LONGPRESS_DELAY=900;
 unsigned long clockMs=1000, t_shutdownFailBle=0, t_menuExitTime=0, menuChordPressedAt=0;
@@ -48,6 +49,7 @@ int i_cal_weight=0, i_button_cal_status=0, menuMoves=0, menuSelects=0, sampledPr
 bool b_menu=false, b_calibration=false, b_ota=false, b_powerOff=false;
 bool b_showChargingUI=false, b_is_charging=true, b_ble_enabled=true, b_chargingOLED=false;
 bool b_softSleep=false, b_u8g2Sleep=true, b_shutdownFailBle=false;
+bool b_screenFlipped=false;
 bool b_websocketLowPowerEnabled=false, b_buttonChordSuppressUntilRelease=false;
 bool b_menuCirclePressPending=false, b_menuSquarePressPending=false;
 bool b_menuCircleLongHandled=false, b_menuSquareLongHandled=false;
@@ -66,6 +68,8 @@ struct {
   bool powerSave=true;
   void setPowerSave(int value) { powerSave=value; }
   void setContrast(int) {}
+  void setFontDirection(int) {}
+  void setDisplayRotation(int) {}
 } u8g2;
 struct {
   template<class T> void print(T) {}
@@ -79,6 +83,9 @@ int currentMenuSize=1, currentIndex=0;
 template<typename T, unsigned N> int getMenuSize(T (&)[N]) { return N; }
 std::array<int, 4> pins={HIGH,HIGH,HIGH,HIGH};
 unsigned long millis() { return clockMs; }
+void delay(unsigned long duration) { clockMs+=duration; }
+void serviceFuelGauge() {}
+void refreshOLED(char*, int) {}
 int digitalRead(uint8_t pin) { return pins[pin]; }
 void pinMode(int, int) {}
 bool usbPowerKeepsAwake() { return true; }

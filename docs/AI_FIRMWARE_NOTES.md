@@ -48,11 +48,12 @@ confirmation. Configuration and OTA pauses also keep charging disabled.
 Battery Protect stops charging at 80% and resumes at 75%. USB presence keeps the
 ESP32 awake even when charging pauses or completes, so the normal loop continues
 sampling and controlling the charger. Automatic shutdown requests are cancelled
-before display or hardware teardown while USB is connected. Explicit Off enters
-charging standby instead of deep sleep; the charging-display preference still
-controls whether its screen is visible. Charging and Battery Protect remain
-active. An armed, running, stopping, failed, or recovering grinder blocks USB
-standby; its normal controls and stop handling remain available. Idle standby
+before display or hardware teardown while USB is connected. Explicit Off shows
+the normal Off screen for one second, then enters charging standby instead of
+deep sleep; the charging-display preference still controls whether its screen
+is visible. Charger supervision continues during the Off screen. Charging and
+Battery Protect remain active. An armed, running, stopping, failed, or recovering
+grinder blocks USB standby; its normal controls and stop handling remain available. Idle standby
 pauses grinder progression and retains its connection supervision.
 Hold either button to return to weighing, or tap with Quick Boot enabled. Wake
 presses are consumed rather than interpreted as tare or timer actions. Holding
