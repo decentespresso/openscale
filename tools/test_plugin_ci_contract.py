@@ -72,7 +72,7 @@ def main():
     assert "#ifdef HDS_CUSTOM_BUILD" not in patch
     assert manifest["patches"] == {
         "v3.1.14": "patches/main.patch",
-        "v3.1.14-preview.3": "patches/main.patch",
+        "v3.1.14-preview.3": "patches/v3.1.14-preview.3.patch",
         "v3.1.14-preview.4": "patches/main.patch",
         "main": "patches/main.patch",
         "v3.1.15": "patches/v3.1.15.patch",

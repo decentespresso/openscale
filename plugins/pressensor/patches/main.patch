@@ -48,6 +48,37 @@ index 91a43cd8bc0b23285f246fb2f77acceeaa5702d2..e1666b4c0c15cec465ab27312d422f5c
    }
  }
  
+diff --git a/include/tap_detection.h b/include/tap_detection.h
+index 05ec99b52d6cdae919a6e0d94693a319413a5965..45d06faa1b16625909cbd27359ed54b252f735c0 100644
+--- a/include/tap_detection.h
++++ b/include/tap_detection.h
+@@ -11,6 +11,12 @@ static bool tapDetectionGated = true;
+ 
+ static inline void runTapLocalAction(bool tripleTap) {
+   if (tripleTap) {
++#if HDS_ENABLE_PRESSENSOR
++    if (pressensorActive()) {
++      pressensorTimerButton(f_displayedValue);
++      return;
++    }
++#endif
+     scaleTimer();
+     return;
+   }
+@@ -24,7 +30,13 @@ static inline void runTapLocalAction(bool tripleTap) {
+ void tapDetectTick() {
+   const unsigned long now = millis();
+   const float weight = f_current_raw_value;
++#if HDS_ENABLE_PRESSENSOR
++  const bool timerRunning = pressensorActive()
++      ? pressensorShot.state == PRESSENSOR_SHOT_RUNNING
++      : stopWatch.isRunning();
++#else
+   const bool timerRunning = stopWatch.isRunning();
++#endif
+   const bool buttonGestureActive =
+       digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW ||
+       circle_press_data.active || square_press_data.active ||
 diff --git a/include/menu.h b/include/menu.h
 index 1728cdeba947f4e60f4ad6dcd4dff51b40e1579d..2988b26c98aade16a215c87fcbf449d5cec87490 100644
 --- a/include/menu.h
@@ -1581,16 +1612,122 @@ index 399e8c4e2b11fca2ad94371f83999df8ba80d85a..f4fa4644bddbb9db085f5257ad35f7d6
  
 diff --git a/tools/test_pressensor_ble_contract.py b/tools/test_pressensor_ble_contract.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..4fbf212de3ac5b3f0e2253a2c7ab5351433057d6
+index 0000000000000000000000000000000000000000..1756766fcb35857399b2c7ccbf4bc614e77c8c70
 --- /dev/null
 +++ b/tools/test_pressensor_ble_contract.py
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,213 @@
 +from pathlib import Path
 +
 +
 +ROOT = Path(__file__).resolve().parents[1]
 +BLE_HEADER = ROOT / "include" / "pressensor_ble.h"
 +PARAMETER_HEADER = ROOT / "include" / "parameter.h"
++
++
++def test_tap_actions():
++    import shutil
++    import subprocess
++    import tempfile
++
++    runtime = (ROOT / "include" / "pressensor_runtime.h").read_text(encoding="utf-8")
++    tap = (ROOT / "include" / "tap_detection.h").read_text(encoding="utf-8")
++    declarations = runtime[runtime.index("#define PRESSENSOR_FLOW_SAMPLE_MS"):runtime.index("static inline float pressensorFlushPeakLimit")]
++    tapState = "\n".join(line for line in tap.splitlines() if line.startswith((
++        "constexpr unsigned long TAP_ACTION_DELAY_MS", "static bool tapActionArmed",
++        "static bool tapTripleArmed", "static unsigned long tapActionAtMs",
++    ))) + "\n"
++    harness = r'''
++#include <cassert>
++#include <cstdint>
++#include <initializer_list>
++''' + declarations + tapState + r'''
++uint32_t now = 10000;
++uint32_t millis() { return now; }
++struct Logger {
++  void println(const char*) {}
++  template<class... Args> void printf(const char*, Args...) {}
++} Serial;
++const int LOW = 0, HIGH = 1, BUTTON_CIRCLE = 1, BUTTON_SQUARE = 2;
++const unsigned long DOUBLECLICK_DELAY = 600;
++unsigned long t_menuExitTime = 0, t_shutdownFailBle = 0;
++unsigned long t_quickZeroStart = 0, t_tareByButton = 0;
++float f_current_raw_value = 0, f_displayedValue = 0;
++bool b_tapTareEnabled = true, b_tapTimerEnabled = true;
++bool b_shutdownFailBle = false, b_powerOff = false;
++bool b_bootTare = false, b_bootFreshTarePending = false;
++bool b_weight_quick_zero = false, b_tareByButton = false;
++bool tapDetectionGated = false;
++int timerActions = 0;
++struct Press { bool active = false; unsigned long releaseTime = 0; } circle_press_data, square_press_data;
++struct Timer {
++  bool running = false;
++  bool isRunning() { return running; }
++} stopWatch;
++enum class TapEvent { None, Double, Triple };
++TapEvent nextEvent = TapEvent::Double;
++struct Detector {
++  void reset(unsigned long, float) {}
++  TapEvent tick(unsigned long, float) {
++    const TapEvent event = nextEvent;
++    nextEvent = TapEvent::None;
++    return event;
++  }
++} tapDetector;
++int digitalRead(int) { return HIGH; }
++void power_off(int) {}
++void scaleTimer() { ++timerActions; stopWatch.running = !stopWatch.running; }
++'''
++    for source, signature in (
++        (runtime, "bool pressensorActive()"),
++        (runtime, "void pressensorResetShot()"),
++        (runtime, "void pressensorStartShot(bool byPressure, float weight)"),
++        (runtime, "void pressensorStopShot(uint32_t endElapsedMs)"),
++        (runtime, "void pressensorTimerButton(float weight)"),
++        (tap, "void runTapLocalAction(bool tripleTap)"),
++        (tap, "void tapDetectTick()"),
++    ):
++        name = signature.split("(", 1)[0].split()[-1]
++        harness += signature + " {" + function_body(source, name) + "}\n"
++    delay = "now += TAP_ACTION_DELAY_MS; tapDetectTick();" if "TAP_ACTION_DELAY_MS" in tap else ""
++    harness += "void sendTap(TapEvent event) { nextEvent = event; tapDetectTick(); " + delay + "}\n"
++    harness += r'''
++int main() {
++  for (bool enabled : {false, true}) {
++    pressensorSettings.enabled = enabled;
++    const bool active = HDS_ENABLE_PRESSENSOR && enabled;
++    pressensorShot.state = PRESSENSOR_SHOT_RUNNING;
++    pressensorShot.startMs = now - 1000;
++    stopWatch.running = false;
++    timerActions = 0;
++    b_tareByButton = b_weight_quick_zero = false;
++    sendTap(TapEvent::Double);
++    assert(b_tareByButton == !active);
++    sendTap(TapEvent::Triple);
++    if (active) {
++      assert(pressensorShot.state == PRESSENSOR_SHOT_DONE);
++      sendTap(TapEvent::Triple);
++      assert(pressensorShot.state == PRESSENSOR_SHOT_IDLE);
++      sendTap(TapEvent::Triple);
++      assert(pressensorShot.state == PRESSENSOR_SHOT_RUNNING);
++      assert(timerActions == 0 && !stopWatch.running);
++    } else {
++      assert(timerActions == 1 && stopWatch.running);
++    }
++    b_tareByButton = b_weight_quick_zero = false;
++    sendTap(TapEvent::Double);
++    assert(!b_tareByButton && !b_weight_quick_zero);
++  }
++}
++'''
++    compiler = shutil.which("g++") or shutil.which("clang++")
++    assert compiler, "a host C++ compiler is required"
++    with tempfile.TemporaryDirectory() as directory:
++        cpp, binary = Path(directory) / "taps.cpp", Path(directory) / "taps.exe"
++        cpp.write_text(harness, encoding="utf-8")
++        for enabled in (0, 1):
++            subprocess.run([compiler, "-std=c++11", f"-DHDS_ENABLE_PRESSENSOR={enabled}",
++                            str(cpp), "-o", str(binary)], check=True)
++            subprocess.run([str(binary)], check=True)
 +
 +
 +class LinkModel:
@@ -1686,6 +1823,7 @@ index 0000000000000000000000000000000000000000..4fbf212de3ac5b3f0e2253a2c7ab5351
 +    if link.accepts(old_generation):
 +        raise AssertionError("late callback from an older generation was accepted")
 +
++    test_tap_actions()
 +    print("Pressensor BLE contract tests passed")
 +
 +
