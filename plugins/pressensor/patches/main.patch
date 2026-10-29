@@ -1447,7 +1447,7 @@ index b0eb26b738ceb52fdd4fb7a5216f51fd3ad7b221..8855ea0ef72b55f8add6a3a588b327f6
  #if HDS_ENABLE_GRINDER
          grinderRuntimeTick(f_displayedValue);
  #endif
-@@ -2594,6 +2615,119 @@ void drawGrinder() {
+@@ -2594,6 +2615,123 @@ void drawGrinder() {
  }
  #endif
  
@@ -1480,6 +1480,10 @@ index b0eb26b738ceb52fdd4fb7a5216f51fd3ad7b221..8855ea0ef72b55f8add6a3a588b327f6
 +}
 +
 +void updatePressensorOled() {
++  if (b_adc_recovery_active) {
++    updateOled();
++    return;
++  }
 +  if (millis() - t_oled_refresh < i_oled_print_interval) {
 +    return;
 +  }
