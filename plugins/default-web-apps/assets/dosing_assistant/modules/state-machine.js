@@ -137,7 +137,7 @@ export class StateMachine {
             this.uiController.updateGuidance('Container back on scale, ready for next dose', 'success');
             this.currentState = SCALE_CONSTANTS.FSM_STATES.WAITING_FOR_NEXT;
         }
-        else if (netWeight>SCALE_CONSTANTS.NEW_CONTAINER_TOLERANCE){
+        else if (netWeight > SCALE_CONSTANTS.WEIGHT_THRESHOLDS.NEW_CONTAINER_TOLERANCE) {
             this.uiController.updateGuidance('New container detected, click zero to continue', 'warning');
         }
     }
