@@ -136,7 +136,7 @@ def main():
     assert_interleavings()
     hds = HDS_SOURCE.read_text(encoding="utf-8")
     loop = hds[hds.index("void loop() {"):hds.index("void chargingOLED(")]
-    if "if (b_ota || bleHasLiveClient()" not in loop:
+    if "if (b_ota || b_is_charging || bleHasLiveClient()" not in loop:
         raise AssertionError("OTA does not suspend the auto-sleep countdown")
     ota_wake = 'if (b_ota && b_softSleep) {\n    wakeScaleFromSoftSleep("OTA wake");'
     if ota_wake not in loop:
