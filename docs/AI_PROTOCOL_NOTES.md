@@ -46,10 +46,10 @@ Decent binary frames begin with model byte `0x03`. Checksums are XORs of the pre
 
 `0x1B` starts a WiFi pull OTA and has two accepted forms:
 
-- `03 1B` is the bare form. It starts the interactive on-OLED release picker and frames as exactly two bytes, with no wait for the USB receive timeout.
+- `03 1B` is the bare form. It starts the interactive on-OLED release picker and frames as exactly two bytes. An isolated prefix waits for the existing 30 ms USB receive timeout; a following unbiased byte resolves it immediately.
 - `03 1B <major> <minor> <patch>` names a target release for an unattended install. Each version byte is encoded `0x80 | value`, so every component is capped at 127 and the firmware masks with `0x7F` on receipt.
 
-The USB length resolver picks the five-byte form only when `data[2]` has its high bit set. A following command always begins with model byte `0x03`, and a biased version byte never can, so the two forms are distinguished without a checksum and without the receive timeout. A frame whose payload has begun but is shorter than five bytes is refused and logged, never truncated to the bare form.
+The USB length resolver picks the five-byte form only when `data[2]` has its high bit set. A following command always begins with model byte `0x03`, and a biased version byte never can, so that byte distinguishes the forms without a checksum. Until a third byte arrives, the resolver retains the two-byte prefix. Timeout resolution waits while UART bytes remain unread, including across the main loop's 32-byte receive boundary. A frame whose payload has begun but is shorter than five bytes is refused and logged, never truncated to the bare form.
 
 Every byte of a started payload must stay biased. An unbiased byte resynchronizes the resolver after one byte, so `03 1B 83` followed by `03 22` refuses the update and still delivers `03 22`. The dispatcher repeats the check, since BLE delivers whole packets and never reaches the resolver.
 
