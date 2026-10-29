@@ -116,7 +116,7 @@ export function resolveSelection(catalog, selection) {
   const compatible = compatibilityPackages(maps, pluginIds);
   for (const id of pluginIds) {
     const plugin = maps.plugins.get(id);
-    const otherPluginId = plugin.conflicts.find(conflict =>
+    const otherPluginId = (plugin.conflicts_by_ref?.[firmwareRef] ?? plugin.conflicts).find(conflict =>
       resolvedPlugins.has(conflict) && !compatible.some(group => group.has(id) && group.has(conflict)));
     if (otherPluginId) {
       throw new SelectionError("plugin_conflict", {pluginId: id, otherPluginId});

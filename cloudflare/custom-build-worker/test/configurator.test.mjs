@@ -62,6 +62,19 @@ const catalog = {
 };
 
 
+test("firmware-specific conflicts permit main without weakening stable selection", () => {
+  const refs = ["main", "v1.2.3"];
+  const paired = {
+    ...catalog,
+    plugins: [
+      plugin("pressure", "Pressure", {firmware_refs: refs, conflicts: ["grinder"], conflicts_by_ref: {main: []}}),
+      plugin("grinder", "Grinder", {firmware_refs: refs, conflicts: ["pressure"], conflicts_by_ref: {main: []}}),
+    ],
+  };
+  assert.doesNotThrow(() => resolveSelection(paired, {firmware_ref: "main", features: [], plugins: ["pressure", "grinder"]}));
+  assert.throws(() => resolveSelection(paired, {firmware_ref: "v1.2.3", features: [], plugins: ["pressure", "grinder"]}), /plugin_conflict/);
+});
+
 test("labels stable, preview, and development firmware refs", () => {
   assert.equal(firmwareRefLabel("v3.1.14"), "3.1.14 (stable)");
   assert.equal(firmwareRefLabel("v3.1.14-preview.1"), "3.1.14-preview.1 (preview)");

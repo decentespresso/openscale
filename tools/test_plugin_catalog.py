@@ -128,6 +128,11 @@ def testTemporaryPluginValidation():
 
             writePlugin(root, pluginManifest(conflicts=["missing-plugin"]))
             assertRejected(customBuild.loadPluginCatalog)
+            for overrides in (None, [], {"unknown": []}, {firmwareRef: "bad"},
+                              {firmwareRef: ["code-plugin"]}, {firmwareRef: ["bad/id"]},
+                              {firmwareRef: ["other", "other"]}, {firmwareRef: ["missing-plugin"]}):
+                writePlugin(root, pluginManifest(conflicts_by_ref=overrides))
+                assertRejected(customBuild.loadPluginCatalog)
 
             invalidBudget = {
                 "firmware_flash_bytes": True,
@@ -209,8 +214,12 @@ def main():
     assert len(pluginIds) == len(set(pluginIds))
     assert all(customBuild.ID_PATTERN.fullmatch(pluginId) for pluginId in pluginIds)
     for pluginId in pluginIds:
+        manifest, _, _ = customBuild.loadPlugin(pluginId)
         for firmwareRef in customBuild.FIRMWARE_REFS:
-            customBuild.loadPlugin(pluginId, firmwareRef)
+            if firmwareRef in manifest["firmware_refs"]:
+                customBuild.loadPlugin(pluginId, firmwareRef)
+            else:
+                assertRejected(lambda ref=firmwareRef: customBuild.loadPlugin(pluginId, ref))
     generatedCatalog = customBuild.buildBrowserCatalog()
     pageCatalog = json.loads(
         (customBuild.ROOT / "docs" / "custom-build" / "catalog.json").read_text(encoding="utf-8")
@@ -377,6 +386,14 @@ def main():
         assertRejected(lambda: customBuild.resolveConfiguration(
             writeConfig(root, [], ["grind-by-weight", "pressensor"])
         ))
+        combined = customBuild.resolveConfiguration(
+            writeConfig(root, [], ["grind-by-weight", "pressensor"], "main")
+        )
+        assert {plugin["id"] for plugin in combined["plugins"]} == {"grind-by-weight", "pressensor"}
+        for ref in ("v3.1.15", "v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4"):
+            assertRejected(lambda ref=ref: customBuild.resolveConfiguration(
+                writeConfig(root, [], ["grind-by-weight", "pressensor"], ref)
+            ))
     testTemporaryPluginValidation()
     print("plugin catalog tests passed")
 

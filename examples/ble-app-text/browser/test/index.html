@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>HDS App Text</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.mjs?v=1"></script>
+</head>
+<body>
+  <header>
+    <div><span class="eyebrow">HALF DECENT SCALE</span><h1>App Text</h1></div>
+    <div class="connection"><span id="connection" role="status">Disconnected</span><button id="connect" class="primary">Connect scale</button></div>
+  </header>
+  <main>
+    <p id="notice" role="status" hidden></p>
+    <section class="readings" aria-labelledby="weight-title">
+      <div class="section-title"><h2 id="weight-title">Live weight</h2><span id="weight-status">No readings</span></div>
+      <div class="weight"><output id="weight">--.-</output><span>g</span></div>
+      <div class="reading-footer"><span>Cumulative, tared weight</span><button id="tare" disabled>Tare</button></div>
+      <dl class="telemetry">
+        <div><dt>App Text</dt><dd id="capability">Not checked</dd></div>
+        <div><dt>Last sent</dt><dd id="last-prompt">None</dd></div>
+      </dl>
+    </section>
+    <div class="workflows">
+      <section class="prompt-control" aria-labelledby="prompt-title">
+        <div class="section-title"><h2 id="prompt-title">Custom prompt</h2><output id="count" for="prompt">12 / 18</output></div>
+        <form id="prompt-form">
+          <label for="prompt">Text</label>
+          <input id="prompt" type="text" value="Add Gin: 35g" maxlength="18" pattern="[ -~]+" required autocomplete="off" spellcheck="false" aria-describedby="prompt-error">
+          <p id="prompt-error" class="error" aria-live="polite"></p>
+          <div class="actions"><button id="send" class="primary" disabled>Send prompt</button><button id="clear" type="button" disabled>Clear</button></div>
+        </form>
+      </section>
+      <section class="recipe" aria-labelledby="recipe-title">
+        <div class="section-title"><h2 id="recipe-title">Gin &amp; tonic</h2><span id="step-count">Step 1 / 5</span></div>
+        <progress id="progress" max="5" value="1" aria-label="Recipe progress"></progress>
+        <h3 id="step-title">Place glass</h3>
+        <p id="step-detail">Place an empty glass on the scale, then tare.</p>
+        <div class="recipe-actions">
+          <button id="previous" aria-label="Previous step" title="Previous step" disabled>&larr;</button>
+          <button id="next" class="primary">Next step &rarr;</button>
+          <button id="finish">Finish</button>
+        </div>
+      </section>
+    </div>
+    <section class="session" aria-labelledby="session-title">
+      <div class="section-title"><h2 id="session-title">Session</h2><label class="heartbeat"><input id="heartbeat" type="checkbox" checked>Heartbeat <span id="heartbeat-status">Idle</span></label></div>
+      <ol id="events" aria-label="Connection events" aria-live="polite"><li>Ready</li></ol>
+    </section>
+  </main>
+  <footer><span>HDS 2.1 / BLE protocol v1</span><span id="origin"></span></footer>
+</body>
+</html>

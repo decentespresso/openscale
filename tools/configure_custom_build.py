@@ -91,7 +91,7 @@ PLUGIN_KEYS = {
     "schema", "id", "name", "description", "tooltip", "version",
     "firmware_refs", "requires", "conflicts", "patches", "budget",
 }
-OPTIONAL_PLUGIN_KEYS = {"depends_on", "recommends", "conflicts_features", "presentation"}
+OPTIONAL_PLUGIN_KEYS = {"depends_on", "recommends", "conflicts_features", "conflicts_by_ref", "presentation"}
 RECOMMENDATION_KEYS = {"features", "plugins"}
 BUDGET_KEYS = {"firmware_flash_bytes", "static_ram_bytes", "littlefs_bytes"}
 BUILD_CONTRACT_SCHEMA = 2
@@ -170,6 +170,7 @@ def loadPlugin(pluginId, firmwareRef=None):
         "depends_on": storedManifest.get("depends_on", []),
         "recommends": storedManifest.get("recommends", {"features": [], "plugins": []}),
         "conflicts_features": storedManifest.get("conflicts_features", []),
+        "conflicts_by_ref": storedManifest.get("conflicts_by_ref", {}),
     }
     if manifest["schema"] != 2 or manifest["id"] != pluginId:
         raise ValueError(f"invalid plugin identity: {pluginId}")
@@ -198,6 +199,13 @@ def loadPlugin(pluginId, firmwareRef=None):
         raise ValueError(f"invalid plugin dependencies: {pluginId}")
     if any(not ID_PATTERN.fullmatch(conflict) for conflict in conflicts) or pluginId in conflicts:
         raise ValueError(f"invalid plugin conflicts: {pluginId}")
+    conflictsByRef = manifest["conflicts_by_ref"]
+    if not isinstance(conflictsByRef, dict) or set(conflictsByRef) - set(firmwareRefs):
+        raise ValueError(f"invalid firmware-specific conflicts: {pluginId}")
+    for ref, values in conflictsByRef.items():
+        entries = requireStringList(values, f"{pluginId}.conflicts_by_ref.{ref}")
+        if pluginId in entries or any(not ID_PATTERN.fullmatch(value) for value in entries):
+            raise ValueError(f"invalid firmware-specific conflict IDs: {pluginId}")
     recommendations = manifest["recommends"]
     if not isinstance(recommendations, dict) or set(recommendations) != RECOMMENDATION_KEYS:
         raise ValueError(f"invalid plugin recommendations: {pluginId}")
@@ -368,7 +376,7 @@ def resolveCatalogSelection(pluginCatalog, requestedPluginIds, requestedFeatures
         manifest = pluginCatalog[pluginId][0]
         pluginConflicts = sorted(
             conflict
-            for conflict in selectedPlugins.intersection(manifest["conflicts"])
+            for conflict in selectedPlugins.intersection(manifest.get("conflicts_by_ref", {}).get(firmwareRef, manifest["conflicts"]))
             if not any({pluginId, conflict} <= package for package in compatibilityPackages)
         )
         if pluginConflicts:
@@ -417,6 +425,10 @@ def loadPluginCatalog(validateDefaults=False):
             unknownIds = set(manifest[field]) - knownIds
             if unknownIds:
                 raise ValueError(f"unknown plugin {field} for {pluginId}: {sorted(unknownIds)}")
+        for conflicts in manifest["conflicts_by_ref"].values():
+            unknownIds = set(conflicts) - knownIds
+            if unknownIds:
+                raise ValueError(f"unknown firmware-specific conflicts for {pluginId}: {sorted(unknownIds)}")
         unknownRecommendations = set(manifest["recommends"]["plugins"]) - knownIds
         if unknownRecommendations:
             raise ValueError(
@@ -470,7 +482,7 @@ def catalogRevision(plugins):
                 key: manifest[key]
                 for key in (
                     "version", "firmware_refs", "requires", "depends_on", "conflicts",
-                    "conflicts_features", "recommends",
+                    "conflicts_features", "conflicts_by_ref", "recommends",
                 )
             }
             for pluginId, (manifest, _, _) in plugins.items()
@@ -509,7 +521,7 @@ def buildBrowserCatalog():
                 for key in (
                     "id", "name", "description", "tooltip", "version",
                     "firmware_refs", "requires", "depends_on", "conflicts",
-                    "conflicts_features", "recommends",
+                    "conflicts_features", "conflicts_by_ref", "recommends",
                 )
             },
             "asset_targets": sorted(target.as_posix() for _, target in assets),
@@ -565,6 +577,7 @@ def buildServiceCatalog(sourceRoot=ROOT):
                 "requires": manifest["requires"],
                 "depends_on": manifest["depends_on"],
                 "conflicts": manifest["conflicts"],
+                "conflicts_by_ref": manifest["conflicts_by_ref"],
                 "conflicts_features": manifest["conflicts_features"],
                 "recommends": manifest["recommends"],
                 "patches": {
