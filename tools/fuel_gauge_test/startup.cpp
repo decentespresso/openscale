@@ -55,7 +55,7 @@ static void reset() {
   scale = FakeScale{};
   pinWrites.clear();
   pinLevels.fill(0);
-  pinModes.fill(0);
+  pinModes.fill(-1);
   pinHolds.fill(false);
 }
 
@@ -100,7 +100,8 @@ static void checkAcknowledgedGauge(size_t attempt, bool configFails) {
   assert(Wire.operations == static_cast<int>(attempt));
   assert(Wire.commands.empty());
   assert(scale.updateTimes.size() >= 899);
-  assert(pinLevels[6] == HIGH && pinModes[14] == INPUT);
+  assert(pinModes[6] == OUTPUT && pinLevels[6] == HIGH && pinModes[14] == INPUT);
+  assert(pinWrites.size() == 1 && pinWrites.front() == 6);
   assert(std::find(pinWrites.begin(), pinWrites.end(), 14) == pinWrites.end());
 }
 

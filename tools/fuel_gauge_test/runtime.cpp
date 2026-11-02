@@ -86,7 +86,7 @@ static void reset(bool retainPersistence = false) {
   b_ota = false;
   pinWrites.clear();
   pinLevels.fill(0);
-  pinModes.fill(0);
+  pinModes.fill(-1);
   pinHolds.fill(false);
   buttonBackAt = std::numeric_limits<unsigned long>::max();
   if (!retainPersistence) persistedReseal = false;

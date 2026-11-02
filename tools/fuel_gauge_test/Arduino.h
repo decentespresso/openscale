@@ -18,7 +18,12 @@ inline unsigned long millis() { return static_cast<unsigned long>(fakeMicros / 1
 inline unsigned long micros() { return static_cast<unsigned long>(fakeMicros); }
 inline void delay(unsigned long duration) { ++millisecondDelayCalls; fakeMicros += static_cast<uint64_t>(duration) * 1000; }
 inline void delayMicroseconds(unsigned int duration) { fakeMicros += duration; }
-inline void digitalWrite(int pin, int level) { pinLevels[pin] = level; pinWrites.push_back(pin); }
+inline void digitalWrite(int pin, int level) {
+  if (pinModes[pin] < 0) return;
+  assert(pinModes[pin] == OUTPUT);
+  pinLevels[pin] = level;
+  pinWrites.push_back(pin);
+}
 inline int digitalRead(int pin) { return pin == 1 && millis() >= buttonBackAt ? LOW : pinLevels[pin]; }
 inline void pinMode(int pin, int mode) { pinModes[pin] = mode; }
 struct FakeSerial {
