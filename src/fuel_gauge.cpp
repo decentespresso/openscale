@@ -30,6 +30,9 @@ void fuelGaugePauseCharging() {
 static void gaugeSelectHardware() {
   fuelGaugeRuntime.hardware = BatteryHardware::Gauge;
   b_hasFuelGauge = true;
+#ifdef ESP32
+  gpio_set_level(static_cast<gpio_num_t>(CHRG_CTRL), HIGH);
+#endif
   pinMode(CHRG_CTRL, OUTPUT);
   digitalWrite(CHRG_CTRL, HIGH);
 #ifdef ESP32
