@@ -38,7 +38,7 @@ static void reset() {
   b_batteryProtect = true;
   pinWrites.clear();
   pinLevels.fill(0);
-  pinModes.fill(0);
+  pinModes.fill(-1);
   pinHolds.fill(false);
   buttonBackAt = std::numeric_limits<unsigned long>::max();
 }
