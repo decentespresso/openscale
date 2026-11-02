@@ -47,8 +47,8 @@ static bool gaugeRecover() {
 static void gaugeSelectHardware() {
   fuelGaugeRuntime.hardware = BatteryHardware::Gauge;
   b_hasFuelGauge = true;
-  digitalWrite(CHRG_CTRL, HIGH);
   pinMode(CHRG_CTRL, OUTPUT);
+  digitalWrite(CHRG_CTRL, HIGH);
 #ifdef ESP32
   gpio_hold_dis(static_cast<gpio_num_t>(CHRG_CTRL));
 #endif
