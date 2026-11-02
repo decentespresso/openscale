@@ -78,6 +78,44 @@ static void gaugeFailCleanup() {
   fuelGaugePauseCharging();
 }
 
+static bool gaugeObserveFlags(uint16_t flags, bool cleanup = false) {
+  FuelGaugeRuntime &runtime = fuelGaugeRuntime;
+  FuelGaugeEngine &engine = runtime.engine;
+  if (!(flags & gaugePorFlag) && !runtime.porSeen) return true;
+  runtime.porSeen = true;
+  if (runtime.desiredCapacity == 0) {
+    if (!fuelGaugeStoreCapacity(700)) {
+      engine.successful = false;
+      engine.cleanupOnly = true;
+      engine.capacityPersistenceFailed = true;
+      if (engine.wasSealed && !engine.currentlySealed) {
+        if (!engine.cleanupStarted) {
+          engine.cleanupStarted = true;
+          engine.cleanupStartedAt = millis();
+        }
+        engine.stage = GaugeStage::Seal;
+      } else gaugeFailCleanup();
+      return false;
+    }
+    runtime.desiredCapacity = 700;
+    runtime.capacityPersistPending = true;
+    if (engine.requestedCapacity == 0 && (engine.capacity == 0 || engine.capacity == 700)) {
+      engine.requestedCapacity = 700;
+      engine.capacity = 700;
+    }
+  }
+  if (engine.requestedCapacity == 0 && engine.capacity != 0 && engine.capacity != 700) {
+    engine.successful = false;
+    engine.cleanupOnly = true;
+    runtime.configurationPending = true;
+    if (!cleanup) {
+      gaugeBeginCleanup();
+      return false;
+    }
+  }
+  return true;
+}
+
 static void gaugePlanConfiguration() {
   FuelGaugeEngine &engine = fuelGaugeRuntime.engine;
   const uint16_t actualCapacity = static_cast<uint16_t>(engine.state[6]) << 8 | engine.state[7];
@@ -204,7 +242,7 @@ void gaugeServiceOperation() {
     case GaugeStage::Flags:
       if (gaugeAdvance(gaugeIoRun(GaugeIoKind::Word, 0x06), GaugeStage::Chemistry)) {
         engine.flags = engine.io.word;
-        runtime.porSeen = runtime.porSeen || (engine.flags & gaugePorFlag);
+        gaugeObserveFlags(engine.flags);
       }
       break;
     case GaugeStage::Chemistry:
@@ -231,6 +269,7 @@ void gaugeServiceOperation() {
       } else if (engine.io.kind != GaugeIoKind::None || millis() - engine.lastFlagPoll >= 500) {
         const int result = gaugeIoRun(GaugeIoKind::Word, 0x06);
         if (result < 0) gaugeFailedOperation();
+        if (result == 1 && !gaugeObserveFlags(engine.io.word)) break;
         if (result == 1 && (engine.io.word & gaugeConfigFlag)) {
           engine.stage = GaugeStage::EnterSettle;
           engine.waitStartedAt = millis();
@@ -276,7 +315,7 @@ void gaugeServiceOperation() {
     case GaugeStage::CleanupFlags:
       if (gaugeAdvance(gaugeIoRun(GaugeIoKind::Word, 0x06), GaugeStage::VerifyChemistry)) {
         engine.flags = engine.io.word;
-        runtime.porSeen = runtime.porSeen || (engine.flags & gaugePorFlag);
+        if (!gaugeObserveFlags(engine.flags, true)) break;
         if (engine.flags & (gaugeConfigFlag | gaugePorFlag)) {
           if (!engine.currentlySealed) engine.stage = GaugeStage::Exit;
           else if (runtime.resealPending || fuelGaugeStoreReseal(true)) {
@@ -302,6 +341,7 @@ void gaugeServiceOperation() {
       } else if (engine.io.kind != GaugeIoKind::None || millis() - engine.lastFlagPoll >= 500) {
         const int result = gaugeIoRun(GaugeIoKind::Word, 0x06);
         if (result < 0) gaugeFailedOperation();
+        if (result == 1 && !gaugeObserveFlags(engine.io.word, true)) break;
         if (result == 1 && !(engine.io.word & (gaugeConfigFlag | gaugePorFlag))) {
           engine.flags = engine.io.word;
           engine.stage = GaugeStage::ExitSettle;
@@ -326,8 +366,10 @@ void gaugeServiceOperation() {
       if (gaugeAdvance(gaugeIoRun(GaugeIoKind::ReadBlock, 105), GaugeStage::VerifyFlags) && (engine.io.bytes[5] & 0x80)) gaugeFailedOperation();
       break;
     case GaugeStage::VerifyFlags:
-      if (gaugeAdvance(gaugeIoRun(GaugeIoKind::Word, 0x06), engine.wasSealed ? GaugeStage::Seal : GaugeStage::FinalFlags) &&
-          (engine.io.word & (gaugeConfigFlag | gaugePorFlag))) gaugeFailedOperation();
+      if (gaugeAdvance(gaugeIoRun(GaugeIoKind::Word, 0x06), engine.wasSealed ? GaugeStage::Seal : GaugeStage::FinalFlags)) {
+        if (!gaugeObserveFlags(engine.io.word, true)) break;
+        if (engine.io.word & (gaugeConfigFlag | gaugePorFlag)) gaugeFailedOperation();
+      }
       break;
     case GaugeStage::Seal:
       gaugeAdvance(gaugeIoRun(GaugeIoKind::Command, 0x0020), GaugeStage::SealStatus);
@@ -336,11 +378,14 @@ void gaugeServiceOperation() {
       if (gaugeAdvance(gaugeIoRun(GaugeIoKind::Control, 0), GaugeStage::FinalFlags)) {
         engine.currentlySealed = (engine.io.word & 0x2000) != 0;
         if (!engine.currentlySealed) engine.stage = GaugeStage::Seal;
+        else if (engine.capacityPersistenceFailed) gaugeFailCleanup();
       }
       break;
     case GaugeStage::FinalFlags:
-      if (gaugeAdvance(gaugeIoRun(GaugeIoKind::Word, 0x06), GaugeStage::ClearReseal) &&
-          (engine.io.word & (gaugeConfigFlag | gaugePorFlag))) engine.stage = GaugeStage::CleanupFlags;
+      if (gaugeAdvance(gaugeIoRun(GaugeIoKind::Word, 0x06), GaugeStage::ClearReseal)) {
+        if (!gaugeObserveFlags(engine.io.word, true)) break;
+        if (engine.io.word & (gaugeConfigFlag | gaugePorFlag)) engine.stage = GaugeStage::CleanupFlags;
+      }
       break;
     case GaugeStage::ClearReseal:
       if (!runtime.resealPending || fuelGaugeStoreReseal(false)) {

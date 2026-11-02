@@ -87,6 +87,8 @@ otherwise select 700 mAh. Gauge POR triggers restoration of capacity, chemistry,
 and CC_GAIN before measurements or charging are trusted. The old Boolean key
 and storage schema remain compatible. A custom capacity already lost to a gauge
 reset before this migration cannot be recovered from the old Boolean alone.
+If migration observes POR, persist the 700 mAh fallback before cleanup clears
+POR, including a cleanup-only boot followed by a filesystem-update reboot.
 
 The Boolean `bat_reseal` defaults false. Its verified persistent write must
 succeed before unsealing a sealed gauge. Only verified resealing with normal

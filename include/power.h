@@ -76,6 +76,11 @@ bool fuelGaugeStoreReseal(bool required) {
          storageGetBool(KEY_BAT_RESEAL, !required) == required;
 }
 
+bool fuelGaugeStoreCapacity(uint16_t capacity) {
+  return storagePutInt(KEY_BAT_CAPACITY, capacity) &&
+         storageGetInt(KEY_BAT_CAPACITY, 0) == capacity;
+}
+
 bool quiesceFuelGaugeForShutdown() {
   fuelGaugeRequestQuiesce();
   const unsigned long startedAt = millis();

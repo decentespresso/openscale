@@ -7,6 +7,7 @@ volatile bool b_hasFuelGauge = false;
 volatile bool b_batteryProtect = true;
 FuelGaugeRuntime fuelGaugeRuntime;
 bool fuelGaugeStoreReseal(bool) { return true; }
+bool fuelGaugeStoreCapacity(uint16_t) { return true; }
 bool b_u8g2Sleep = true;
 bool b_screenFlipped = false;
 bool storedScreenFlip = false;

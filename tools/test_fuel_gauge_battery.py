@@ -39,6 +39,7 @@ constexpr const char *KEY_BAT_CAPACITY = "bat_capacity", *KEY_BAT_CAPACITY_SET =
 constexpr const char *KEY_BAT_RESEAL = "bat_reseal";
 bool storageSucceeds = false;
 bool capacityFlagSucceeds = true;
+bool capacityReadbackSucceeds = true;
 bool resealStoreSucceeds = true, storedReseal = false, resealReadbackSucceeds = true;
 int capacityWrites = 0, storedCapacity = 0;
 struct { bool capacityPersistPending = true; uint16_t desiredCapacity = 1100; } fuelGaugeRuntime;
@@ -46,6 +47,9 @@ bool storagePutInt(const char *, int value) {
   ++capacityWrites;
   if (storageSucceeds) storedCapacity = value;
   return storageSucceeds;
+}
+int storageGetInt(const char *, int fallback) {
+  return capacityReadbackSucceeds ? storedCapacity : fallback;
 }
 bool storagePutBool(const char *key, bool value) {
   if (key != KEY_BAT_RESEAL) return capacityFlagSucceeds;
@@ -92,6 +96,16 @@ int main() {
   assert(!fuelGaugeStoreReseal(false));
   resealReadbackSucceeds = true;
   assert(fuelGaugeStoreReseal(false) && !storedReseal);
+  assert(!fuelGaugeStoreCapacity(700) && storedCapacity == 0);
+  storageSucceeds = true;
+  assert(fuelGaugeStoreCapacity(700) && storedCapacity == 700);
+  capacityReadbackSucceeds = false;
+  assert(!fuelGaugeStoreCapacity(900));
+  capacityReadbackSucceeds = true;
+  assert(fuelGaugeStoreCapacity(700) && storedCapacity == 700);
+  storageSucceeds = false;
+  capacityWrites = 0;
+  storedCapacity = 0;
   updateBattery(6);
   assert(batteryPercent() == 50);
   assert(f_batteryVoltage == legacyVoltage);
@@ -176,6 +190,7 @@ def main():
     power = (ROOT / "include/power.h").read_text(encoding="utf-8")
     functions = "\n".join(extract_function(power, signature) for signature in (
         "bool fuelGaugeStoreReseal(bool required)",
+        "bool fuelGaugeStoreCapacity(uint16_t capacity)",
         "int batteryPercent()",
         "void updateBattery(int batteryPin)",
         "void serviceFuelGauge() {",

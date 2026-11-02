@@ -81,6 +81,7 @@ void fuelGaugeResume();
 bool fuelGaugeBusy();
 bool fuelGaugeDrain();
 bool fuelGaugeStoreReseal(bool required);
+bool fuelGaugeStoreCapacity(uint16_t capacity);
 void fuelGaugePauseCharging();
 void fuelGaugeProtectSet(bool enable);
 float fuelGaugeVoltageV();

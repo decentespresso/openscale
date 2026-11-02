@@ -12,6 +12,10 @@ volatile bool b_ota = false;
 FuelGaugeRuntime fuelGaugeRuntime;
 bool persistedReseal = false;
 int storeCalls = 0, failStoreValue = -1, failStoreAt = -1;
+uint16_t persistedCapacity = 0;
+int capacityStoreCalls = 0;
+std::vector<uint16_t> capacityStoreFlags;
+bool capacityStoreSucceeds = true, capacityReadbackSucceeds = true;
 const char *activeCheck = "startup";
 int activeCase = 0;
 
@@ -21,6 +25,14 @@ bool fuelGaugeStoreReseal(bool required) {
   if (!required) assert(Wire.sealed && !(Wire.words[0x06] & 0x30));
   persistedReseal = required;
   return true;
+}
+
+bool fuelGaugeStoreCapacity(uint16_t capacity) {
+  ++capacityStoreCalls;
+  capacityStoreFlags.push_back(Wire.words[0x06]);
+  if (!capacityStoreSucceeds) return false;
+  persistedCapacity = capacity;
+  return capacityReadbackSucceeds;
 }
 
 static void service() {
@@ -89,8 +101,15 @@ static void reset(bool retainPersistence = false) {
   pinModes.fill(-1);
   pinHolds.fill(false);
   buttonBackAt = std::numeric_limits<unsigned long>::max();
-  if (!retainPersistence) persistedReseal = false;
+  if (!retainPersistence) {
+    persistedReseal = false;
+    persistedCapacity = 0;
+  }
   storeCalls = 0;
+  capacityStoreCalls = 0;
+  capacityStoreFlags.clear();
+  capacityStoreSucceeds = true;
+  capacityReadbackSucceeds = true;
   failStoreValue = -1;
   failStoreAt = -1;
   fuelGaugeSetResealPending(persistedReseal);
@@ -621,6 +640,81 @@ static void checkResumePreservesCleanupDeadline() {
   }
 }
 
+static void checkPorCapacityPersistence() {
+  reset();
+  persistedReseal = true;
+  fuelGaugeSetResealPending(true);
+  Wire.setCapacity(1340);
+  Wire.words[0x06] |= 0x20;
+  fuelGaugeStartDetection(0, true);
+  until([] { return fuelGaugeRuntime.probeComplete; });
+  fuelGaugeRequestQuiesce();
+  until([] { return fuelGaugeQuiesceStatus() != FuelGaugeQuiesceStatus::Pending; }, 8100);
+  assert(fuelGaugeQuiesceStatus() == FuelGaugeQuiesceStatus::Complete);
+  assert(persistedCapacity == 700 && capacityStoreCalls == 1);
+  assert(capacityStoreFlags.front() & 0x20);
+  assert(!persistedReseal && Wire.sealed && !(Wire.words[0x06] & 0x30));
+  assert(Wire.capacity() == 1340 && !fuelGaugeRuntime.configurationAllowed);
+  const FakeWire afterFirstRestartCleanup = Wire;
+  reset(true);
+  Wire = afterFirstRestartCleanup;
+  const int unsealsBeforeSecondBoot = Wire.unsealKeys;
+  fuelGaugeStartDetection(persistedCapacity, true);
+  until([] { return fuelGaugeRuntime.probeComplete; });
+  assert(Wire.unsealKeys == unsealsBeforeSecondBoot && !fuelGaugeRuntime.configurationAllowed);
+  fuelGaugeAllowConfiguration();
+  ready();
+  assert(Wire.capacity() == 700 && fuelGaugeRuntime.desiredCapacity == 700);
+  for (bool writeFails : {false, true}) {
+    for (bool initiallySealed : {false, true}) {
+      reset();
+      persistedReseal = true;
+      fuelGaugeSetResealPending(true);
+      Wire.sealed = initiallySealed;
+      Wire.setCapacity(1340);
+      Wire.words[0x06] |= 0x20;
+      capacityStoreSucceeds = !writeFails;
+      capacityReadbackSucceeds = writeFails;
+      fuelGaugeStartDetection(0, true);
+      until([] { return fuelGaugeRuntime.probeComplete; });
+      const unsigned long startedAt = millis();
+      fuelGaugeRequestQuiesce();
+      until([] { return fuelGaugeQuiesceStatus() != FuelGaugeQuiesceStatus::Pending; }, 8100);
+      assert(fuelGaugeQuiesceStatus() == FuelGaugeQuiesceStatus::Failed);
+      assert(millis() - startedAt <= 8000 && capacityStoreCalls == 1);
+      assert(persistedReseal && (Wire.words[0x06] & 0x20) && Wire.sealed);
+      assert(!fuelGaugeRuntime.ready && pinLevels[CHRG_CTRL] == HIGH);
+      for (uint16_t command : {0x8000, 0x0013, 0x0031, 0x0042}) {
+        assert(std::find(Wire.commands.begin(), Wire.commands.end(), command) == Wire.commands.end());
+      }
+      assert(initiallySealed ? Wire.seals == 0 : Wire.seals > 0);
+      for (int index = 0; index < 1000; ++index) { service(); advance(); }
+      assert(capacityStoreCalls == 1);
+    }
+  }
+  for (bool queueBeforeFallback : {false, true}) {
+    reset();
+    persistedReseal = true;
+    fuelGaugeSetResealPending(true);
+    Wire.setCapacity(1340);
+    Wire.words[0x06] |= 0x20;
+    fuelGaugeStartDetection(0, true);
+    until([] { return fuelGaugeRuntime.probeComplete; });
+    if (!queueBeforeFallback) until([] { return capacityStoreCalls != 0; });
+    persistedCapacity = 900;
+    assert(!fuelGaugeSetCapacity(900));
+    fuelGaugeRequestQuiesce();
+    until([] { return fuelGaugeQuiesceStatus() != FuelGaugeQuiesceStatus::Pending; }, 8100);
+    assert(fuelGaugeQuiesceStatus() == FuelGaugeQuiesceStatus::Complete);
+    assert(persistedCapacity == 900 && fuelGaugeRuntime.desiredCapacity == 900);
+    assert(capacityStoreCalls == (queueBeforeFallback ? 0 : 1));
+    fuelGaugeResume();
+    fuelGaugeAllowConfiguration();
+    ready();
+    assert(Wire.capacity() == 900 && persistedCapacity == 900);
+  }
+}
+
 int main() {
   activeCheck = "probe";
   checkProbeScheduling();
@@ -648,4 +742,6 @@ int main() {
   checkStuckCleanup();
   activeCheck = "resumed cleanup";
   checkResumePreservesCleanupDeadline();
+  activeCheck = "POR capacity persistence";
+  checkPorCapacityPersistence();
 }

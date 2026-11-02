@@ -47,6 +47,7 @@ struct FuelGaugeEngine {
   bool successful = true;
   bool cleanupOnly = false;
   bool cleanupStarted = false;
+  bool capacityPersistenceFailed = false;
   bool changeChemistry = false;
   bool changeCapacity = false;
   bool changeGain = false;
