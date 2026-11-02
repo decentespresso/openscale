@@ -52,7 +52,7 @@ def main():
     assert "hdsOtaRollback(" not in rollback_begin
     setup = function_body((ROOT / "src/hds.ino").read_text(encoding="utf-8"), "setup")
     rollback_at = setup.index("if (bootRollbackReason) hdsOtaRollback(bootRollbackReason);")
-    assert setup.index("bootRollbackReason = hdsOtaRollbackBegin(r);") < setup.index("storageInit()")
+    assert setup.index("bootRollbackReason = hdsOtaRollbackBegin(r);") < setup.index("storageInit(&bootSettingsOpened)")
     assert setup.index("esp32_sleep();") < setup.index("fuelGaugeStartDetection(") < rollback_at
     assert setup.index("fuelGaugeBegin(") < rollback_at < setup.index("ADS_init();")
     timeout = re.search(r"OTA_RUNTIME_PAUSE_TIMEOUT_MS = (\d+)", parameter)

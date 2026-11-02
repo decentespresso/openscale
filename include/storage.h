@@ -338,8 +338,10 @@ inline bool storageMigrateLegacyEeprom() {
   return migrated;
 }
 
-inline bool storageInit() {
-  if (!settingsPreferences.begin(STORAGE_NAMESPACE, false)) {
+inline bool storageInit(bool *opened = nullptr) {
+  const bool namespaceOpened = settingsPreferences.begin(STORAGE_NAMESPACE, false);
+  if (opened) *opened = namespaceOpened;
+  if (!namespaceOpened) {
     return false;
   }
   if (settingsPreferences.getUShort(KEY_STORAGE_SCHEMA, 0) >= STORAGE_SCHEMA_VERSION) {

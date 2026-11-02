@@ -86,7 +86,7 @@ bool fuelGaugePollDetection() {
     fuelGaugePauseCharging();
     runtime.ready = false;
   } else {
-    runtime.hardware = runtime.probeAbsent && !runtime.resealPending
+    runtime.hardware = runtime.probeAbsent && !runtime.resealPending && !runtime.sealRequired
         ? BatteryHardware::Legacy : BatteryHardware::Unknown;
   }
   runtime.lastRecovery = millis();
@@ -173,7 +173,7 @@ void fuelGaugeLoop() {
     return;
   }
   if (!b_hasFuelGauge) {
-    if (runtime.resealPending && millis() - runtime.lastRecovery >= 10000) {
+    if ((runtime.resealPending || runtime.sealRequired) && millis() - runtime.lastRecovery >= 10000) {
       fuelGaugeStartDetection(runtime.desiredCapacity, runtime.adoptCapacity);
     }
     return;

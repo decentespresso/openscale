@@ -230,6 +230,9 @@ Boot rollback still records and evaluates attempts immediately, but executes
 the selected rollback only after the existing button-abort gate, settings load,
 and gauge discovery make persistent cleanup possible. Early button-abort sleep
 does not start I2C and retains any stored obligation.
+A selected rollback bypasses fatal settings/energy initialization halts so
+NVS-full failures cannot strand a pending image. Unreadable reseal state stays
+unresolved, never authorizes unsealing, and never selects Legacy hardware.
 
 ## Reboot Routing
 

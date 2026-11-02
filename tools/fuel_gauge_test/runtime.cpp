@@ -715,6 +715,27 @@ static void checkPorCapacityPersistence() {
   }
 }
 
+static void checkUntrustedResealState() {
+  for (bool present : {false, true}) {
+    reset();
+    fuelGaugeRuntime.sealRequired = true;
+    Wire.present = present;
+    Wire.words[0x06] |= 0x20;
+    failStoreValue = true;
+    fuelGaugeStartDetection(700, false);
+    until([] { return fuelGaugeRuntime.probeComplete; });
+    assert(!fuelGaugeLegacyHardware());
+    if (!present) assert(fuelGaugeRuntime.hardware == BatteryHardware::Unknown);
+    fuelGaugeRequestQuiesce();
+    until([] { return fuelGaugeQuiesceStatus() != FuelGaugeQuiesceStatus::Pending; }, 8100);
+    assert(fuelGaugeQuiesceStatus() == FuelGaugeQuiesceStatus::Failed);
+    assert(!persistedReseal && !fuelGaugeRuntime.resealPending && fuelGaugeRuntime.sealRequired);
+    assert(std::find(Wire.commands.begin(), Wire.commands.end(), 0x8000) == Wire.commands.end());
+    assert(Wire.sealed && (Wire.words[0x06] & 0x20));
+    if (present) assert(pinLevels[CHRG_CTRL] == HIGH);
+  }
+}
+
 int main() {
   activeCheck = "probe";
   checkProbeScheduling();
@@ -744,4 +765,6 @@ int main() {
   checkResumePreservesCleanupDeadline();
   activeCheck = "POR capacity persistence";
   checkPorCapacityPersistence();
+  activeCheck = "untrusted reseal state";
+  checkUntrustedResealState();
 }

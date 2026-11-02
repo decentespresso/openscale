@@ -965,9 +965,7 @@ void beforeDeepSleepFlush() {
 #endif
 
 void setup() {
-#if HDS_FEATURE_PULL_OTA
   const char *bootRollbackReason = nullptr;
-#endif
   wowMicroWakeOrContinue();
 #if HDS_ENABLE_ENERGY_MENU
   energyIdle.mainTask = xTaskGetCurrentTaskHandle();
@@ -983,27 +981,32 @@ void setup() {
     bootRollbackReason = hdsOtaRollbackBegin(r);
 #endif
   }
-  if (!storageInit()) {
+  bool bootSettingsOpened = false;
+  if (!storageInit(&bootSettingsOpened)) {
     Serial.println("NVS settings init failed!");
-    while (1) {
-      delay(1000);
+    if (!bootRollbackReason) {
+      while (1) {
+        delay(1000);
+      }
     }
   }
 #if HDS_ENABLE_ENERGY_MENU
-  if (!energyLoadSettings(energyPolicy.settings)) {
-    Serial.println("Energy settings init failed!");
-    while (1) {
-      delay(1000);
+  if (!bootRollbackReason) {
+    if (!energyLoadSettings(energyPolicy.settings)) {
+      Serial.println("Energy settings init failed!");
+      while (1) {
+        delay(1000);
+      }
     }
+    if (energyPolicy.featureEnabled(EnergyFeature::UsbSleepTest)) {
+      Serial.println("[energy] USB Sleep Test ON: USB serial reliability not guaranteed");
+    }
+    if (!initEnergyPowerManagement() || !applyEnergyLightSleepSetting(false)) {
+      Serial.println("[energy] Light Sleep unavailable; continuing awake");
+    }
+    energyPolicy.begin(millis());
+    refreshEnergyMenuRows();
   }
-  if (energyPolicy.featureEnabled(EnergyFeature::UsbSleepTest)) {
-    Serial.println("[energy] USB Sleep Test ON: USB serial reliability not guaranteed");
-  }
-  if (!initEnergyPowerManagement() || !applyEnergyLightSleepSetting(false)) {
-    Serial.println("[energy] Light Sleep unavailable; continuing awake");
-  }
-  energyPolicy.begin(millis());
-  refreshEnergyMenuRows();
 #endif
 #if HDS_ENABLE_GRINDER
   grinderLoadSettings();
@@ -1013,7 +1016,7 @@ void setup() {
   i_buttonBootDelay = b_quickBoot ? 0 : 500;
   i_wow_interval = storageGetInt(KEY_WOW_INTERVAL, 0);
 
-  Serial.println("NVS settings init success");
+  if (!bootRollbackReason) Serial.println("NVS settings init success");
 
   usbCallbacks.setStableOutputThreshold = setStableOutputThreshold;
   usbCallbacks.setTrackingThreshold = setTrackingThreshold;
@@ -1125,7 +1128,12 @@ void setup() {
   Wire.begin(I2C_SDA, I2C_SCL);
 #endif
   b_batteryProtect = storageGetBool(KEY_BAT_PROTECT, false);
-  fuelGaugeSetResealPending(storageGetBool(KEY_BAT_RESEAL, false));
+  const uint8_t bootResealState = bootSettingsOpened
+      ? (settingsPreferences.isKey(KEY_BAT_RESEAL)
+          ? settingsPreferences.getUChar(KEY_BAT_RESEAL, 2) : 0)
+      : 2;
+  fuelGaugeSetResealPending(bootResealState == 1);
+  if (bootResealState > 1) fuelGaugeRuntime.sealRequired = true;
   const int storedBatteryCapacity = storageGetInt(KEY_BAT_CAPACITY, 0);
   const uint16_t batteryCapacity = storedBatteryCapacity >= 300 && storedBatteryCapacity <= 2000
       ? static_cast<uint16_t>(storedBatteryCapacity) : 0;

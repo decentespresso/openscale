@@ -61,6 +61,7 @@ static void hdsOtaRollback(const char *reason) {
   Serial.print("[ota-verify] rollback: ");
   Serial.println(reason);
   quiesceFuelGaugeForShutdown();
+  fuelGaugeSleep();
   hdsOtaClearAttempts();
   stopWifi();
   Serial.flush();

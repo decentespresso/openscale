@@ -52,6 +52,7 @@ def main():
     rollback_start = (ROLLBACK_HEADER.read_text(encoding="utf-8")).index("static void hdsOtaRollback(")
     rollback_body = ROLLBACK_HEADER.read_text(encoding="utf-8")[rollback_start:]
     assert rollback_body.index("quiesceFuelGaugeForShutdown();") < rollback_body.index("esp_ota_mark_app_invalid_rollback_and_reboot")
+    assert rollback_body.index("quiesceFuelGaugeForShutdown();") < rollback_body.index("fuelGaugeSleep();") < rollback_body.index("esp_ota_mark_app_invalid_rollback_and_reboot")
     assert_contains(ROLLBACK_HEADER, 'preferences.begin("ota_verify"')
     assert_contains(ROLLBACK_HEADER, 'preferences.putUInt("attempts", attempts) != sizeof(attempts)')
     assert_contains(ROLLBACK_HEADER, "attempts == 0")
