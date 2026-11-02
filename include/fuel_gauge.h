@@ -1,6 +1,7 @@
 #ifndef FUEL_GAUGE_H
 #define FUEL_GAUGE_H
 #include <Arduino.h>
+#include "fuel_gauge_engine.h"
 
 extern volatile bool b_hasFuelGauge;
 extern volatile bool b_batteryProtect;
@@ -19,6 +20,7 @@ extern volatile bool b_batteryProtect;
 #endif
 
 enum class BatteryHardware { Unknown, Legacy, Gauge };
+enum class FuelGaugeQuiesceStatus { Running, Pending, Complete, Failed };
 
 struct FuelGaugeReading {
   uint16_t voltageMv = 0;
@@ -38,6 +40,8 @@ struct FuelGaugeReading {
 struct FuelGaugeRuntime {
   BatteryHardware hardware = BatteryHardware::Unknown;
   FuelGaugeReading reading;
+  FuelGaugeReading pendingReading;
+  FuelGaugeEngine engine;
   unsigned long lastPoll = 0;
   unsigned long lastRecovery = 0;
   unsigned long lastProbe = 0;
@@ -51,6 +55,14 @@ struct FuelGaugeRuntime {
   bool chargeEnabled = false;
   bool sealRequired = false;
   bool lowSocNotified = false;
+  bool configurationAllowed = false;
+  bool configurationPending = false;
+  bool recoveryPending = false;
+  bool porSeen = false;
+  bool resealPending = false;
+  bool quiesceRequested = false;
+  bool quiesceComplete = false;
+  bool quiesceFailed = false;
 };
 
 extern FuelGaugeRuntime fuelGaugeRuntime;
@@ -61,6 +73,14 @@ bool fuelGaugeBegin(uint16_t capacity, bool adoptCapacity);
 bool fuelGaugeLegacyHardware();
 FuelGaugeReading fuelGaugeReading();
 void fuelGaugeLoop();
+void fuelGaugeSetResealPending(bool pending);
+void fuelGaugeAllowConfiguration();
+void fuelGaugeRequestQuiesce();
+FuelGaugeQuiesceStatus fuelGaugeQuiesceStatus();
+void fuelGaugeResume();
+bool fuelGaugeBusy();
+bool fuelGaugeDrain();
+bool fuelGaugeStoreReseal(bool required);
 void fuelGaugePauseCharging();
 void fuelGaugeProtectSet(bool enable);
 float fuelGaugeVoltageV();

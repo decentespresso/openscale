@@ -38,6 +38,9 @@ bool chargingUiActive() { return chargingUi; }
 bool b_ota = false, b_powerOff = false, pendingOtaDispatching = false;
 bool b_hasFuelGauge = false;
 bool fuelGaugeLegacyHardware() { return !b_hasFuelGauge; }
+bool quiesceFuelGaugeForShutdown() { return true; }
+void fuelGaugeSleep() {}
+void fuelGaugeResume() {}
 bool rail = true, accessory = true, oled = true;
 int wakes = 0, sleeps = 0, supervises = 0, adcRefreshes = 0, outputResets = 0;
 constexpr int PWR_CTRL = 3, ACC_PWR_CTRL = 14, LOW = 0, HIGH = 1;

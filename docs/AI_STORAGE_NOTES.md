@@ -56,6 +56,7 @@ Current setup pages submit byte-exact SSIDs and passwords with `preserve_edges:t
 | `tap_tare` | bool | `false` |
 | `tap_timer` | bool | `false` |
 | `wow_interval` | int | `0` (off); indices 1-3 select 2-4 second sleep intervals. |
+| `bat_reseal` | bool | `false`; persistent gauge resealing obligation, cleared only after verified cleanup. |
 
 `schema` is a `uint16_t`, currently `1`. Do not rename a key or change its stored type in place. Add an explicit migration, preserve old data until the new schema is complete, then increment the schema version.
 

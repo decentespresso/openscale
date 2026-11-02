@@ -26,18 +26,21 @@ Core files:
 
 ## HDS 9.0.5 Battery Safety
 
-`src/fuel_gauge.cpp` owns runtime sampling and charger control on the loop task.
-`src/fuel_gauge_config.cpp` checks I2C acknowledgments, exact read lengths,
-configuration checksums/readback, CFGUPDATE exit, and restoration of the prior
-seal state. It uses one-byte writes and bus-free delays per BQ27427 TRM 3.3.
+`src/fuel_gauge.cpp` owns discovery and charger control on the loop task.
+`src/fuel_gauge_engine.cpp` cooperatively configures, recovers, and samples the
+gauge. Each service call performs at most one I2C transaction, with a 50 ms Wire
+timeout. `src/fuel_gauge_config.cpp` retains one-byte writes, bus-free spacing,
+checksums, and readback. Millisecond waits advance between service calls.
 Normal measurements are read at most once per second; getters and OLED frames
 use the cached snapshot. Blocking information screens service the same path.
 
 On the shared `V8_1` image without an accelerometer, the logo precedes gauge
 detection. Five address probes, spaced at least 200 ms apart, run during the
-existing 900 ms ADS1232 stabilization period. An acknowledged gauge still uses
-synchronous configuration, followed by a full 900 ms ADC stabilization period
-even if configuration fails. Legacy accessory power and ADS1115 initialization
+existing 900 ms ADS1232 stabilization period. An acknowledgment schedules
+configuration without restarting ADC stabilization. Configuration starts only
+after setup's firmware-validity/filesystem-recovery decision, and never on a
+boot awaiting an OTA reboot. Weighing proceeds while battery telemetry and
+charging remain unavailable. Legacy accessory power and ADS1115 initialization
 wait for confirmed legacy identity. Other board profiles retain their startup
 order and orientation checks.
 
@@ -48,8 +51,8 @@ role is assumed, including an aborted button wake.
 
 Invalid/short reads disable charging, mark telemetry unavailable, and do not
 advance the battery sample sequence or freshness timestamp. The last valid
-value remains cached for existing transports. Sampling retries once per second;
-failed configuration retries after ten seconds. No new automatic shutdown policy
+value remains cached for existing transports. Valid sampling runs once per second;
+failed sampling and configuration recover after ten seconds. No new automatic shutdown policy
 is applied to invalid data. Fresh low-voltage samples retain existing shutdown
 confirmation. Configuration and OTA pauses also keep charging disabled.
 
@@ -84,6 +87,17 @@ otherwise select 700 mAh. Gauge POR triggers restoration of capacity, chemistry,
 and CC_GAIN before measurements or charging are trusted. The old Boolean key
 and storage schema remain compatible. A custom capacity already lost to a gauge
 reset before this migration cannot be recovered from the old Boolean alone.
+
+The Boolean `bat_reseal` defaults false. Its verified persistent write must
+succeed before unsealing a sealed gauge. Only verified resealing with normal
+flags clears it. A restart resolves that obligation before ordinary configuration
+or charging; missing ACKs with an obligation remain Unknown, never Legacy.
+Main-task quiesce finishes an active command/block-write group, skips optional
+changes, exits configuration, and restores sealing within eight seconds. OTA
+allows ten seconds for the pause handshake and cannot flash without successful
+cleanup. Sleep/reset perform bounded cleanup before teardown; failed sleep
+cleanup retains the obligation and holds charging disabled on proven Gauge
+hardware. USB standby keeps servicing the gauge with rails powered.
 
 Host tests: `python tools/test_fuel_gauge_runtime.py` and
 `python tools/test_fuel_gauge_battery.py`. Physical sign-off still requires

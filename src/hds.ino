@@ -965,6 +965,9 @@ void beforeDeepSleepFlush() {
 #endif
 
 void setup() {
+#if HDS_FEATURE_PULL_OTA
+  const char *bootRollbackReason = nullptr;
+#endif
   wowMicroWakeOrContinue();
 #if HDS_ENABLE_ENERGY_MENU
   energyIdle.mainTask = xTaskGetCurrentTaskHandle();
@@ -977,7 +980,7 @@ void setup() {
     g_resetReasonCode = (uint8_t)r;
     Serial.printf("[boot] reset_reason=%s (%u)\n", resetReasonStr(r), (unsigned)g_resetReasonCode);
 #if HDS_FEATURE_PULL_OTA
-    hdsOtaRollbackBegin(r);
+    bootRollbackReason = hdsOtaRollbackBegin(r);
 #endif
   }
   if (!storageInit()) {
@@ -1122,6 +1125,7 @@ void setup() {
   Wire.begin(I2C_SDA, I2C_SCL);
 #endif
   b_batteryProtect = storageGetBool(KEY_BAT_PROTECT, false);
+  fuelGaugeSetResealPending(storageGetBool(KEY_BAT_RESEAL, false));
   const int storedBatteryCapacity = storageGetInt(KEY_BAT_CAPACITY, 0);
   const uint16_t batteryCapacity = storedBatteryCapacity >= 300 && storedBatteryCapacity <= 2000
       ? static_cast<uint16_t>(storedBatteryCapacity) : 0;
@@ -1138,6 +1142,9 @@ void setup() {
   stabilizeScaleWithFuelGauge();
 #else
   fuelGaugeBegin(batteryCapacity, storageGetBool(KEY_BAT_CAPACITY_SET, false));
+#endif
+#if HDS_FEATURE_PULL_OTA
+  if (bootRollbackReason) hdsOtaRollback(bootRollbackReason);
 #endif
   if (fuelGaugeLegacyHardware()) {
     pinMode(ACC_PWR_CTRL, OUTPUT);
@@ -1437,7 +1444,9 @@ void setup() {
   if (b_pendingOtaLittleFs) {
     b_ota = true;
     blePauseForOta();
-    if (!pullOtaResumePendingLittleFs()) {
+    const bool gaugeClean = quiesceFuelGaugeForShutdown();
+    setOtaRuntimePaused(gaugeClean && !bleHasLiveClient());
+    if (!gaugeClean || !otaRuntimeIsPaused() || !pullOtaResumePendingLittleFs()) {
       hdsOtaRollback("LittleFS update");
     }
   } else {
@@ -1460,6 +1469,17 @@ void setup() {
     }
   }
 #endif
+  portENTER_CRITICAL(&wsPendingMux);
+  const bool bootOtaRebootPending = (wsPendingMask & WSP_OTA_RESET) != 0;
+  portEXIT_CRITICAL(&wsPendingMux);
+  if (!b_ota && !bootOtaRebootPending) {
+    fuelGaugeResume();
+    fuelGaugeAllowConfiguration();
+#if !HDS_OVERLAP_GAUGE_STARTUP
+    fuelGaugeDrain();
+    t_bootTare = millis();
+#endif
+  }
 #if HDS_ENABLE_ENERGY_MENU
   primeScaleButtonInputs();
   const bool lightSleepRequested =
@@ -1827,6 +1847,7 @@ bool wakeScaleFromSoftSleep(const char *context) {
     digitalWrite(ACC_PWR_CTRL, HIGH);
   }
   delay(5);
+  fuelGaugeResume();
   scale.powerUp();
 #if HDS_ENABLE_ENERGY_MENU
   b_softSleep = false;
@@ -2341,7 +2362,9 @@ void loop() {
 #endif
   processWsPendingCmds();
   if (b_ota) {
-    fuelGaugePauseCharging();
+    if (b_softSleep) wakeScaleFromSoftSleep("OTA wake");
+    fuelGaugeRequestQuiesce();
+    serviceFuelGauge();
     if (!otaRuntimeIsPaused()) {
       if (!otaTransportsStopped) {
         otaBleClientDisconnected =
@@ -2351,13 +2374,11 @@ void loop() {
         websocket.closeAll();
 #endif
       }
-      if (b_softSleep) {
-        wakeScaleFromSoftSleep("OTA wake");
-      }
 #if HDS_ENABLE_ENERGY_MENU
       setEnergyPerformanceCritical(true);
 #endif
-      if (!bleHasLiveClient()) {
+      if (!bleHasLiveClient() &&
+          fuelGaugeQuiesceStatus() == FuelGaugeQuiesceStatus::Complete) {
         setOtaRuntimePaused(true);
       }
     } else {
@@ -2378,6 +2399,7 @@ void loop() {
   }
   if (otaTransportsStopped) {
     setOtaRuntimePaused(false);
+    fuelGaugeResume();
     bleResumeAfterOta(
         otaBleClientDisconnected && !bleHasLiveClient());
     otaBleClientDisconnected = false;

@@ -1353,6 +1353,9 @@ bool pullOtaStreamAsset(
     int command,
     const char *label,
     bool *filesystemWriteStarted = nullptr) {
+  if (!otaRuntimeIsPaused()) {
+    return pullOtaFail("OTA runtime pause failed", label);
+  }
   HTTPClient http;
   WiFiClientSecure client;
   if (!pullOtaBeginHttp(http, client, asset.url)) {
@@ -1457,6 +1460,9 @@ bool pullOtaInstall(
     const PullOtaManifest &rollbackManifest,
     const String &combinationHash = "",
     const String &rollbackCombinationHash = "") {
+  if (!otaRuntimeIsPaused()) {
+    return pullOtaFail("OTA runtime pause failed");
+  }
   if (!rollbackManifest.littlefs.present &&
       manifest.forwardRecoveryVersion != HDS_OTA_FORWARD_RECOVERY_VERSION) {
     return pullOtaFail("Recovery unsupported", "Choose newer build");
@@ -1544,6 +1550,9 @@ bool pullOtaAttemptPendingLittleFs(
 }
 
 bool pullOtaResumePendingLittleFs() {
+  if (!otaRuntimeIsPaused()) {
+    return pullOtaFail("OTA runtime pause failed");
+  }
   PullOtaPendingLittleFs pending;
   if (!pullOtaLoadPendingLittleFs(pending)) {
     return true;

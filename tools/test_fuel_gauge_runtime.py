@@ -13,6 +13,21 @@ ROOT = Path(__file__).resolve().parents[1]
 def checkStartupOrder(compiler):
     header = (ROOT / "include/boot_startup.h").read_text(encoding="utf-8")
     setup = extract_function((ROOT / "src/hds.ino").read_text(encoding="utf-8"), "void setup()")
+    acceptance = setup.index("fuelGaugeAllowConfiguration();")
+    assert setup.index("hdsOtaRollbackMarkValid();") < acceptance
+    assert setup.index("pullOtaResumePendingLittleFs()") < acceptance
+    assert setup.count("fuelGaugeAllowConfiguration();") == 1
+    gate = extract_function(setup, "if (!b_ota && !bootOtaRebootPending)")
+    assert "fuelGaugeAllowConfiguration();" in gate
+    debtLoaded = setup.index("fuelGaugeSetResealPending(")
+    discovery = setup.index("fuelGaugeStartDetection(")
+    deferredRollback = setup.index("if (bootRollbackReason) hdsOtaRollback(bootRollbackReason);")
+    assert debtLoaded < discovery < deferredRollback < setup.index("if (fuelGaugeLegacyHardware())")
+    assert setup.index("bootRollbackReason = hdsOtaRollbackBegin(r);") < setup.index("storageInit()")
+    earlySleep = setup.index("esp32_sleep();")
+    assert earlySleep < setup.index("Wire.begin(I2C_SDA, I2C_SCL);") < debtLoaded
+    for operation in ("Wire.begin(", "fuelGaugeStartDetection(", "fuelGaugeBegin(", "serviceFuelGauge("):
+        assert operation not in setup[:earlySleep]
     profiles = (
         (("V8_1", "ADS1232ADC", "ADS1115ADC", "HW_SPI"), True),
         (("V8_1", "ADS1232ADC", "ADS1115ADC", "HW_SPI", "ACC_BMA400"), False),
@@ -35,7 +50,9 @@ def checkStartupOrder(compiler):
                 "digitalWrite(ACC_PWR_CTRL, HIGH);", "ADS_init();", "power_off(15);",
             )
             assert "fuelGaugeBegin(" not in body and "scale.start(" not in body
+            assert "fuelGaugeDrain(" not in body
         else:
+            assert body.index("fuelGaugeDrain();") < body.rindex("t_bootTare = millis();")
             snippets = (
                 "fuelGaugeBegin(", "digitalWrite(ACC_PWR_CTRL, HIGH);", "SPI.begin(",
                 "delay(50);", "initializeBootDisplay();", "power_off(15);",
@@ -64,6 +81,7 @@ def main():
                 compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror", "-DESP32",
                 "-I", str(ROOT / "tools/fuel_gauge_test"), "-I", str(ROOT / "include"),
                 str(ROOT / "src/fuel_gauge.cpp"), str(ROOT / "src/fuel_gauge_config.cpp"),
+                str(ROOT / "src/fuel_gauge_engine.cpp"),
                 str(ROOT / f"tools/fuel_gauge_test/{name}.cpp"), "-o", str(binary),
             ], check=True)
             subprocess.run([str(binary)], check=True)

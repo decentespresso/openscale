@@ -1,23 +1,25 @@
-#include "fuel_gauge_internal.h"
 #include "fuel_gauge.h"
+#include "fuel_gauge_internal.h"
 #include <Wire.h>
+#include <cstring>
 
-static bool gaugeWriteByte(uint8_t reg, uint8_t value) {
+static bool gaugeWrite(uint8_t reg, uint8_t value) {
   delayMicroseconds(70);
   Wire.beginTransmission(gaugeAddress);
   const bool queued = Wire.write(reg) == 1 && Wire.write(value) == 1;
   return Wire.endTransmission(true) == 0 && queued;
 }
 
-static bool gaugeReadBytes(uint8_t reg, uint8_t *bytes, uint8_t count) {
+static bool gaugePoint(uint8_t reg) {
   delayMicroseconds(70);
   Wire.beginTransmission(gaugeAddress);
   const bool queued = Wire.write(reg) == 1;
-  if (Wire.endTransmission(true) != 0 || !queued) return false;
+  return Wire.endTransmission(true) == 0 && queued;
+}
+
+static bool gaugeReceive(uint8_t *bytes, uint8_t count) {
   delayMicroseconds(70);
-  if (Wire.requestFrom(gaugeAddress, count) != count || Wire.available() != count) {
-    return false;
-  }
+  if (Wire.requestFrom(gaugeAddress, count) != count || Wire.available() != count) return false;
   for (uint8_t index = 0; index < count; ++index) {
     const int value = Wire.read();
     if (value < 0) return false;
@@ -26,145 +28,159 @@ static bool gaugeReadBytes(uint8_t reg, uint8_t *bytes, uint8_t count) {
   return true;
 }
 
-bool gaugeReadWord(uint8_t reg, uint16_t &value) {
-  uint8_t bytes[2];
-  if (!gaugeReadBytes(reg, bytes, sizeof(bytes))) return false;
-  value = bytes[0] | static_cast<uint16_t>(bytes[1]) << 8;
-  return true;
-}
-
-static bool gaugeCommand(uint16_t command) {
-  delay(500);
-  return gaugeWriteByte(0x00, command & 0xff) &&
-         gaugeWriteByte(0x01, command >> 8);
-}
-
-bool gaugeReadControl(uint16_t command, uint16_t &value) {
-  if (!gaugeCommand(command)) return false;
-  delay(2);
-  return gaugeReadWord(0x00, value);
-}
-
-static bool gaugeWaitConfig(bool enabled) {
-  const unsigned long startedAt = millis();
-  while (millis() - startedAt < 3000) {
-    delay(500);
-    uint16_t flags;
-    if (!gaugeReadWord(0x06, flags)) return false;
-    if (((flags & gaugeConfigFlag) != 0) == enabled) return true;
-  }
-  return false;
-}
-
 static uint8_t gaugeChecksum(const uint8_t *bytes) {
   uint8_t sum = 0;
   for (uint8_t index = 0; index < 32; ++index) sum += bytes[index];
   return 255 - sum;
 }
 
-static bool gaugeSelectBlock(uint8_t subclass) {
-  if (!gaugeWriteByte(0x61, 0) || !gaugeWriteByte(0x3e, subclass) ||
-      !gaugeWriteByte(0x3f, 0)) return false;
-  delay(10);
-  return true;
+static int gaugeIoFinish(bool success) {
+  fuelGaugeRuntime.engine.io.kind = GaugeIoKind::None;
+  return success ? 1 : -1;
 }
 
-static bool gaugeReadBlock(uint8_t subclass, uint8_t *bytes) {
-  uint8_t checksum;
-  return gaugeSelectBlock(subclass) && gaugeReadBytes(0x40, bytes, 32) &&
-         gaugeReadBytes(0x60, &checksum, 1) && checksum == gaugeChecksum(bytes);
+static int gaugeWordStep(GaugeIo &io) {
+  if (io.phase++ == 0) return gaugePoint(io.reg) ? 0 : gaugeIoFinish(false);
+  uint8_t bytes[2];
+  if (!gaugeReceive(bytes, 2)) return gaugeIoFinish(false);
+  io.word = bytes[0] | static_cast<uint16_t>(bytes[1]) << 8;
+  return gaugeIoFinish(true);
 }
 
-static bool gaugeWriteBlock(uint8_t subclass, const uint8_t *bytes) {
-  if (!gaugeSelectBlock(subclass)) return false;
-  for (uint8_t index = 0; index < 32; ++index) {
-    if (!gaugeWriteByte(0x40 + index, bytes[index])) return false;
+static int gaugeCommandStep(GaugeIo &io) {
+  if (io.phase == 0) {
+    if (millis() - io.startedAt < 500) return 0;
+    io.phase = 1;
   }
-  if (!gaugeWriteByte(0x60, gaugeChecksum(bytes))) return false;
-  delay(20);
-  uint8_t verified[32];
-  if (!gaugeReadBlock(subclass, verified)) return false;
-  for (uint8_t index = 0; index < 32; ++index) {
-    if (verified[index] != bytes[index]) return false;
+  if (io.phase == 1) {
+    if (!gaugeWrite(0, io.command & 0xff)) return gaugeIoFinish(false);
+    io.phase = 2;
+    return 0;
   }
-  return true;
+  if (io.phase == 2) {
+    if (!gaugeWrite(1, io.command >> 8)) return gaugeIoFinish(false);
+    io.startedAt = millis();
+    io.phase = 3;
+    return io.kind == GaugeIoKind::Command ? gaugeIoFinish(true) : 0;
+  }
+  if (io.phase == 3) {
+    if (millis() - io.startedAt < 2) return 0;
+    io.phase = 4;
+    return gaugePoint(0) ? 0 : gaugeIoFinish(false);
+  }
+  uint8_t bytes[2];
+  if (!gaugeReceive(bytes, 2)) return gaugeIoFinish(false);
+  io.word = bytes[0] | static_cast<uint16_t>(bytes[1]) << 8;
+  return gaugeIoFinish(true);
 }
 
-static bool gaugeApplyConfiguration(uint16_t &capacity, bool adoptCapacity,
-                                    bool &configAttempted) {
-  uint16_t flags;
-  uint16_t chemistry;
-  uint8_t state[32];
-  uint8_t calibration[32];
-  if (!gaugeReadWord(0x06, flags)) return false;
-  configAttempted = (flags & gaugeConfigFlag) != 0;
-  if (!gaugeReadControl(0x0008, chemistry) ||
-      !gaugeReadBlock(82, state) || !gaugeReadBlock(105, calibration)) return false;
-  const uint16_t actualCapacity = static_cast<uint16_t>(state[6]) << 8 | state[7];
-  if (capacity == 0) {
-    capacity = adoptCapacity && !(flags & gaugePorFlag) &&
-               actualCapacity >= 300 && actualCapacity <= 2000 ? actualCapacity : 700;
+static int gaugeReadBlockStep(GaugeIo &io, uint8_t *bytes) {
+  switch (io.phase) {
+    case 0:
+      if (!gaugeWrite(0x61, 0)) return gaugeIoFinish(false);
+      ++io.phase;
+      return 0;
+    case 1:
+      if (!gaugeWrite(0x3e, io.subclass)) return gaugeIoFinish(false);
+      ++io.phase;
+      return 0;
+    case 2:
+      if (!gaugeWrite(0x3f, 0)) return gaugeIoFinish(false);
+      io.startedAt = millis();
+      ++io.phase;
+      return 0;
+    case 3:
+      if (millis() - io.startedAt < 10) return 0;
+      if (!gaugePoint(0x40)) return gaugeIoFinish(false);
+      ++io.phase;
+      return 0;
+    case 4:
+      if (!gaugeReceive(bytes, 32)) return gaugeIoFinish(false);
+      ++io.phase;
+      return 0;
+    case 5:
+      if (!gaugePoint(0x60)) return gaugeIoFinish(false);
+      ++io.phase;
+      return 0;
+    default:
+      uint8_t checksum;
+      return gaugeIoFinish(gaugeReceive(&checksum, 1) && checksum == gaugeChecksum(bytes));
   }
-  const bool changeChemistry = chemistry != 0x1202;
-  const bool changeCapacity = actualCapacity != capacity;
-  const bool changeGain = (calibration[5] & 0x80) != 0;
-  if (!changeChemistry && !changeCapacity && !changeGain &&
-      !(flags & (gaugePorFlag | gaugeConfigFlag))) return true;
+}
 
-  configAttempted = true;
-  if (!gaugeCommand(0x0013) || !gaugeWaitConfig(true)) return false;
-  delay(1000);
-  if (changeChemistry && !gaugeCommand(0x0031)) return false;
-  if (changeCapacity) {
-    if (!gaugeReadBlock(82, state)) return false;
-    state[6] = capacity >> 8;
-    state[7] = capacity & 0xff;
-    if (!gaugeWriteBlock(82, state)) return false;
+static int gaugeWriteBlockStep(GaugeIo &io) {
+  switch (io.phase) {
+    case 0:
+      if (!gaugeWrite(0x61, 0)) return gaugeIoFinish(false);
+      ++io.phase;
+      return 0;
+    case 1:
+      if (!gaugeWrite(0x3e, io.subclass)) return gaugeIoFinish(false);
+      ++io.phase;
+      return 0;
+    case 2:
+      if (!gaugeWrite(0x3f, 0)) return gaugeIoFinish(false);
+      io.startedAt = millis();
+      ++io.phase;
+      return 0;
+    case 3:
+      if (millis() - io.startedAt < 10) return 0;
+      io.phase = 4;
+      return 0;
+    case 4:
+      if (!gaugeWrite(0x40 + io.index, io.bytes[io.index])) return gaugeIoFinish(false);
+      if (++io.index == 32) ++io.phase;
+      return 0;
+    case 5:
+      if (!gaugeWrite(0x60, gaugeChecksum(io.bytes))) return gaugeIoFinish(false);
+      io.startedAt = millis();
+      ++io.phase;
+      return 0;
+    case 6:
+      if (millis() - io.startedAt < 20) return 0;
+      io.phase = 7;
+      return 0;
+    default:
+      io.phase -= 7;
+      const int result = gaugeReadBlockStep(io, io.verified);
+      io.phase += 7;
+      if (result == 0) return 0;
+      return gaugeIoFinish(result > 0 && std::memcmp(io.bytes, io.verified, 32) == 0);
   }
-  if (changeGain) {
-    if (!gaugeReadBlock(105, calibration)) return false;
-    calibration[5] &= 0x7f;
-    if (!gaugeWriteBlock(105, calibration)) return false;
+}
+
+int gaugeIoRun(GaugeIoKind kind, uint16_t argument, const uint8_t *bytes) {
+  GaugeIo &io = fuelGaugeRuntime.engine.io;
+  if (io.kind == GaugeIoKind::None) {
+    io = GaugeIo{};
+    io.kind = kind;
+    io.command = argument;
+    io.reg = static_cast<uint8_t>(argument);
+    io.subclass = static_cast<uint8_t>(argument);
+    io.startedAt = millis();
+    if (bytes) std::memcpy(io.bytes, bytes, 32);
   }
-  return true;
+  switch (io.kind) {
+    case GaugeIoKind::Word: return gaugeWordStep(io);
+    case GaugeIoKind::Command:
+    case GaugeIoKind::Control: return gaugeCommandStep(io);
+    case GaugeIoKind::ReadBlock: return gaugeReadBlockStep(io, io.bytes);
+    case GaugeIoKind::WriteBlock: return gaugeWriteBlockStep(io);
+    default: return 0;
+  }
 }
 
 bool gaugeConfigure(uint16_t &capacity, bool adoptCapacity) {
-  uint16_t status;
-  if (!gaugeReadControl(0x0000, status)) return false;
-  const bool wasSealed = (status & 0x2000) != 0 || fuelGaugeRuntime.sealRequired;
-  fuelGaugeRuntime.sealRequired = wasSealed;
-  bool configured = true;
-  bool configAttempted = false;
-  if (wasSealed) {
-    configured = gaugeCommand(0x8000) && gaugeCommand(0x8000) &&
-                 gaugeReadControl(0x0000, status) && !(status & 0x2000);
+  if (fuelGaugeBusy() || !fuelGaugeRuntime.configurationAllowed) return false;
+  if (!b_hasFuelGauge) {
+    const bool result = fuelGaugeBegin(capacity, adoptCapacity);
+    capacity = fuelGaugeRuntime.desiredCapacity;
+    return result;
   }
-  if (configured) {
-    configured = gaugeApplyConfiguration(capacity, adoptCapacity, configAttempted);
-  }
-  bool exited = true;
-  if (configAttempted) {
-    exited = gaugeCommand(0x0042) && gaugeWaitConfig(false);
-    delay(2000);
-  }
-  if (configured && exited) {
-    uint16_t chemistry;
-    uint16_t flags;
-    uint8_t state[32];
-    uint8_t calibration[32];
-    configured = gaugeReadControl(0x0008, chemistry) && chemistry == 0x1202 &&
-                 gaugeReadBlock(82, state) &&
-                 (static_cast<uint16_t>(state[6]) << 8 | state[7]) == capacity &&
-                 gaugeReadBlock(105, calibration) && !(calibration[5] & 0x80) &&
-                 gaugeReadWord(0x06, flags) &&
-                 !(flags & (gaugeConfigFlag | gaugePorFlag));
-  }
-  bool restoredSeal = true;
-  if (wasSealed) {
-    restoredSeal = gaugeCommand(0x0020) && gaugeReadControl(0x0000, status) &&
-                   (status & 0x2000);
-    if (restoredSeal) fuelGaugeRuntime.sealRequired = false;
-  }
-  return configured && exited && restoredSeal;
+  fuelGaugeRuntime.desiredCapacity = capacity;
+  fuelGaugeRuntime.adoptCapacity = adoptCapacity;
+  gaugeStartOperation(false);
+  const bool result = fuelGaugeDrain();
+  capacity = fuelGaugeRuntime.desiredCapacity;
+  return result;
 }

@@ -59,6 +59,7 @@ Probe probe;
 bool paired = true, signatureValid = true, confirmInstall = true;
 bool rollbackAvailable = true, signedCatalogValid = true, pending = false;
 bool storageReady = true, streamReady = true, credentialsReady = true, b_ota = false;
+bool otaRuntimeIsPaused() { return true; }
 PullOtaReleaseList offeredCatalog;
 struct {
   bool prepareLegacyDowngrade() { ++probe.legacyPreparations; return credentialsReady; }

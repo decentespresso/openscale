@@ -218,6 +218,19 @@ The single LittleFS partition has no independent rollback slot. Keep signed asse
 
 `setup()` calls `hdsOtaRollbackBegin()` after reset-reason capture. Without pending filesystem work it calls `hdsOtaRollbackMarkValid()` after setup validation. With pending work, validity is deferred until target recovery succeeds; recovery metadata is cleared only after application validity marking succeeds.
 
+## Gauge Cleanup
+
+The main loop must finish fuel-gauge quiesce before acknowledging an OTA pause.
+Cleanup is bounded to eight seconds; the OTA handshake allows ten seconds and
+rejects a failed pause without starting flash writes. Synchronous startup
+LittleFS recovery uses the same owner cleanup before consuming recovery attempts.
+Gauge configuration remains deferred until the firmware-acceptance decision;
+boots awaiting an OTA reboot do not start configuration.
+Boot rollback still records and evaluates attempts immediately, but executes
+the selected rollback only after the existing button-abort gate, settings load,
+and gauge discovery make persistent cleanup possible. Early button-abort sleep
+does not start I2C and retains any stored obligation.
+
 ## Reboot Routing
 
 ElegantOTA auto-reboot stays disabled with `ElegantOTA.setAutoReboot(false)`. Successful ElegantOTA and pull OTA paths call `remoteQueueOtaResetAt()` so their reset remains distinguishable from ordinary remote resets during an active update. Other scheduled main-loop resets use `remoteQueueResetAt()`; neither path should call `ESP.restart()` directly.

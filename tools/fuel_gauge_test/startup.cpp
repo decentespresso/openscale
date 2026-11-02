@@ -6,6 +6,7 @@
 volatile bool b_hasFuelGauge = false;
 volatile bool b_batteryProtect = true;
 FuelGaugeRuntime fuelGaugeRuntime;
+bool fuelGaugeStoreReseal(bool) { return true; }
 bool b_u8g2Sleep = true;
 bool b_screenFlipped = false;
 bool storedScreenFlip = false;
@@ -43,6 +44,7 @@ static_assert(HDS_OVERLAP_GAUGE_STARTUP == 1);
 
 static void reset() {
   fakeMicros = 0;
+  millisecondDelayCalls = 0;
   Wire = FakeWire{};
   fuelGaugeRuntime = FuelGaugeRuntime{};
   b_hasFuelGauge = false;
@@ -93,9 +95,11 @@ static void checkAcknowledgedGauge(size_t attempt, bool configFails) {
   stabilizeScaleWithFuelGauge();
   assert(Wire.probeTimes.size() == attempt);
   assert(b_hasFuelGauge && !fuelGaugeLegacyHardware());
-  assert(fuelGaugeRuntime.ready == !configFails);
-  assert(millis() - fuelGaugeRuntime.lastRecovery == 900);
-  assert(scale.updateTimes.back() - fuelGaugeRuntime.lastRecovery == 899);
+  assert(!fuelGaugeRuntime.ready);
+  assert(millis() == 900 && scale.updateTimes.back() == 899);
+  assert(Wire.operations == static_cast<int>(attempt));
+  assert(Wire.commands.empty());
+  assert(scale.updateTimes.size() >= 899);
   assert(pinLevels[6] == HIGH && pinModes[14] == INPUT);
   assert(std::find(pinWrites.begin(), pinWrites.end(), 14) == pinWrites.end());
 }

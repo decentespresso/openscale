@@ -105,13 +105,24 @@ void gpio_hold_en(int) { ++effects; }
 void gpio_deep_sleep_hold_en() { ++effects; }
 void pinMode(int, int) { ++effects; }
 void digitalWrite(int, int) { ++effects; }
-void delay(int) { ++effects; }
+void delay(int amount) { ++effects; clockMs += amount; }
 void bleShutdown() { ++effects; }
 void sendBlePowerOff(int) { ++effects; }
 void sendWebsocketPowerOff(int) { ++effects; }
 void wowCaptureBaselineForSleep() { ++effects; }
 void wowArmSleepTimer() { ++effects; }
 void fuelGaugeSleep() { ++effects; }
+enum class FuelGaugeQuiesceStatus { Running, Pending, Complete, Failed };
+bool gaugeStarted = false, gaugeCleanupFails = false;
+unsigned long gaugeCleanupDuration = 0, gaugeCleanupStartedAt = 0;
+int gaugeServices = 0;
+void fuelGaugeRequestQuiesce() { gaugeCleanupStartedAt = millis(); }
+FuelGaugeQuiesceStatus fuelGaugeQuiesceStatus() {
+  if (!gaugeStarted) return FuelGaugeQuiesceStatus::Complete;
+  if (millis() - gaugeCleanupStartedAt < gaugeCleanupDuration) return FuelGaugeQuiesceStatus::Pending;
+  return gaugeCleanupFails ? FuelGaugeQuiesceStatus::Failed : FuelGaugeQuiesceStatus::Complete;
+}
+void serviceFuelGauge() { ++gaugeServices; }
 bool fuelGaugeLegacyHardware() { return false; }
 void refreshOLED(char*, int) { ++effects; }
 std::string String(int value) { return std::to_string(value); }
@@ -219,6 +230,23 @@ void testStandbyAndMenu() {
 }
 
 int main() {
+  for (const bool fail : {false, true}) {
+    levels.fill(HIGH);
+    gaugeStarted = true;
+    gaugeCleanupFails = fail;
+    gaugeCleanupDuration = fail ? 12000 : 3500;
+    gaugeServices = 0;
+    const unsigned long startedAt = millis();
+    bool slept = false;
+    try { shut_down_low_battery(3.0f); } catch (const Sleep&) { slept = true; }
+    assert(slept && gaugeServices > 0);
+    assert(millis() - startedAt == 1000 + (fail ? 8000 : 3500));
+  }
+  gaugeStarted = false;
+  gaugeServices = 0;
+  const unsigned long beforeAbort = millis();
+  try { shut_down_now_accidentTouch(); } catch (const Sleep&) {}
+  assert(gaugeServices == 0 && millis() == beforeAbort);
   const auto lowBatteryShutdown = []() { shut_down_low_battery(3.0f); };
   for (const auto shutdown : {esp32_sleep, shut_down_now, shut_down_now_nobeep,
                               shut_down_now_accidentTouch, +lowBatteryShutdown}) {
@@ -280,6 +308,7 @@ int main() {
 def main():
     power = (ROOT / "include/power.h").read_text(encoding="utf-8")
     signatures = [
+        "bool quiesceFuelGaugeForShutdown()",
         "bool usbPowerKeepsAwake()", "bool cancelUsbPoweredShutdown()",
         "void configureWakePinForDeepSleep(gpio_num_t pin)",
         "void configureWakePinsForDeepSleep()", "void releaseWakePinsFromRtcMode()",

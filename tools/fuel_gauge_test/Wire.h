@@ -4,20 +4,31 @@
 #include <map>
 
 struct FakeWire {
+  struct Transaction {
+    bool read;
+    uint8_t reg;
+    uint8_t value;
+    unsigned long at;
+  };
   std::array<std::array<uint8_t, 32>, 256> blocks{};
   std::map<uint8_t, uint16_t> words;
   std::map<uint8_t, std::vector<unsigned long>> reads;
   std::vector<unsigned long> probeTimes;
   std::vector<uint8_t> probeResults;
   std::vector<uint8_t> tx, rx;
+  std::vector<Transaction> transactions;
+  std::vector<uint16_t> commands;
   uint8_t reg = 0, subclass = 0, commandLow = 0;
   uint16_t command = 0, chemistry = 0x1202, deviceType = 0x0427;
   bool present = true, sealed = true, configTimeout = false, checksumBad = false;
   int operations = 0, failAt = -1, shortReg = -1, negativeReg = -1, nackReg = -1;
   int unsealKeys = 0, configEntries = 0, resets = 0, seals = 0;
+  int blockWriteCount = 0, checksumWrites = 0;
   uint8_t errorCode = 2;
   uint16_t failCommand = 0xffff;
   unsigned long probeDelayMs = 0;
+  uint16_t timeoutMs = 0;
+  bool sealIgnored = false, exitIgnored = false;
 
   FakeWire() {
     words = {{0x04, 3800}, {0x06, 8}, {0x1c, 50}, {0x1e, 2981},
@@ -27,11 +38,13 @@ struct FakeWire {
   void setCapacity(uint16_t capacity) { blocks[82][6] = capacity >> 8; blocks[82][7] = capacity & 0xff; }
   uint16_t capacity() const { return static_cast<uint16_t>(blocks[82][6]) << 8 | blocks[82][7]; }
   void begin(int, int) {}
+  void setTimeOut(uint16_t timeout) { timeoutMs = timeout; }
   void end() {}
   void beginTransmission(uint8_t address) { assert(address == 0x55); tx.clear(); }
   size_t write(uint8_t byte) { tx.push_back(byte); return 1; }
   bool fails() { return ++operations == failAt; }
   void control(uint16_t value) {
+    commands.push_back(value);
     command = value;
     if (value == 0x8000) {
       if (++unsealKeys == 2) { sealed = false; unsealKeys = 0; }
@@ -43,14 +56,15 @@ struct FakeWire {
       if (!configTimeout) words[0x06] |= 0x10;
     }
     if (value == 0x0031 && !sealed && (words[0x06] & 0x10)) chemistry = 0x1202;
-    if (value == 0x0042 && !sealed) { ++resets; words[0x06] &= ~0x30; }
-    if (value == 0x0020) { ++seals; sealed = true; }
+    if (value == 0x0042 && !sealed) { ++resets; if (!exitIgnored) words[0x06] &= ~0x30; }
+    if (value == 0x0020) { ++seals; if (!sealIgnored) sealed = true; }
   }
   uint8_t endTransmission(bool = true) {
+    transactions.push_back({false, tx.empty() ? uint8_t{0xff} : tx[0], tx.size() < 2 ? uint8_t{0} : tx[1], millis()});
     if (tx.empty()) {
       const size_t probe = probeTimes.size();
       probeTimes.push_back(millis());
-      delay(probeDelayMs);
+      if (probeDelayMs) delay(probeDelayMs);
       if (probe < probeResults.size()) {
         ++operations;
         return probeResults[probe];
@@ -71,13 +85,23 @@ struct FakeWire {
       control(requested);
     }
     if (reg == 0x3e) subclass = value;
+    if (reg == 0x61) blockWriteCount = 0;
     if (reg >= 0x40 && reg <= 0x5f) {
       if (sealed || !(words[0x06] & 0x10)) return 2;
       blocks[subclass][reg - 0x40] = value;
+      ++blockWriteCount;
+    }
+    if (reg == 0x60) {
+      assert(blockWriteCount == 32);
+      uint8_t sum = 0;
+      for (uint8_t byte : blocks[subclass]) sum += byte;
+      assert(value == static_cast<uint8_t>(255 - sum));
+      ++checksumWrites;
     }
     return 0;
   }
   uint8_t requestFrom(uint8_t address, uint8_t count) {
+    transactions.push_back({true, reg, count, millis()});
     assert(address == 0x55);
     rx.clear();
     reads[reg].push_back(millis());

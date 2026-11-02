@@ -34,13 +34,12 @@ void renderBootLogo() {
 
 #if HDS_OVERLAP_GAUGE_STARTUP
 void stabilizeScaleWithFuelGauge() {
-  unsigned long stabilizationStartedAt = millis();
+  const unsigned long stabilizationStartedAt = millis();
   bool detectionComplete = false;
   while (!detectionComplete || millis() - stabilizationStartedAt < 900) {
     scale.update();
     if (!detectionComplete && fuelGaugePollDetection()) {
       detectionComplete = true;
-      if (b_hasFuelGauge) stabilizationStartedAt = millis();
     }
     yield();
   }

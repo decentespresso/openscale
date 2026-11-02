@@ -6,7 +6,7 @@
 #include "driver/gpio.h"
 #endif
 
-static void gaugeSetCharging(bool enabled) {
+void gaugeSetCharging(bool enabled) {
   if (!b_hasFuelGauge || fuelGaugeRuntime.chargeEnabled == enabled) return;
   digitalWrite(CHRG_CTRL, enabled ? LOW : HIGH);
   fuelGaugeRuntime.chargeEnabled = enabled;
@@ -27,23 +27,6 @@ void fuelGaugePauseCharging() {
   fuelGaugeRuntime.reading.valid = false;
 }
 
-static bool gaugeRecover() {
-  gaugeSetCharging(false);
-  fuelGaugeRuntime.reading.valid = false;
-  uint16_t deviceType;
-  const uint16_t previousCapacity = fuelGaugeRuntime.desiredCapacity;
-  fuelGaugeRuntime.ready = gaugeReadControl(0x0001, deviceType) &&
-                          deviceType == 0x0427 &&
-                          gaugeConfigure(fuelGaugeRuntime.desiredCapacity,
-                                         fuelGaugeRuntime.adoptCapacity);
-  if (previousCapacity == 0 && fuelGaugeRuntime.desiredCapacity != 0) {
-    fuelGaugeRuntime.capacityPersistPending = true;
-  }
-  fuelGaugeRuntime.lastRecovery = millis();
-  fuelGaugeRuntime.lastPoll = millis();
-  return fuelGaugeRuntime.ready;
-}
-
 static void gaugeSelectHardware() {
   fuelGaugeRuntime.hardware = BatteryHardware::Gauge;
   b_hasFuelGauge = true;
@@ -56,117 +39,176 @@ static void gaugeSelectHardware() {
   pinMode(GPOUT, INPUT);
 }
 
+void fuelGaugeSetResealPending(bool pending) {
+  fuelGaugeRuntime.resealPending = pending;
+  fuelGaugeRuntime.sealRequired = pending;
+  if (pending && !b_hasFuelGauge) fuelGaugeRuntime.hardware = BatteryHardware::Unknown;
+}
+
 void fuelGaugeStartDetection(uint16_t capacity, bool adoptCapacity) {
-  fuelGaugeRuntime.desiredCapacity = capacity;
-  fuelGaugeRuntime.adoptCapacity = adoptCapacity;
-  fuelGaugeRuntime.probeAttempts = 0;
-  fuelGaugeRuntime.probeComplete = false;
-  fuelGaugeRuntime.probeAbsent = true;
-  if (!b_hasFuelGauge) fuelGaugeRuntime.hardware = BatteryHardware::Unknown;
+  FuelGaugeRuntime &runtime = fuelGaugeRuntime;
+  runtime.desiredCapacity = capacity;
+  runtime.adoptCapacity = adoptCapacity;
+  runtime.probeAttempts = 0;
+  runtime.probeComplete = false;
+  runtime.probeAbsent = true;
+  runtime.quiesceRequested = false;
+  runtime.quiesceComplete = false;
+  runtime.quiesceFailed = false;
+  runtime.configurationPending = false;
+  if (!b_hasFuelGauge) runtime.hardware = BatteryHardware::Unknown;
   Wire.begin(FUEL_GAUGE_I2C_SDA, FUEL_GAUGE_I2C_SCL);
+  Wire.setTimeOut(50);
 }
 
 bool fuelGaugePollDetection() {
-  if (fuelGaugeRuntime.probeComplete) return true;
-  if (fuelGaugeRuntime.probeAttempts > 0 &&
-      millis() - fuelGaugeRuntime.lastProbe < 200) return false;
+  FuelGaugeRuntime &runtime = fuelGaugeRuntime;
+  if (runtime.probeComplete || runtime.quiesceRequested) return true;
+  if (runtime.probeAttempts > 0 && millis() - runtime.lastProbe < 200) return false;
   delayMicroseconds(70);
   Wire.beginTransmission(gaugeAddress);
   const uint8_t result = Wire.endTransmission(true);
-  fuelGaugeRuntime.lastProbe = millis();
-  fuelGaugeRuntime.probeAbsent = fuelGaugeRuntime.probeAbsent && result == 2;
-  ++fuelGaugeRuntime.probeAttempts;
+  runtime.lastProbe = millis();
+  runtime.probeAbsent = runtime.probeAbsent && result == 2;
+  ++runtime.probeAttempts;
   if (result == 0) {
     gaugeSelectHardware();
-    const bool ready = gaugeRecover();
-    Serial.println(ready ? "fuelGauge: ready" : "fuelGauge: unavailable, charging disabled");
-    fuelGaugeRuntime.probeComplete = true;
+    runtime.configurationPending = true;
+    runtime.ready = false;
+    runtime.probeComplete = true;
     return true;
   }
-  if (fuelGaugeRuntime.probeAttempts < 5) return false;
+  if (runtime.probeAttempts < 5) return false;
   if (b_hasFuelGauge) {
-    fuelGaugeRuntime.ready = false;
-    fuelGaugeRuntime.reading.valid = false;
-    fuelGaugeRuntime.lastRecovery = millis();
+    fuelGaugePauseCharging();
+    runtime.ready = false;
   } else {
-    fuelGaugeRuntime.hardware = fuelGaugeRuntime.probeAbsent
+    runtime.hardware = runtime.probeAbsent && !runtime.resealPending
         ? BatteryHardware::Legacy : BatteryHardware::Unknown;
   }
-  fuelGaugeRuntime.probeComplete = true;
+  runtime.lastRecovery = millis();
+  runtime.probeComplete = true;
   return true;
 }
 
 bool fuelGaugeBegin(uint16_t capacity, bool adoptCapacity) {
   fuelGaugeStartDetection(capacity, adoptCapacity);
   while (!fuelGaugePollDetection()) delay(1);
-  return fuelGaugeRuntime.ready;
+  if (fuelGaugeRuntime.configurationAllowed && b_hasFuelGauge) return fuelGaugeDrain();
+  return false;
 }
 
-static void gaugeApplyProtection() {
+void gaugeApplyProtection() {
   const FuelGaugeReading reading = fuelGaugeReading();
-  if (!fuelGaugeRuntime.ready || !reading.valid) {
+  if (!fuelGaugeRuntime.ready || !reading.valid || fuelGaugeRuntime.resealPending ||
+      fuelGaugeRuntime.quiesceRequested || fuelGaugeRuntime.configurationPending) {
     gaugeSetCharging(false);
     return;
   }
-  if (!b_batteryProtect || reading.soc <= 75) {
-    gaugeSetCharging(true);
-  } else if (reading.soc >= 80) {
-    gaugeSetCharging(false);
+  if (!b_batteryProtect || reading.soc <= 75) gaugeSetCharging(true);
+  else if (reading.soc >= 80) gaugeSetCharging(false);
+}
+
+bool fuelGaugeBusy() {
+  return fuelGaugeRuntime.engine.stage != GaugeStage::Idle;
+}
+
+void fuelGaugeAllowConfiguration() {
+  fuelGaugeRuntime.configurationAllowed = true;
+}
+
+void fuelGaugeRequestQuiesce() {
+  FuelGaugeRuntime &runtime = fuelGaugeRuntime;
+  if (runtime.quiesceRequested) return;
+  runtime.quiesceRequested = true;
+  runtime.quiesceComplete = false;
+  runtime.quiesceFailed = false;
+  fuelGaugePauseCharging();
+  if (runtime.engine.stage == GaugeStage::Sample) {
+    runtime.engine.io.kind = GaugeIoKind::None;
+    runtime.engine.stage = GaugeStage::Idle;
   }
+  if (!fuelGaugeBusy() && !runtime.resealPending && !runtime.sealRequired) {
+    runtime.quiesceComplete = true;
+    return;
+  }
+  if (!fuelGaugeBusy() && b_hasFuelGauge) gaugeStartOperation(true);
+  runtime.engine.cleanupOnly = true;
+  runtime.engine.cleanupStarted = true;
+  runtime.engine.cleanupStartedAt = millis();
+}
+
+FuelGaugeQuiesceStatus fuelGaugeQuiesceStatus() {
+  if (!fuelGaugeRuntime.quiesceRequested) return FuelGaugeQuiesceStatus::Running;
+  if (fuelGaugeRuntime.quiesceFailed) return FuelGaugeQuiesceStatus::Failed;
+  return fuelGaugeRuntime.quiesceComplete ? FuelGaugeQuiesceStatus::Complete : FuelGaugeQuiesceStatus::Pending;
+}
+
+void fuelGaugeResume() {
+  FuelGaugeRuntime &runtime = fuelGaugeRuntime;
+  runtime.quiesceRequested = false;
+  runtime.quiesceComplete = false;
+  runtime.quiesceFailed = false;
+  fuelGaugePauseCharging();
+#ifdef ESP32
+  if (b_hasFuelGauge) gpio_hold_dis(static_cast<gpio_num_t>(CHRG_CTRL));
+#endif
+  runtime.lastPoll = millis() - 1000;
+  if (b_hasFuelGauge && !runtime.ready) runtime.configurationPending = true;
 }
 
 void fuelGaugeLoop() {
-  if (!b_hasFuelGauge) return;
-  const unsigned long now = millis();
-  if (now - fuelGaugeRuntime.lastPoll < 1000) {
-    gaugeApplyProtection();
+  FuelGaugeRuntime &runtime = fuelGaugeRuntime;
+  gaugeApplyProtection();
+  if (runtime.quiesceRequested && (runtime.quiesceComplete || runtime.quiesceFailed)) return;
+  if (!runtime.probeComplete && !runtime.quiesceRequested) {
+    fuelGaugePollDetection();
     return;
   }
-  fuelGaugeRuntime.lastPoll = now;
-  if (!fuelGaugeRuntime.ready) {
-    gaugeSetCharging(false);
-    if (now - fuelGaugeRuntime.lastRecovery >= 10000) {
-      gaugeRecover();
+  if (runtime.quiesceRequested && !b_hasFuelGauge) {
+    if (millis() - runtime.engine.cleanupStartedAt >= 8000) runtime.quiesceFailed = true;
+    return;
+  }
+  if (!b_hasFuelGauge) {
+    if (runtime.resealPending && millis() - runtime.lastRecovery >= 10000) {
+      fuelGaugeStartDetection(runtime.desiredCapacity, runtime.adoptCapacity);
     }
     return;
   }
-  FuelGaugeReading reading;
-  if (!gaugeReadWord(0x06, reading.flags)) {
-    fuelGaugePauseCharging();
+  if (runtime.recoveryPending && millis() - runtime.lastRecovery < 10000) return;
+  if (fuelGaugeBusy()) {
+    gaugeServiceOperation();
     return;
   }
-  if (reading.flags & (gaugePorFlag | gaugeConfigFlag)) {
-    gaugeRecover();
+  if (runtime.resealPending || runtime.sealRequired) {
+    if (runtime.configurationPending || runtime.quiesceRequested || millis() - runtime.lastRecovery >= 10000) gaugeStartOperation(true);
     return;
   }
-  uint16_t current;
-  uint16_t power;
-  const bool valid = gaugeReadWord(0x04, reading.voltageMv) &&
-                     gaugeReadWord(0x1c, reading.soc) &&
-                     gaugeReadWord(0x1e, reading.temperature) &&
-                     gaugeReadWord(0x10, current) &&
-                     gaugeReadWord(0x18, power) &&
-                     gaugeReadWord(0x0c, reading.capacityMah) &&
-                     gaugeReadWord(0x0e, reading.fullCapacityMah) &&
-                     gaugeReadWord(0x20, reading.soh);
-  if (!valid || reading.soc > 100 || reading.voltageMv == 0 ||
-      reading.voltageMv > 5000 || (reading.soh & 0xff) > 100 ||
-      reading.temperature < 1731 || reading.temperature > 4732) {
-    fuelGaugePauseCharging();
+  if (runtime.quiesceRequested) {
+    runtime.quiesceComplete = true;
     return;
   }
-  reading.currentMa = static_cast<int16_t>(current);
-  reading.powerMw = static_cast<int16_t>(power);
-  reading.soh &= 0xff;
-  reading.valid = true;
-  reading.sequence = fuelGaugeRuntime.reading.sequence + 1;
-  reading.sampledAt = millis();
-  fuelGaugeRuntime.reading = reading;
-  if (reading.soc < 10 && !fuelGaugeRuntime.lowSocNotified) {
-    Serial.printf("fuelGauge: battery low, SOC %u%%\n", reading.soc);
+  if (!runtime.configurationAllowed) return;
+  if (runtime.configurationPending || (!runtime.ready && millis() - runtime.lastRecovery >= 10000)) {
+    gaugeStartOperation(false);
+    return;
   }
-  fuelGaugeRuntime.lowSocNotified = reading.soc < 10;
-  gaugeApplyProtection();
+  if (!runtime.ready || millis() - runtime.lastPoll < 1000) return;
+  runtime.lastPoll = millis();
+  runtime.pendingReading = FuelGaugeReading{};
+  runtime.engine = FuelGaugeEngine{};
+  runtime.engine.stage = GaugeStage::Sample;
+  runtime.engine.sampleStartedAt = millis();
+}
+
+bool fuelGaugeDrain() {
+  if (!b_hasFuelGauge || !fuelGaugeRuntime.configurationAllowed ||
+      fuelGaugeRuntime.quiesceRequested || fuelGaugeRuntime.recoveryPending) return false;
+  do {
+    fuelGaugeLoop();
+    if (fuelGaugeBusy() || fuelGaugeRuntime.configurationPending) delay(1);
+  } while ((fuelGaugeBusy() || fuelGaugeRuntime.configurationPending) && !fuelGaugeRuntime.recoveryPending);
+  return fuelGaugeRuntime.ready;
 }
 
 void fuelGaugeProtectSet(bool enable) {
@@ -175,15 +217,17 @@ void fuelGaugeProtectSet(bool enable) {
 }
 
 bool fuelGaugeSetCapacity(uint16_t capacity) {
+  FuelGaugeRuntime &runtime = fuelGaugeRuntime;
   if (!b_hasFuelGauge || capacity < 300 || capacity > 2000) return false;
-  fuelGaugeRuntime.desiredCapacity = capacity;
-  return gaugeRecover();
+  const bool busy = fuelGaugeBusy() || runtime.configurationPending || runtime.recoveryPending || runtime.quiesceRequested || !runtime.configurationAllowed;
+  runtime.desiredCapacity = capacity;
+  runtime.adoptCapacity = false;
+  runtime.configurationPending = true;
+  fuelGaugePauseCharging();
+  return !busy && fuelGaugeDrain();
 }
 
-uint16_t fuelGaugeDesignCapacityMah() {
-  return fuelGaugeRuntime.ready ? fuelGaugeRuntime.desiredCapacity : 0;
-}
-
+uint16_t fuelGaugeDesignCapacityMah() { return fuelGaugeRuntime.ready ? fuelGaugeRuntime.desiredCapacity : 0; }
 float fuelGaugeVoltageV() { return fuelGaugeRuntime.reading.voltageMv / 1000.0f; }
 int16_t fuelGaugeCurrentMa() { return fuelGaugeRuntime.reading.currentMa; }
 int16_t fuelGaugePowerMw() { return fuelGaugeRuntime.reading.powerMw; }
@@ -200,7 +244,7 @@ bool fuelGaugeUsbPlugged() { return digitalRead(FUEL_GAUGE_USB_DET) == LOW; }
 
 void fuelGaugeSleep() {
   if (!b_hasFuelGauge) return;
-  gaugeSetCharging(false);
+  fuelGaugePauseCharging();
 #ifdef ESP32
   gpio_hold_en(static_cast<gpio_num_t>(CHRG_CTRL));
 #endif

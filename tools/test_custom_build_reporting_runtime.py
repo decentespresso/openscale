@@ -26,6 +26,8 @@ using String = std::string;
 struct CustomBuildAssignment {};
 struct PullOtaManifest { String version = "3.1.15"; int firmware = 0; struct { bool present = true; } littlefs; int forwardRecoveryVersion = 0; };
 bool b_ota, storeOk, streamOk;
+bool pauseReady = true;
+bool otaRuntimeIsPaused() { return pauseReady; }
 struct { bool ready = true; bool prepareLegacyDowngrade() { return ready; } } params;
 int pullOtaCompareVersions(const String &left, const String &right) {
   return pullOtaCompareVersionPrefixes(left.c_str(), right.c_str());
@@ -81,6 +83,7 @@ bool pullOtaStreamAsset(int, int, const char *) { events.push_back("stream"); re
 unsigned long millis() { return 0; }
 void remoteQueueOtaResetAt(unsigned long) { events.push_back("restart"); }
 void reset() {
+  pauseReady = true;
   paired = network = clockReady = pending = verified = true;
   succeeds = false;
   storeOk = streamOk = true;
@@ -100,6 +103,11 @@ void reset() {
     source += "bool pullOtaResumePendingLittleFs() {" + resume + "}\n"
     source += r'''
 int main() {
+  reset();
+  pauseReady = false;
+  assert(!pullOtaInstall({}, {}, String(64, 'b'), identity));
+  assert(!pullOtaResumePendingLittleFs());
+  assert(events.empty() && reports == 0);
   reset();
   PullOtaManifest legacy;
   legacy.version = "3.1.14";

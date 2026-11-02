@@ -36,7 +36,10 @@ volatile int batteryPercentCached = 0;
 bool locked = false;
 constexpr int BATTERY_PIN = 6;
 constexpr const char *KEY_BAT_CAPACITY = "bat_capacity", *KEY_BAT_CAPACITY_SET = "bat_cap_set";
+constexpr const char *KEY_BAT_RESEAL = "bat_reseal";
 bool storageSucceeds = false;
+bool capacityFlagSucceeds = true;
+bool resealStoreSucceeds = true, storedReseal = false, resealReadbackSucceeds = true;
 int capacityWrites = 0, storedCapacity = 0;
 struct { bool capacityPersistPending = true; uint16_t desiredCapacity = 1100; } fuelGaugeRuntime;
 bool storagePutInt(const char *, int value) {
@@ -44,7 +47,15 @@ bool storagePutInt(const char *, int value) {
   if (storageSucceeds) storedCapacity = value;
   return storageSucceeds;
 }
-bool storagePutBool(const char *, bool) { return true; }
+bool storagePutBool(const char *key, bool value) {
+  if (key != KEY_BAT_RESEAL) return capacityFlagSucceeds;
+  if (!resealStoreSucceeds) return false;
+  storedReseal = value;
+  return true;
+}
+bool storageGetBool(const char *, bool fallback) {
+  return resealReadbackSucceeds ? storedReseal : fallback;
+}
 struct {
   uint32_t batterySampleSequence = 0;
   uint32_t fuelGaugeSampleSequence = 0;
@@ -73,6 +84,14 @@ long map(long value, long fromLow, long fromHigh, long toLow, long toHigh) {
 FUNCTIONS
 
 int main() {
+  assert(fuelGaugeStoreReseal(true) && storedReseal);
+  resealStoreSucceeds = false;
+  assert(!fuelGaugeStoreReseal(false) && storedReseal);
+  resealStoreSucceeds = true;
+  resealReadbackSucceeds = false;
+  assert(!fuelGaugeStoreReseal(false));
+  resealReadbackSucceeds = true;
+  assert(fuelGaugeStoreReseal(false) && !storedReseal);
   updateBattery(6);
   assert(batteryPercent() == 50);
   assert(f_batteryVoltage == legacyVoltage);
@@ -97,11 +116,11 @@ int main() {
   updateBattery(6);
   assert(batteryPercent() == 87);
   assert(f_batteryVoltage == 3.8f);
-  assert(gaugeReads == 1 && adcReads == 4);
+  assert(gaugeReads == 0 && adcReads == 4);
   assert(t_batteryRefresh == currentTime);
   assert(powerCadence.batterySampleSequence == 5);
   for (int i = 0; i < 100; ++i) assert(batteryPercent() == 87);
-  assert(gaugeReads == 1 && adcReads == 4);
+  assert(gaugeReads == 0 && adcReads == 4);
   assert(!locked);
 
   gaugeValid = false;
@@ -124,18 +143,28 @@ int main() {
   assert(adcReads == 4 && powerCadence.batterySampleSequence == 6);
   b_hasFuelGauge = true;
   ++gaugeSequence;
+  const int previousGaugeReads = gaugeReads;
   serviceFuelGauge();
+  assert(gaugeReads == previousGaugeReads + 1);
   assert(capacityWrites == 1 && fuelGaugeRuntime.capacityPersistPending);
   serviceFuelGauge();
-  assert(capacityWrites == 1);
-  storageSucceeds = true;
-  ++gaugeSequence;
-  serviceFuelGauge();
-  assert(capacityWrites == 2 && storedCapacity == 1100);
-  assert(!fuelGaugeRuntime.capacityPersistPending);
-  ++gaugeSequence;
-  serviceFuelGauge();
   assert(capacityWrites == 2);
+  storageSucceeds = true;
+  capacityFlagSucceeds = false;
+  serviceFuelGauge();
+  assert(capacityWrites == 3 && storedCapacity == 1100);
+  assert(fuelGaugeRuntime.capacityPersistPending);
+  capacityFlagSucceeds = true;
+  serviceFuelGauge();
+  assert(capacityWrites == 4);
+  assert(!fuelGaugeRuntime.capacityPersistPending);
+  serviceFuelGauge();
+  assert(capacityWrites == 4);
+  b_hasFuelGauge = false;
+  const int beforeDetectionService = gaugeReads;
+  serviceFuelGauge();
+  assert(gaugeReads == beforeDetectionService + 1);
+  assert(adcReads == 4);
 }
 """
 
@@ -146,9 +175,10 @@ def main():
         raise SystemExit("A C++ compiler is required (g++, clang++, or CXX).")
     power = (ROOT / "include/power.h").read_text(encoding="utf-8")
     functions = "\n".join(extract_function(power, signature) for signature in (
+        "bool fuelGaugeStoreReseal(bool required)",
         "int batteryPercent()",
         "void updateBattery(int batteryPin)",
-        "void serviceFuelGauge()",
+        "void serviceFuelGauge() {",
     ))
     with tempfile.TemporaryDirectory(prefix="fuel-gauge-battery-") as directory:
         cpp = Path(directory) / "battery.cpp"
