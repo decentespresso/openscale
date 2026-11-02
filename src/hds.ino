@@ -51,6 +51,7 @@ void waitForEnergyMainLoopWork();
 #include "finger_detection.h"
 #include "timing.h"
 #include "tap_detection.h"
+#include "boot_startup.h"
 
 #if HDS_ENABLE_GRINDER
 #ifndef GRINDER_MENU_CHORD_HOLD_MS
@@ -1111,6 +1112,9 @@ void setup() {
   gpio_hold_dis((gpio_num_t)PWR_CTRL);
 
 #if defined(V7_3) || defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1) || defined(V9_0_5)
+#if HDS_OVERLAP_GAUGE_STARTUP
+  pinMode(ACC_PWR_CTRL, INPUT);
+#endif
   gpio_hold_dis((gpio_num_t)ACC_PWR_CTRL);
 #endif
   gpio_deep_sleep_hold_dis();
@@ -1121,12 +1125,25 @@ void setup() {
   const int storedBatteryCapacity = storageGetInt(KEY_BAT_CAPACITY, 0);
   const uint16_t batteryCapacity = storedBatteryCapacity >= 300 && storedBatteryCapacity <= 2000
       ? static_cast<uint16_t>(storedBatteryCapacity) : 0;
+#if HDS_OVERLAP_GAUGE_STARTUP
+#ifdef HW_SPI
+  SPI.begin(OLED_SCLK, -1, OLED_SDIN, OLED_CS);
+#endif
+  delay(50);
+  initializeBootDisplay();
+  renderBootLogo();
+  fuelGaugeStartDetection(batteryCapacity, storageGetBool(KEY_BAT_CAPACITY_SET, false));
+  scale.begin();
+  scale.setSamplesInUse(1);
+  stabilizeScaleWithFuelGauge();
+#else
   fuelGaugeBegin(batteryCapacity, storageGetBool(KEY_BAT_CAPACITY_SET, false));
+#endif
   if (fuelGaugeLegacyHardware()) {
     pinMode(ACC_PWR_CTRL, OUTPUT);
     digitalWrite(ACC_PWR_CTRL, HIGH);
   }
-#ifdef HW_SPI
+#if defined(HW_SPI) && !HDS_OVERLAP_GAUGE_STARTUP
   SPI.begin(OLED_SCLK, -1, OLED_SDIN, OLED_CS);
 #endif
 #ifdef ADS1115ADC
@@ -1134,7 +1151,9 @@ void setup() {
     ADS_init();
   }
 #endif
+#if !HDS_OVERLAP_GAUGE_STARTUP
   delay(50);
+#endif
   b_requireHeartBeat = storageGetBool(KEY_HEARTBEAT, true);
   Serial.println("Begin!");
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
@@ -1176,30 +1195,17 @@ void setup() {
     buzzer.beep(1, BUZZER_DURATION);
   }
 #endif
-  u8g2.begin();
-  b_u8g2Sleep = false;
-  u8g2.enableUTF8Print();
-  u8g2.setContrast(255);
-  u8g2.setFont(FONT_M);
+#if !HDS_OVERLAP_GAUGE_STARTUP
+  initializeBootDisplay();
+#endif
   power_off(15);
-  b_screenFlipped = storageGetBool(KEY_SCREEN_FLIP, false);
-  if (b_screenFlipped)
-    u8g2.setDisplayRotation(U8G2_R0);
-  else
-    u8g2.setDisplayRotation(U8G2_R2);
-
-  invalidateEnergyOledFrame();
-  u8g2.firstPage();
-  do {
-    u8g2.setFont(u8g2_font_logisoso22_tf);
-    u8g2.drawStr(AC("Half"), 26, "Half");
-    u8g2.drawBox(4, LCDHeight / 2, LCDWidth - 4 * 2, 2);
-    u8g2.drawStr(AC("Decent"), LCDHeight - 2, "Decent");
-  } while (u8g2.nextPage());
+#if !HDS_OVERLAP_GAUGE_STARTUP
+  renderBootLogo();
   unsigned long stabilizingtime = 500;
   scale.begin();
   scale.setSamplesInUse(1);
   scale.start(stabilizingtime, false);
+#endif
   resetAdcRecoveryState();
   scale.setCalFactor(f_calibration_value);
 

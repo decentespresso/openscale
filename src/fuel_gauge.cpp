@@ -56,32 +56,50 @@ static void gaugeSelectHardware() {
   pinMode(GPOUT, INPUT);
 }
 
-bool fuelGaugeBegin(uint16_t capacity, bool adoptCapacity) {
+void fuelGaugeStartDetection(uint16_t capacity, bool adoptCapacity) {
   fuelGaugeRuntime.desiredCapacity = capacity;
   fuelGaugeRuntime.adoptCapacity = adoptCapacity;
+  fuelGaugeRuntime.probeAttempts = 0;
+  fuelGaugeRuntime.probeComplete = false;
+  fuelGaugeRuntime.probeAbsent = true;
+  if (!b_hasFuelGauge) fuelGaugeRuntime.hardware = BatteryHardware::Unknown;
   Wire.begin(FUEL_GAUGE_I2C_SDA, FUEL_GAUGE_I2C_SCL);
-  bool absent = true;
-  for (int attempt = 0; attempt < 5; ++attempt) {
-    if (attempt > 0) delay(200);
-    delayMicroseconds(70);
-    Wire.beginTransmission(gaugeAddress);
-    const uint8_t result = Wire.endTransmission(true);
-    absent = absent && result == 2;
-    if (result == 0) {
-      gaugeSelectHardware();
-      const bool ready = gaugeRecover();
-      Serial.println(ready ? "fuelGauge: ready" : "fuelGauge: unavailable, charging disabled");
-      return ready;
-    }
+}
+
+bool fuelGaugePollDetection() {
+  if (fuelGaugeRuntime.probeComplete) return true;
+  if (fuelGaugeRuntime.probeAttempts > 0 &&
+      millis() - fuelGaugeRuntime.lastProbe < 200) return false;
+  delayMicroseconds(70);
+  Wire.beginTransmission(gaugeAddress);
+  const uint8_t result = Wire.endTransmission(true);
+  fuelGaugeRuntime.lastProbe = millis();
+  fuelGaugeRuntime.probeAbsent = fuelGaugeRuntime.probeAbsent && result == 2;
+  ++fuelGaugeRuntime.probeAttempts;
+  if (result == 0) {
+    gaugeSelectHardware();
+    const bool ready = gaugeRecover();
+    Serial.println(ready ? "fuelGauge: ready" : "fuelGauge: unavailable, charging disabled");
+    fuelGaugeRuntime.probeComplete = true;
+    return true;
   }
+  if (fuelGaugeRuntime.probeAttempts < 5) return false;
   if (b_hasFuelGauge) {
     fuelGaugeRuntime.ready = false;
     fuelGaugeRuntime.reading.valid = false;
     fuelGaugeRuntime.lastRecovery = millis();
   } else {
-    fuelGaugeRuntime.hardware = absent ? BatteryHardware::Legacy : BatteryHardware::Unknown;
+    fuelGaugeRuntime.hardware = fuelGaugeRuntime.probeAbsent
+        ? BatteryHardware::Legacy : BatteryHardware::Unknown;
   }
-  return false;
+  fuelGaugeRuntime.probeComplete = true;
+  return true;
+}
+
+bool fuelGaugeBegin(uint16_t capacity, bool adoptCapacity) {
+  fuelGaugeStartDetection(capacity, adoptCapacity);
+  while (!fuelGaugePollDetection()) delay(1);
+  return fuelGaugeRuntime.ready;
 }
 
 static void gaugeApplyProtection() {

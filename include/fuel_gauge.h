@@ -40,7 +40,11 @@ struct FuelGaugeRuntime {
   FuelGaugeReading reading;
   unsigned long lastPoll = 0;
   unsigned long lastRecovery = 0;
+  unsigned long lastProbe = 0;
   uint16_t desiredCapacity = 700;
+  uint8_t probeAttempts = 0;
+  bool probeComplete = true;
+  bool probeAbsent = true;
   bool ready = false;
   bool adoptCapacity = false;
   bool capacityPersistPending = false;
@@ -51,6 +55,8 @@ struct FuelGaugeRuntime {
 
 extern FuelGaugeRuntime fuelGaugeRuntime;
 
+void fuelGaugeStartDetection(uint16_t capacity, bool adoptCapacity);
+bool fuelGaugePollDetection();
 bool fuelGaugeBegin(uint16_t capacity, bool adoptCapacity);
 bool fuelGaugeLegacyHardware();
 FuelGaugeReading fuelGaugeReading();

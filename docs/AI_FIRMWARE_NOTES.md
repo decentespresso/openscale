@@ -33,6 +33,14 @@ seal state. It uses one-byte writes and bus-free delays per BQ27427 TRM 3.3.
 Normal measurements are read at most once per second; getters and OLED frames
 use the cached snapshot. Blocking information screens service the same path.
 
+On the shared `V8_1` image without an accelerometer, the logo precedes gauge
+detection. Five address probes, spaced at least 200 ms apart, run during the
+existing 900 ms ADS1232 stabilization period. An acknowledged gauge still uses
+synchronous configuration, followed by a full 900 ms ADC stabilization period
+even if configuration fails. Legacy accessory power and ADS1115 initialization
+wait for confirmed legacy identity. Other board profiles retain their startup
+order and orientation checks.
+
 An address acknowledgment retains gauge-board identity even if device-type or
 configuration validation fails. GPIO6 never falls back to ADC and GPIO14 never
 becomes accessory output on that board. Before detection, neither legacy pin

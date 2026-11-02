@@ -7,6 +7,8 @@ struct FakeWire {
   std::array<std::array<uint8_t, 32>, 256> blocks{};
   std::map<uint8_t, uint16_t> words;
   std::map<uint8_t, std::vector<unsigned long>> reads;
+  std::vector<unsigned long> probeTimes;
+  std::vector<uint8_t> probeResults;
   std::vector<uint8_t> tx, rx;
   uint8_t reg = 0, subclass = 0, commandLow = 0;
   uint16_t command = 0, chemistry = 0x1202, deviceType = 0x0427;
@@ -15,6 +17,7 @@ struct FakeWire {
   int unsealKeys = 0, configEntries = 0, resets = 0, seals = 0;
   uint8_t errorCode = 2;
   uint16_t failCommand = 0xffff;
+  unsigned long probeDelayMs = 0;
 
   FakeWire() {
     words = {{0x04, 3800}, {0x06, 8}, {0x1c, 50}, {0x1e, 2981},
@@ -44,6 +47,15 @@ struct FakeWire {
     if (value == 0x0020) { ++seals; sealed = true; }
   }
   uint8_t endTransmission(bool = true) {
+    if (tx.empty()) {
+      const size_t probe = probeTimes.size();
+      probeTimes.push_back(millis());
+      delay(probeDelayMs);
+      if (probe < probeResults.size()) {
+        ++operations;
+        return probeResults[probe];
+      }
+    }
     if (fails()) return 2;
     if (!present) return errorCode;
     if (tx.empty()) return 0;
