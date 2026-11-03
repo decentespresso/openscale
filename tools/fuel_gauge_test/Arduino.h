@@ -8,13 +8,14 @@
 
 constexpr int LOW = 0, HIGH = 1, INPUT = 0, OUTPUT = 1, INPUT_PULLUP = 2;
 inline uint64_t fakeMicros = 0;
+inline unsigned long fakeMillisBase = 0;
 inline unsigned long millisecondDelayCalls = 0;
 inline std::array<int, 64> pinLevels{};
 inline std::array<int, 64> pinModes{};
 inline std::array<bool, 64> pinHolds{};
 inline std::vector<int> pinWrites;
 inline unsigned long buttonBackAt = std::numeric_limits<unsigned long>::max();
-inline unsigned long millis() { return static_cast<unsigned long>(fakeMicros / 1000); }
+inline unsigned long millis() { return fakeMillisBase + static_cast<unsigned long>(fakeMicros / 1000); }
 inline unsigned long micros() { return static_cast<unsigned long>(fakeMicros); }
 inline void delay(unsigned long duration) { ++millisecondDelayCalls; fakeMicros += static_cast<uint64_t>(duration) * 1000; }
 inline void delayMicroseconds(unsigned int duration) { fakeMicros += duration; }

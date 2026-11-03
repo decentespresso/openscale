@@ -45,6 +45,7 @@ static_assert(HDS_OVERLAP_GAUGE_STARTUP == 1);
 
 static void reset() {
   fakeMicros = 0;
+  fakeMillisBase = 0;
   millisecondDelayCalls = 0;
   Wire = FakeWire{};
   fuelGaugeRuntime = FuelGaugeRuntime{};

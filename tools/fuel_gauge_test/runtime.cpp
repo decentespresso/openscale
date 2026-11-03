@@ -90,6 +90,7 @@ struct FakeOled {
 
 static void reset(bool retainPersistence = false) {
   fakeMicros = 0;
+  fakeMillisBase = 0;
   millisecondDelayCalls = 0;
   Wire = FakeWire{};
   fuelGaugeRuntime = FuelGaugeRuntime{};
@@ -176,12 +177,13 @@ static void checkProbeScheduling() {
   assert(Wire.operations == operations + 1);
   reset();
   Wire.present = false;
-  fakeMicros = static_cast<uint64_t>(std::numeric_limits<unsigned long>::max() - 100) * 1000;
+  fakeMillisBase = std::numeric_limits<unsigned long>::max() - 100;
+  assert(millis() == std::numeric_limits<unsigned long>::max() - 100);
   fuelGaugeStartDetection(700, false);
   service();
   advance(199);
   service();
-  assert(Wire.operations == 1);
+  assert(Wire.operations == 1 && millis() == 98);
   advance(1);
   service();
   assert(Wire.operations == 2);
@@ -374,7 +376,8 @@ static void checkOperationTiming() {
   assert(Wire.operations == failedAt);
   ready();
   reset();
-  fakeMicros = static_cast<uint64_t>(std::numeric_limits<unsigned long>::max() - 1000) * 1000;
+  fakeMillisBase = std::numeric_limits<unsigned long>::max() - 1000;
+  assert(millis() == std::numeric_limits<unsigned long>::max() - 1000);
   dirtyConfiguration();
   begin(900);
   ready();
