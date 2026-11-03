@@ -56,8 +56,17 @@ Current setup pages submit byte-exact SSIDs and passwords with `preserve_edges:t
 | `tap_tare` | bool | `false` |
 | `tap_timer` | bool | `false` |
 | `wow_interval` | int | `0` (off); indices 1-3 select 2-4 second sleep intervals. |
+| `bat_reseal` | bool | `false`; persistent gauge resealing obligation, cleared only after verified cleanup. |
 
 `schema` is a `uint16_t`, currently `1`. Do not rename a key or change its stored type in place. Add an explicit migration, preserve old data until the new schema is complete, then increment the schema version.
+
+`bat_reseal` is optional and is not eagerly created during defaults or migration.
+An absent key means false, so adding it cannot block an otherwise valid upgrade
+when NVS is full. Its native NVS reader distinguishes a missing key from a failed
+read: malformed values, type mismatches, and namespace/read errors remain unknown
+and cannot authorize unsealing or Legacy hardware. Before unsealing, writing and
+reading back true must still succeed; a full NVS store therefore disables that
+operation rather than preventing weighing.
 
 Energy-menu settings use `energy_schema` and `ENERGY_FEATURE_KEYS` in `include/storage.h`, independently of the base settings schema. Missing or invalid booleans receive validated defaults.
 
@@ -92,6 +101,7 @@ Run the smallest relevant checks:
 
 ```sh
 python tools/test_storage_migration_contract.py
+python tools/test_storage_reseal_runtime.py
 python tools/test_wifi_setup_runtime.py
 python tools/test_wifi_setup_contract.py
 python tools/test_pull_ota_contract.py

@@ -47,6 +47,7 @@ inline void menuActionMessageChanged() {
 
 void waitForMenuButtonRelease() {
   while (digitalRead(BUTTON_CIRCLE) == LOW || digitalRead(BUTTON_SQUARE) == LOW) {
+    if (b_ota) return;
     serviceFuelGauge();
     delay(20);
   }
@@ -422,6 +423,7 @@ void showWifiStatus() {
   } while (u8g2.nextPage());
   delay(1000);
   while (b_showWifiData) {
+    if (b_ota) return;
     power_off(-1);
     delay(20);
     if (digitalRead(BUTTON_SQUARE) == LOW) {
@@ -493,6 +495,7 @@ void showStatus() {
   } while (u8g2.nextPage());
   delay(1000);
   while (b_showStatusData) {
+    if (b_ota) return;
     power_off(-1);
     delay(20);
     if (digitalRead(BUTTON_SQUARE) == LOW) {
@@ -650,6 +653,8 @@ bool grinderEnsureWifiReadyForDiscovery() {
   }
   const uint32_t startedAt = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - startedAt < 12000) {
+    if (b_ota) return false;
+    serviceFuelGauge();
     refreshOLED((char *)"WiFi", (char *)"Connecting");
     if (b_wifiEnabled) {
       wifiSupervise();
@@ -714,6 +719,7 @@ void grinderSelectPlugMenu() {
   uint8_t selected = 0;
   bool selecting = true;
   while (selecting) {
+    if (b_ota) return;
     power_off(-1);
     grinderDrawPlugList(selected);
     if (digitalRead(BUTTON_CIRCLE) == LOW) {
@@ -778,6 +784,7 @@ static inline float grinderHandleDraftAdjust(const char *title, float draft, flo
   uint32_t lastStepAt = 0;
   bool held = false;
   while (digitalRead(BUTTON_SQUARE) == LOW) {
+    if (b_ota) return draft;
     power_off(-1);
     const uint32_t now = millis();
     if (now - startedAt >= 650 && now - lastStepAt >= 250) {
@@ -799,6 +806,7 @@ static inline bool grinderEditNumber(const char *title, float *output, float min
   uint8_t selected = 0;
   waitForMenuButtonRelease();
   while (true) {
+    if (b_ota) return false;
     power_off(-1);
     grinderDrawNumberEditor(title, draft, selected);
     if (digitalRead(BUTTON_CIRCLE) == LOW) {
@@ -1052,6 +1060,8 @@ bool calibrationCaptureRaw(CalibrationRawCapture &capture,
   ADS1232DebugInfo previousInfo;
 
   while (millis() - start < CALIBRATION_CAPTURE_TIMEOUT_MS) {
+    if (b_ota) return false;
+    serviceFuelGauge();
     if (scale.update()) {
       lastUpdate = millis();
       ADS1232DebugInfo currentInfo = scale.getDebugInfo();
@@ -1313,6 +1323,10 @@ void calibration(int input) {
       if (!calibrationCaptureRaw(calibrationZeroCapture,
                                  CAL_REJECT_UNSTABLE_ZERO,
                                  zeroFailureReason)) {
+        if (b_ota) {
+          calibrationFinish(false);
+          return;
+        }
         calibrationFail(zeroFailureReason, previousCalibrationValue, 0.0f,
                         &calibrationZeroCapture, nullptr, 0.0f);
         return;
@@ -1422,6 +1436,10 @@ void calibration(int input) {
         CalibrationRejectReason loadFailureReason = CAL_REJECT_NONE;
         if (!calibrationCaptureRaw(loadCapture, CAL_REJECT_UNSTABLE_LOAD,
                                    loadFailureReason)) {
+          if (b_ota) {
+            calibrationFinish(false);
+            return;
+          }
           calibrationFail(loadFailureReason, previousCalibrationValue, 0.0f,
                           &calibrationZeroCapture, &loadCapture, 0.0f);
           return;
@@ -1536,6 +1554,7 @@ void showAbout() {
 #endif
   delay(1000);
   while (b_showAbout) {
+    if (b_ota) return;
     power_off(-1);
     delay(20);
     if (digitalRead(BUTTON_SQUARE) == LOW)
@@ -1606,6 +1625,7 @@ void showLogo() {
 #endif
   delay(1000);
   while (b_showLogo) {
+    if (b_ota) return;
     power_off(-1);
     delay(20);
     if (digitalRead(BUTTON_SQUARE) == LOW) {

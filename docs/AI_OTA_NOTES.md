@@ -218,6 +218,33 @@ The single LittleFS partition has no independent rollback slot. Keep signed asse
 
 `setup()` calls `hdsOtaRollbackBegin()` after reset-reason capture. Without pending filesystem work it calls `hdsOtaRollbackMarkValid()` after setup validation. With pending work, validity is deferred until target recovery succeeds; recovery metadata is cleared only after application validity marking succeeds.
 
+## Gauge Cleanup
+
+The main loop must finish fuel-gauge quiesce before acknowledging an OTA pause.
+Cleanup is bounded to eight seconds; the OTA handshake allows ten seconds and
+rejects a failed pause without starting flash writes. Synchronous startup
+LittleFS recovery uses the same owner cleanup before consuming recovery attempts.
+Gauge configuration remains deferred until the firmware-acceptance decision;
+boots awaiting an OTA reboot do not start configuration.
+Boot rollback still records and evaluates attempts immediately, but executes
+the selected rollback only after the existing button-abort gate, settings load,
+and gauge discovery make persistent cleanup possible. Early button-abort sleep
+does not start I2C and retains any stored obligation.
+A selected rollback bypasses fatal settings/energy initialization halts to
+attempt safe cleanup. Unreadable reseal state stays unresolved, never authorizes
+unsealing, and never selects Legacy hardware.
+
+Rollback requires successful gauge cleanup, because an older image may not
+understand `bat_reseal`. Failed cleanup retains the obligation and charging hold,
+stores filesystem-free recovery, then cancels automatic bootloader rollback.
+Only after both persistent operations succeed may battery-powered shutdown enter
+deep sleep; USB-powered operation remains stopped in the current image. The next
+boot remains gauge-aware and filesystem-free until recovery completes.
+If either persistent operation fails, do not invalidate the image, reboot, sleep,
+or continue ordinary startup. Remain stopped for external USB recovery. Software
+cannot guarantee the bootloader's choice after an external reset or power loss
+when the required flash/NVS writes themselves fail.
+
 ## Reboot Routing
 
 ElegantOTA auto-reboot stays disabled with `ElegantOTA.setAutoReboot(false)`. Successful ElegantOTA and pull OTA paths call `remoteQueueOtaResetAt()` so their reset remains distinguishable from ordinary remote resets during an active update. Other scheduled main-loop resets use `remoteQueueResetAt()`; neither path should call `ESP.restart()` directly.
@@ -260,6 +287,7 @@ python tools/test_decent_ota_target_contract.py
 python tools/test_pull_ota_contract.py
 python tools/test_release_workflow_contract.py
 python tools/test_ota_rollback_contract.py
+python tools/test_rollback_reseal_safety.py
 python tools/test_ota_public_key_header.py
 python tools/test_ota_reboot_routing_contract.py
 python tools/test_custom_build_ota_contract.py

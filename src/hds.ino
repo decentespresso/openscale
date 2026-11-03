@@ -51,6 +51,7 @@ void waitForEnergyMainLoopWork();
 #include "finger_detection.h"
 #include "timing.h"
 #include "tap_detection.h"
+#include "boot_startup.h"
 
 #if HDS_ENABLE_GRINDER
 #ifndef GRINDER_MENU_CHORD_HOLD_MS
@@ -964,6 +965,7 @@ void beforeDeepSleepFlush() {
 #endif
 
 void setup() {
+  const char *bootRollbackReason = nullptr;
   wowMicroWakeOrContinue();
 #if HDS_ENABLE_ENERGY_MENU
   energyIdle.mainTask = xTaskGetCurrentTaskHandle();
@@ -976,30 +978,35 @@ void setup() {
     g_resetReasonCode = (uint8_t)r;
     Serial.printf("[boot] reset_reason=%s (%u)\n", resetReasonStr(r), (unsigned)g_resetReasonCode);
 #if HDS_FEATURE_PULL_OTA
-    hdsOtaRollbackBegin(r);
+    bootRollbackReason = hdsOtaRollbackBegin(r);
 #endif
   }
-  if (!storageInit()) {
+  bool bootSettingsOpened = false;
+  if (!storageInit(&bootSettingsOpened)) {
     Serial.println("NVS settings init failed!");
-    while (1) {
-      delay(1000);
+    if (!bootRollbackReason) {
+      while (1) {
+        delay(1000);
+      }
     }
   }
 #if HDS_ENABLE_ENERGY_MENU
-  if (!energyLoadSettings(energyPolicy.settings)) {
-    Serial.println("Energy settings init failed!");
-    while (1) {
-      delay(1000);
+  if (!bootRollbackReason) {
+    if (!energyLoadSettings(energyPolicy.settings)) {
+      Serial.println("Energy settings init failed!");
+      while (1) {
+        delay(1000);
+      }
     }
+    if (energyPolicy.featureEnabled(EnergyFeature::UsbSleepTest)) {
+      Serial.println("[energy] USB Sleep Test ON: USB serial reliability not guaranteed");
+    }
+    if (!initEnergyPowerManagement() || !applyEnergyLightSleepSetting(false)) {
+      Serial.println("[energy] Light Sleep unavailable; continuing awake");
+    }
+    energyPolicy.begin(millis());
+    refreshEnergyMenuRows();
   }
-  if (energyPolicy.featureEnabled(EnergyFeature::UsbSleepTest)) {
-    Serial.println("[energy] USB Sleep Test ON: USB serial reliability not guaranteed");
-  }
-  if (!initEnergyPowerManagement() || !applyEnergyLightSleepSetting(false)) {
-    Serial.println("[energy] Light Sleep unavailable; continuing awake");
-  }
-  energyPolicy.begin(millis());
-  refreshEnergyMenuRows();
 #endif
 #if HDS_ENABLE_GRINDER
   grinderLoadSettings();
@@ -1009,7 +1016,7 @@ void setup() {
   i_buttonBootDelay = b_quickBoot ? 0 : 500;
   i_wow_interval = storageGetInt(KEY_WOW_INTERVAL, 0);
 
-  Serial.println("NVS settings init success");
+  if (!bootRollbackReason) Serial.println("NVS settings init success");
 
   usbCallbacks.setStableOutputThreshold = setStableOutputThreshold;
   usbCallbacks.setTrackingThreshold = setTrackingThreshold;
@@ -1111,6 +1118,9 @@ void setup() {
   gpio_hold_dis((gpio_num_t)PWR_CTRL);
 
 #if defined(V7_3) || defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1) || defined(V9_0_5)
+#if HDS_OVERLAP_GAUGE_STARTUP
+  pinMode(ACC_PWR_CTRL, INPUT);
+#endif
   gpio_hold_dis((gpio_num_t)ACC_PWR_CTRL);
 #endif
   gpio_deep_sleep_hold_dis();
@@ -1118,15 +1128,35 @@ void setup() {
   Wire.begin(I2C_SDA, I2C_SCL);
 #endif
   b_batteryProtect = storageGetBool(KEY_BAT_PROTECT, false);
+  const uint8_t bootResealState = bootSettingsOpened
+      ? storageGetResealState() : 2;
+  fuelGaugeSetResealPending(bootResealState == 1);
+  if (bootResealState > 1) fuelGaugeRuntime.sealRequired = true;
   const int storedBatteryCapacity = storageGetInt(KEY_BAT_CAPACITY, 0);
   const uint16_t batteryCapacity = storedBatteryCapacity >= 300 && storedBatteryCapacity <= 2000
       ? static_cast<uint16_t>(storedBatteryCapacity) : 0;
+#if HDS_OVERLAP_GAUGE_STARTUP
+#ifdef HW_SPI
+  SPI.begin(OLED_SCLK, -1, OLED_SDIN, OLED_CS);
+#endif
+  delay(50);
+  initializeBootDisplay();
+  renderBootLogo();
+  fuelGaugeStartDetection(batteryCapacity, storageGetBool(KEY_BAT_CAPACITY_SET, false));
+  scale.begin();
+  scale.setSamplesInUse(1);
+  stabilizeScaleWithFuelGauge();
+#else
   fuelGaugeBegin(batteryCapacity, storageGetBool(KEY_BAT_CAPACITY_SET, false));
+#endif
+#if HDS_FEATURE_PULL_OTA
+  if (bootRollbackReason) hdsOtaRollback(bootRollbackReason);
+#endif
   if (fuelGaugeLegacyHardware()) {
     pinMode(ACC_PWR_CTRL, OUTPUT);
     digitalWrite(ACC_PWR_CTRL, HIGH);
   }
-#ifdef HW_SPI
+#if defined(HW_SPI) && !HDS_OVERLAP_GAUGE_STARTUP
   SPI.begin(OLED_SCLK, -1, OLED_SDIN, OLED_CS);
 #endif
 #ifdef ADS1115ADC
@@ -1134,7 +1164,9 @@ void setup() {
     ADS_init();
   }
 #endif
+#if !HDS_OVERLAP_GAUGE_STARTUP
   delay(50);
+#endif
   b_requireHeartBeat = storageGetBool(KEY_HEARTBEAT, true);
   Serial.println("Begin!");
 #if defined(ACC_MPU6050) || defined(ACC_BMA400)
@@ -1176,30 +1208,17 @@ void setup() {
     buzzer.beep(1, BUZZER_DURATION);
   }
 #endif
-  u8g2.begin();
-  b_u8g2Sleep = false;
-  u8g2.enableUTF8Print();
-  u8g2.setContrast(255);
-  u8g2.setFont(FONT_M);
+#if !HDS_OVERLAP_GAUGE_STARTUP
+  initializeBootDisplay();
+#endif
   power_off(15);
-  b_screenFlipped = storageGetBool(KEY_SCREEN_FLIP, false);
-  if (b_screenFlipped)
-    u8g2.setDisplayRotation(U8G2_R0);
-  else
-    u8g2.setDisplayRotation(U8G2_R2);
-
-  invalidateEnergyOledFrame();
-  u8g2.firstPage();
-  do {
-    u8g2.setFont(u8g2_font_logisoso22_tf);
-    u8g2.drawStr(AC("Half"), 26, "Half");
-    u8g2.drawBox(4, LCDHeight / 2, LCDWidth - 4 * 2, 2);
-    u8g2.drawStr(AC("Decent"), LCDHeight - 2, "Decent");
-  } while (u8g2.nextPage());
+#if !HDS_OVERLAP_GAUGE_STARTUP
+  renderBootLogo();
   unsigned long stabilizingtime = 500;
   scale.begin();
   scale.setSamplesInUse(1);
   scale.start(stabilizingtime, false);
+#endif
   resetAdcRecoveryState();
   scale.setCalFactor(f_calibration_value);
 
@@ -1431,7 +1450,9 @@ void setup() {
   if (b_pendingOtaLittleFs) {
     b_ota = true;
     blePauseForOta();
-    if (!pullOtaResumePendingLittleFs()) {
+    const bool gaugeClean = quiesceFuelGaugeForShutdown();
+    setOtaRuntimePaused(gaugeClean && !bleHasLiveClient());
+    if (!gaugeClean || !otaRuntimeIsPaused() || !pullOtaResumePendingLittleFs()) {
       hdsOtaRollback("LittleFS update");
     }
   } else {
@@ -1454,6 +1475,17 @@ void setup() {
     }
   }
 #endif
+  portENTER_CRITICAL(&wsPendingMux);
+  const bool bootOtaRebootPending = (wsPendingMask & WSP_OTA_RESET) != 0;
+  portEXIT_CRITICAL(&wsPendingMux);
+  if (!b_ota && !bootOtaRebootPending) {
+    fuelGaugeResume();
+    fuelGaugeAllowConfiguration();
+#if !HDS_OVERLAP_GAUGE_STARTUP
+    fuelGaugeDrain();
+    t_bootTare = millis();
+#endif
+  }
 #if HDS_ENABLE_ENERGY_MENU
   primeScaleButtonInputs();
   const bool lightSleepRequested =
@@ -1821,6 +1853,7 @@ bool wakeScaleFromSoftSleep(const char *context) {
     digitalWrite(ACC_PWR_CTRL, HIGH);
   }
   delay(5);
+  fuelGaugeResume();
   scale.powerUp();
 #if HDS_ENABLE_ENERGY_MENU
   b_softSleep = false;
@@ -2172,11 +2205,12 @@ uint32_t energyDisplaySignature(unsigned long now) {
   chargingNow = digitalRead(USB_DET) == LOW;
 #endif
   const uint8_t batteryBucket = EnergyRuntimePolicy::batteryDisplayBucket(percent);
-  const uint8_t displayedBattery = chargingNow ? 5 : batteryBucket;
+  const bool batteryReady = powerCadence.batterySampleSequence != 0;
+  const uint8_t displayedBattery = chargingNow ? 5 : (batteryReady ? batteryBucket : 6);
   const bool tareVisible = now - t_tareStatus < 500;
   const bool shutdownWarningVisible = b_shutdownFailBle && now - t_shutdownFailBle < 3000;
   const uint32_t animationPhase =
-    ((wifiBlink || (!chargingNow && batteryBucket == 0)) ? (now / 500) & 1 : 0) |
+    ((wifiBlink || (batteryReady && !chargingNow && batteryBucket == 0)) ? (now / 500) & 1 : 0) |
     ((b_ble_enabled && !bleConnected ? (now / 1000) & 1 : 0) << 1);
   signature = mixEnergyDisplaySignature(signature, static_cast<uint32_t>(lroundf(f_displayedValue * 10.0f)));
   signature = mixEnergyDisplaySignature(signature, (f_displayedValue > OVER_WEIGHT) |
@@ -2335,7 +2369,9 @@ void loop() {
 #endif
   processWsPendingCmds();
   if (b_ota) {
-    fuelGaugePauseCharging();
+    if (b_softSleep) wakeScaleFromSoftSleep("OTA wake");
+    fuelGaugeRequestQuiesce();
+    serviceFuelGauge();
     if (!otaRuntimeIsPaused()) {
       if (!otaTransportsStopped) {
         otaBleClientDisconnected =
@@ -2345,13 +2381,11 @@ void loop() {
         websocket.closeAll();
 #endif
       }
-      if (b_softSleep) {
-        wakeScaleFromSoftSleep("OTA wake");
-      }
 #if HDS_ENABLE_ENERGY_MENU
       setEnergyPerformanceCritical(true);
 #endif
-      if (!bleHasLiveClient()) {
+      if (!bleHasLiveClient() &&
+          fuelGaugeQuiesceStatus() == FuelGaugeQuiesceStatus::Complete) {
         setOtaRuntimePaused(true);
       }
     } else {
@@ -2372,6 +2406,7 @@ void loop() {
   }
   if (otaTransportsStopped) {
     setOtaRuntimePaused(false);
+    fuelGaugeResume();
     bleResumeAfterOta(
         otaBleClientDisconnected && !bleHasLiveClient());
     otaBleClientDisconnected = false;
@@ -2818,6 +2853,8 @@ void drawBattery(unsigned long now) {
     u8g2.drawXBM(121, 51, 7, 12, image_battery_charging);
   } else {
     b_is_charging = false;
+  }
+  if (!b_is_charging && powerCadence.batterySampleSequence != 0) {
     int i_batteryPercent = batteryPercent();
     switch (EnergyRuntimePolicy::batteryDisplayBucket(i_batteryPercent)) {
       case 0:

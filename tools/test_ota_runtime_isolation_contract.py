@@ -45,15 +45,25 @@ def main():
     assert loop.index("websocket.closeAll();") < loop.index("ElegantOTA.loop();")
     assert loop.index("wakeScaleFromSoftSleep(\"OTA wake\");") < loop.index("setOtaRuntimePaused(true);")
     assert loop.index("setEnergyPerformanceCritical(true);") < loop.index("setOtaRuntimePaused(true);")
-    assert loop.index("if (!bleHasLiveClient())") < loop.index("setOtaRuntimePaused(true);")
+    assert loop.index("if (!bleHasLiveClient() &&") < loop.index("setOtaRuntimePaused(true);")
+    assert loop.index("fuelGaugeRequestQuiesce();") < loop.index("serviceFuelGauge();")
+    assert loop.index("serviceFuelGauge();") < loop.index("fuelGaugeQuiesceStatus() == FuelGaugeQuiesceStatus::Complete")
+    assert loop.index("fuelGaugeQuiesceStatus() == FuelGaugeQuiesceStatus::Complete") < loop.index("setOtaRuntimePaused(true);")
     assert loop.index("processOtaDisplayUpdate();") < loop.index("processElegantOtaTimeout();")
     assert loop.index("setOtaRuntimePaused(false);") < loop.index("bleResumeAfterOta(")
+    assert loop.index("setOtaRuntimePaused(false);") < loop.index("fuelGaugeResume();")
+    assert loop.index("fuelGaugeResume();") < loop.index("bleResumeAfterOta(")
     assert loop.index("bleResumeAfterOta(") < loop.index("processBleStatusResponse();")
 
     pending_at = setup.index("if (b_pendingOtaLittleFs)")
     assert pending_at < setup.index("b_ota = true;", pending_at)
     assert setup.index("b_ota = true;", pending_at) < setup.index("blePauseForOta();", pending_at)
     assert setup.index("blePauseForOta();", pending_at) < setup.index("pullOtaResumePendingLittleFs()", pending_at)
+    assert setup.index("quiesceFuelGaugeForShutdown();", pending_at) < setup.index("setOtaRuntimePaused(gaugeClean && !bleHasLiveClient());", pending_at)
+    assert setup.index("setOtaRuntimePaused(gaugeClean && !bleHasLiveClient());", pending_at) < setup.index("pullOtaResumePendingLittleFs()", pending_at)
+    assert "!gaugeClean || !otaRuntimeIsPaused() || !pullOtaResumePendingLittleFs()" in setup
+    assert setup.index("hdsOtaRollbackMarkValid();") < setup.index("fuelGaugeAllowConfiguration();")
+    assert "if (!b_ota && !bootOtaRebootPending)" in setup
     pending_check_at = setup.index("const bool b_pendingOtaLittleFs = pullOtaHasPendingLittleFs();")
     assert pending_check_at < setup.index("ble_init();")
     assert "if (b_ble_enabled && !b_pendingOtaLittleFs)" in setup
@@ -104,7 +114,7 @@ def main():
     assert "volatile unsigned long otaActivityAt = 0;" in parameter
     assert "volatile bool otaRuntimePaused = false;" in parameter
     assert "bool elegantOtaUploadClaimed = false;" in parameter
-    assert "OTA_RUNTIME_PAUSE_TIMEOUT_MS = 2000" in parameter
+    assert "OTA_RUNTIME_PAUSE_TIMEOUT_MS = 10000" in parameter
     assert ota_start.index("otaDispatchMutex") < ota_start.index("b_pullOtaRunning || b_ota")
     assert ota_start.index("b_pullOtaRunning || b_ota") < ota_start.index("otaRuntimeIsPaused()")
     assert ota_start.index("otaRuntimeIsPaused()") < ota_start.index("Update.begin")

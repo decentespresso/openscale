@@ -170,6 +170,11 @@ void handleElegantOtaStart(AsyncWebServerRequest *request) {
   }
 
   std::lock_guard<std::mutex> updateLock(otaDispatchMutex);
+  if (!b_ota || b_pullOtaRunning || !otaRuntimeIsPaused()) {
+    onOTAEnd(false);
+    request->send(503, "text/plain", "OTA runtime pause lost");
+    return;
+  }
   if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) {
     onOTAEnd(false);
     request->send(400, "text/plain", Update.errorString());

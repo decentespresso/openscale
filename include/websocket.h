@@ -386,6 +386,8 @@ void processWsPendingCmds() {
   }
 #endif
   if (mask & WSP_SLEEP_ON) {
+    quiesceFuelGaugeForShutdown();
+    fuelGaugeSleep();
     b_softSleep = true;
     b_u8g2Sleep = true;
     u8g2.setPowerSave(1);

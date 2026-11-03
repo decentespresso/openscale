@@ -127,7 +127,7 @@ class WakeOnWeightContractTests(unittest.TestCase):
         self.assertIn("deepSleepWakeMask()", WOW)
         self.assertLess(setup.index("wowMicroWakeOrContinue();"), setup.index("Serial.begin"))
         self.assertLess(FIRMWARE.index("wowMicroWakeOrContinue();"),
-                        FIRMWARE.index("storageInit()"))
+                        FIRMWARE.index("storageInit(&bootSettingsOpened)"))
         self.assertLess(FIRMWARE.index("wowMicroWakeOrContinue();"),
                         FIRMWARE.index("pinMode(PWR_CTRL, OUTPUT)"))
         self.assertLess(FIRMWARE.index("storageGetInt(KEY_WOW_INTERVAL, 0)"),

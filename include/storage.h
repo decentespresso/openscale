@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <EEPROM.h>
 #include <Preferences.h>
+#include <nvs.h>
 #include <math.h>
 #include "calibration_validation.h"
 #include "config.h"
@@ -30,6 +31,7 @@ constexpr const char *KEY_DRIFT_MAX = "drift_max";
 constexpr const char *KEY_BAT_PROTECT = "bat_protect";
 constexpr const char *KEY_BAT_CAPACITY_SET = "bat_cap_set";
 constexpr const char *KEY_BAT_CAPACITY = "bat_capacity";
+constexpr const char *KEY_BAT_RESEAL = "bat_reseal";
 constexpr const char *KEY_WOW_INTERVAL = "wow_interval";
 #if HDS_ENABLE_ENERGY_MENU
 constexpr const char *KEY_ENERGY_SCHEMA = "energy_schema";
@@ -110,6 +112,15 @@ inline int storageGetInt(const char *key, int defaultValue) {
 
 inline bool storageGetBool(const char *key, bool defaultValue) {
   return settingsPreferences.getBool(key, defaultValue);
+}
+
+inline uint8_t storageGetResealState() {
+  nvs_handle_t handle;
+  if (nvs_open(STORAGE_NAMESPACE, NVS_READONLY, &handle) != ESP_OK) return 2;
+  uint8_t state = 2;
+  const esp_err_t result = nvs_get_u8(handle, KEY_BAT_RESEAL, &state);
+  nvs_close(handle);
+  return result == ESP_ERR_NVS_NOT_FOUND ? 0 : (result == ESP_OK && state <= 1 ? state : 2);
 }
 
 #if HDS_ENABLE_ENERGY_MENU
@@ -334,8 +345,10 @@ inline bool storageMigrateLegacyEeprom() {
   return migrated;
 }
 
-inline bool storageInit() {
-  if (!settingsPreferences.begin(STORAGE_NAMESPACE, false)) {
+inline bool storageInit(bool *opened = nullptr) {
+  const bool namespaceOpened = settingsPreferences.begin(STORAGE_NAMESPACE, false);
+  if (opened) *opened = namespaceOpened;
+  if (!namespaceOpened) {
     return false;
   }
   if (settingsPreferences.getUShort(KEY_STORAGE_SCHEMA, 0) >= STORAGE_SCHEMA_VERSION) {
