@@ -2207,11 +2207,12 @@ uint32_t energyDisplaySignature(unsigned long now) {
   chargingNow = digitalRead(USB_DET) == LOW;
 #endif
   const uint8_t batteryBucket = EnergyRuntimePolicy::batteryDisplayBucket(percent);
-  const uint8_t displayedBattery = chargingNow ? 5 : batteryBucket;
+  const bool batteryReady = powerCadence.batterySampleSequence != 0;
+  const uint8_t displayedBattery = chargingNow ? 5 : (batteryReady ? batteryBucket : 6);
   const bool tareVisible = now - t_tareStatus < 500;
   const bool shutdownWarningVisible = b_shutdownFailBle && now - t_shutdownFailBle < 3000;
   const uint32_t animationPhase =
-    ((wifiBlink || (!chargingNow && batteryBucket == 0)) ? (now / 500) & 1 : 0) |
+    ((wifiBlink || (batteryReady && !chargingNow && batteryBucket == 0)) ? (now / 500) & 1 : 0) |
     ((b_ble_enabled && !bleConnected ? (now / 1000) & 1 : 0) << 1);
   signature = mixEnergyDisplaySignature(signature, static_cast<uint32_t>(lroundf(f_displayedValue * 10.0f)));
   signature = mixEnergyDisplaySignature(signature, (f_displayedValue > OVER_WEIGHT) |
@@ -2854,6 +2855,8 @@ void drawBattery(unsigned long now) {
     u8g2.drawXBM(121, 51, 7, 12, image_battery_charging);
   } else {
     b_is_charging = false;
+  }
+  if (!b_is_charging && powerCadence.batterySampleSequence != 0) {
     int i_batteryPercent = batteryPercent();
     switch (EnergyRuntimePolicy::batteryDisplayBucket(i_batteryPercent)) {
       case 0:

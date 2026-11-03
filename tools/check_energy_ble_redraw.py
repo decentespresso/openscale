@@ -25,6 +25,8 @@ bool connected = false, b_ble_enabled = true, b_wifiEnabled = true;
 bool b_shutdownFailBle = false, b_screenFlipped = false, b_debug = false;
 bool b_about = false, b_timeOnTop = false, b_adc_recovery_active = false;
 bool b_heartBeatIcon = false;
+struct { uint32_t batterySampleSequence = 1; } powerCadence;
+int batteryPercent() { return 50; }
 unsigned long now = 0, t_tareStatus = 0, t_shutdownFailBle = 0;
 unsigned long t_oled_refresh = 0, i_oled_print_interval = 100;
 int i_adc_recovery_count = 0;
