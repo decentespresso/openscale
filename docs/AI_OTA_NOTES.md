@@ -230,9 +230,20 @@ Boot rollback still records and evaluates attempts immediately, but executes
 the selected rollback only after the existing button-abort gate, settings load,
 and gauge discovery make persistent cleanup possible. Early button-abort sleep
 does not start I2C and retains any stored obligation.
-A selected rollback bypasses fatal settings/energy initialization halts so
-NVS-full failures cannot strand a pending image. Unreadable reseal state stays
-unresolved, never authorizes unsealing, and never selects Legacy hardware.
+A selected rollback bypasses fatal settings/energy initialization halts to
+attempt safe cleanup. Unreadable reseal state stays unresolved, never authorizes
+unsealing, and never selects Legacy hardware.
+
+Rollback requires successful gauge cleanup, because an older image may not
+understand `bat_reseal`. Failed cleanup retains the obligation and charging hold,
+stores filesystem-free recovery, then cancels automatic bootloader rollback.
+Only after both persistent operations succeed may battery-powered shutdown enter
+deep sleep; USB-powered operation remains stopped in the current image. The next
+boot remains gauge-aware and filesystem-free until recovery completes.
+If either persistent operation fails, do not invalidate the image, reboot, sleep,
+or continue ordinary startup. Remain stopped for external USB recovery. Software
+cannot guarantee the bootloader's choice after an external reset or power loss
+when the required flash/NVS writes themselves fail.
 
 ## Reboot Routing
 
@@ -276,6 +287,7 @@ python tools/test_decent_ota_target_contract.py
 python tools/test_pull_ota_contract.py
 python tools/test_release_workflow_contract.py
 python tools/test_ota_rollback_contract.py
+python tools/test_rollback_reseal_safety.py
 python tools/test_ota_public_key_header.py
 python tools/test_ota_reboot_routing_contract.py
 python tools/test_custom_build_ota_contract.py

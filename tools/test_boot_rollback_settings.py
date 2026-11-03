@@ -20,12 +20,14 @@ constexpr const char *STORAGE_NAMESPACE = "hds";
 constexpr const char *KEY_STORAGE_SCHEMA = "schema";
 constexpr const char *KEY_BAT_RESEAL = "bat_reseal";
 constexpr uint16_t STORAGE_SCHEMA_VERSION = 1;
+constexpr int ESP_OK = 0;
 struct Halted {};
 struct Slept {};
 struct RolledBack {};
 bool namespaceAvailable = true, defaultsWritable = true, energyLoadSucceeds = true;
 bool selectedRollback = true, preDetectionAbort = false, cleanupSucceeds = true;
 bool storedMarkerPresent = false, storedMarkerTyped = true;
+bool recoveryStored = false, rollbackCancelled = false;
 uint8_t storedMarkerValue = 0;
 int energyLoads = 0, energyInitializations = 0, discoveries = 0, cleanupCalls = 0;
 int shutdownHolds = 0, wifiStops = 0, events = 0, cleanupEvent = 0, holdEvent = 0;
@@ -40,11 +42,12 @@ struct {
   }
 } settingsPreferences;
 bool storageEnsureDefaults() {
-  if (storedMarkerPresent) return true;
-  if (!defaultsWritable) return false;
-  storedMarkerPresent = true;
-  storedMarkerValue = 0;
-  return true;
+  return defaultsWritable;
+}
+uint8_t storageGetResealState() {
+  if (!settingsPreferences.opened) return 2;
+  if (!storedMarkerPresent) return 0;
+  return storedMarkerTyped && storedMarkerValue <= 1 ? storedMarkerValue : 2;
 }
 bool storageHasAllSettings() { return true; }
 bool storageMigrateLegacyEeprom() { return true; }
@@ -77,6 +80,9 @@ bool quiesceFuelGaugeForShutdown() {
   return cleanupSucceeds;
 }
 void fuelGaugeSleep() { ++shutdownHolds; holdEvent = ++events; }
+bool filesystemRecoveryStore(bool active) { recoveryStored = active; return true; }
+int esp_ota_mark_app_valid_cancel_rollback() { rollbackCancelled = true; return ESP_OK; }
+void esp32_sleep() { throw Slept{}; }
 void hdsOtaClearAttempts() {}
 void stopWifi() { ++wifiStops; }
 void esp_ota_mark_app_invalid_rollback_and_reboot() {
@@ -109,6 +115,7 @@ static void reset() {
   storedMarkerPresent = false;
   storedMarkerTyped = true;
   storedMarkerValue = 0;
+  recoveryStored = rollbackCancelled = false;
   energyLoads = energyInitializations = discoveries = cleanupCalls = 0;
   shutdownHolds = wifiStops = events = cleanupEvent = holdEvent = 0;
   settingsPreferences.opened = false;
@@ -121,6 +128,15 @@ static void expectRollback() {
   assert(rolledBack && energyLoads == 0 && energyInitializations == 0);
 }
 
+static void expectBlockedRollback() {
+  bool slept = false;
+  try { boot(); } catch (const Slept &) { slept = true; }
+  assert(slept && recoveryStored && rollbackCancelled);
+  assert(discoveries == 1 && cleanupCalls == 1 && shutdownHolds == 1);
+  assert(cleanupEvent < holdEvent && wifiStops == 1);
+  assert(energyLoads == 0 && energyInitializations == 0);
+}
+
 int main() {
   reset();
   defaultsWritable = false;
@@ -129,7 +145,7 @@ int main() {
   reset();
   namespaceAvailable = false;
   cleanupSucceeds = false;
-  expectRollback();
+  expectBlockedRollback();
   assert(fuelGaugeRuntime.sealRequired && !fuelGaugeRuntime.resealPending);
   reset();
   storedMarkerPresent = true;
@@ -186,7 +202,7 @@ def main():
     deferred = "if (bootRollbackReason) hdsOtaRollback(bootRollbackReason);"
     assert setup.index("esp32_sleep();") < setup.index("Wire.begin(") < setup.index(reseal)
     assert setup.index("fuelGaugeStartDetection(") < setup.index(deferred)
-    assert "storageEnsureBool(KEY_BAT_RESEAL, false)" in extract_function(storage, "inline bool storageEnsureDefaults()")
+    assert "KEY_BAT_RESEAL" not in extract_function(storage, "inline bool storageEnsureDefaults()")
     source = HARNESS.replace("__STORAGE_INIT__", extract_function(storage, "inline bool storageInit("))
     source = source.replace("__ROLLBACK_FUNCTION__", extract_function(rollback, "static void hdsOtaRollback("))
     source = source.replace("__SETTINGS_BLOCK__", settings).replace("__RESEAL_BLOCK__", reseal)

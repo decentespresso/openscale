@@ -1129,9 +1129,7 @@ void setup() {
 #endif
   b_batteryProtect = storageGetBool(KEY_BAT_PROTECT, false);
   const uint8_t bootResealState = bootSettingsOpened
-      ? (settingsPreferences.isKey(KEY_BAT_RESEAL)
-          ? settingsPreferences.getUChar(KEY_BAT_RESEAL, 2) : 0)
-      : 2;
+      ? storageGetResealState() : 2;
   fuelGaugeSetResealPending(bootResealState == 1);
   if (bootResealState > 1) fuelGaugeRuntime.sealRequired = true;
   const int storedBatteryCapacity = storageGetInt(KEY_BAT_CAPACITY, 0);

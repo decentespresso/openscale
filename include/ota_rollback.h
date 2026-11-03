@@ -60,8 +60,20 @@ static void hdsOtaRollback(const char *reason) {
 #ifdef CONFIG_APP_ROLLBACK_ENABLE
   Serial.print("[ota-verify] rollback: ");
   Serial.println(reason);
-  quiesceFuelGaugeForShutdown();
+  const bool gaugeClean = quiesceFuelGaugeForShutdown();
   fuelGaugeSleep();
+  if (!gaugeClean) {
+    Serial.println("[ota-verify] rollback blocked: gauge cleanup failed");
+    const bool recoveryStored = filesystemRecoveryStore(true);
+    const bool rollbackCancelled = recoveryStored &&
+        esp_ota_mark_app_valid_cancel_rollback() == ESP_OK;
+    stopWifi();
+    Serial.flush();
+    if (recoveryStored && rollbackCancelled) esp32_sleep();
+    while (true) {
+      delay(1000);
+    }
+  }
   hdsOtaClearAttempts();
   stopWifi();
   Serial.flush();
