@@ -16,7 +16,11 @@ inline unsigned long buttonBackAt = std::numeric_limits<unsigned long>::max();
 inline unsigned long millis() { return static_cast<unsigned long>(fakeMicros / 1000); }
 inline void delay(unsigned long duration) { fakeMicros += duration * 1000; }
 inline void delayMicroseconds(unsigned int duration) { fakeMicros += duration; }
-inline void digitalWrite(int pin, int level) { pinLevels[pin] = level; pinWrites.push_back(pin); }
+inline void digitalWrite(int pin, int level) {
+  if (pinModes[pin] < 0) return;
+  pinLevels[pin] = level;
+  pinWrites.push_back(pin);
+}
 inline int digitalRead(int pin) { return pin == 1 && millis() >= buttonBackAt ? LOW : pinLevels[pin]; }
 inline void pinMode(int pin, int mode) { pinModes[pin] = mode; }
 struct FakeSerial {
