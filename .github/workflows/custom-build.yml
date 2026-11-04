@@ -97,6 +97,7 @@ jobs:
       - name: Validate custom build contracts
         run: |
           python tools/test_plugin_catalog.py
+          python tools/test_app_text.py
           python tools/test_webapp_contract.py
           python tools/test_web_theme.py
           python tools/test_custom_build_execution.py
@@ -175,10 +176,17 @@ jobs:
       - name: Build plugin environment
         env:
           PLUGIN_ID: ${{ matrix.plugin }}
-        run: >-
-          python tools/build_custom_firmware.py
-          --config .pio.nosync/plugin-ci.json
-          --verify-plugin-environment "esp32s3-$PLUGIN_ID"
+          FIRMWARE_REF: ${{ matrix.firmware_ref }}
+          CANDIDATE_COMMIT: ${{ github.sha }}
+        run: |
+          source_args=()
+          if [ "$FIRMWARE_REF" = "main" ]; then
+            source_args+=(--source-commit "$CANDIDATE_COMMIT")
+          fi
+          python tools/build_custom_firmware.py \
+            --config .pio.nosync/plugin-ci.json \
+            --verify-plugin-environment "esp32s3-$PLUGIN_ID" \
+            "${source_args[@]}"
 
   compile_custom:
     if: github.event_name != 'workflow_dispatch' || inputs.commit != ''
@@ -245,6 +253,8 @@ jobs:
         run: pio run -e esp32s3
       - name: Check both About layouts
         run: python tools/check_about_layout.py
+      - name: Check App Text in both rotations
+        run: python tools/check_app_text_layout.py
       - name: Build multi-webapp filesystem fixture
         run: python tools/test_webapp_contract.py --buildfs
       - name: Build changed webapp filesystems

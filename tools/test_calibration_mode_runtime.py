@@ -31,6 +31,8 @@ bool b_menuCircleLongHandled = false, b_menuSquareLongHandled = false;
 bool b_chargingOLED = true, bleClientLive = false;
 bool b_buttonChordSuppressUntilRelease = false;
 struct { bool active = false; } circle_press_data, square_press_data;
+bool appTextScreenAvailable() { return !b_menu && !b_calibration && !b_showChargingUI; }
+bool cancelAppPrompt() { assert(!b_calibration); return false; }
 int i_cal_weight = 0, i_button_cal_status = 1, i_calibration = 0, i_buttonBootDelay = 0;
 int GPIO_power_on_with = BATTERY_CHARGING, chargingPin = LOW, usbPin = LOW;
 bool chargingUiActive() { @CHARGING_UI@ }

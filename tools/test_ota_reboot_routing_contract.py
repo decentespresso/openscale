@@ -234,8 +234,8 @@ def main():
     assert_contains(MENU_HEADER, "if (pullOtaTargetIsAssignedCustomBuild(target)) {\n    customBuildStart(false, false);")
     assert_contains(MENU_HEADER, "b_debug = true;\n  leaveMenu();")
     menu_contents = MENU_HEADER.read_text(encoding="utf-8")
-    if menu_contents.count("markMenuRestartRequired();") != 2:
-        raise AssertionError("menu.h expected restart routing for WiFi toggle and reset")
+    if menu_contents.count("markMenuRestartRequired();") != 3:
+        raise AssertionError("menu.h expected restart routing for integration, WiFi toggle and reset")
     for path in [*ROOT.glob("include/*.h"), *ROOT.glob("src/*.ino"), *ROOT.glob("src/*.cpp")]:
         if path == MENU_HEADER:
             assert path.read_text(encoding="utf-8").count("b_menu = false;") == 1

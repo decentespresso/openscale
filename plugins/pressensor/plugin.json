@@ -8,10 +8,11 @@
   "firmware_refs": ["v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main", "v3.1.15"],
   "requires": [],
   "conflicts": ["grind-by-weight"],
+  "conflicts_by_ref": {"main": []},
   "patches": {
-    "v3.1.14-preview.3": "patches/main.patch",
-    "v3.1.14-preview.4": "patches/main.patch",
-    "v3.1.14": "patches/main.patch",
+    "v3.1.14-preview.3": "patches/legacy-main.patch",
+    "v3.1.14-preview.4": "patches/legacy-main.patch",
+    "v3.1.14": "patches/legacy-main.patch",
     "main": "patches/main.patch",
     "v3.1.15": "patches/v3.1.15.patch"
   },

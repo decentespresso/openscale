@@ -17,6 +17,8 @@ Local build, flash, OTA, editor, cache, and CAD files are omitted unless they ar
 | Calibration, ADC, tare stability | `include/calibration_validation.h`, `include/menu.h`, `src/hds.ino` | `docs/AI_FIRMWARE_NOTES.md` |
 | Persistent settings, defaults, migration | `include/storage.h` | `docs/AI_STORAGE_NOTES.md` |
 | Decent binary, BLE, USB, ADS debug | `include/decent_protocol.h`, then `include/ble.h` or `include/usbcomm.h` | `docs/AI_PROTOCOL_NOTES.md` |
+| BLE App Text, local opt-in, browser helper | `include/app_prompt_state.h`, `include/app_prompt.h`, `include/app_prompt_ble.h`, `examples/ble-app-text/` | `docs/AI_PROTOCOL_NOTES.md` |
+| Pressensor/grinder selection and safe restart | `include/integration_state.h`, `include/integration_settings.h`, `include/menu.h` | `docs/AI_STORAGE_NOTES.md` |
 | WiFi, AP setup, credentials, mDNS | `src/wifi_setup.cpp`, `include/wifi_setup.h`, `include/mdns_name.h` | `docs/AI_BUILD_NOTES.md` |
 | HTTP and LittleFS serving | `include/webserver.h`, matching `plugins/default-web-apps/assets/` file | `docs/AI_FIRMWARE_NOTES.md` |
 | HDS web theme, CSS, and preference toggle | `plugins/default-web-apps/assets/shared/theme.css`, `plugins/default-web-apps/assets/shared/theme.js`, matching LittleFS page | `docs/AI_WEB_UI_NOTES.md` |

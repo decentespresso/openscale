@@ -25,6 +25,16 @@ Do not duplicate command interpretation in BLE and USB. Add shared behavior to t
 
 ## BLE Notification State
 
+App Text is a separate core characteristic in `FFF0`, UUID
+`8b8dc7c0-6bf7-4bdf-9a2c-0ba9cb9a4a01`. Read returns `[1,18,10,enabled]`;
+write `[1,...text]` to Show or `[0]` to Clear. Text is 1-18 printable ASCII bytes.
+Only the local persisted Display opt-in enables Show. BLE callbacks validate and
+update protected fixed buffers; the main loop renders text below weight on the
+normal weighing screen. Legacy heartbeat refreshes the ten-second text session.
+Disconnect, expiry, Off, or Clear removes text; Circle cancellation blocks Show
+until reconnection. Neither USB nor WebSocket exposes this text command. See
+`examples/ble-app-text/README.md` and run `python tools/test_app_text.py`.
+
 A live BLE connection does not imply an FFF4 notification subscription. A client becomes eligible for outbound FFF4 notifications only after its current connection handle subscribes to the characteristic.
 
 All outbound FFF4 paths pass through `bleCanNotifyCurrent()`. The shared gate checks the feature state, characteristic, live connection, and current subscription before touching the characteristic.
