@@ -18,11 +18,30 @@ static bool rejects(const char *text) {
   return !pullOtaParseTargetVersion(text, strlen(text), target);
 }
 
+static void assertTargetWaitsForPayload(const uint8_t request[5]) {
+  for (size_t length = 1; length < 5; length++) {
+    assert(decentCommandFrameLength(request, length, false) == 0);
+  }
+  assert(decentCommandFrameLength(request, 5, false) == 5);
+
+  const uint8_t stream[] = {
+      0x03, 0x22, 0x03, 0x22, 0x03, 0x22, 0x03, 0x22, 0x03, 0x22,
+      0x03, 0x22, 0x03, 0x22, 0x03, 0x22, 0x03, 0x22, 0x03, 0x22,
+      0x03, 0x22, 0x03, 0x22, 0x03, 0x22, 0x03, 0x22, 0x03, 0x22,
+      request[0], request[1], request[2], request[3], request[4]};
+  for (size_t offset = 0; offset < 30; offset += 2) {
+    assert(decentCommandFrameLength(stream + offset, 32 - offset, false) == 2);
+  }
+  assert(decentCommandFrameLength(stream + 30, 2, false) == 0);
+  assert(decentCommandFrameLength(stream + 30, sizeof(stream) - 30, false) == 5);
+}
+
 int main() {
   PullOtaTargetVersion absent = pullOtaNoTargetVersion();
   assert(!absent.present);
   assert(!pullOtaTargetIsAssignedCustomBuild(absent));
   const uint8_t customRequest[] = {0x03, 0x1B, 0x80, 0x80, 0x80};
+  assertTargetWaitsForPayload(customRequest);
   assert(decentCommandFrameLength(customRequest, sizeof(customRequest), false) == 5);
   assert(decentCommandFrameLength(customRequest, 3, false) == 0);
   assert(decentCommandFrameLength(customRequest, 4, false) == 0);
@@ -93,9 +112,15 @@ int main() {
          decoded.patch == 13);
 
   const uint8_t bare[] = {0x03, 0x1B};
-  assert(decentCommandFrameLength(bare, sizeof(bare), false) == 2);
+  assert(decentCommandFrameLength(bare, sizeof(bare), false) == 0);
+  assert(decentCommandFrameLength(bare, sizeof(bare), true) == 2);
+
+  const uint8_t bareThenCommand[] = {0x03, 0x1B, 0x03, 0x22};
+  assert(decentCommandFrameLength(bareThenCommand, sizeof(bareThenCommand), false) == 2);
+  assert(decentCommandFrameLength(bareThenCommand + 2, 2, false) == 2);
 
   const uint8_t targeted[] = {0x03, 0x1B, 0x83, 0x81, 0x8D};
+  assertTargetWaitsForPayload(targeted);
   assert(decentCommandFrameLength(targeted, sizeof(targeted), false) == 5);
 
   const uint8_t partial[] = {0x03, 0x1B, 0x83};

@@ -527,6 +527,7 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
   }
 #endif
   int pin = button->getPin();
+  if (handleMenuInfoPageButton(pin, eventType)) return;
   switch (eventType) {
     case AceButton::kEventPressed:
 #if HDS_ENABLE_ENERGY_MENU
@@ -637,15 +638,7 @@ void enterUsbStandby() {
   b_powerOff = false;
   if (b_menu || b_calibration) return;
 #if HDS_ENABLE_GRINDER
-  if (grinderSettings.enabled &&
-      (grinderRuntime.state == GRINDER_STATE_ARMED ||
-       grinderRuntime.state == GRINDER_STATE_GRINDING ||
-       grinderRuntime.state == GRINDER_STATE_STOPPING ||
-       grinderRuntime.state == GRINDER_STATE_ERROR ||
-       grinderRuntime.relayOn || grinderRuntime.recovery.active)) {
-    Serial.println("USB standby blocked: stop grinder first");
-    return;
-  }
+  grinderPrepareForShutdown();
 #endif
   if (b_softSleep) wakeScaleFromSoftSleep("USB standby");
   b_shutdownFailBle = false;
@@ -654,9 +647,16 @@ void enterUsbStandby() {
   b_buttonChordSuppressUntilRelease = true;
   circle_press_data = {};
   square_press_data = {};
-#if HDS_ENABLE_GRINDER
-  grinderPauseForMenu();
-#endif
+  u8g2.setPowerSave(0);
+  u8g2.setContrast(255);
+  u8g2.setFontDirection(0);
+  u8g2.setDisplayRotation(b_screenFlipped ? U8G2_R0 : U8G2_R2);
+  refreshOLED((char*)"Off", FONT_M);
+  const unsigned long offShownAt = millis();
+  while (millis() - offShownAt < 1000) {
+    serviceFuelGauge();
+    delay(20);
+  }
 #if HDS_ENABLE_ENERGY_MENU
   requestEnergyDisplay(b_chargingOLED);
   applyEnergyDisplayCommand(b_chargingOLED);
@@ -1109,7 +1109,7 @@ void setup() {
     } else {
       Serial.println("Button released before 0.5 second.");
       Serial.println("Going to sleep now.");
-      esp32_sleep();
+      esp32_sleep(true);
       break;
       b_button_pressed = false;
     }
@@ -2398,6 +2398,8 @@ void loop() {
   processAppPromptSession();
   static bool otaBleClientDisconnected = false;
   static bool otaTransportsStopped = false;
+  processMenuInfoPageExit();
+  if (!b_menu && menuInfoPageActive()) clearMenuInfoPage();
 #if HDS_ENABLE_ENERGY_MENU
   const uint64_t lightSleepWakeMask = serviceEnergyLightSleepWakeRestore();
   if (energyLightSleepButtonWake(lightSleepWakeMask)) {
@@ -2449,11 +2451,15 @@ void loop() {
         otaBleClientDisconnected && !bleHasLiveClient());
     otaBleClientDisconnected = false;
     otaTransportsStopped = false;
+    invalidateMenuFrame();
   }
 
   processBleStatusResponse();
   processBleVoltageResponse();
   serviceFuelGauge();
+  if (powerCadence.chargeCheck.shouldRun(millis(), 200)) {
+    checkBattery();
+  }
 #if HDS_ENABLE_ENERGY_MENU
   serviceEnergyPowerManagement();
   serviceEnergyHousekeeping(millis());
@@ -2479,7 +2485,7 @@ void loop() {
   else
     b_heartBeatIcon = false;
 #endif
-  if (b_ota || bleHasLiveClient()
+  if (b_ota || b_is_charging || bleHasLiveClient()
 #if HDS_FEATURE_WEBSOCKET
       || (b_wifiEnabled && websocketHasClients())
 #endif
@@ -2535,9 +2541,6 @@ void loop() {
 #endif  //DEBUG
     if (millis() - t_batteryRefresh > i_batteryRefreshTareInterval){
       updateBattery(BATTERY_PIN);
-    }
-    if (powerCadence.chargeCheck.shouldRun(millis(), 200)) {
-      checkBattery();
     }
     if (b_menu) {
 #if HDS_FEATURE_WIFI

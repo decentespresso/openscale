@@ -51,12 +51,12 @@ Experience the app in action! It requires a **Chrome or Edge browser (version 70
 5.  **Start Dosing:** Click the **"Start"** button. The app will tare the scale and guide you through the defined stages.
 6.  **Follow On-Screen Prompts:**
     * The app will prompt you for each stage after you click start.
-    * First it will prompt you to **Put Container on the scale and click set container weight**, after click it will tare the scale.
+    * First it will prompt you to **Put Container on the scale and click set container weight**. Setup starts dosing only if its tare command can be sent. If disconnected, reconnect and retry container setup explicitly; sending the command does not confirm completed hardware tare.
     * Now you can start dosing.
     * It will detect when the target weight for a stage is reached and stabilized before moving to the next.
     * Sounds will indicate completion of a stage or errors.
 7.  **Export Data:** After completing a dosing sequence, the results are automatically logged. You can click **"CSV"** or **"JSON"** to download your complete dosing history.
-8.  **Stop Dosing:** Click **"Stop Dosing"** to end the current sequence or reset the process.
+8.  **Stop Dosing:** Click **"Stop"** to end the current sequence or cancel the initial container setup. A heavier replacement container prompts you to zero before continuing.
 
 ---
 

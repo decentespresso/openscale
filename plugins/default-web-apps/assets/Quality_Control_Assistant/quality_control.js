@@ -23,9 +23,7 @@ class DecentScale {
             minWeight: 0,
             enableSounds: false
         };
-        this.stabilityTimer = null;
-        this.lastStableWeight = 0;
-        this.lastWeight = 0;
+        this.stabilityWindow = null;
         this.weightIsStable = false;
         this.stabilityThreshold = 0.2;
         this.nearzerotolerance =0.2;
@@ -65,10 +63,14 @@ class DecentScale {
     });
 
     this.ws.addEventListener('error', () => {
+        this.stabilityWindow = null;
+        this.weightIsStable = false;
         if (this.statusDisplay) this.statusDisplay.textContent = 'Status: Connection error (WebSocket)';
     });
 
     this.ws.addEventListener('close', () => {
+        this.stabilityWindow = null;
+        this.weightIsStable = false;
         if (this.statusDisplay) this.statusDisplay.textContent = 'Status: Disconnected (WebSocket)';
     });
 
@@ -324,9 +326,7 @@ class DecentScale {
             this.qcMode = false;
             this.toggleQC.textContent = 'Start QC Mode';
             console.log("stopQC, button text changed");
-        } else {
-            this.startQCMode();
-            this.qcMode=true;
+        } else if (this.startQCMode()) {
             this.toggleQC.textContent = 'Stop QC Mode';
             console.log("StartQC, button text changed");
         }
@@ -334,20 +334,27 @@ class DecentScale {
 
     startQCMode() {
         console.log('Starting QC Mode');
-        this.qcMode = true;
-        this.qcSettings = {
+        const settings = {
             lowThreshold: parseFloat(document.getElementById('lowThreshold').value),
             goalWeight: parseFloat(document.getElementById('goalWeight').value),
             highThreshold: parseFloat(document.getElementById('highThreshold').value),
             minWeight: parseFloat(document.getElementById('minWeight').value),
             enableSounds: document.getElementById('enableSounds').checked,
         };
-        this.tare();
-        this.updateQCStatus(
+        if (!this.isValidPreset(settings) || settings.minWeight <= this.nearzerotolerance ||
+            settings.lowThreshold > settings.goalWeight || settings.goalWeight > settings.highThreshold) {
+            alert('Enter finite QC settings with low <= goal <= high and minimum weight above 0.2 g.');
+            return false;
+        }
+        this.qcSettings = settings;
+        this.qcMode = true;
+        this.setQCState(
             this.QC_STATES.WAITING_FOR_NEXT,
             'QC Mode: Active - Place object on scale'
         );
+        this.tare();
         console.log('QC Mode started, current state:', this.currentQCState);
+        return true;
     }
 
     updateCountdown(timeLeft) {
@@ -374,9 +381,7 @@ class DecentScale {
         clearInterval(this.countdownInterval);
         this.countdownInterval = null;
     }
-    this.stabilityTimer = null;
-    this.weightIsStable = false;
-    this.updateQCStatus(
+    this.setQCState(
         this.QC_STATES.WAITING_FOR_NEXT,
         'QC Mode: Inactive'
     );
@@ -492,14 +497,8 @@ class DecentScale {
         const presets = this.getPresets() ?? {};
         const presetSelect = document.getElementById('presetSelect');
 
-        const savePresetOption = presetSelect.querySelector('option[value="save_preset"]');
-
-        while (presetSelect.options.length > 1) {
-            if (presetSelect.options[1] !== savePresetOption) {
-                presetSelect.remove(1);
-            } else {
-                break;
-            }
+        while (presetSelect.options.length > 2) {
+            presetSelect.remove(2);
         }
 
 
@@ -622,79 +621,71 @@ class DecentScale {
             this.processQCWeight(weight);
         }
     }
-    processQCWeight(weight) {
-        try {
+    setQCState(state, message) {
+        clearTimeout(this.removalTimeout);
+        this.removalTimeout = null;
+        this.stabilityWindow = null;
+        this.weightIsStable = false;
+        this.currentQCState = state;
+        this.updateQCStatus(state, message);
+    }
 
-        if (this.qcMode) {
+    updateQCStability(weight) {
+        const now = Date.now();
+        const previous = this.stabilityWindow;
+        const minimum = Math.min(previous?.minimum ?? weight, weight);
+        const maximum = Math.max(previous?.maximum ?? weight, weight);
+        if (!previous || now - previous.lastSampleAt > 1000 ||
+            now < previous.lastSampleAt || maximum - minimum > this.stabilityThreshold) {
+            this.stabilityWindow = {minimum: weight, maximum: weight,
+                startedAt: now, lastSampleAt: now};
+            return false;
+        }
+        this.stabilityWindow = {...previous, minimum, maximum, lastSampleAt: now};
+        return now - previous.startedAt >= 2500;
+    }
+
+    processQCWeight(weight) {
+        if (!this.qcMode) return;
+        try {
             switch (this.currentQCState) {
                 case this.QC_STATES.WAITING_FOR_NEXT:
                     if (weight >= this.qcSettings.minWeight) {
-                        this.updateQCStatus(
+                        this.setQCState(
                             this.QC_STATES.MEASURING,
                             'Stabilizing...'
                         );
-                        this.currentQCState = this.QC_STATES.MEASURING;
-                        this.weightIsStable = false;
-                        this.lastWeight = weight;
                     }
                     break;
 
                 case this.QC_STATES.MEASURING:
-                    const weightChange = Math.abs(weight - this.lastWeight);
-
-                    if (weightChange <= this.stabilityThreshold) {
-                        if (weight >= this.qcSettings.minWeight) {
-                            this.weightIsStable = true;
-                            const result = this.evaluateWeight(weight);
-                            this.saveMeasurement(weight, result);
-                            this.updateQCStatus(
-                                this.QC_STATES.REMOVAL_PENDING,
-                                'Place next object on scale'
-                            );
-                            this.currentQCState = this.QC_STATES.REMOVAL_PENDING;
-                            this.removalTimeout = setTimeout(() => {
-                                if (this.currentQCState === this.QC_STATES.REMOVAL_PENDING && weight >= this.qcSettings.minWeight) {
-                                    this.weightIsStable = false;
-                                    this.updateQCStatus(
-                                        this.QC_STATES.REMOVAL_PENDING,
-                                        'Ready - Place next object on scale (Check if previous object was left)'
-                                    );
-                                }
-                            }, this.removalTimeoutDuration);
-                        } else if (weight < this.qcSettings.minWeight) {
-                            this.weightIsStable = true;
-                            const result = this.evaluateWeight(weight);
-                            this.saveMeasurement(weight, result);
-                            this.updateQCStatus(
-                                this.QC_STATES.REMOVAL_PENDING,
-                                'Place next object on scale'
-                            );
-                            this.currentQCState = this.QC_STATES.REMOVAL_PENDING;
-                            this.removalTimeout = setTimeout(() => {
-                                if (this.currentQCState === this.QC_STATES.REMOVAL_PENDING && weight < this.qcSettings.minWeight) {
-                                    this.weightIsStable = false;
-                                    this.updateQCStatus(
-                                        this.QC_STATES.REMOVAL_PENDING,
-                                        'Ready - Place next object on scale (Check if previous object was left)'
-                                    );
-                                }
-                            }, this.removalTimeoutDuration);
-                        } else if (weight <= this.nearzerotolerance) {
-                            this.weightIsStable = false;
-                            this.updateQCStatus(
-                                this.QC_STATES.WAITING_FOR_NEXT,
-                                'No Object Detected - Place next one on scale'
-                            );
-                            this.currentQCState = this.QC_STATES.WAITING_FOR_NEXT;
-                            clearTimeout(this.removalTimeout);
-                        }
-                    } else {
-                        this.weightIsStable = false;
+                    if (weight <= this.nearzerotolerance) {
+                        this.setQCState(
+                            this.QC_STATES.WAITING_FOR_NEXT,
+                            'No Object Detected - Place next one on scale'
+                        );
+                        break;
+                    }
+                    if (!this.updateQCStability(weight)) {
                         this.updateQCStatus(
                             this.QC_STATES.MEASURING,
                             'Stabilizing...'
                         );
+                        break;
                     }
+                    this.saveMeasurement(weight, this.evaluateWeight(weight));
+                    this.setQCState(this.QC_STATES.REMOVAL_PENDING, 'Place next object on scale');
+                    this.weightIsStable = true;
+                    this.removalTimeout = setTimeout(() => {
+                        this.removalTimeout = null;
+                        if (this.qcMode && this.currentQCState === this.QC_STATES.REMOVAL_PENDING) {
+                            this.weightIsStable = false;
+                            this.updateQCStatus(
+                                this.QC_STATES.REMOVAL_PENDING,
+                                'Ready - Place next object on scale (Check if previous object was left)'
+                            );
+                        }
+                    }, this.removalTimeoutDuration);
                     break;
 
                 case this.QC_STATES.REMOVAL_PENDING:
@@ -704,21 +695,17 @@ class DecentScale {
                             this.QC_STATES.REMOVAL_PENDING,
                             'Remove this object, and then place the next object'
                         );
-                        this.currentQCState = this.QC_STATES.REMOVAL_PENDING;
                     } else if (weight === 0 || weight <= this.nearzerotolerance) {
-                        this.updateQCStatus(
+                        this.setQCState(
                             this.QC_STATES.WAITING_FOR_NEXT,
                             'Ready ! Place next object on scale'
                         );
-                        this.currentQCState = this.QC_STATES.WAITING_FOR_NEXT;
                     }
                     break;
             }
 
-            this.lastWeight = weight;
+        } catch (error) {
+            console.error('Weight update error:', error);
         }
-    } catch (error) {
-        console.error('Weight update error:', error);
     }
-}
 }

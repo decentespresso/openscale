@@ -3,6 +3,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from test_usb_text_actions_contract import block_after
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL_HEADER = ROOT / "include" / "grinder_protocol.h"
@@ -43,6 +45,73 @@ def test_production_contract():
             [compiler, "-std=c++11", "-I", str(ROOT / "include"), str(HOST_CONTRACT), "-o", str(executable)],
             check=True,
         )
+        subprocess.run([str(executable)], check=True)
+
+
+def test_armed_settings_runtime_contract():
+    compiler = shutil.which("g++") or shutil.which("clang++")
+    assert compiler, "a host C++ compiler is required"
+    harness = r'''
+#include <cassert>
+#include <cstdint>
+#include <initializer_list>
+#include "grinder_protocol.h"
+enum State { GRINDER_STATE_ARMED, GRINDER_STATE_ERROR };
+enum Command { GRINDER_COMMAND_NONE, GRINDER_COMMAND_ON };
+struct { float zeroMaxGrams, targetGrams = 15.0f, safetyMarginGrams = 2.0f; } grinderSettings;
+bool connected = true, offSucceeds = true;
+int order = 0, offAt = 0, closeAt = 0, onCount = 0;
+struct Client { bool connected() { return ::connected; } };
+struct {
+  Client client;
+  State state = GRINDER_STATE_ARMED;
+  Command pendingCommand = GRINDER_COMMAND_NONE;
+  uint32_t lastCommandAt = 100;
+  GrinderRecoveryState recovery = grinderRecoveryStart();
+  bool resumeAfterRecovery = true;
+} grinderRuntime;
+struct Logger {
+  void println(const char*) {}
+  void printf(const char*, const char*) {}
+} Serial;
+uint32_t millis() { return 100; }
+bool grinderSendOff() { offAt = ++order; return offSucceeds; }
+void grinderCloseClient() { closeAt = ++order; connected = false; }
+void grinderSetStatus(const char*) {}
+void grinderSetState(State state) { grinderRuntime.state = state; }
+void grinderSendSimpleCommand(const char*, Command command) {
+  ++onCount;
+  grinderRuntime.pendingCommand = command;
+}
+void grinderEnterError(const char *status) { @ERROR@ }
+void grinderTickArmed() { @ARMED@ }
+int main() {
+  for (float zero : {20.0f, 13.0f, 1.0f}) {
+    for (bool offSuccess : {false, true}) {
+      grinderSettings.zeroMaxGrams = zero;
+      grinderRuntime.state = GRINDER_STATE_ARMED;
+      grinderRuntime.pendingCommand = GRINDER_COMMAND_NONE;
+      grinderRuntime.resumeAfterRecovery = connected = true;
+      offSucceeds = offSuccess;
+      order = offAt = closeAt = onCount = 0;
+      grinderTickArmed();
+      if (zero >= 13.0f) {
+        assert(onCount == 0 && offAt > 0 && offAt < closeAt);
+        assert(!connected && !grinderRuntime.resumeAfterRecovery);
+        assert(grinderRuntime.state == GRINDER_STATE_ERROR);
+      } else {
+        assert(onCount == 1 && offAt == 0 && closeAt == 0 && connected);
+      }
+    }
+  }
+}
+'''.replace("@ERROR@", block_after(source(RUNTIME_HEADER), "void grinderEnterError("))
+    harness = harness.replace("@ARMED@", block_after(source(RUNTIME_HEADER), "void grinderTickArmed("))
+    with tempfile.TemporaryDirectory() as directory:
+        cpp, executable = Path(directory) / "armed.cpp", Path(directory) / "armed.exe"
+        cpp.write_text(harness, encoding="utf-8")
+        subprocess.run([compiler, "-std=c++11", "-I", str(ROOT / "include"),
+                        str(cpp), "-o", str(executable)], check=True)
         subprocess.run([str(executable)], check=True)
 
 
@@ -349,6 +418,7 @@ def test_firmware_contracts():
 
 if __name__ == "__main__":
     test_production_contract()
+    test_armed_settings_runtime_contract()
     test_wrong_mac_runtime_contract()
     test_adaptive_safety_source_contracts()
     test_low_latency_cutoff_source_contracts()

@@ -1,4 +1,5 @@
 from pathlib import Path
+from test_usb_text_actions_contract import block_after
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -136,7 +137,7 @@ def main():
     assert_interleavings()
     hds = HDS_SOURCE.read_text(encoding="utf-8")
     loop = hds[hds.index("void loop() {"):hds.index("void chargingOLED(")]
-    if "if (b_ota || bleHasLiveClient()" not in loop:
+    if "if (b_ota || b_is_charging || bleHasLiveClient()" not in loop:
         raise AssertionError("OTA does not suspend the auto-sleep countdown")
     ota_wake = 'if (b_ota && b_softSleep) {\n    wakeScaleFromSoftSleep("OTA wake");'
     if ota_wake not in loop:
@@ -220,6 +221,7 @@ def main():
         PARAMETER_HEADER,
         "inline void leaveMenu() {\n"
         "  b_menu = false;\n"
+        "  menuInfoPageClearPending = true;\n"
         "  portENTER_CRITICAL(&wsPendingMux);\n"
         "  const bool restartRequired = b_menuRestartRequired;\n"
         "  b_menuRestartRequired = false;\n"
@@ -230,12 +232,16 @@ def main():
         "}",
     )
     assert_contains(MENU_HEADER, "void calibrate() {\n  calibrationReturnToMenu = b_menu;\n  b_menu = false;")
-    assert_contains(MENU_HEADER, "pullOtaUpdate(target);\n  }\n}")
+    assert_contains(MENU_HEADER, "pullOtaUpdate(target);\n  }\n  invalidateMenuFrame();\n}")
     assert_contains(MENU_HEADER, "if (pullOtaTargetIsAssignedCustomBuild(target)) {\n    customBuildStart(false, false);")
     assert_contains(MENU_HEADER, "b_debug = true;\n  leaveMenu();")
     menu_contents = MENU_HEADER.read_text(encoding="utf-8")
-    if menu_contents.count("markMenuRestartRequired();") != 3:
-        raise AssertionError("menu.h expected restart routing for integration, WiFi toggle and reset")
+    for action in ("toggleWifi", "resetWifi"):
+        if "markMenuRestartRequired();" not in block_after(menu_contents, f"void {action}() {{"):
+            raise AssertionError(f"{action} must preserve restart-on-exit routing")
+    integration = block_after(menu_contents, "void toggleIntegration(IntegrationMode mode) {")
+    if "markMenuRestartRequired();" in integration or "remoteQueueResetAt(" in integration:
+        raise AssertionError("integration changes must apply without restarting")
     for path in [*ROOT.glob("include/*.h"), *ROOT.glob("src/*.ino"), *ROOT.glob("src/*.cpp")]:
         if path == MENU_HEADER:
             assert path.read_text(encoding="utf-8").count("b_menu = false;") == 1

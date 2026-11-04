@@ -51,8 +51,8 @@ def test_framer_uses_high_bit_to_detect_the_payload():
     assert "return decentFixedFrameLength(len, 2 + HDS_OTA_TARGET_PAYLOAD_BYTES);" in frame
     frame_case = frame[frame.index(marker):]
     frame_case = frame_case[: frame_case.index("#ifdef BUZZER")]
-    assert "return decentFixedFrameLength(len, 2);" in frame_case, (
-        "a bare 0x1B must still frame as two bytes with no timeout dependence"
+    assert "return len > 2 || allowShort ? 2 : 0;" in frame_case, (
+        "an isolated 0x1B prefix must wait for the payload or receive timeout"
     )
     assert "if (!decentTargetedOtaPayloadIsIntact(data, len)) {\n          return 1;\n" in frame_case, (
         "a targeted payload interrupted by a new frame boundary must be resynced, not consumed"
@@ -62,6 +62,15 @@ def test_framer_uses_high_bit_to_detect_the_payload():
     )
     assert "decentCommandFrameLength" not in source(PROTOCOL_HEADER), (
         "the framer lives in decent_protocol_frame.h; do not reintroduce a copy"
+    )
+
+
+def test_usb_timeout_waits_for_unread_uart_data():
+    usb = source(USB_HEADER)
+    start = usb.index("  void poll() {")
+    poll = usb[start:usb.index("\n  }", start)]
+    assert "processUsbRxBuffer(Serial.available() == 0);" in poll, (
+        "processing earlier commands must not expire a payload still queued in the UART"
     )
 
 

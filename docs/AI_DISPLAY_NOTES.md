@@ -204,6 +204,8 @@ continues in weighing and menus.
 
 Display order comes from pointer arrays such as `mainMenu[]`, not declaration order.
 
+Status, About, Logo, and WiFi Status are nonblocking information pages. They remain visible without suspending main-loop commands, battery checks, heartbeat enforcement, or OTA admission. Square release dismisses the page without selecting another action; Logo retains its next-preview toggle. Circle input is ignored while a page is open. USB text `set` also dismisses the page. Hiding and reopening the menu returns to its selected row, even when both commands arrive in one USB buffer. OTA owns the display during an update. If an update returns without leaving the menu, including an admission failure, its information page is redrawn. Weighing remains paused while the menu is open.
+
 Adding a category requires all of these:
 
 1. parent and child `Menu` declarations

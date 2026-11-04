@@ -6,6 +6,9 @@
 #include "wifi_credentials.h"
 #include "wifi_switch.h"
 #include "mdns_name.h"
+#if HDS_FEATURE_MDNS
+#include <mdns.h>
+#endif
 
 void setupWifi();
 void stopWifi();
@@ -41,6 +44,9 @@ struct WifiSetupStatus {
   char ssid[33] = {};
   char ip[16] = {};
   char testedIp[16] = {};
+#if HDS_FEATURE_MDNS
+  char mdnsHostname[MDNS_NAME_BUF_LEN] = {};
+#endif
   bool connected = false;
   bool credentialsSaved = false;
   bool accessPoint = false;

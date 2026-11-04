@@ -289,7 +289,7 @@ public:
   }
 
   void poll() {
-    processUsbRxBuffer(true);
+    processUsbRxBuffer(Serial.available() == 0);
   }
 
   void onWrite(uint8_t *data, size_t len) {

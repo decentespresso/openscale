@@ -24,7 +24,7 @@ def checkStartupOrder(compiler):
     deferredRollback = setup.index("if (bootRollbackReason) hdsOtaRollback(bootRollbackReason);")
     assert debtLoaded < discovery < deferredRollback < setup.index("if (fuelGaugeLegacyHardware())")
     assert setup.index("bootRollbackReason = hdsOtaRollbackBegin(r);") < setup.index("storageInit(&bootSettingsOpened)")
-    earlySleep = setup.index("esp32_sleep();")
+    earlySleep = setup.index("esp32_sleep(true);")
     assert earlySleep < setup.index("Wire.begin(I2C_SDA, I2C_SCL);") < debtLoaded
     for operation in ("Wire.begin(", "fuelGaugeStartDetection(", "fuelGaugeBegin(", "serviceFuelGauge("):
         assert operation not in setup[:earlySleep]

@@ -47,6 +47,8 @@ unsigned long millis() { return now; }
 bool setScaleSamplesInUseWhenReady(uint8_t, const char *) { return true; }
 bool chargingUiActive() { return false; }
 bool fuelGaugeLegacyHardware() { return false; }
+bool quiesceFuelGaugeForShutdown() { return true; }
+void fuelGaugeSleep() {}
 void wakeScaleFromSoftSleep(const char *) {}
 void digitalWrite(int, int) {}
 void remoteQueuePending(uint32_t mask) { wsPendingMask |= mask; }

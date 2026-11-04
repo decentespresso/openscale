@@ -38,10 +38,15 @@ export class DecentScale {
 
     tare() {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send('tare');
-            return;
+            try {
+                this.ws.send('tare');
+                return true;
+            } catch (error) {
+                console.error('Tare could not be sent:', error);
+            }
         }
         alert('WebSocket not connected.');
+        return false;
     }
 
     handleWebSocketWeight(weight) {
@@ -86,7 +91,7 @@ export class DecentScale {
     }
 
     toggleDosingMode() {
-        if (this.dosingMode) {
+        if (this.dosingMode || this.waitingForContainerWeight) {
             this.dosingMode = false;
             this.uiController.updateGuidance('Dosing Stopped');
             this.uiController.updateDosingButton('Start', false);
@@ -155,12 +160,10 @@ export class DecentScale {
             return;
         }
 
+        if (!this.configureDosingSettings()) return;
         this.containerWeight = currentWeight;
-        this.tareWeight = currentWeight;
-        this.uiController.updateGuidance('Container weight set. Enter target weight and thresholds.');
         this.uiController.enableStartDosingButton();
         this.uiController.disableSetContainerWeightButton();
-        this.configureDosingSettings();
         this.waitingForContainerWeight = false;
     }
 
@@ -184,17 +187,18 @@ export class DecentScale {
             return;
         }
 
+        if (!this.tare()) return false;
         this.dosingSettings = {
             targetWeight,
             lowThreshold,
             highThreshold
         };
-        this.tare();
         this.tareWeight = 0;
         this.dosingMode = true;
         this.stateMachine.setCurrentState(SCALE_CONSTANTS.FSM_STATES.WAITING_FOR_NEXT);
         this.uiController.updateDosingButton('Stop', true);
         this.uiController.updateGuidance('Ready! Place object on scale');
+        return true;
     }
 
     saveDosing(finalWeight) {

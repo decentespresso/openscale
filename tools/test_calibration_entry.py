@@ -55,6 +55,9 @@ int connectionsMenuSize() { return 1; }
 int powerMenuSize() { return 1; }
 void invalidateMenuFrame() {}
 void backMenu() {}
+bool menuInfoPageActive() { return false; }
+void processMenuInfoPageExit() {}
+void dismissMenuInfoPage() { assert(false); }
 void selectMenu() { @SELECT@ }
 struct SerialStub {
   void print(const char*) {}

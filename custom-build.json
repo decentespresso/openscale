@@ -1,9 +1,18 @@
 {
   "firmware_ref": "main",
   "features": [
-    "pull-ota"
+    "wifi",
+    "mdns",
+    "webserver",
+    "websocket",
+    "littlefs",
+    "elegant-ota",
+    "pull-ota",
+    "energy-menu"
   ],
   "plugins": [
-    "default-web-apps"
+    "default-web-apps",
+    "grind-by-weight",
+    "pressensor"
   ]
 }

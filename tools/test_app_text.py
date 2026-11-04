@@ -34,6 +34,11 @@ def main():
     assert "if (appTextScreenAvailable() && cancelAppPrompt())" in sketch
     assert "grinderRuntime.state >= GRINDER_STATE_ARMED" in sketch
     assert "if (grinderSettings.enabled) grinderRuntimeBegin();" in sketch
+    standby = block_after(sketch, "void enterUsbStandby()")
+    assert standby.index("grinderPrepareForShutdown();") < standby.index('refreshOLED((char*)"Off"')
+    wifi = (ROOT / "src/wifi_setup.cpp").read_text(encoding="utf-8")
+    mdns = block_after(wifi, "if (g_mdnsAdvertisePending)")
+    assert mdns.index("if (!g_mdnsReady)") < mdns.index("MDNS.end();")
     assert "drawWeightAt(f_displayedValue, LCDHeight - 30);" in sketch
     assert "if (!showPrompt) drawButton();" in sketch
     assert "setAppTextEnabled(textEnabled);" in sketch

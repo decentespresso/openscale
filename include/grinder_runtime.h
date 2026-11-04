@@ -712,6 +712,10 @@ static inline void grinderTickConnected(float weight) {
 }
 
 static inline void grinderTickArmed() {
+  if (!(grinderSettings.zeroMaxGrams < grinderCutoffGrams(grinderSettings.targetGrams, grinderSettings.safetyMarginGrams))) {
+    grinderEnterError("invalid zero range");
+    return;
+  }
   const uint32_t now = millis();
   if (grinderRuntime.pendingCommand == GRINDER_COMMAND_NONE) {
     Serial.println("[grinder] armed send ON");
@@ -939,5 +943,7 @@ static inline void grinderShortStatus(char *output, size_t outputSize) {
            "Gr:%s",
            grinderRuntime.status[0] ? grinderRuntime.status : grinderStateText(grinderRuntime.state));
 }
+
+#include "grinder_shutdown.h"
 
 #endif
