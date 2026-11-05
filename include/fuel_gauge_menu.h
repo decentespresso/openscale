@@ -81,6 +81,7 @@ void showBatInfo() {
   delay(1000);
   unsigned long t_lastRefresh = millis();
   while (showing) {
+    if (b_ota) return;
     power_off(-1);
     if (digitalRead(MENU_BTN_ENTER) == LOW) {
       page = (page + 1) % batInfoTotalPages();

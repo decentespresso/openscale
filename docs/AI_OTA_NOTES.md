@@ -151,6 +151,11 @@ hash, not merely a `-custom` version suffix. It retains signed custom rollback
 manifest lookup and the shared staged LittleFS installation path.
 
 Compatible older stable releases at `v3.1.13+` may be offered as signed downgrades.
+Official `3.1.13` is excluded when running identified custom firmware or a
+preview/RC release: its recovery loader cannot consume custom rollback URLs or
+prerelease rollback identities. The shared selection excludes it for both the
+picker and unattended requests, including filesystem recovery. Stable-to-stable
+`3.1.13` downgrades remain supported.
 
 ## Unattended Install
 
@@ -184,6 +189,11 @@ Staged LittleFS OTA stores target and rollback metadata in NVS namespace `ota_fs
 
 `install_combo` retains the original attempted custom target across conversion to a rollback restore. Terminal failure telemetry uses that identity, not the running rollback firmware. Legacy restore transactions without an original target omit failure telemetry rather than attributing it to the wrong build.
 
+Successful rollback restoration also reports the original target as failed alongside
+the verified restored identity. The loader retains `install_combo` in the local
+pending record before transaction cleanup; the completion report uses the existing
+three-attempt limit and never blocks reboot on a telemetry outage.
+
 Flow:
 
 1. Current firmware stores both manifests, writes `firmware.bin` to the inactive app slot, and reboots.
@@ -208,11 +218,38 @@ The single LittleFS partition has no independent rollback slot. Keep signed asse
 
 `setup()` calls `hdsOtaRollbackBegin()` after reset-reason capture. Without pending filesystem work it calls `hdsOtaRollbackMarkValid()` after setup validation. With pending work, validity is deferred until target recovery succeeds; recovery metadata is cleared only after application validity marking succeeds.
 
+## Gauge Cleanup
+
+The main loop must finish fuel-gauge quiesce before acknowledging an OTA pause.
+Cleanup is bounded to eight seconds; the OTA handshake allows ten seconds and
+rejects a failed pause without starting flash writes. Synchronous startup
+LittleFS recovery uses the same owner cleanup before consuming recovery attempts.
+Gauge configuration remains deferred until the firmware-acceptance decision;
+boots awaiting an OTA reboot do not start configuration.
+Boot rollback still records and evaluates attempts immediately, but executes
+the selected rollback only after the existing button-abort gate, settings load,
+and gauge discovery make persistent cleanup possible. Early button-abort sleep
+does not start I2C and retains any stored obligation.
+A selected rollback bypasses fatal settings/energy initialization halts to
+attempt safe cleanup. Unreadable reseal state stays unresolved, never authorizes
+unsealing, and never selects Legacy hardware.
+
+Rollback requires successful gauge cleanup, because an older image may not
+understand `bat_reseal`. Failed cleanup retains the obligation and charging hold,
+stores filesystem-free recovery, then cancels automatic bootloader rollback.
+Only after both persistent operations succeed may battery-powered shutdown enter
+deep sleep; USB-powered operation remains stopped in the current image. The next
+boot remains gauge-aware and filesystem-free until recovery completes.
+If either persistent operation fails, do not invalidate the image, reboot, sleep,
+or continue ordinary startup. Remain stopped for external USB recovery. Software
+cannot guarantee the bootloader's choice after an external reset or power loss
+when the required flash/NVS writes themselves fail.
+
 ## Reboot Routing
 
 ElegantOTA auto-reboot stays disabled with `ElegantOTA.setAutoReboot(false)`. Successful ElegantOTA and pull OTA paths call `remoteQueueOtaResetAt()` so their reset remains distinguishable from ordinary remote resets during an active update. Other scheduled main-loop resets use `remoteQueueResetAt()`; neither path should call `ESP.restart()` directly.
 
-The project-owned `/ota/start` handler and main-loop remote action dispatch share `otaDispatchMutex`. The handler claims `b_ota`, waits for the main loop to stop BLE traffic, close WebSockets, wake the scale, and lock out energy-saving transitions, then calls `Update.begin()` under the mutex. It installs the requested MD5 only after `Update.begin()` because the ESP32 core clears the expected digest when an update begins. Pull OTA waits for the same main-loop pause before downloading or writing. Hold the mutex across the complete extracted action batch. Restore extracted actions through `remoteRestoreDeferredPendingLocked()` so older display, low-power, soft-sleep, or timer commands cannot replace newer pending commands.
+The project-owned `/ota/start` handler and main-loop remote action dispatch share `otaDispatchMutex`. The handler claims `b_ota`, waits for the main loop to stop BLE traffic, close WebSockets, wake the scale, and lock out energy-saving transitions, then calls `Update.begin()` under the mutex. It installs the requested MD5 only after `Update.begin()` because the ESP32 core clears the expected digest when an update begins. Pull OTA waits for the same main-loop pause before downloading or writing. Hold the mutex across the complete extracted action batch. Restore extracted actions through `remoteRestoreDeferredPendingLocked()` so older display, low-power, soft-sleep, or timer commands cannot replace newer pending commands. A deferred timer START/ZERO reset effect must survive a newer STOP, without replacing that final stopped intent.
 
 Both OTA paths stop BLE advertising and wait for an active peer's disconnect callback before flash work. BLE writes are ignored after OTA claims the runtime. Disconnect callbacks defer the saved buzzer setting until a failed or cancelled update resumes advertising from the main loop; display state is not restored over newer deferred commands. WebSocket connect and data callbacks close without doing application work once OTA is active. Do not shut BLE down from an AsyncTCP callback.
 
@@ -250,6 +287,7 @@ python tools/test_decent_ota_target_contract.py
 python tools/test_pull_ota_contract.py
 python tools/test_release_workflow_contract.py
 python tools/test_ota_rollback_contract.py
+python tools/test_rollback_reseal_safety.py
 python tools/test_ota_public_key_header.py
 python tools/test_ota_reboot_routing_contract.py
 python tools/test_custom_build_ota_contract.py

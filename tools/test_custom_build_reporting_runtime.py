@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     custom = (ROOT / "include/custom_build_ota.h").read_text(encoding="utf-8")
     ota = (ROOT / "include/pull_ota.h").read_text(encoding="utf-8")
-    report = function_body(custom, "void customBuildReportInstalled()")
+    report = function_body(custom, "void customBuildReportInstalled(")
     reportState = function_body(custom, "void customBuildReportInstallState(")
     install = function_body(ota, "bool pullOtaInstall(")
     resume = function_body(ota, "bool pullOtaResumePendingLittleFs()")
@@ -26,6 +26,8 @@ using String = std::string;
 struct CustomBuildAssignment {};
 struct PullOtaManifest { String version = "3.1.15"; int firmware = 0; struct { bool present = true; } littlefs; int forwardRecoveryVersion = 0; };
 bool b_ota, storeOk, streamOk;
+bool pauseReady = true;
+bool otaRuntimeIsPaused() { return pauseReady; }
 struct { bool ready = true; bool prepareLegacyDowngrade() { return ready; } } params;
 int pullOtaCompareVersions(const String &left, const String &right) {
   return pullOtaCompareVersionPrefixes(left.c_str(), right.c_str());
@@ -37,10 +39,12 @@ struct PullOtaPendingLittleFs {
   uint8_t targetAttempts = 0;
   bool filesystemDirty = false;
   bool forwardRecovery = false;
+  String installCombinationHash;
 };
+PullOtaPendingLittleFs saved;
 bool paired, network, clockReady, pending, verified, succeeds;
 int reports, failedReports, retries;
-String identity, reported;
+String identity, reported, reportedInstallCombination, reportedInstallState;
 std::vector<String> events;
 struct Logger { void println(const char *) {};} Serial;
 bool customBuildRelinkAvailable() { return paired; }
@@ -48,15 +52,20 @@ void pullOtaDraw(const char *, const char *, const char * = "") {}
 bool pullOtaEnsureWifi() { return network; }
 bool pullOtaClockReady() { return clockReady; }
 String pullOtaCurrentCombinationHash() { return identity; }
+bool pullOtaShaLooksValid(const String &value) {
+  return value.length() == 64 && value.find_first_not_of("0123456789abcdef") == String::npos;
+}
 bool customBuildCheckIn(const String &value, CustomBuildAssignment &,
     const String &combination = "", const char *state = "installing") {
   reports++;
   reported = value;
+  reportedInstallCombination = combination;
+  reportedInstallState = combination.empty() ? "" : state;
   events.push_back(combination.empty() ? "report" : state);
   return reports > failedReports;
 }
 void delay(int) { retries++; }
-bool pullOtaLoadPendingLittleFs(PullOtaPendingLittleFs &) { return pending; }
+bool pullOtaLoadPendingLittleFs(PullOtaPendingLittleFs &out) { out = saved; return pending; }
 bool pullOtaVerifyPendingLittleFs(const PullOtaPendingLittleFs &) { return verified; }
 bool pullOtaBeginRollbackLittleFsAttempt() { return true; }
 bool pullOtaBeginTargetLittleFsAttempt(uint8_t) { return true; }
@@ -66,7 +75,7 @@ bool hdsOtaAcceptFilesystemRecovery() { return true; }
 bool pullOtaAttemptPendingLittleFs(const PullOtaPendingLittleFs &, bool &) { return succeeds; }
 bool pullOtaActivateRollbackLittleFs(const PullOtaPendingLittleFs &) { return true; }
 void hdsOtaRollbackMarkValid() { events.push_back("valid"); }
-bool pullOtaClearPendingLittleFs() { events.push_back("clear"); return true; }
+bool pullOtaClearPendingLittleFs() { saved.installCombinationHash.clear(); events.push_back("clear"); return true; }
 bool pullOtaFail(const char *, const char * = "") { return false; }
 bool pullOtaStorePendingLittleFs(const PullOtaManifest &, const PullOtaManifest &,
     const String &, const String &) { events.push_back("store"); return storeOk; }
@@ -74,22 +83,31 @@ bool pullOtaStreamAsset(int, int, const char *) { events.push_back("stream"); re
 unsigned long millis() { return 0; }
 void remoteQueueOtaResetAt(unsigned long) { events.push_back("restart"); }
 void reset() {
+  pauseReady = true;
   paired = network = clockReady = pending = verified = true;
   succeeds = false;
   storeOk = streamOk = true;
   params.ready = true;
   reports = failedReports = retries = 0;
   identity = String(64, 'a');
+  saved = {};
   reported.clear();
+  reportedInstallCombination.clear();
+  reportedInstallState.clear();
   events.clear();
 }
 '''
-    source += "void customBuildReportInstalled() {" + report + "}\n"
+    source += "void customBuildReportInstalled(const String &failedCombinationHash = \"\") {" + report + "}\n"
     source += "void customBuildReportInstallState(const String &combinationHash, const char *state) {" + reportState + "}\n"
     source += "bool pullOtaInstall(const PullOtaManifest &manifest, const PullOtaManifest &rollbackManifest, const String &combinationHash, const String &rollbackCombinationHash) {" + install + "}\n"
     source += "bool pullOtaResumePendingLittleFs() {" + resume + "}\n"
     source += r'''
 int main() {
+  reset();
+  pauseReady = false;
+  assert(!pullOtaInstall({}, {}, String(64, 'b'), identity));
+  assert(!pullOtaResumePendingLittleFs());
+  assert(events.empty() && reports == 0);
   reset();
   PullOtaManifest legacy;
   legacy.version = "3.1.14";
@@ -122,9 +140,38 @@ int main() {
   reset();
   assert(pullOtaInstall({}, {}, "", identity));
   assert(reports == 0);
+  for (const bool alreadyVerified : {false, true}) {
+    reset();
+    saved.restore = true;
+    saved.installCombinationHash = String(64, 'b');
+    verified = alreadyVerified;
+    succeeds = true;
+    assert(pullOtaResumePendingLittleFs());
+    assert(reported == identity && reportedInstallCombination == String(64, 'b'));
+    assert(reportedInstallState == "failed" && reports == 1);
+    assert((events == std::vector<String>{"valid", "clear", "failed", "restart"}));
+    assert(saved.installCombinationHash.empty());
+  }
   reset();
+  saved.restore = true;
+  saved.installCombinationHash = String(64, 'b');
+  failedReports = 100;
+  assert(pullOtaResumePendingLittleFs());
+  assert(reports == 3 && reported == identity && reportedInstallCombination == String(64, 'b'));
+  assert(reportedInstallState == "failed" && events.back() == "restart");
+  for (const String &legacyTarget : {String(""), String("invalid")}) {
+    reset();
+    saved.restore = true;
+    saved.installCombinationHash = legacyTarget;
+    assert(pullOtaResumePendingLittleFs());
+    assert(reported == identity && reportedInstallCombination.empty() && reportedInstallState.empty());
+    assert((events == std::vector<String>{"valid", "clear", "report", "restart"}));
+  }
+  reset();
+  saved.installCombinationHash = String(64, 'b');
   assert(pullOtaResumePendingLittleFs());
   assert(reported == identity);
+  assert(reportedInstallCombination.empty() && reportedInstallState.empty());
   assert((events == std::vector<String>{"valid", "clear", "report", "restart"}));
   reset();
   verified = false;

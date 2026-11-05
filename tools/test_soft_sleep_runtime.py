@@ -16,6 +16,7 @@ def main():
     parameter = (ROOT / "include/parameter.h").read_text(encoding="utf-8")
     sleepCommand = ws[ws.index('if (websocketEqualsIgnoreCase(command, "sleep") ||'):]
     displayCommand = ws[ws.index('if (websocketEqualsIgnoreCase(command, "display"))'):]
+    timerCommand = ws[ws.index('if (websocketEqualsIgnoreCase(command, "timer"))'):]
     loop = block_after(hds, "void loop()")
     sleepGate = loop.index("if (!b_softSleep)")
     wifiGuard = "if (b_softSleep && b_wifiEnabled)"
@@ -23,9 +24,13 @@ def main():
     assert loop.index("if (b_ota)") < loop.index(wifiGuard)
     harness = r'''
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <initializer_list>
 #include <mutex>
+#include "energy_runtime_policy.h"
+using std::isfinite;
+template<typename L, typename R> auto max(L left, R right) { return left > right ? left : right; }
 @COMMANDS@
 bool b_softSleep = false, b_u8g2Sleep = false, b_wifiEnabled = true;
 bool chargingUi = false;
@@ -33,6 +38,9 @@ bool chargingUiActive() { return chargingUi; }
 bool b_ota = false, b_powerOff = false, pendingOtaDispatching = false;
 bool b_hasFuelGauge = false;
 bool fuelGaugeLegacyHardware() { return !b_hasFuelGauge; }
+bool quiesceFuelGaugeForShutdown() { return true; }
+void fuelGaugeSleep() {}
+void fuelGaugeResume() {}
 bool rail = true, accessory = true, oled = true;
 int wakes = 0, sleeps = 0, supervises = 0, adcRefreshes = 0, outputResets = 0;
 constexpr int PWR_CTRL = 3, ACC_PWR_CTRL = 14, LOW = 0, HIGH = 1;
@@ -70,12 +78,34 @@ struct {
   void setContrast(int) { assert(wsPendingMux == 0); }
 } u8g2;
 struct { template<class T> void println(T) {} void print(const char*) {} } Serial;
-struct { void reset() {} void start() {} void stop() {} } stopWatch;
+struct {
+  unsigned long elapsedMs = 42000;
+  bool running = false;
+  int calls = 0;
+  void reset() {
+    assert(wsPendingMux == 0 && !b_ota);
+    elapsedMs = 0;
+    running = false;
+    ++calls;
+  }
+  void start() {
+    assert(wsPendingMux == 0 && !b_ota);
+    running = true;
+    ++calls;
+  }
+  void stop() {
+    assert(wsPendingMux == 0 && !b_ota);
+    running = false;
+    ++calls;
+  }
+  bool isRunning() { return running; }
+} stopWatch;
 struct {
   int getSamplesInUse() { return 1; }
+  bool getSignalTimeoutFlag() { return false; }
+  float getConversionTime() { return 100; }
   void powerUp() { assert(wsPendingMux == 0); ++wakes; }
 } scale;
-enum class DisplayIdleMode { Active, Off };
 struct {
   bool explicitDisplayOff = false;
   DisplayIdleMode displayMode = DisplayIdleMode::Active;
@@ -83,17 +113,16 @@ struct {
   struct { void invalidate() {} } oledFrames;
 } energyRuntime;
 struct { void recordActivity(unsigned long) {} } energyPolicy;
-struct EnergyRuntimePolicy {
-  static int displayContrast(int contrast, DisplayIdleMode) { return contrast; }
-};
-unsigned long millis() { return 1; }
+unsigned long clockMs = 1;
+unsigned long millis() { return clockMs; }
 void delay(int) { assert(wsPendingMux == 0); }
 void reset() { assert(false); }
 bool setScaleSamplesInUseWhenReady(uint8_t, const char*) { return true; }
 void applyEnergyLowPowerCommand() {}
 void recordEnergyActivity() {}
 void clearPendingEnergyActivity() {}
-void notifyEnergyMainLoop() {}
+int taskNotifications = 0;
+void notifyEnergyMainLoop() { ++taskNotifications; }
 void digitalWrite(int pin, int value) {
   assert(wsPendingMux == 0);
   (pin == PWR_CTRL ? rail : accessory) = value;
@@ -108,7 +137,8 @@ void remoteReplacePending(uint32_t setBits, uint32_t clearBits) { @REPLACE@ }
 void wsReplacePending(uint32_t setBits, uint32_t clearBits) { @WS_REPLACE@ }
 void remoteRestoreDeferredPendingLocked(uint32_t deferredMask, unsigned long resetAt) { @RESTORE@ }
 void remoteFinishWifiUpdateDispatch() { @FINISH_OTA@ }
-void sendWebsocketStatus(void*, const char*) {}
+int statusReplies = 0;
+void sendWebsocketStatus(void*, const char*) { ++statusReplies; }
 void queueBleStatusResponse() {}
 bool refreshScaleDatasetAfterDiscontinuity(const char*) {
   assert(wsPendingMux == 0);
@@ -133,7 +163,117 @@ void bleDisplayOn() { @BLE_DISPLAY_ON@ }
 void bleDisplayOff() { @BLE_DISPLAY_OFF@ }
 bool wsDisplayOn() { void *client = nullptr; @WS_DISPLAY_ON@ }
 bool wsDisplayOff() { void *client = nullptr; @WS_DISPLAY_OFF@ }
+void bleTimerCommand(int action) {
+  if (action == 0) { @BLE_TIMER_START@ }
+  else if (action == 1) { @BLE_TIMER_STOP@ }
+  else { @BLE_TIMER_ZERO@ }
+}
+bool wsTimerCommand(int action) {
+  void *client = nullptr;
+  if (action == 0) { @WS_TIMER_START@ }
+  if (action == 1) { @WS_TIMER_STOP@ }
+  @WS_TIMER_ZERO@
+}
+void queueTimerCommand(int source, int action) {
+  if (source == 0) bleTimerCommand(action);
+  else assert(wsTimerCommand(action));
+}
 void dispatch() { @DISPATCH@ }
+int deferredTimerSource = 0, deferredTimerAction = 0;
+void queueTimerBeforeOtaPause() {
+  queueTimerCommand(deferredTimerSource, deferredTimerAction);
+  b_ota = true;
+}
+void testTimerCommands() {
+  struct TimerCase { int first, last; unsigned long elapsedMs; bool running; };
+  const TimerCase cases[] = {
+    {0, 0, 0, true}, {0, 1, 0, false}, {0, 2, 0, false},
+    {1, 0, 0, true}, {1, 1, 42000, false}, {1, 2, 0, false},
+    {2, 0, 0, true}, {2, 1, 0, false}, {2, 2, 0, false},
+  };
+  for (const auto &test : cases) {
+    for (const bool initiallyRunning : {false, true}) {
+      for (const int firstSource : {0, 1}) {
+        for (const int lastSource : {0, 1}) {
+          for (const bool deferred : {false, true}) {
+            stopWatch.elapsedMs = 42000;
+            stopWatch.running = initiallyRunning;
+            stopWatch.calls = 0;
+            const int repliesBefore = statusReplies;
+            queueTimerCommand(firstSource, test.first);
+            if (deferred) {
+              deferredTimerSource = lastSource;
+              deferredTimerAction = test.last;
+              afterSnapshot = queueTimerBeforeOtaPause;
+              dispatch();
+              assert(!afterSnapshot && b_ota && stopWatch.calls == 0);
+              const auto pending = wsPendingMask;
+              dispatch();
+              assert(wsPendingMask == pending && stopWatch.calls == 0);
+              b_ota = false;
+            } else {
+              queueTimerCommand(lastSource, test.last);
+            }
+            assert(statusReplies == repliesBefore + (firstSource == 1) + (lastSource == 1));
+            assert(stopWatch.calls == 0 && stopWatch.elapsedMs == 42000);
+            assert(stopWatch.running == initiallyRunning);
+            dispatch();
+            assert(stopWatch.elapsedMs == test.elapsedMs && stopWatch.running == test.running);
+            assert(wsPendingMask == 0);
+          }
+        }
+      }
+    }
+  }
+}
+#if HDS_ENABLE_ENERGY_MENU
+int remoteTareMux = 0;
+uint8_t i_remoteTareRequests = 0;
+bool b_tareByBle = false;
+unsigned long t_tareByBle = 0;
+unsigned long t_batteryRefresh = 0;
+unsigned long i_batteryRefreshTareInterval = 30000;
+unsigned long t_firstConnect = 0, t_heartBeat = 0, t_lastDisconnectAttempt = 0;
+bool b_weight_in_serial = false, b_usbweight_enabled = false, b_requireHeartBeat = true;
+unsigned int bleStatusResponsesPending = 0, bleVoltageResponsesPending = 0;
+unsigned int otaDisplayState = 0;
+constexpr unsigned int OTA_DISPLAY_NONE = 0;
+constexpr int SCALE_DOUT = 11;
+int digitalRead(int) { return HIGH; }
+constexpr unsigned long WEIGHT_BASE_INTERVAL_MS = 100;
+constexpr unsigned long ENERGY_ADC_RECOVERY_START_MS = 1501;
+constexpr unsigned long ENERGY_ADC_RECOVERY_RETRY_MS = 5001;
+constexpr unsigned long ENERGY_ADC_SIGNAL_TIMEOUT_MS = 301;
+constexpr unsigned long ADS1232_DEFAULT_CONVERSION_MS = 100;
+constexpr unsigned long BUTTON_POLL_INTERVAL_MS = 2;
+constexpr unsigned long ENERGY_USB_FALLBACK_POLL_MS = 10;
+constexpr unsigned long ENERGY_DISPLAY_DEADLINE_MS = 500;
+constexpr unsigned long WIFI_SUPERVISE_INTERVAL_MS = 250;
+constexpr unsigned long HEARTBEAT_TIMEOUT = 5000;
+constexpr unsigned long HEARTBEAT_DISCONNECT_RETRY_INTERVAL = 10000;
+struct {
+  unsigned long lastScaleData = 0, lastScaleRecovery = 0;
+  unsigned long lastButtonPoll = 0, lastWeightTick = 0;
+  bool scaleWakeFallback = false, circleButtonWakeFallback = false;
+  bool squareButtonWakeFallback = false, usbWakeFallback = false;
+  bool buttonGestureActive = false;
+} energyIdle;
+bool anyScaleButtonPressed() { return false; }
+bool bleHasLiveClient() { return false; }
+bool energyMainLoopCanBlock() { return true; }
+using TickType_t = unsigned long;
+constexpr bool pdTRUE = true;
+TickType_t pdMS_TO_TICKS(unsigned long ms) { return ms; }
+int waits = 0;
+TickType_t lastWaitTicks = 0;
+void ulTaskNotifyTake(bool, TickType_t ticks) { ++waits; lastWaitTicks = ticks; }
+void requestRemoteTare() { @REQUEST_TARE@ }
+bool hasRemoteTareRequest() { @HAS_TARE@ }
+uint8_t consumeRemoteTareRequests() { @CONSUME_TARE@ }
+bool energyMainLoopHasPendingWork() { @PENDING_WORK@ }
+unsigned long energyMainLoopWaitMs(unsigned long now) { @WAIT_MS@ }
+void waitForEnergyMainLoopWork() { @WAIT_WORK@ }
+#endif
 int transport = 0;
 void wakeCommand() {
   if (transport == 0) bleWake();
@@ -157,6 +297,7 @@ void assertDisplay(bool enabled) {
 #endif
 }
 int main() {
+  testTimerCommands();
   for (transport = 0; transport < 3; ++transport) {
     sleepCommand();
     dispatch();
@@ -360,6 +501,38 @@ int main() {
   b_softSleep = true;
   supervise();
   assert(supervises == 1);
+#if HDS_ENABLE_ENERGY_MENU
+  sleepCommand();
+  dispatch();
+  t_batteryRefresh = 1000;
+  for (const unsigned long now : {31001UL, 61001UL}) {
+    clockMs = now;
+    assert(!energyMainLoopHasPendingWork());
+    assert(energyMainLoopWaitMs(now) == 200);
+    const int waitsBefore = waits;
+    waitForEnergyMainLoopWork();
+    assert(waits == waitsBefore + 1 && lastWaitTicks == 200);
+    assert(t_batteryRefresh == 1000);
+  }
+  clockMs = 2000;
+  const int notificationsBefore = taskNotifications;
+  requestRemoteTare();
+  assert(taskNotifications == notificationsBefore + 1);
+  assert(hasRemoteTareRequest() && !energyMainLoopHasPendingWork());
+  const int waitsBefore = waits;
+  waitForEnergyMainLoopWork();
+  assert(waits == waitsBefore + 1 && i_remoteTareRequests == 1);
+  remoteQueuePending(WSP_TIMER_START);
+  waitForEnergyMainLoopWork();
+  assert(waits == waitsBefore + 1);
+  dispatch();
+  wakeCommand();
+  dispatch();
+  assert(!b_softSleep && energyMainLoopHasPendingWork());
+  assert(consumeRemoteTareRequests() == 1 && !hasRemoteTareRequest());
+  clockMs = 31001;
+  assert(energyMainLoopWaitMs(clockMs) == 0);
+#endif
   b_wifiEnabled = false;
   supervise();
   assert(supervises == 1);
@@ -405,8 +578,20 @@ int main() {
         "BLE_DISPLAY_OFF": block_after(ble, "void displayOff()"),
         "WS_DISPLAY_ON": block_after(displayCommand, 'if (websocketEqualsIgnoreCase(action, "on"))'),
         "WS_DISPLAY_OFF": block_after(displayCommand, 'if (websocketEqualsIgnoreCase(action, "off"))'),
+        "BLE_TIMER_START": block_after(ble, "void timerStart()"),
+        "BLE_TIMER_STOP": block_after(ble, "void timerStop()"),
+        "BLE_TIMER_ZERO": block_after(ble, "void timerZero()"),
+        "WS_TIMER_START": block_after(timerCommand, 'if (websocketEqualsIgnoreCase(action, "start"))'),
+        "WS_TIMER_STOP": block_after(timerCommand, 'if (websocketEqualsIgnoreCase(action, "stop"))'),
+        "WS_TIMER_ZERO": block_after(timerCommand, 'if (websocketEqualsIgnoreCase(action, "zero") ||'),
         "DISPATCH": block_after(ws, "void processWsPendingCmds()"),
         "WIFI": block_after(loop, wifiGuard),
+        "REQUEST_TARE": block_after(parameter, "void requestRemoteTare()"),
+        "HAS_TARE": block_after(parameter, "bool hasRemoteTareRequest()"),
+        "CONSUME_TARE": block_after(parameter, "uint8_t consumeRemoteTareRequests()"),
+        "PENDING_WORK": block_after(hds, "bool energyMainLoopHasPendingWork()"),
+        "WAIT_MS": block_after(hds, "unsigned long energyMainLoopWaitMs("),
+        "WAIT_WORK": block_after(hds, "void waitForEnergyMainLoopWork() {"),
     }
     for marker, source in replacements.items():
         harness = harness.replace(f"@{marker}@", source)
@@ -415,11 +600,12 @@ int main() {
         source.write_text(harness, encoding="utf-8")
         for energy, webserver in ((0, 0), (0, 1), (1, 0), (1, 1)):
             binary = Path(directory) / "check.exe"
-            subprocess.run(["g++", "-std=c++17", f"-DHDS_ENABLE_ENERGY_MENU={energy}",
+            subprocess.run(["g++", "-std=c++17", "-I", str(ROOT / "include"),
+                            f"-DHDS_ENABLE_ENERGY_MENU={energy}",
                             f"-DHDS_FEATURE_WEBSERVER={webserver}", str(source),
                             "-o", str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
-    print("Soft-sleep transport/display ordering, ADC recovery and sleeping WiFi supervision passed")
+    print("Remote timer composition, soft-sleep ordering, ADC recovery, WiFi supervision and idle scheduling passed")
 
 
 if __name__ == "__main__":

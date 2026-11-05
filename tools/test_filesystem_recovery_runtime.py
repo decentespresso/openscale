@@ -23,7 +23,7 @@ def main():
     setup = (ROOT / "src/hds.ino").read_text(encoding="utf-8")
     loader = function_body(ota, "bool pullOtaLoadPendingLittleFs(")
     assert 'preferences.getBool("paused", false) && filesystemRecoveryActive.load()' in loader
-    assert "filesystemRecoveryLoad();" in function_body(rollback, "void hdsOtaRollbackBegin(")
+    assert "filesystemRecoveryLoad();" in function_body(rollback, "const char *hdsOtaRollbackBegin(")
     assert "filesystemRecoveryActive.load()" in function_body(custom, "bool customBuildCheckIn(")
     assert "assignment.combinationHash == installedCombination && !filesystemRecoveryActive.load()" in custom
     assert "currentCompare != 0 || currentIsPrerelease || currentIsCustom || filesystemRecoveryActive.load()" in ota
@@ -37,6 +37,7 @@ def main():
     assert "!loaded.restore && !loaded.forwardRecovery" in loader
     assert 'preferences.putString("fw_sha", manifest.firmware.sha256)' in ota
     assert 'preferences.putUInt("fw_size", (uint32_t)manifest.firmware.size)' in ota
+    assert 'loaded.installCombinationHash = preferences.getString("install_combo", "");' in loader
 
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
@@ -78,6 +79,8 @@ String runningCombination, reportedCombination;
 bool storageOk = true, acceptOk = true, clearOk = true;
 bool hdsOtaPendingVerify = true;
 bool b_ota = true;
+bool pauseReady = true;
+bool otaRuntimeIsPaused() { return pauseReady; }
 const int ESP_OK = 0;
 const int HDS_OTA_FORWARD_RECOVERY_VERSION = 1;
 bool pullOtaShaLooksValid(const String &value) {
@@ -140,7 +143,7 @@ struct PullOtaPendingLittleFs {
   bool restore = false, restoreAttempted = false, filesystemDirty = false;
   bool forwardRecovery = false;
   uint8_t targetAttempts = 0;
-  String combinationHash, rollbackCombinationHash;
+  String combinationHash, rollbackCombinationHash, installCombinationHash;
   PullOtaAsset rollbackAsset;
   String rollbackVersion = "3.1.14", fsPartitionLabel = "spiffs";
   uint32_t fsPartitionSize = 1, fsSchema = 1;
@@ -161,13 +164,14 @@ bool pullOtaActivateRollbackLittleFs(const PullOtaPendingLittleFs &value) {
   events.push_back("rollback"); return activateOk && activateRollback(value);
 }
 void hdsOtaRollbackMarkValid() { events.push_back("valid"); }
-void customBuildReportInstalled() { assert(!filesystemRecoveryActive.load()); events.push_back("installed"); }
+void customBuildReportInstalled(const String & = "") { assert(!filesystemRecoveryActive.load()); events.push_back("installed"); }
 bool pullOtaClearPendingLittleFs() { events.push_back("clear"); return clearOk; }
 void pullOtaDraw(const char *, const char *) {}
 void delay(int) {}
 unsigned long millis() { return 0; }
 void remoteQueueOtaResetAt(unsigned long) { events.push_back("restart"); }
 void reset() {
+  pauseReady = true;
   filesystemRecoveryActive.store(false); webFilesystemReady.store(true);
   nvs.clear(); strings.clear(); numbers.clear(); events.clear(); saved = {};
   runningCombination = String(64, 'a'); reportedCombination.clear();
@@ -190,6 +194,10 @@ void reset() {
     source += r'''
 int main() {
   const String buildA(64, 'a'), buildB(64, 'b');
+  reset();
+  pauseReady = false;
+  assert(!pullOtaResumePendingLittleFs() && attempts == 0);
+  assert(nvs.empty() && strings.size() == 1 && events == std::vector<String>{"error"});
   reset();
   assert(pullOtaStorePendingLittleFs({}, {}, buildB, buildA));
   assert(strings["ota_fsinstall_combo"] == buildB);

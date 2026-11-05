@@ -26,7 +26,7 @@ uint8_t pendingOtaTargetMinor = 0, pendingOtaTargetPatch = 0;
 bool pendingOtaTargetPresent = false;
 unsigned long pendingResetAt = 0, pendingOtaResetAt = 0, now = 123;
 std::mutex otaDispatchMutex;
-int resetCount = 0, otaCount = 0, timerCount = 0;
+int resetCount = 0, otaCount = 0, timerCount = 0, gaugeShutdownStep = 0;
 struct {
   template<class T> void println(T) {}
   template<class T> void print(T) {}
@@ -47,6 +47,14 @@ unsigned long millis() { return now; }
 bool setScaleSamplesInUseWhenReady(uint8_t, const char *) { return true; }
 bool chargingUiActive() { return false; }
 bool fuelGaugeLegacyHardware() { return false; }
+void quiesceFuelGaugeForShutdown() {
+  assert(gaugeShutdownStep == 0 && !b_softSleep && !b_u8g2Sleep);
+  gaugeShutdownStep = 1;
+}
+void fuelGaugeSleep() {
+  assert(gaugeShutdownStep == 1 && !b_softSleep && !b_u8g2Sleep);
+  gaugeShutdownStep = 2;
+}
 void wakeScaleFromSoftSleep(const char *) {}
 void digitalWrite(int, int) {}
 void remoteQueuePending(uint32_t mask) { wsPendingMask |= mask; }
@@ -97,4 +105,11 @@ int main() {
   wsPendingMask = WSP_OTA_RESET | WSP_POWER_OFF;
   processWsPendingCmds();
   assert(resetCount == 2 && wsPendingMask == WSP_POWER_OFF);
+
+  b_ota = false;
+  b_u8g2Sleep = false;
+  wsPendingMask = WSP_SLEEP_ON;
+  processWsPendingCmds();
+  assert(gaugeShutdownStep == 2 && b_softSleep && b_u8g2Sleep);
+  assert(u8g2.powerSave == 1 && wsPendingMask == 0);
 }

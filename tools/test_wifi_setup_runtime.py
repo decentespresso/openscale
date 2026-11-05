@@ -224,6 +224,7 @@ struct PullOtaManifest {
   int firmware = 0;
 };
 int pendingStores = 0, firmwareStreams = 0, pendingClears = 0, otaReboots = 0;
+bool otaRuntimeIsPaused() { return true; }
 String otaError;
 constexpr int U_FLASH = 0;
 int pullOtaCompareVersions(const String &left, const String &right) {

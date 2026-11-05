@@ -69,6 +69,31 @@ int batteryPercent() {
 
 void (*resetFunc)(void) = 0;
 
+void serviceFuelGauge();
+
+bool fuelGaugeStoreReseal(bool required) {
+  return storagePutBool(KEY_BAT_RESEAL, required) &&
+         storageGetBool(KEY_BAT_RESEAL, !required) == required;
+}
+
+bool fuelGaugeStoreCapacity(uint16_t capacity) {
+  return storagePutInt(KEY_BAT_CAPACITY, capacity) &&
+         storageGetInt(KEY_BAT_CAPACITY, 0) == capacity;
+}
+
+bool quiesceFuelGaugeForShutdown() {
+  fuelGaugeRequestQuiesce();
+  const unsigned long startedAt = millis();
+  while (fuelGaugeQuiesceStatus() == FuelGaugeQuiesceStatus::Pending &&
+         millis() - startedAt < 8000) {
+    serviceFuelGauge();
+    delay(1);
+  }
+  const bool complete = fuelGaugeQuiesceStatus() == FuelGaugeQuiesceStatus::Complete;
+  if (!complete) Serial.println("fuelGauge: cleanup failed; charging disabled");
+  return complete;
+}
+
 bool usbPowerKeepsAwake() {
 #ifdef USB_DET
   return digitalRead(USB_DET) == LOW;
@@ -85,6 +110,8 @@ bool cancelUsbPoweredShutdown() {
 
 void reset() {
 #ifdef ESP32
+  quiesceFuelGaugeForShutdown();
+  fuelGaugeSleep();
   bleShutdown();
 #if HDS_FEATURE_WEBSERVER
   stopWebServer();
@@ -227,6 +254,8 @@ void print_wakeup_reason() {
 
 void esp32_sleep() {
   if (cancelUsbPoweredShutdown()) return;
+  quiesceFuelGaugeForShutdown();
+  fuelGaugeSleep();
 #if HDS_ENABLE_ENERGY_MENU
   applyEnergyLightSleepSetting(false);
   setEnergyIdleWakeEnabled(false);
@@ -292,7 +321,6 @@ void esp32_sleep() {
   gpio_hold_en((gpio_num_t)I2C_SCL);
   gpio_hold_en((gpio_num_t)I2C_SDA);
 
-  fuelGaugeSleep();
   if (fuelGaugeLegacyHardware()) {
     digitalWrite(ACC_PWR_CTRL, LOW);
     gpio_hold_en((gpio_num_t)ACC_PWR_CTRL);
@@ -399,7 +427,6 @@ void shut_down_now_accidentTouch() {
 
 void updateBattery(int batteryPin){
   if (b_hasFuelGauge) {
-    fuelGaugeLoop();
     const FuelGaugeReading reading = fuelGaugeReading();
     if (!reading.valid || reading.sequence == powerCadence.fuelGaugeSampleSequence) return;
     f_batteryVoltage = reading.voltageMv / 1000.0f;
@@ -433,14 +460,13 @@ void updateBattery(int batteryPin){
 }
 
 void serviceFuelGauge() {
+  fuelGaugeLoop();
   if (!b_hasFuelGauge) return;
-  const uint32_t previousSequence = powerCadence.batterySampleSequence;
   updateBattery(BATTERY_PIN);
-  if (powerCadence.batterySampleSequence != previousSequence &&
-      fuelGaugeRuntime.capacityPersistPending &&
-      storagePutInt(KEY_BAT_CAPACITY, fuelGaugeRuntime.desiredCapacity)) {
+  if (fuelGaugeRuntime.capacityPersistPending &&
+      storagePutInt(KEY_BAT_CAPACITY, fuelGaugeRuntime.desiredCapacity) &&
+      storagePutBool(KEY_BAT_CAPACITY_SET, true)) {
     fuelGaugeRuntime.capacityPersistPending = false;
-    storagePutBool(KEY_BAT_CAPACITY_SET, true);
   }
 }
 

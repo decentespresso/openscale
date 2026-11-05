@@ -29,7 +29,7 @@ New WiFi credentials use the `credentials` blob: version byte `1`, a 33-byte ter
 
 Signed OTA calls `prepareLegacyDowngrade()` when the target or known rollback firmware predates `3.1.15`. The storage owner verifies or repairs the legacy pair and removes the blob only after verification. A storage failure cancels installation before pending LittleFS state or firmware writes. The surviving legacy pair supports rollback to the running firmware, and allows a later upgrade to read credentials changed by `v3.1.14`. The two legacy strings are not atomic; this guarantee relies on the verified OTA gate. A raw USB or firmware-upload downgrade bypasses it: after changing credentials on older firmware, a remaining blob can still override those changes on re-upgrade. Validate those unmanaged paths separately; do not claim arbitrary downgrade round-trip compatibility.
 
-Manual WiFi input trims Unicode whitespace and invisible characters at both edges. Selecting a scan result preserves the byte-exact SSID and password, including meaningful edge spaces. The firmware permits this only when the submitted SSID exactly matches its latest completed scan; UTF-8, control-character, and byte-length validation still applies. A failed scan clears the browser's old choices. Recovery AP retries the saved network after ten minutes, with a 20-second deadline before reopening the AP if that retry fails.
+Current setup pages submit byte-exact SSIDs and passwords with `preserve_edges:true`, including meaningful edge spaces during manual AP provisioning. When manually entered values have leading or trailing whitespace, a confirmation offers Keep spaces, Remove spaces, or Cancel without displaying credentials. Removal is explicit and revalidated before sending; scanned SSIDs are never trimmed. Direct API requests that omit this optional boolean retain Unicode edge trimming. Selecting a scan result still requires the submitted SSID to exactly match the latest completed scan, independently of edge preservation. UTF-8, control-character, and byte-length validation still applies. The older-firmware dashboard fallback retains manual trimming. A failed scan clears the browser's old choices. Recovery AP retries the saved network after ten minutes, with a 20-second deadline before reopening the AP if that retry fails.
 
 ## HDS Schema Version 1
 
@@ -57,8 +57,17 @@ Manual WiFi input trims Unicode whitespace and invisible characters at both edge
 | `tap_tare` | bool | `false` |
 | `tap_timer` | bool | `false` |
 | `wow_interval` | int | `0` (off); indices 1-3 select 2-4 second sleep intervals. |
+| `bat_reseal` | bool | `false`; persistent gauge resealing obligation, cleared only after verified cleanup. |
 
 `schema` is a `uint16_t`, currently `1`. Do not rename a key or change its stored type in place. Add an explicit migration, preserve old data until the new schema is complete, then increment the schema version.
+
+`bat_reseal` is optional and is not eagerly created during defaults or migration.
+An absent key means false, so adding it cannot block an otherwise valid upgrade
+when NVS is full. Its native NVS reader distinguishes a missing key from a failed
+read: malformed values, type mismatches, and namespace/read errors remain unknown
+and cannot authorize unsealing or Legacy hardware. Before unsealing, writing and
+reading back true must still succeed; a full NVS store therefore disables that
+operation rather than preventing weighing.
 
 Energy-menu settings use `energy_schema` and `ENERGY_FEATURE_KEYS` in `include/storage.h`, independently of the base settings schema. Missing or invalid booleans receive validated defaults.
 
@@ -111,6 +120,7 @@ Run the smallest relevant checks:
 
 ```sh
 python tools/test_storage_migration_contract.py
+python tools/test_storage_reseal_runtime.py
 python tools/test_wifi_setup_runtime.py
 python tools/test_wifi_setup_contract.py
 python tools/test_pull_ota_contract.py

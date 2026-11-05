@@ -117,7 +117,9 @@ jobs:
 
       - name: Shorten commit SHA
         id: slugify
-        run: echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        run: |
+          commit="$(git rev-parse HEAD)"
+          echo "sha=${commit:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Save firmware file
         uses: actions/upload-artifact@v7

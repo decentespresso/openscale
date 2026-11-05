@@ -258,7 +258,7 @@ export class BuildCoordinator {
       const record = {
         state: "queued",
         combination_hash: hash,
-        attempts: (effectiveCurrent?.state === "failed" ? effectiveCurrent.attempts : 0) + 1,
+        attempts: (["failed", "missing"].includes(effectiveCurrent?.state) ? effectiveCurrent.attempts || 0 : 0) + 1,
         attempt_id: attemptId,
         lease_expires_at: leaseExpiresAt,
         updated_at: new Date(now).toISOString(),
@@ -295,21 +295,33 @@ export class BuildCoordinator {
       await dispatchBuild(this.env, {...build, attemptId: reservation.record.attempt_id});
       return Response.json(reservation.record, {status: 202});
     } catch (error) {
+      if (error instanceof BudgetError) {
+        await this.state.storage.transaction(async transaction => {
+          const key = `build:${hash}`;
+          const [current, pending, rates] = await Promise.all([
+            transaction.get(key), transaction.get("pending"), transaction.get("rates"),
+          ]);
+          if (current?.attempt_id !== reservation.record.attempt_id || current.state !== "queued") return;
+          await transaction.put({
+            [key]: {state: "missing", combination_hash: hash,
+              attempts: Math.max(0, current.attempts - 1), updated_at: new Date().toISOString()},
+            pending: Object.fromEntries(Object.entries(pending || {}).filter(([pendingHash]) => pendingHash !== hash)),
+            ...(rates?.week === rateWindow.week ? {rates: {
+              ...rates,
+              global: Math.max(0, rates.global - 1),
+              clients: {...rates.clients, [build.clientKey]: Math.max(0, (rates.clients[build.clientKey] || 0) - 1)},
+            }} : {}),
+          });
+        });
+        await this.scheduleAlarm();
+        return Response.json({error: error.code}, {status: 503});
+      }
       const failed = await this.updateAttempt(hash, {
         state: "failed",
         failure_code: "dispatch_failed",
         attempt_id: reservation.record.attempt_id,
       });
-      if (error instanceof BudgetError && failed) {
-        await this.state.storage.transaction(async transaction => {
-          const key = `build:${hash}`;
-          const current = await transaction.get(key);
-          if (current?.attempt_id !== failed.attempt_id || current.state !== "failed") return;
-          await transaction.put(key, {state: "missing", combination_hash: hash,
-            attempts: Math.max(0, failed.attempts - 1), updated_at: failed.updated_at});
-        });
-      }
-      return Response.json(error instanceof BudgetError ? {error: error.code} : failed || {error: "dispatch_failed"}, {status: 503});
+      return Response.json(failed || {error: "dispatch_failed"}, {status: 503});
     }
   }
 

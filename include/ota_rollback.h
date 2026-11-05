@@ -60,6 +60,20 @@ static void hdsOtaRollback(const char *reason) {
 #ifdef CONFIG_APP_ROLLBACK_ENABLE
   Serial.print("[ota-verify] rollback: ");
   Serial.println(reason);
+  const bool gaugeClean = quiesceFuelGaugeForShutdown();
+  fuelGaugeSleep();
+  if (!gaugeClean) {
+    Serial.println("[ota-verify] rollback blocked: gauge cleanup failed");
+    const bool recoveryStored = filesystemRecoveryStore(true);
+    const bool rollbackCancelled = recoveryStored &&
+        esp_ota_mark_app_valid_cancel_rollback() == ESP_OK;
+    stopWifi();
+    Serial.flush();
+    if (recoveryStored && rollbackCancelled) esp32_sleep();
+    while (true) {
+      delay(1000);
+    }
+  }
   hdsOtaClearAttempts();
   stopWifi();
   Serial.flush();
@@ -72,22 +86,23 @@ static void hdsOtaRollback(const char *reason) {
 #endif
 }
 
-void hdsOtaRollbackBegin(esp_reset_reason_t resetReason) {
+const char *hdsOtaRollbackBegin(esp_reset_reason_t resetReason) {
   filesystemRecoveryLoad();
   hdsOtaPendingVerify = hdsOtaIsPendingVerify();
   if (!hdsOtaPendingVerify) {
     hdsOtaClearAttempts();
-    return;
+    return nullptr;
   }
   uint32_t attempts = hdsOtaRecordAttempt();
   Serial.print("[ota-verify] pending attempt=");
   Serial.println(attempts);
   if (attempts > HDS_OTA_MAX_VERIFY_ATTEMPTS) {
-    hdsOtaRollback("boot attempts");
+    return "boot attempts";
   }
   if (hdsOtaResetLooksCrashy(resetReason)) {
-    hdsOtaRollback("reset reason");
+    return "reset reason";
   }
+  return nullptr;
 }
 
 bool hdsOtaAcceptFilesystemRecovery() {
