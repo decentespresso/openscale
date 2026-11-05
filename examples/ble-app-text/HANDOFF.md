@@ -75,8 +75,8 @@ changing App Text on the scale.
   loss, expired heartbeat, and Circle cancellation. Check both display rotations
   and a running timer. Confirm priority screens keep their controls.
 - If both integrations are included, selecting Pressensor or Grind by Weight
-  saves the exclusive choice without restarting. Restart happens only when
-  leaving the menu. App Text remains independent. A lost
+  saves and applies the exclusive choice immediately without restarting,
+  including when leaving the menu. App Text remains independent. A lost
   or pending grinder stop must block switching until shutdown is confirmed.
 
 `SHA256SUMS.txt` covers the package contents. `firmware/build-info.json` records

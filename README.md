@@ -41,7 +41,7 @@ retain priority. Hold Circle while text is visible to block it until reconnectio
 See the [protocol and browser example](examples/ble-app-text/README.md).
 
 On updated `main`, custom firmware can include both Pressensor and Grind by Weight.
-Their Enabled controls select one integration and restart the scale; saved sensor,
+Their Enabled controls switch integrations immediately in the menu; saved sensor,
 plug, and tuning settings remain intact. Switching is blocked while grinder
 shutdown is unconfirmed. App Text has its own setting and does not select a mode.
 Older firmware refs keep their existing plugin conflicts.
