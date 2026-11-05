@@ -1012,7 +1012,7 @@ void setup() {
     }
   }
   bool textEnabled = false;
-  if (!storageLoadValidatedBool(KEY_APP_TEXT, false, textEnabled)) {
+  if (!bootRollbackReason && !storageLoadValidatedBool(KEY_APP_TEXT, false, textEnabled)) {
     Serial.println("App Text settings init failed!");
     while (true) delay(1000);
   }
@@ -1042,7 +1042,7 @@ void setup() {
   pressensorLoadSettings();
 #endif
 #if HDS_ENABLE_GRINDER || HDS_ENABLE_PRESSENSOR
-  if (!loadIntegrationSelection()) {
+  if (!bootRollbackReason && !loadIntegrationSelection()) {
     Serial.println("Integration settings init failed!");
     while (true) delay(1000);
   }
@@ -2396,6 +2396,7 @@ void serviceEnergyHousekeeping(unsigned long now) {
 
 void loop() {
   processAppPromptSession();
+  if (!appTextScreenAvailable()) appPromptScrollState = {};
   static bool otaBleClientDisconnected = false;
   static bool otaTransportsStopped = false;
   processMenuInfoPageExit();
@@ -2706,6 +2707,11 @@ void updateOled() {
   const unsigned long frameNow = millis();
   if (frameNow - t_oled_refresh >= i_oled_print_interval) {
     t_oled_refresh = frameNow;
+    appPromptScrollState = appPromptScrollUpdate(appPromptScrollState, showPrompt,
+                                                promptFrame.displayGeneration, frameNow);
+    u8g2.setFont(u8g2_font_6x10_tr);
+    const int promptWidth = showPrompt ? u8g2.getStrWidth(promptFrame.text) : 0;
+    const int promptX = appPromptTextX(appPromptScrollState, promptWidth, LCDWidth, frameNow);
 
 #if HDS_ENABLE_ENERGY_MENU
     const bool oledRedraw = energyPolicy.featureEnabled(EnergyFeature::OledRedraw);
@@ -2715,7 +2721,10 @@ void updateOled() {
     if (oledRedraw) {
       uint32_t signature = energyDisplaySignature(frameNow);
       signature = mixEnergyDisplaySignature(signature, showPrompt);
-      if (showPrompt) signature = mixEnergyDisplayText(signature, promptFrame.text);
+      if (showPrompt) {
+        signature = mixEnergyDisplayText(signature, promptFrame.text);
+        signature = mixEnergyDisplaySignature(signature, static_cast<uint32_t>(promptX));
+      }
       if (!energyRuntime.oledFrames.shouldRender(
             true, signature, frameNow, 1000)) {
         return;
@@ -2738,7 +2747,7 @@ void updateOled() {
           if (showPrompt) {
             drawWeightAt(f_displayedValue, LCDHeight - 30);
             u8g2.setFont(u8g2_font_6x10_tr);
-            u8g2.drawStr((LCDWidth - u8g2.getStrWidth(promptFrame.text)) / 2, LCDHeight - 16, promptFrame.text);
+            u8g2.drawStr(promptX, LCDHeight - 16, promptFrame.text);
           } else {
             drawWeight(f_displayedValue);
             drawTime();

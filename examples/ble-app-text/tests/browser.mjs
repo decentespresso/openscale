@@ -4,7 +4,7 @@ import { APP_PROMPTS_UUID, connectAppPrompts, ingredientPrompt } from "../browse
 assert.equal(APP_PROMPTS_UUID, "8b8dc7c0-6bf7-4bdf-9a2c-0ba9cb9a4a01");
 const heartbeat = [3, 10, 3, 255, 255, 0, 10];
 
-function scale({ present = true, capabilities = [1, 18, 10, 1], failPrompt = false, afterClear = null } = {}) {
+function scale({ present = true, capabilities = [1, 18, 10, 1], failPrompt = false, afterClear = null, withoutResponse = false } = {}) {
   const writes = [];
   let inFlight = 0;
   let promptFailures = failPrompt ? Infinity : 0, displayed = "";
@@ -24,7 +24,10 @@ function scale({ present = true, capabilities = [1, 18, 10, 1], failPrompt = fal
       assert.equal(uuid, 0xfff0);
       return {
         async getCharacteristic(uuid) {
-          if (uuid === 0x36f5) return { writeValueWithResponse: write("command") };
+          if (uuid === 0x36f5) return withoutResponse
+            ? { properties: { write: false, writeWithoutResponse: true }, writeValueWithoutResponse: write("command"),
+                writeValueWithResponse() { throw new Error("Write with response unsupported"); } }
+            : { writeValueWithResponse: write("command") };
           assert.equal(uuid, APP_PROMPTS_UUID);
           if (!present) throw new Error("NotFoundError");
           return {
@@ -42,6 +45,7 @@ const supportedScale = scale();
 const supported = await connectAppPrompts(supportedScale.server);
 assert.equal(supported.supported, true);
 assert.equal(supported.enabled, true);
+assert.equal(supported.maxPromptBytes, 18);
 assert.deepEqual(await Promise.all([
   supported.showPrompt("Add Gin: 35g"), supported.send([3, 15, 1]), supported.clearPrompt(),
 ]), [true, undefined, true]);
@@ -130,11 +134,60 @@ assert.equal(supported.supported, false);
 assert.equal(await supported.showPrompt("Old prompt"), false);
 assert.equal(supportedScale.writes.length, beforeDisconnect);
 
-assert.equal(ingredientPrompt("Add", "Gin", "35g"), "Add Gin: 35g");
+assert.equal(ingredientPrompt("Add", "Gin", "35g"), "Gin: 35g");
 const longPrompt = ingredientPrompt("Add", "Plymouth Navy Strength Gin", "135.5g");
 assert.ok(longPrompt.length <= 18 && longPrompt.endsWith(": 135.5g"));
-assert.equal(ingredientPrompt("Add", "B\u00e9n\u00e9dictine", "5g"), "Add Benedictin: 5g");
-assert.throws(() => ingredientPrompt("Add", "Gin", "A".repeat(18)), RangeError);
+assert.equal(ingredientPrompt("Add", "B\u00e9n\u00e9dictine", "5g"), "Benedictine: 5g");
+assert.equal(ingredientPrompt("Add", "Gin", "A".repeat(18)), "Gin");
+assert.equal(ingredientPrompt("Add", "Gin", "35g", 12), "Gin: 35g");
+const fullPrompt = "Carpano Antica Sweet Vermouth: 31g";
+assert.equal(ingredientPrompt("Add", "Carpano Antica Sweet Vermouth", "31g", 128), fullPrompt);
+assert.equal(ingredientPrompt("Garnish", "Mint Sprig", "1", 128), "Garnish Mint Sprig");
+assert.equal(ingredientPrompt("Rinse", "Absinthe", "5.0g", 128), "Rinse Absinthe: 5.0g");
+assert.equal(ingredientPrompt("Add", "A".repeat(123), "31g", 128).length, 128);
+assert.throws(() => ingredientPrompt("Add", "A".repeat(124), "31g", 128), RangeError);
+for (const limit of [0, 129, -1, 1.5, NaN, "128"]) {
+  assert.throws(() => ingredientPrompt("Add", "Gin", "35g", limit), RangeError);
+}
+
+for (const limit of [1, 17, 19, 64, 128]) {
+  const device = scale({ capabilities: [1, limit, 10, 1] });
+  const prompts = await connectAppPrompts(device.server);
+  assert.equal(prompts.supported, true);
+  assert.equal(prompts.maxPromptBytes, limit);
+  assert.throws(() => { prompts.maxPromptBytes = 1; }, TypeError);
+  const text = "A".repeat(limit);
+  assert.equal(await prompts.showPrompt(text), true);
+  assert.deepEqual(device.writes.at(-1), ["prompt", 1, ...new TextEncoder().encode(text)]);
+  await assert.rejects(prompts.showPrompt(text + "A"), RangeError);
+  await assert.rejects(prompts.showPrompt("caf\u00e9"), RangeError);
+  assert.equal(await prompts.clearPrompt(), true);
+  assert.equal(device.displayed, "");
+  prompts.dispose();
+}
+
+for (const capabilities of [[1, 0, 10, 1], [1, 129, 10, 1], [1, 128, 10, 2], [1, 128, 9, 1],
+  [2, 128, 10, 1], [1, 128], [1, 128, 10, 1, 0]]) {
+  const prompts = await connectAppPrompts(scale({ capabilities }).server);
+  assert.equal(prompts.supported, false);
+  prompts.dispose();
+}
+
+const longScale = scale({ capabilities: [1, 128, 10, 1] });
+const long = await connectAppPrompts(longScale.server);
+assert.equal(await long.showPrompt(fullPrompt), true);
+longScale.failNextPrompts(2);
+assert.deepEqual(await Promise.all([long.showPrompt("A".repeat(128)), long.showPrompt(fullPrompt)]), [false, false]);
+assert.equal(longScale.displayed, fullPrompt);
+await long.send(heartbeat);
+assert.equal(longScale.displayed, "");
+long.dispose();
+
+const commandOnly = scale({ withoutResponse: true });
+const withoutResponse = await connectAppPrompts(commandOnly.server);
+await withoutResponse.send(heartbeat);
+assert.deepEqual(commandOnly.writes, [["command", ...heartbeat], ["command", ...heartbeat]]);
+withoutResponse.dispose();
 
 const disabledScale = scale({ capabilities: [1, 18, 10, 0] });
 const disabled = await connectAppPrompts(disabledScale.server);

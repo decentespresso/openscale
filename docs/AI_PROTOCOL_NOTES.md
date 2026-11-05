@@ -26,11 +26,17 @@ Do not duplicate command interpretation in BLE and USB. Add shared behavior to t
 ## BLE Notification State
 
 App Text is a separate core characteristic in `FFF0`, UUID
-`8b8dc7c0-6bf7-4bdf-9a2c-0ba9cb9a4a01`. Read returns `[1,18,10,enabled]`;
-write `[1,...text]` to Show or `[0]` to Clear. Text is 1-18 printable ASCII bytes.
+`8b8dc7c0-6bf7-4bdf-9a2c-0ba9cb9a4a01`. Read returns `[1,128,10,enabled]`;
+write `[1,...text]` to Show or `[0]` to Clear. Text is 1-128 printable ASCII bytes.
+Each Show is one acknowledged write, up to 129 bytes; the BLE stack handles
+long-write assembly. The updated browser helper negotiates the advertised limit
+and still accepts the original 18-byte firmware capability.
 Only the local persisted Display opt-in enables Show. BLE callbacks validate and
 update protected fixed buffers; the main loop renders text below weight on the
-normal weighing screen. Legacy heartbeat refreshes the ten-second text session.
+normal weighing screen. Overflowing text holds its beginning for one second,
+scrolls left at ten pixels per second until its end is visible, holds for one
+second, and starts over. Scrolling position participates in Energy Menu redraw
+detection. Legacy heartbeat refreshes the ten-second text session, not scrolling.
 Disconnect, expiry, Off, or Clear removes text; Circle cancellation blocks Show
 until reconnection. Neither USB nor WebSocket exposes this text command. See
 `examples/ble-app-text/README.md` and run `python tools/test_app_text.py`.

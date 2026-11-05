@@ -32,8 +32,10 @@ Plugin authors can use the [plugin development guide](docs/plugin-development.md
 
 Development firmware includes BLE App Text in standard and custom builds. Enable
 `Setup > Display > App Text` on the scale before connecting a supported app. The
-setting defaults Off and survives reboot. Apps can show up to 18 printable ASCII
+setting defaults Off and survives reboot. Apps can show up to 128 printable ASCII
 characters underneath the live weight or clear them to restore the timer area.
+Text that fits stays centered. Longer instructions scroll left, pausing for one
+second at the beginning and end before repeating.
 The timer keeps running. Menus, errors, Pressensor, and grinder-operation screens
 retain priority. Hold Circle while text is visible to block it until reconnection.
 See the [protocol and browser example](examples/ble-app-text/README.md).
