@@ -59,12 +59,17 @@ confirmation. Configuration and OTA pauses also keep charging disabled.
 Battery Protect stops charging at 80% and resumes at 75%. USB presence keeps the
 ESP32 awake even when charging pauses or completes, so the normal loop continues
 sampling and controlling the charger. Automatic shutdown requests are cancelled
-before display or hardware teardown while USB is connected. Explicit Off enters
-charging standby instead of deep sleep; the charging-display preference still
-controls whether its screen is visible. Charging and Battery Protect remain
-active. An armed, running, stopping, failed, or recovering grinder blocks USB
-standby; its normal controls and stop handling remain available. Idle standby
-pauses grinder progression and retains its connection supervision.
+before display or hardware teardown while USB is connected. Explicit Off shows
+the normal Off screen for one second, then enters charging standby instead of
+deep sleep; the charging-display preference still controls whether its screen
+is visible. Charger supervision continues during the Off screen. Charging and
+Battery Protect remain active. Explicit Off remains available in every grinder
+state. Before the Off screen, fuel-gauge cleanup, USB standby, or battery
+shutdown, the scale sends grinder OFF and waits at most 250 ms for a matching
+relay-OFF reply, then closes the connection even without confirmation. The plug
+turns its relay OFF on disconnect. Waking requires a fresh connection and tare
+before grinding can re-arm. If USB arrives during battery shutdown and cancels
+sleep, normal weighing resumes without leaving grinder progression paused.
 Hold either button to return to weighing, or tap with Quick Boot enabled. Wake
 presses are consumed rather than interpreted as tare or timer actions. Holding
 both buttons for 500 ms opens the menu on USB without unplugging or rebooting;
@@ -139,7 +144,7 @@ Light Sleep boosts CPU performance briefly after a button wake. `serviceScaleBut
 
 ## WiFi And BLE
 
-The WiFi initialization task stays alive as the WiFi worker. Only that task runs `wifiSupervise()`; calls from the main loop remain harmless. `wifi_setup_control.cpp` handles bounded requests and status snapshots; `wifi_scan.cpp` handles scans. Shared fields live in `include/parameter.h` behind `wifiSetupMux`. `wifiRadioMutex` serializes the worker with synchronous shutdown and OLED credential reset. Network callbacks record events without taking either blocking mutex. The worker must keep running while an OLED status page blocks the main loop. Tests from a saved STA network use STA-only mode. Tests from the setup AP use AP+STA to keep the browser's network available, then return to that same AP without recreating it. A failed AP test reports on the AP even when older credentials remain saved. Final activation and direct switches use STA-only mode. The deferred saved-network retry clears test-only state before restoration, so retry success or timeout releases the WiFi reservation.
+The WiFi initialization task stays alive as the WiFi worker. Only that task runs `wifiSupervise()`; calls from the main loop remain harmless. `wifi_setup_control.cpp` handles bounded requests and status snapshots; `wifi_scan.cpp` handles scans. Shared fields live in `include/parameter.h` behind `wifiSetupMux`. `wifiRadioMutex` serializes the worker with synchronous shutdown and OLED credential reset. Network callbacks record events without taking either blocking mutex. Information pages return to the main loop, and the worker remains independent of menu and OTA activity. Tests from a saved STA network use STA-only mode. Tests from the setup AP use AP+STA to keep the browser's network available, then return to that same AP without recreating it. A failed AP test reports on the AP even when older credentials remain saved. Final activation and direct switches use STA-only mode. The deferred saved-network retry clears test-only state before restoration, so retry success or timeout releases the WiFi reservation.
 
 During OTA the worker still retries the saved STA network with the existing startup grace and backoff. It does not process setup requests, scans, mDNS advertisement, or the heap reboot watchdog. OTA owns the WiFi operation reservation; official pull, assigned custom installs, pairing/relink, and firmware uploads must not start over an existing network switch. Non-rebooting OTA exits release their reservation.
 

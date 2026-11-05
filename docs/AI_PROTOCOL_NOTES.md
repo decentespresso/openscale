@@ -25,6 +25,22 @@ Do not duplicate command interpretation in BLE and USB. Add shared behavior to t
 
 ## BLE Notification State
 
+App Text is a separate core characteristic in `FFF0`, UUID
+`8b8dc7c0-6bf7-4bdf-9a2c-0ba9cb9a4a01`. Read returns `[1,128,10,enabled]`;
+write `[1,...text]` to Show or `[0]` to Clear. Text is 1-128 printable ASCII bytes.
+Each Show is one acknowledged write, up to 129 bytes; the BLE stack handles
+long-write assembly. The updated browser helper negotiates the advertised limit
+and still accepts the original 18-byte firmware capability.
+Only the local persisted Display opt-in enables Show. BLE callbacks validate and
+update protected fixed buffers; the main loop renders text below weight on the
+normal weighing screen. Overflowing text holds its beginning for one second,
+scrolls left at ten pixels per second until its end is visible, holds for one
+second, and starts over. Scrolling position participates in Energy Menu redraw
+detection. Legacy heartbeat refreshes the ten-second text session, not scrolling.
+Disconnect, expiry, Off, or Clear removes text; Circle cancellation blocks Show
+until reconnection. Neither USB nor WebSocket exposes this text command. See
+`examples/ble-app-text/README.md` and run `python tools/test_app_text.py`.
+
 A live BLE connection does not imply an FFF4 notification subscription. A client becomes eligible for outbound FFF4 notifications only after its current connection handle subscribes to the characteristic.
 
 All outbound FFF4 paths pass through `bleCanNotifyCurrent()`. The shared gate checks the feature state, characteristic, live connection, and current subscription before touching the characteristic.
@@ -46,10 +62,10 @@ Decent binary frames begin with model byte `0x03`. Checksums are XORs of the pre
 
 `0x1B` starts a WiFi pull OTA and has two accepted forms:
 
-- `03 1B` is the bare form. It starts the interactive on-OLED release picker and frames as exactly two bytes, with no wait for the USB receive timeout.
+- `03 1B` is the bare form. It starts the interactive on-OLED release picker and frames as exactly two bytes. An isolated prefix waits for the existing 30 ms USB receive timeout; a following unbiased byte resolves it immediately.
 - `03 1B <major> <minor> <patch>` names a target release for an unattended install. Each version byte is encoded `0x80 | value`, so every component is capped at 127 and the firmware masks with `0x7F` on receipt.
 
-The USB length resolver picks the five-byte form only when `data[2]` has its high bit set. A following command always begins with model byte `0x03`, and a biased version byte never can, so the two forms are distinguished without a checksum and without the receive timeout. A frame whose payload has begun but is shorter than five bytes is refused and logged, never truncated to the bare form.
+The USB length resolver picks the five-byte form only when `data[2]` has its high bit set. A following command always begins with model byte `0x03`, and a biased version byte never can, so that byte distinguishes the forms without a checksum. Until a third byte arrives, the resolver retains the two-byte prefix. Timeout resolution waits while UART bytes remain unread, including across the main loop's 32-byte receive boundary. A frame whose payload has begun but is shorter than five bytes is refused and logged, never truncated to the bare form.
 
 Every byte of a started payload must stay biased. An unbiased byte resynchronizes the resolver after one byte, so `03 1B 83` followed by `03 22` refuses the update and still delivers `03 22`. The dispatcher repeats the check, since BLE delivers whole packets and never reaches the resolver.
 

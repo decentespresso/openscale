@@ -23,23 +23,28 @@ def main():
     usb = (ROOT / "include/usbcomm.h").read_text(encoding="utf-8")
     ble = (ROOT / "include/ble.h").read_text(encoding="utf-8")
     ws = (ROOT / "include/websocket.h").read_text(encoding="utf-8")
+    prompt = (ROOT / "include/app_prompt.h").read_text(encoding="utf-8")
     names = ["anyScaleButtonPressed", "resetReleasedScaleButtons", "buttonChecksSuppressedUntilRelease",
              "serviceScaleButtonInputs", "enterUsbStandby", "wakeFromChargingUi", "handleMenuChord",
              "button_init", "aceButtonHandleEvent", "buttonCircle_Pressed", "buttonSquare_Pressed",
              "buttonCircle_Released", "buttonSquare_Released", "buttonCircle_LongPressed",
-             "buttonSquare_LongPressed", "buttonCircle_DoubleClicked", "buttonSquare_DoubleClicked"]
+             "buttonSquare_LongPressed", "buttonCircle_DoubleClicked", "buttonSquare_DoubleClicked",
+             "appTextScreenAvailable"]
     signatures = [re.search(r"^(?:bool|void) " + name + r"\([^;]*?\) \{", hds, re.M).group(0)[:-2]
                   for name in names]
     source = r'''
 #include <array>
 #include <cassert>
 #include "ace_button/AceButton.h"
+#include "app_prompt_state.h"
 #include "timing.h"
 using namespace ace_button;
 #define HDS_ENABLE_GRINDER 0
+#define HDS_ENABLE_PRESSENSOR 0
 #define HDS_FEATURE_WIFI 0
 #define HDS_FEATURE_WEBSOCKET 0
 constexpr int BUTTON_CIRCLE=1, BUTTON_SQUARE=2, BATTERY_CHARGING=3;
+constexpr int U8G2_R0=0, U8G2_R2=2, FONT_M=0;
 constexpr unsigned long BUTTON_POLL_INTERVAL_MS=2, CLICK_DELAY=180;
 constexpr unsigned long DOUBLECLICK_DELAY=600, LONGPRESS_DELAY=900;
 unsigned long clockMs=1000, t_shutdownFailBle=0, t_menuExitTime=0, menuChordPressedAt=0;
@@ -48,9 +53,17 @@ int i_cal_weight=0, i_button_cal_status=0, menuMoves=0, menuSelects=0, sampledPr
 bool b_menu=false, b_calibration=false, b_ota=false, b_powerOff=false;
 bool b_showChargingUI=false, b_is_charging=true, b_ble_enabled=true, b_chargingOLED=false;
 bool b_softSleep=false, b_u8g2Sleep=true, b_shutdownFailBle=false;
+bool b_screenFlipped=false;
 bool b_websocketLowPowerEnabled=false, b_buttonChordSuppressUntilRelease=false;
 bool b_menuCirclePressPending=false, b_menuSquarePressPending=false;
 bool b_menuCircleLongHandled=false, b_menuSquareLongHandled=false;
+bool b_debug=false, b_about=false, b_adc_recovery_active=false;
+float f_displayedValue=0;
+constexpr float OVER_WEIGHT=2000;
+volatile AppPromptState appPromptState;
+int appPromptMux=0;
+void portENTER_CRITICAL(int*) {}
+void portEXIT_CRITICAL(int*) {}
 struct { bool active=false; } circle_press_data, square_press_data;
 struct {
   bool explicitDisplayOff=false;
@@ -66,6 +79,8 @@ struct {
   bool powerSave=true;
   void setPowerSave(int value) { powerSave=value; }
   void setContrast(int) {}
+  void setFontDirection(int) {}
+  void setDisplayRotation(int) {}
 } u8g2;
 struct {
   template<class T> void print(T) {}
@@ -79,6 +94,9 @@ int currentMenuSize=1, currentIndex=0;
 template<typename T, unsigned N> int getMenuSize(T (&)[N]) { return N; }
 std::array<int, 4> pins={HIGH,HIGH,HIGH,HIGH};
 unsigned long millis() { return clockMs; }
+void delay(unsigned long duration) { clockMs+=duration; }
+void serviceFuelGauge() {}
+void refreshOLED(char*, int) {}
 int digitalRead(uint8_t pin) { return pins[pin]; }
 void pinMode(int, int) {}
 bool usbPowerKeepsAwake() { return true; }
@@ -86,6 +104,7 @@ bool serviceEnergyButtonGesture(unsigned long) { return true; }
 void power_off(int) {}
 void recordEnergyActivity() {}
 void invalidateMenuFrame() {}
+bool handleMenuInfoPageButton(int, uint8_t) { return false; }
 void navigateMenu(int direction) { menuMoves+=direction; }
 void selectMenu() { ++menuSelects; }
 void backMenu() {}
@@ -110,6 +129,10 @@ void applyEnergyDisplayCommand(bool enabled) {
 }
 void applyEnergyLowPowerCommand() {}
 '''
+    for signature in ("inline AppPromptState readAppPromptLocked()",
+                      "inline void storeAppPromptLocked(const AppPromptState &state)",
+                      "inline bool cancelAppPrompt()"):
+        source += signature + " {" + block_after(prompt, signature) + "}\n"
     for signature in ("inline bool chargingUiActive()", "inline void requestEnergyDisplay(bool enabled)"):
         source += signature + " {" + block_after(parameter, signature) + "}\n"
     source += "\n".join(signature + ";" for signature in signatures)
@@ -145,6 +168,7 @@ void boot(bool display, int quickBoot) {
   remoteTares=timerToggles=menuMoves=menuSelects=sampledPresses=0;
   pendingDisplay=0;
   menuChordPressedAt=0;
+  storeAppPromptLocked(appPromptConnection(APP_PROMPT_NO_CONNECTION,clockMs));
   config1.setDebounceDelay(20);
   button_init();
   poll(50);
@@ -215,6 +239,32 @@ void testMenuChord(bool display, int quickBoot) {
   tap(BUTTON_SQUARE);
   assert(menuMoves==1 && menuSelects==1 && !b_powerOff);
 }
+void showPrompt() {
+  const uint8_t message[]={1,'A','d','d',' ','G','i','n'};
+  storeAppPromptLocked(appPromptCommand(appPromptConnection(1,clockMs),message,sizeof(message),clockMs));
+  assert(appPromptState.active && !appPromptState.cancelled);
+}
+void testAppTextWake(bool display, int quickBoot) {
+  boot(display,quickBoot);
+  showPrompt();
+  assert(!appTextScreenAvailable());
+  tap(BUTTON_CIRCLE,quickBoot ? 1000 : 60);
+  assert(appTextScreenAvailable() && appPromptState.active && !appPromptState.cancelled);
+  assert(sampledPresses==0 && !circle_press_data.active);
+  tap(BUTTON_CIRCLE,1000);
+  assert(!appPromptState.active && appPromptState.cancelled && !b_powerOff);
+  assert(!circle_press_data.active);
+
+  boot(display,quickBoot);
+  showPrompt();
+  pins[BUTTON_CIRCLE]=pins[BUTTON_SQUARE]=LOW;
+  poll(510);
+  pins.fill(HIGH);
+  poll(50);
+  assert(b_menu && !appTextScreenAvailable());
+  tap(BUTTON_CIRCLE,1000);
+  assert(menuMoves==-1 && appPromptState.active && !appPromptState.cancelled);
+}
 int main() {
   for (bool display : {false,true}) {
     testBlankStandby(display);
@@ -222,6 +272,7 @@ int main() {
       for (int pin : {BUTTON_CIRCLE,BUTTON_SQUARE}) testWakeClicks(display,quickBoot,pin);
       testUsbCommands(display,quickBoot);
       testMenuChord(display,quickBoot);
+      testAppTextWake(display,quickBoot);
     }
   }
 }
@@ -241,7 +292,7 @@ int main() {
                             str(cpp), str(library / "src/ace_button/AceButton.cpp"),
                             str(library / "src/ace_button/ButtonConfig.cpp"), "-o", str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
-    print("USB standby, consumed wake/clicks, menu chord, OLED/BLE restore, and USB routing passed (AceButton 1.10.1)")
+    print("USB standby, App Text cancellation priority, wake/clicks, menu chord, OLED/BLE restore, and USB routing passed (AceButton 1.10.1)")
 
 
 if __name__ == "__main__":

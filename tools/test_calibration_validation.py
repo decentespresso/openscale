@@ -165,8 +165,11 @@ def capture_after_plateau(samples, factor, elapsed_per_sample_ms):
                 stable_started_at = 0
                 stable_min = None
                 stable_max = None
-            last_capture["stable_reads"] = stable_reads
             stable_span = 0 if stable_min is None else stable_max - stable_min
+            if stable_span > limit:
+                stable_reads = 0
+                stable_started_at = 0
+            last_capture["stable_reads"] = stable_reads
             if (
                 stable_reads >= STABLE_READS_REQUIRED
                 and elapsed_ms - stable_started_at >= STABLE_HOLD_MS
@@ -281,6 +284,11 @@ def main():
     slow_ramp_capture, slow_ramp_last = capture_after_plateau(slow_ramp, 1000.0, 100)
     assert slow_ramp_capture is None
     assert slow_ramp_last["spread"] <= stability_raw_limit(1000.0)
+
+    settled_capture, _ = capture_after_plateau(
+        [8655800, 8656200] + [8656600] * 20, 1000.0, 100,
+    )
+    assert settled_capture is not None and settled_capture["raw"] == 8656600
 
     scale_model = ScaleModel()
     scale_model.set_samples_in_use(4)

@@ -66,14 +66,26 @@ struct {
   struct { bool active = false; } recovery;
 } grinderRuntime;
 bool grinderPaused = false, explicitDisplayOff = false;
+bool oledPowerSave = true, offPowerSave = true, attachUsbOnNextDelay = false;
+int oledContrast = 0, oledDirection = -1, oledRotation = -1;
+int offContrast = 0, offDirection = -1, offRotation = -1, offFrames = 0;
+int grinderShutdownCalls = 0;
+unsigned long offShownAt = 0;
 void grinderPauseForMenu() { grinderPaused = grinderSettings.enabled; }
 void grinderResumeAfterMenu() { grinderPaused = false; }
+void grinderResumeAfterCancelledShutdown() { grinderResumeAfterMenu(); }
+void grinderPrepareForShutdown() {
+  ++grinderShutdownCalls;
+  grinderPaused = true;
+  grinderRuntime.relayOn = false;
+  grinderRuntime.recovery.active = false;
+}
 void beforeDeepSleepFlush() {}
 void applyEnergyLightSleepSetting(bool) {}
 void setEnergyIdleWakeEnabled(bool) {}
 void esp_sleep_disable_wakeup_source(int) {}
 void requestEnergyDisplay(bool enabled) { explicitDisplayOff = !enabled; }
-void applyEnergyDisplayCommand(bool enabled) { b_u8g2Sleep = !enabled; }
+void applyEnergyDisplayCommand(bool enabled) { b_u8g2Sleep = oledPowerSave = !enabled; }
 bool wakeScaleFromSoftSleep(const char*) { b_softSleep = false; return true; }
 void ble_init() {}
 void invalidateMenuFrame() {}
@@ -105,11 +117,19 @@ void gpio_hold_en(int) { ++effects; }
 void gpio_deep_sleep_hold_en() { ++effects; }
 void pinMode(int, int) { ++effects; }
 void digitalWrite(int, int) { ++effects; }
-void delay(int amount) { ++effects; clockMs += amount; }
+void delay(int amount) {
+  ++effects;
+  clockMs += amount;
+  if (attachUsbOnNextDelay) {
+    levels[8] = LOW;
+    attachUsbOnNextDelay = false;
+  }
+}
 void bleShutdown() { ++effects; }
 void sendBlePowerOff(int) { ++effects; }
 void sendWebsocketPowerOff(int) { ++effects; }
 void wowCaptureBaselineForSleep() { ++effects; }
+void wowResumeSleepSession() { ++effects; }
 void wowArmSleepTimer() { ++effects; }
 void fuelGaugeSleep() { ++effects; }
 enum class FuelGaugeQuiesceStatus { Running, Pending, Complete, Failed };
@@ -124,7 +144,17 @@ FuelGaugeQuiesceStatus fuelGaugeQuiesceStatus() {
 }
 void serviceFuelGauge() { ++gaugeServices; }
 bool fuelGaugeLegacyHardware() { return false; }
-void refreshOLED(char*, int) { ++effects; }
+void refreshOLED(char* text, int) {
+  assert(!HDS_ENABLE_GRINDER || grinderShutdownCalls > 0);
+  ++effects;
+  if (std::string(text) != "Off") return;
+  ++offFrames;
+  offShownAt = millis();
+  offPowerSave = oledPowerSave;
+  offContrast = oledContrast;
+  offDirection = oledDirection;
+  offRotation = oledRotation;
+}
 std::string String(int value) { return std::to_string(value); }
 struct {
   template<class T> void print(T) { ++effects; }
@@ -133,9 +163,10 @@ struct {
   void flush() { ++effects; }
 } Serial;
 struct {
-  void setPowerSave(int) { ++effects; }
-  void setFontDirection(int) { ++effects; }
-  void setDisplayRotation(int) { ++effects; }
+  void setPowerSave(int value) { ++effects; oledPowerSave = value; }
+  void setContrast(int value) { ++effects; oledContrast = value; }
+  void setFontDirection(int value) { ++effects; oledDirection = value; }
+  void setDisplayRotation(int value) { ++effects; oledRotation = value; }
 } u8g2;
 struct { void powerDown() { ++effects; } } scale;
 esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return wakeCause; }
@@ -146,6 +177,50 @@ void esp_deep_sleep_start() { throw Sleep{}; }
 void enterUsbStandby();
 @FUNCTIONS@
 @STANDBY_FUNCTIONS@
+
+void testStandbyOffScreen() {
+  for (bool display : {false, true}) {
+    for (bool flipped : {false, true}) {
+      for (bool asleep : {false, true}) {
+        levels.fill(HIGH);
+        levels[8] = LOW;
+        b_menu = b_calibration = b_softSleep = false;
+        b_chargingOLED = display;
+        b_screenFlipped = flipped;
+        b_u8g2Sleep = oledPowerSave = asleep;
+        oledContrast = offFrames = gaugeServices = 0;
+        clockMs = std::numeric_limits<unsigned long>::max() - 500;
+        enterUsbStandby();
+        assert(offFrames == 1 && !offPowerSave && offContrast == 255);
+        assert(offDirection == 0 && offRotation == (flipped ? U8G2_R0 : U8G2_R2));
+        assert(millis() - offShownAt >= 1000 && millis() - offShownAt < 1020);
+        assert(gaugeServices >= 50);
+        assert(oledPowerSave == !display && b_u8g2Sleep == !display);
+      }
+    }
+  }
+}
+
+void testLateUsbCancellation() {
+#ifdef USB_DET
+  for (const auto shutdown : {shut_down_now, shut_down_now_nobeep}) {
+    levels.fill(HIGH);
+    b_menu = b_calibration = false;
+    b_powerOff = true;
+    GPIO_power_on_with = BUTTON_CIRCLE;
+    grinderPaused = false;
+    attachUsbOnNextDelay = true;
+    bool slept = false;
+    try { shutdown(); } catch (const Sleep&) { slept = true; }
+    assert(!slept && !b_powerOff && !grinderPaused);
+    assert(GPIO_power_on_with == BUTTON_CIRCLE);
+  }
+  b_menu = true;
+  grinderPaused = true;
+  assert(cancelUsbPoweredShutdown() && grinderPaused);
+  b_menu = false;
+#endif
+}
 
 void testStandbyAndMenu() {
 #if HDS_ENABLE_GRINDER
@@ -160,15 +235,17 @@ void testStandbyAndMenu() {
         GPIO_power_on_with = BUTTON_CIRCLE;
         b_showChargingUI = false;
         b_powerOff = true;
+        const int callsBefore = grinderShutdownCalls;
         enterUsbStandby();
-        const bool allowed = state == GRINDER_STATE_CONNECTED && !relayOn && !recovery;
-        assert(!b_powerOff && (GPIO_power_on_with == BATTERY_CHARGING) == allowed);
+        assert(!b_powerOff && GPIO_power_on_with == BATTERY_CHARGING);
+        assert(grinderShutdownCalls == callsBefore + 1 && grinderPaused);
       }
     }
   }
   grinderRuntime.state = GRINDER_STATE_CONNECTED;
   grinderRuntime.relayOn = grinderRuntime.recovery.active = false;
 #endif
+  testStandbyOffScreen();
   for (bool chargingDisplay : {false, true}) {
     levels.fill(HIGH);
     levels[8] = LOW;
@@ -248,12 +325,14 @@ int main() {
   try { shut_down_now_accidentTouch(); } catch (const Sleep&) {}
   assert(gaugeServices == 0 && millis() == beforeAbort);
   const auto lowBatteryShutdown = []() { shut_down_low_battery(3.0f); };
-  for (const auto shutdown : {esp32_sleep, shut_down_now, shut_down_now_nobeep,
+  const auto sleep = []() { esp32_sleep(); };
+  for (const auto shutdown : {+sleep, shut_down_now, shut_down_now_nobeep,
                               shut_down_now_accidentTouch, +lowBatteryShutdown}) {
     for (int usb : {LOW, HIGH}) {
       levels.fill(HIGH);
       levels[8] = usb;
       effects = 0;
+      grinderShutdownCalls = 0;
       b_powerOff = true;
       GPIO_power_on_with = BUTTON_CIRCLE;
       bool slept = false;
@@ -301,6 +380,7 @@ int main() {
     assert(GPIO_power_on_with == expected);
   }
   testStandbyAndMenu();
+  testLateUsbCancellation();
 }
 '''
 
@@ -310,10 +390,11 @@ def main():
     signatures = [
         "bool quiesceFuelGaugeForShutdown()",
         "bool usbPowerKeepsAwake()", "bool cancelUsbPoweredShutdown()",
+        "bool prepareScaleShutdown()",
         "void configureWakePinForDeepSleep(gpio_num_t pin)",
         "void configureWakePinsForDeepSleep()", "void releaseWakePinsFromRtcMode()",
         "uint64_t deepSleepWakeMask()", "void print_wakeup_reason()",
-        "void esp32_sleep()", "void shut_down_now()",
+        "void esp32_sleep(bool resumeWowSession = false)", "void shut_down_now()",
         "void shut_down_low_battery(float voltage)", "void shut_down_now_nobeep()",
         "void shut_down_now_accidentTouch()",
     ]

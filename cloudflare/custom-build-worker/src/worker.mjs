@@ -240,10 +240,16 @@ function resolvePlugins(catalog, firmwareRef, selected) {
     const plugin = catalog.plugins[id];
     if (!plugin) throw new ApiError(400, "unknown_plugin");
     const conflictsFeatures = plugin.conflicts_features || [];
+    const conflictsByRef = plugin.conflicts_by_ref === undefined ? {} : plugin.conflicts_by_ref;
     const recommendedPlugins = plugin.recommends?.plugins || [];
     if (!Array.isArray(plugin.firmware_refs) || !Array.isArray(plugin.depends_on) ||
         !Array.isArray(plugin.conflicts) || !Array.isArray(conflictsFeatures) ||
         !Array.isArray(recommendedPlugins) ||
+        typeof conflictsByRef !== "object" || conflictsByRef === null || Array.isArray(conflictsByRef) ||
+        Object.entries(conflictsByRef).some(([ref, ids]) =>
+          !plugin.firmware_refs.includes(ref) || !Array.isArray(ids) ||
+          ids.length !== new Set(ids).size || ids.some(conflict =>
+            typeof conflict !== "string" || !idPattern.test(conflict) || conflict === id || !Object.hasOwn(catalog.plugins, conflict))) ||
         !Array.isArray(plugin.requires) || !Array.isArray(plugin.assets) ||
         !plugin.patches || typeof plugin.patches !== "object" || Array.isArray(plugin.patches) ||
         plugin.firmware_refs.some(ref => typeof ref !== "string") ||
@@ -315,13 +321,13 @@ function compatibilityPackages(catalog, pluginIds) {
   });
 }
 
-function validateConflicts(catalog, pluginIds, featureIds) {
+function validateConflicts(catalog, pluginIds, featureIds, firmwareRef) {
   const selectedPlugins = new Set(pluginIds);
   const selectedFeatures = new Set(featureIds);
   const compatible = compatibilityPackages(catalog, pluginIds);
   for (const id of pluginIds) {
     const plugin = catalog.plugins[id];
-    if (plugin.conflicts.some(conflict => selectedPlugins.has(conflict) &&
+    if ((plugin.conflicts_by_ref?.[firmwareRef] ?? plugin.conflicts).some(conflict => selectedPlugins.has(conflict) &&
         !compatible.some(group => group.has(id) && group.has(conflict)))) {
       throw new ApiError(400, "plugin_conflict");
     }
@@ -347,7 +353,7 @@ export function identityForSelection(catalog, sourceCommit, selection, builderCo
   const features = resolveFeatures(
     catalog, requested.firmware_ref, requested.features, pluginIds,
   );
-  validateConflicts(catalog, pluginIds, features);
+  validateConflicts(catalog, pluginIds, features, requested.firmware_ref);
   const platformioEnvironment = features.includes("energy-menu")
     ? "esp32s3-energy-menu-custom"
     : catalog.platformio_environment;

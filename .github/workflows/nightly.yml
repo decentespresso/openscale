@@ -168,6 +168,7 @@ jobs:
       - name: Check button wake and energy migration regressions
         run: |
           python tools/check_energy_button_regressions.py
+          python tools/check_energy_ble_redraw.py
           python tools/check_usb_standby_regressions.py
 
   release-ready:

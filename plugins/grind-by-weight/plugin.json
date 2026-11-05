@@ -9,6 +9,7 @@
   "requires": ["grinder"],
   "depends_on": [],
   "conflicts": ["pressensor"],
+  "conflicts_by_ref": {"main": []},
   "recommends": {
     "features": ["pull-ota"],
     "plugins": ["default-web-apps"]

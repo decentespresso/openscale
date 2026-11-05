@@ -1,5 +1,5 @@
 {
-  "catalog_revision": "84bffa6904707413b5cf28fb1fad5a153ffe0fe07a80176ad15c8f851b611de2",
+  "catalog_revision": "961aaa3309c748934b4ba9ffa31ed67653f09d5ead18e4593ac262f7a53088ac",
   "custom_ota_signing_key_generation": 1,
   "firmware_refs": [
     "v3.1.15",
@@ -180,6 +180,7 @@
       "depends_on": [],
       "conflicts": [],
       "conflicts_features": [],
+      "conflicts_by_ref": {},
       "recommends": {
         "features": [],
         "plugins": []
@@ -239,6 +240,9 @@
         "pressensor"
       ],
       "conflicts_features": [],
+      "conflicts_by_ref": {
+        "main": []
+      },
       "recommends": {
         "features": [
           "pull-ota"
@@ -271,6 +275,9 @@
         "grind-by-weight"
       ],
       "conflicts_features": [],
+      "conflicts_by_ref": {
+        "main": []
+      },
       "recommends": {
         "features": [],
         "plugins": []

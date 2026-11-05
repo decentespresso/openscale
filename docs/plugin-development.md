@@ -301,6 +301,7 @@ The important fields are:
 * `requires` — existing firmware features the plugin needs;
 * `depends_on` — other plugins that must also be installed;
 * `conflicts` — plugins that cannot be used together;
+* `conflicts_by_ref` — optional map from supported firmware ref to a replacement conflict list; omitted refs use `conflicts`, and an empty list permits that combination for the named ref;
 * `conflicts_features` — firmware features that cannot be used with the plugin;
 * `recommends` — a combination of features or plugins known to work together;
 * `patches` — firmware patches for supported firmware revisions;

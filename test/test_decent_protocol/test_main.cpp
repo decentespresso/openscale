@@ -35,9 +35,10 @@ void testUsbWeightRetainsAdjacentFrameBoundary() {
       decentCommandFrameLength(frames + firstLength, sizeof(frames) - firstLength, false));
 }
 
-void testWifiUpdateFramesBareRequestAsTwoBytes() {
+void testWifiUpdateFramesBareRequestAfterTimeout() {
   const uint8_t bare[] = {0x03, 0x1B};
-  TEST_ASSERT_EQUAL_size_t(2, decentCommandFrameLength(bare, sizeof(bare), false));
+  TEST_ASSERT_EQUAL_size_t(0, decentCommandFrameLength(bare, sizeof(bare), false));
+  TEST_ASSERT_EQUAL_size_t(2, decentCommandFrameLength(bare, sizeof(bare), true));
 }
 
 void testWifiUpdateFramesBiasedVersionPayload() {
@@ -96,7 +97,7 @@ int main() {
   RUN_TEST(testUsbWeightConsumesThreeByteCommands);
   RUN_TEST(testUsbWeightEnableSupportsOptionalInterval);
   RUN_TEST(testUsbWeightRetainsAdjacentFrameBoundary);
-  RUN_TEST(testWifiUpdateFramesBareRequestAsTwoBytes);
+  RUN_TEST(testWifiUpdateFramesBareRequestAfterTimeout);
   RUN_TEST(testWifiUpdateFramesBiasedVersionPayload);
   RUN_TEST(testWifiUpdateWaitsForAnIncompletePayload);
   RUN_TEST(testWifiUpdateDoesNotSwallowAFollowingCommand);

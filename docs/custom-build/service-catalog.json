@@ -1,7 +1,7 @@
 {
   "schema": 2,
   "custom_ota_signing_key_generation": 1,
-  "catalog_revision": "84bffa6904707413b5cf28fb1fad5a153ffe0fe07a80176ad15c8f851b611de2",
+  "catalog_revision": "961aaa3309c748934b4ba9ffa31ed67653f09d5ead18e4593ac262f7a53088ac",
   "firmware_refs": [
     "v3.1.14",
     "v3.1.14-preview.3",
@@ -172,6 +172,7 @@
       ],
       "depends_on": [],
       "conflicts": [],
+      "conflicts_by_ref": {},
       "conflicts_features": [],
       "recommends": {
         "features": [],
@@ -181,7 +182,7 @@
       "assets": [
         {
           "target": "Quality_Control_Assistant/README.md",
-          "sha256": "bc418898ab27593f80eb130e8ca122d955bba096765a19c0a13e553130eb04ff"
+          "sha256": "a59659182427eec1ce8de9c7bffce6146599dded160c9ead09f311628c9b2658"
         },
         {
           "target": "Quality_Control_Assistant/quality_control.html",
@@ -189,7 +190,7 @@
         },
         {
           "target": "Quality_Control_Assistant/quality_control.js",
-          "sha256": "6d42988434521928610307c2ae29496bb3305c26ff27cee0752785c780aebe18"
+          "sha256": "0e1de295c1b819412acb68b98351dec695c3b7196756e2ce5dcb0bb7d63b9223"
         },
         {
           "target": "README.md",
@@ -225,7 +226,7 @@
         },
         {
           "target": "dosing_assistant/README.md",
-          "sha256": "e3509438fa2a2c0ba8de9de38c18c44944b62528659d4179f828fc1b50f23e6c"
+          "sha256": "6aa785521453f26d870c8bdc1a4ca14c45d988e00807ea956a01e7d93e66f50b"
         },
         {
           "target": "dosing_assistant/dosing_assistant.html",
@@ -249,11 +250,11 @@
         },
         {
           "target": "dosing_assistant/modules/scale.js",
-          "sha256": "ce06167026588ab1fd9dde70dc3a576576f125cd8e66ecac6242a6221d9f5acf"
+          "sha256": "b589e8c53aaf3c59fa0d93718f77aa996b8d42a15ec51068b6bfea14e80d9ad7"
         },
         {
           "target": "dosing_assistant/modules/state-machine.js",
-          "sha256": "212db756f7a1f34360e0b0a6f189a0aeafc2a6257bb7a801c69f85efe44bf431"
+          "sha256": "c8b85a5a3f3181a7fd4a3ed7bb4b68eb5cfae78c51e7554ac696f2d92904466b"
         },
         {
           "target": "dosing_assistant/modules/ui-controller.js",
@@ -317,6 +318,9 @@
       "conflicts": [
         "pressensor"
       ],
+      "conflicts_by_ref": {
+        "main": []
+      },
       "conflicts_features": [],
       "recommends": {
         "features": [
@@ -343,6 +347,9 @@
       "conflicts": [
         "grind-by-weight"
       ],
+      "conflicts_by_ref": {
+        "main": []
+      },
       "conflicts_features": [],
       "recommends": {
         "features": [],
@@ -350,19 +357,19 @@
       },
       "patches": {
         "main": {
-          "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"
+          "sha256": "9544f92b459288f332038e43cd061e4984575e32aa14ce2c436b603b4ebb80b6"
         },
         "v3.1.14": {
-          "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"
+          "sha256": "4a98719ba31c44ee490d39912a752ce70fb6e270b89eedee1ef90d71d313b378"
         },
         "v3.1.14-preview.3": {
-          "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"
+          "sha256": "193523def2dc41501fa3f89cfb3ce70cde51a1d77291aab965e176bfd792a288"
         },
         "v3.1.14-preview.4": {
-          "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"
+          "sha256": "4a98719ba31c44ee490d39912a752ce70fb6e270b89eedee1ef90d71d313b378"
         },
         "v3.1.15": {
-          "sha256": "e649fe088bf8807c317effd0438b1b388a409094b29ed00457bb1b6b0c95f9bc"
+          "sha256": "4a98719ba31c44ee490d39912a752ce70fb6e270b89eedee1ef90d71d313b378"
         }
       },
       "assets": []

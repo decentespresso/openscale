@@ -16,20 +16,24 @@ HARNESS = r"""
 
 #define CONFIG_APP_ROLLBACK_ENABLE 1
 #define HDS_ENABLE_ENERGY_MENU 1
+#define HDS_ENABLE_GRINDER 1
 constexpr const char *STORAGE_NAMESPACE = "hds";
 constexpr const char *KEY_STORAGE_SCHEMA = "schema";
 constexpr const char *KEY_BAT_RESEAL = "bat_reseal";
+constexpr const char *KEY_APP_TEXT = "app_text";
 constexpr uint16_t STORAGE_SCHEMA_VERSION = 1;
 constexpr int ESP_OK = 0;
 struct Halted {};
 struct Slept {};
 struct RolledBack {};
 bool namespaceAvailable = true, defaultsWritable = true, energyLoadSucceeds = true;
+bool textLoadSucceeds = true, integrationLoadSucceeds = true, textEnabled = false;
 bool selectedRollback = true, preDetectionAbort = false, cleanupSucceeds = true;
 bool storedMarkerPresent = false, storedMarkerTyped = true;
 bool recoveryStored = false, rollbackCancelled = false;
 uint8_t storedMarkerValue = 0;
 int energyLoads = 0, energyInitializations = 0, discoveries = 0, cleanupCalls = 0;
+int textLoads = 0, textApplications = 0, integrationLoads = 0;
 int shutdownHolds = 0, wifiStops = 0, events = 0, cleanupEvent = 0, holdEvent = 0;
 struct {
   bool opened = false;
@@ -44,6 +48,14 @@ struct {
 bool storageEnsureDefaults() {
   return defaultsWritable;
 }
+bool storageLoadValidatedBool(const char *key, bool defaultValue, bool &value) {
+  assert(std::strcmp(key, KEY_APP_TEXT) == 0 && !defaultValue);
+  ++textLoads;
+  value = true;
+  return textLoadSucceeds;
+}
+void setAppTextEnabled(bool enabled) { ++textApplications; textEnabled = enabled; }
+bool loadIntegrationSelection() { ++integrationLoads; return integrationLoadSucceeds; }
 uint8_t storageGetResealState() {
   if (!settingsPreferences.opened) return 2;
   if (!storedMarkerPresent) return 0;
@@ -99,6 +111,7 @@ __ROLLBACK_FUNCTION__
 static void boot() {
   const char *bootRollbackReason = selectedRollback ? "boot attempts" : nullptr;
 __SETTINGS_BLOCK__
+__INTEGRATION_BLOCK__
   if (preDetectionAbort) throw Slept{};
 __RESEAL_BLOCK__
   ++discoveries;
@@ -109,6 +122,8 @@ static void reset() {
   namespaceAvailable = true;
   defaultsWritable = true;
   energyLoadSucceeds = true;
+  textLoadSucceeds = integrationLoadSucceeds = true;
+  textEnabled = false;
   selectedRollback = true;
   preDetectionAbort = false;
   cleanupSucceeds = true;
@@ -117,6 +132,7 @@ static void reset() {
   storedMarkerValue = 0;
   recoveryStored = rollbackCancelled = false;
   energyLoads = energyInitializations = discoveries = cleanupCalls = 0;
+  textLoads = textApplications = integrationLoads = 0;
   shutdownHolds = wifiStops = events = cleanupEvent = holdEvent = 0;
   settingsPreferences.opened = false;
   fuelGaugeRuntime = {};
@@ -126,6 +142,7 @@ static void expectRollback() {
   bool rolledBack = false;
   try { boot(); } catch (const RolledBack &) { rolledBack = true; }
   assert(rolledBack && energyLoads == 0 && energyInitializations == 0);
+  assert(textLoads == 0 && textApplications == 1 && !textEnabled && integrationLoads == 0);
 }
 
 static void expectBlockedRollback() {
@@ -135,6 +152,7 @@ static void expectBlockedRollback() {
   assert(discoveries == 1 && cleanupCalls == 1 && shutdownHolds == 1);
   assert(cleanupEvent < holdEvent && wifiStops == 1);
   assert(energyLoads == 0 && energyInitializations == 0);
+  assert(textLoads == 0 && textApplications == 1 && !textEnabled && integrationLoads == 0);
 }
 
 int main() {
@@ -163,6 +181,9 @@ int main() {
   reset();
   energyLoadSucceeds = false;
   expectRollback();
+  reset();
+  textLoadSucceeds = integrationLoadSucceeds = false;
+  expectRollback();
   for (bool storageFailure : {false, true}) {
     reset();
     selectedRollback = false;
@@ -177,6 +198,17 @@ int main() {
   selectedRollback = false;
   boot();
   assert(energyLoads == 1 && energyInitializations > 0 && discoveries == 1);
+  assert(textLoads == 1 && textApplications == 1 && textEnabled && integrationLoads == 1);
+  for (bool textFailure : {false, true}) {
+    reset();
+    selectedRollback = false;
+    textLoadSucceeds = !textFailure;
+    integrationLoadSucceeds = textFailure;
+    bool halted = false;
+    try { boot(); } catch (const Halted &) { halted = true; }
+    assert(halted && textLoads == 1 && discoveries == 0 && cleanupCalls == 0);
+    assert(integrationLoads == (textFailure ? 0 : 1));
+  }
   for (bool available : {false, true}) {
     reset();
     namespaceAvailable = available;
@@ -198,14 +230,17 @@ def main():
     storage = (ROOT / "include/storage.h").read_text(encoding="utf-8")
     rollback = (ROOT / "include/ota_rollback.h").read_text(encoding="utf-8")
     settings = setup[setup.index("  bool bootSettingsOpened = false;"):setup.index("#if HDS_ENABLE_GRINDER")]
+    integration = setup[setup.index("#if HDS_ENABLE_GRINDER || HDS_ENABLE_PRESSENSOR"):
+                        setup.index("  b_quickBoot =")]
     reseal = setup[setup.index("  const uint8_t bootResealState"):setup.index("  const int storedBatteryCapacity")]
     deferred = "if (bootRollbackReason) hdsOtaRollback(bootRollbackReason);"
-    assert setup.index("esp32_sleep();") < setup.index("Wire.begin(") < setup.index(reseal)
+    assert setup.index("esp32_sleep(true);") < setup.index("Wire.begin(") < setup.index(reseal)
     assert setup.index("fuelGaugeStartDetection(") < setup.index(deferred)
     assert "KEY_BAT_RESEAL" not in extract_function(storage, "inline bool storageEnsureDefaults()")
     source = HARNESS.replace("__STORAGE_INIT__", extract_function(storage, "inline bool storageInit("))
     source = source.replace("__ROLLBACK_FUNCTION__", extract_function(rollback, "static void hdsOtaRollback("))
     source = source.replace("__SETTINGS_BLOCK__", settings).replace("__RESEAL_BLOCK__", reseal)
+    source = source.replace("__INTEGRATION_BLOCK__", integration)
     source = source.replace("__DEFERRED_ROLLBACK__", deferred)
     with tempfile.TemporaryDirectory(prefix="boot-rollback-settings-") as directory:
         cpp = Path(directory) / "boot.cpp"

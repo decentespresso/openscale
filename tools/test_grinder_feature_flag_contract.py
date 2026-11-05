@@ -99,6 +99,8 @@ def main():
     require("-DHDS_ENABLE_GRINDER=1", grinder_environment)
 
     require_guarded(hds, '#include "grinder_runtime.h"')
+    require_guarded(hds, "grinderPrepareForShutdown();")
+    require_guarded(power, "grinderPrepareForShutdown();")
     for text in (
         "grinderLoadSettings();",
         "grinderRuntimeBegin();",

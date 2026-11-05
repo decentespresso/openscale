@@ -48,6 +48,7 @@ Current setup pages submit byte-exact SSIDs and passwords with `preserve_edges:t
 | `heartbeat` | bool | `true` |
 | `screen_flip` | bool | `false` |
 | `time_on_top` | bool | `false` |
+| `app_text` | bool | `false` |
 | `btn_conn` | bool | `false` |
 | `wifi_boot` | bool | `false` |
 | `auto_sleep` | bool | `true` |
@@ -69,6 +70,25 @@ reading back true must still succeed; a full NVS store therefore disables that
 operation rather than preventing weighing.
 
 Energy-menu settings use `energy_schema` and `ENERGY_FEATURE_KEYS` in `include/storage.h`, independently of the base settings schema. Missing or invalid booleans receive validated defaults.
+
+App Text stores only its local opt-in. Its text, cancellation, and BLE session
+remain in protected RAM. Missing or invalid `app_text` receives the Off default;
+the menu saves before applying a runtime change.
+
+`include/integration_settings.h` owns `hds/integration` (UChar): None `0`,
+Pressensor `1`, or Grinder `2`. When absent, it migrates the legacy `enabled`
+booleans in the separate `pressensor` and `grinder` namespaces. Exactly one enabled
+integration survives migration; ambiguous, invalid, or unavailable choices become
+None. The authoritative selection supplies runtime enable flags. Integration
+changes save/read back the choice before stopping the previous integration and
+starting the selected one in the menu. Both Enabled rows reflect the running
+selection; sensor and plug discovery need no restart. A pending or unconfirmed
+grinder stop blocks a mode change. Other restart requests retain the final
+grinder shutdown guard.
+Sensor, plug, and tuning keys remain in their existing namespaces.
+Migration restores the pre-grinder WiFi boot preference from the legacy settings.
+Selected Grinder forces WiFi in RAM at startup without overwriting that preference.
+Run `python tools/test_app_text.py` for migration, failed-save, and restart guards.
 
 ## Legacy EEPROM Migration
 

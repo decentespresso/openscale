@@ -19,6 +19,7 @@ void waitForEnergyMainLoopWork();
 #endif
 
 #include "storage.h"
+#include "app_prompt.h"
 #include "power.h"
 #include "gyro.h"
 #include "display.h"
@@ -37,6 +38,10 @@ void waitForEnergyMainLoopWork();
 #if HDS_ENABLE_GRINDER
 #include "grinder_runtime.h"
 #endif
+#if HDS_ENABLE_PRESSENSOR
+#include "pressensor_runtime.h"
+#endif
+#include "integration_settings.h"
 #if HDS_FEATURE_PULL_OTA
 #include "pull_ota.h"
 #include "ota_rollback.h"
@@ -522,6 +527,7 @@ void aceButtonHandleEvent(AceButton *button, uint8_t eventType, uint8_t buttonSt
   }
 #endif
   int pin = button->getPin();
+  if (handleMenuInfoPageButton(pin, eventType)) return;
   switch (eventType) {
     case AceButton::kEventPressed:
 #if HDS_ENABLE_ENERGY_MENU
@@ -632,15 +638,7 @@ void enterUsbStandby() {
   b_powerOff = false;
   if (b_menu || b_calibration) return;
 #if HDS_ENABLE_GRINDER
-  if (grinderSettings.enabled &&
-      (grinderRuntime.state == GRINDER_STATE_ARMED ||
-       grinderRuntime.state == GRINDER_STATE_GRINDING ||
-       grinderRuntime.state == GRINDER_STATE_STOPPING ||
-       grinderRuntime.state == GRINDER_STATE_ERROR ||
-       grinderRuntime.relayOn || grinderRuntime.recovery.active)) {
-    Serial.println("USB standby blocked: stop grinder first");
-    return;
-  }
+  grinderPrepareForShutdown();
 #endif
   if (b_softSleep) wakeScaleFromSoftSleep("USB standby");
   b_shutdownFailBle = false;
@@ -649,9 +647,16 @@ void enterUsbStandby() {
   b_buttonChordSuppressUntilRelease = true;
   circle_press_data = {};
   square_press_data = {};
-#if HDS_ENABLE_GRINDER
-  grinderPauseForMenu();
-#endif
+  u8g2.setPowerSave(0);
+  u8g2.setContrast(255);
+  u8g2.setFontDirection(0);
+  u8g2.setDisplayRotation(b_screenFlipped ? U8G2_R0 : U8G2_R2);
+  refreshOLED((char*)"Off", FONT_M);
+  const unsigned long offShownAt = millis();
+  while (millis() - offShownAt < 1000) {
+    serviceFuelGauge();
+    delay(20);
+  }
 #if HDS_ENABLE_ENERGY_MENU
   requestEnergyDisplay(b_chargingOLED);
   applyEnergyDisplayCommand(b_chargingOLED);
@@ -819,7 +824,23 @@ void buttonSquare_DoubleClicked() {
   }
 }
 
+bool appTextScreenAvailable() {
+#if HDS_ENABLE_GRINDER
+  if (grinderSettings.enabled && grinderRuntime.state >= GRINDER_STATE_ARMED) return false;
+#endif
+#if HDS_ENABLE_PRESSENSOR
+  if (pressensorActive()) return false;
+#endif
+  return !b_debug && !b_about && !b_adc_recovery_active && !b_shutdownFailBle &&
+    !b_menu && !b_calibration && !b_softSleep && !b_ota && !b_u8g2Sleep &&
+    GPIO_power_on_with != BATTERY_CHARGING && f_displayedValue <= OVER_WEIGHT;
+}
+
 void buttonCircle_LongPressed() {
+  if (appTextScreenAvailable() && cancelAppPrompt()) {
+    circle_press_data = {};
+    return;
+  }
   if (!b_menu) {
     Serial.println("O button long pressed");
 #ifdef BUZZER
@@ -990,6 +1011,12 @@ void setup() {
       }
     }
   }
+  bool textEnabled = false;
+  if (!bootRollbackReason && !storageLoadValidatedBool(KEY_APP_TEXT, false, textEnabled)) {
+    Serial.println("App Text settings init failed!");
+    while (true) delay(1000);
+  }
+  setAppTextEnabled(textEnabled);
 #if HDS_ENABLE_ENERGY_MENU
   if (!bootRollbackReason) {
     if (!energyLoadSettings(energyPolicy.settings)) {
@@ -1010,6 +1037,15 @@ void setup() {
 #endif
 #if HDS_ENABLE_GRINDER
   grinderLoadSettings();
+#endif
+#if HDS_ENABLE_PRESSENSOR
+  pressensorLoadSettings();
+#endif
+#if HDS_ENABLE_GRINDER || HDS_ENABLE_PRESSENSOR
+  if (!bootRollbackReason && !loadIntegrationSelection()) {
+    Serial.println("Integration settings init failed!");
+    while (true) delay(1000);
+  }
 #endif
 
   b_quickBoot = storageGetBool(KEY_QUICK_BOOT, false);
@@ -1073,7 +1109,7 @@ void setup() {
     } else {
       Serial.println("Button released before 0.5 second.");
       Serial.println("Going to sleep now.");
-      esp32_sleep();
+      esp32_sleep(true);
       break;
       b_button_pressed = false;
     }
@@ -1325,7 +1361,7 @@ void setup() {
   if (grinderSettings.enabled && !b_wifiOnBoot) {
     b_wifiOnBoot = true;
   }
-  grinderRuntimeBegin();
+  if (grinderSettings.enabled) grinderRuntimeBegin();
 #endif
   refreshMenuRows();
 #if HDS_FEATURE_PULL_OTA
@@ -2253,7 +2289,8 @@ bool energyDisplayIdleInhibited() {
 #endif
   return usbPower || b_menu || b_calibration || b_ota ||
          b_adc_recovery_active || stopWatch.isRunning() || grinderDisplayRequired ||
-         b_debug || b_about || b_shutdownFailBle;
+         b_debug || b_about || b_shutdownFailBle ||
+         (appTextScreenAvailable() && snapshotAppPrompt().active);
 }
 
 void applyEnergyDisplayMode(DisplayIdleMode requested, bool force = false) {
@@ -2358,8 +2395,12 @@ void serviceEnergyHousekeeping(unsigned long now) {
 
 
 void loop() {
+  processAppPromptSession();
+  if (!appTextScreenAvailable()) appPromptScrollState = {};
   static bool otaBleClientDisconnected = false;
   static bool otaTransportsStopped = false;
+  processMenuInfoPageExit();
+  if (!b_menu && menuInfoPageActive()) clearMenuInfoPage();
 #if HDS_ENABLE_ENERGY_MENU
   const uint64_t lightSleepWakeMask = serviceEnergyLightSleepWakeRestore();
   if (energyLightSleepButtonWake(lightSleepWakeMask)) {
@@ -2411,11 +2452,15 @@ void loop() {
         otaBleClientDisconnected && !bleHasLiveClient());
     otaBleClientDisconnected = false;
     otaTransportsStopped = false;
+    invalidateMenuFrame();
   }
 
   processBleStatusResponse();
   processBleVoltageResponse();
   serviceFuelGauge();
+  if (powerCadence.chargeCheck.shouldRun(millis(), 200)) {
+    checkBattery();
+  }
 #if HDS_ENABLE_ENERGY_MENU
   serviceEnergyPowerManagement();
   serviceEnergyHousekeeping(millis());
@@ -2441,7 +2486,7 @@ void loop() {
   else
     b_heartBeatIcon = false;
 #endif
-  if (b_ota || bleHasLiveClient()
+  if (b_ota || b_is_charging || bleHasLiveClient()
 #if HDS_FEATURE_WEBSOCKET
       || (b_wifiEnabled && websocketHasClients())
 #endif
@@ -2497,9 +2542,6 @@ void loop() {
 #endif  //DEBUG
     if (millis() - t_batteryRefresh > i_batteryRefreshTareInterval){
       updateBattery(BATTERY_PIN);
-    }
-    if (powerCadence.chargeCheck.shouldRun(millis(), 200)) {
-      checkBattery();
     }
     if (b_menu) {
 #if HDS_FEATURE_WIFI
@@ -2660,9 +2702,16 @@ void chargingOLED(int perc, float voltage) {
 
 
 void updateOled() {
+  const AppPromptState promptFrame = snapshotAppPrompt();
+  const bool showPrompt = promptFrame.active && appTextScreenAvailable();
   const unsigned long frameNow = millis();
   if (frameNow - t_oled_refresh >= i_oled_print_interval) {
     t_oled_refresh = frameNow;
+    appPromptScrollState = appPromptScrollUpdate(appPromptScrollState, showPrompt,
+                                                promptFrame.displayGeneration, frameNow);
+    u8g2.setFont(u8g2_font_6x10_tr);
+    const int promptWidth = showPrompt ? u8g2.getStrWidth(promptFrame.text) : 0;
+    const int promptX = appPromptTextX(appPromptScrollState, promptWidth, LCDWidth, frameNow);
 
 #if HDS_ENABLE_ENERGY_MENU
     const bool oledRedraw = energyPolicy.featureEnabled(EnergyFeature::OledRedraw);
@@ -2670,8 +2719,14 @@ void updateOled() {
       return;
     }
     if (oledRedraw) {
+      uint32_t signature = energyDisplaySignature(frameNow);
+      signature = mixEnergyDisplaySignature(signature, showPrompt);
+      if (showPrompt) {
+        signature = mixEnergyDisplayText(signature, promptFrame.text);
+        signature = mixEnergyDisplaySignature(signature, static_cast<uint32_t>(promptX));
+      }
       if (!energyRuntime.oledFrames.shouldRender(
-            true, energyDisplaySignature(frameNow), frameNow, 1000)) {
+            true, signature, frameNow, 1000)) {
         return;
       }
     }
@@ -2689,14 +2744,20 @@ void updateOled() {
         if (b_adc_recovery_active) {
           drawAdcRecovery();
         } else {
-          drawWeight(f_displayedValue);
-          drawTime();
+          if (showPrompt) {
+            drawWeightAt(f_displayedValue, LCDHeight - 30);
+            u8g2.setFont(u8g2_font_6x10_tr);
+            u8g2.drawStr(promptX, LCDHeight - 16, promptFrame.text);
+          } else {
+            drawWeight(f_displayedValue);
+            drawTime();
+          }
         }
       }
       u8g2.setDrawColor(2);
 
       drawBattery(frameNow);
-      drawButton();
+      if (!showPrompt) drawButton();
       drawBle(frameNow);
       drawHeartBeat();
 #if HDS_ENABLE_GRINDER
@@ -2736,6 +2797,10 @@ void separateFloat(float number) {
 }
 
 void drawWeight(float input) {
+  drawWeightAt(input, -1);
+}
+
+void drawWeightAt(float input, int baseline) {
   if (input > OVER_WEIGHT){
     u8g2.setFont(FONT_GRAM);
     u8g2.drawStr(AC((char *)"Over"), AT(), (char *)"Over");
@@ -2770,6 +2835,7 @@ void drawWeight(float input) {
     if (strcmp(sec2sec(stopWatch.elapsed()), "0s") == 0) {
       y = AT();
     }
+    if (baseline >= 0) y = baseline;
     u8g2.drawStr(x_decimalPoint, y, ".");
     u8g2.drawStr(x_integer, y, trim(integerStr));
     u8g2.drawStr(x_decimal, y, trim(decimalStr));

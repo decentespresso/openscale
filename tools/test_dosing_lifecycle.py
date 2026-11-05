@@ -11,13 +11,27 @@ const vm = require('node:vm');
 let now = 0;
 const timers = new Map();
 let timerId = 0;
-const ui = new Proxy({}, {get() { return () => {}; }});
+const uiState = {};
+const ui = new Proxy({
+  getWeightDisplay() { return uiState.weight; },
+  updateWeightDisplay(weight) { uiState.weight = weight; },
+  updateGuidance(message) { uiState.guidance = message; },
+  updateDosingButton(label) { uiState.button = label; },
+  enableSetContainerWeightButton() { uiState.containerEnabled = true; },
+  disableSetContainerWeightButton() { uiState.containerEnabled = false; },
+  showSetContainerWeightButton() { uiState.containerVisible = true; },
+  hideSetContainerWeightButton() { uiState.containerVisible = false; }
+}, {get(target, key) { return target[key] ?? (() => {}); }});
+const inputs = {targetWeight: {value: '10'}, lowThreshold: {value: '9'}, highThreshold: {value: '11'}};
+const warnings = [];
 const context = vm.createContext({
   Date: class extends Date { static now() { return now; } },
   console: {log() {}, warn() {}, error() {}},
   setTimeout(callback) { const id = ++timerId; timers.set(id, callback); return id; },
   clearTimeout(id) { timers.delete(id); },
-  WebSocket: {OPEN: 1}
+  WebSocket: {OPEN: 1},
+  document: {getElementById(id) { return inputs[id]; }},
+  alert(message) { warnings.push(message); }
 });
 const modules = new Map();
 async function load(file) {
@@ -38,7 +52,7 @@ async function load(file) {
     result.dosingSettings = {targetWeight: 10, lowThreshold: 9, highThreshold: 11};
     result.dosingMode = true;
     result.soundEnabled = false;
-    result.ws = {readyState: 1, send() {}};
+    result.ws = {readyState: 1, sent: [], send(value) { this.sent.push(value); }};
     return result;
   }
   function sample(target, weight, advance = 500) {
@@ -91,7 +105,58 @@ async function load(file) {
     assert.equal(removed.weightData.length, 0);
     assert.equal(removed.stateMachine.stabilityWindow, null);
   }
-  console.log('Dosing rejects ramps/gaps and saves current stable samples only in active sessions');
+  const cancelled = scale();
+  cancelled.stopDosing();
+  cancelled.toggleDosingMode();
+  assert.equal(cancelled.waitingForContainerWeight, true);
+  assert.equal(uiState.button, 'Stop');
+  cancelled.toggleDosingMode();
+  assert.equal(cancelled.waitingForContainerWeight, false);
+  assert.equal(cancelled.dosingMode, false);
+  assert.equal(uiState.button, 'Start');
+  assert.equal(uiState.containerEnabled, false);
+  assert.equal(uiState.containerVisible, false);
+  for (let index = 0; index < 7; ++index) sample(cancelled, 10);
+  assert.equal(cancelled.weightData.length, 0);
+  assert.equal(cancelled.ws.sent.length, 0);
+  for (const failure of ['closed', 'send']) {
+    const disconnected = scale();
+    disconnected.stopDosing();
+    sample(disconnected, 100);
+    disconnected.toggleDosingMode();
+    if (failure === 'closed') disconnected.ws.readyState = 3;
+    else disconnected.ws.send = () => { throw new Error('Connection lost'); };
+    disconnected.setContainerWeight();
+    assert.equal(disconnected.dosingMode, false);
+    assert.equal(disconnected.waitingForContainerWeight, true);
+    assert.equal(disconnected.tareWeight, 0);
+    assert.equal(disconnected.containerWeight, 0);
+    assert.equal(uiState.containerEnabled, true);
+    assert.equal(warnings.at(-1), 'WebSocket not connected.');
+    disconnected.ws = {readyState: 1, sent: [], send(value) { this.sent.push(value); }};
+    for (let index = 0; index < 7; ++index) sample(disconnected, 110);
+    assert.equal(disconnected.weightData.length, 0);
+    disconnected.setContainerWeight();
+    assert.equal(disconnected.dosingMode, true);
+    assert.equal(disconnected.waitingForContainerWeight, false);
+    assert.deepEqual(disconnected.ws.sent, ['tare']);
+    assert.equal(uiState.containerEnabled, false);
+    sample(disconnected, 0);
+    for (let index = 0; index < 7; ++index) sample(disconnected, 10);
+    assert.equal(disconnected.weightData.length, 1);
+    assert.equal(disconnected.weightData[0].weight, '10.0');
+  }
+  const replacement = scale();
+  sample(replacement, 10);
+  sample(replacement, -100);
+  sample(replacement, 2);
+  assert.equal(uiState.guidance, 'New container detected, click zero to continue');
+  assert.equal(replacement.stateMachine.currentState, 'container_removed');
+  assert.equal(replacement.weightData.length, 0);
+  replacement.tare();
+  sample(replacement, 0);
+  assert.equal(replacement.stateMachine.currentState, 'waiting_for_next');
+  console.log('Dosing settling, cancellation, failed tare sends and replacement containers passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
 '''
 
