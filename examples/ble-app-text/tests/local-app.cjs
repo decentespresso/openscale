@@ -5,15 +5,15 @@ const { chromium } = require("playwright");
 const url = process.env.HDS_TEST_APP_URL || "http://localhost:8765/test/";
 const screenshots = process.env.HDS_TEST_SCREENSHOTS;
 
-async function mockBluetooth(page, supported = true, enabled = true) {
-  await page.addInitScript(({ supported, enabled }) => {
+async function mockBluetooth(page, supported = true, enabled = true, maxPromptBytes = 128) {
+  await page.addInitScript(({ supported, enabled, maxPromptBytes }) => {
     const writes = [];
     let writing = false;
     let overlap = false;
     class Characteristic extends EventTarget {
       constructor(kind) { super(); this.kind = kind; }
       async startNotifications() { return this; }
-      async readValue() { return new DataView(Uint8Array.of(1, 18, 10, Number(enabled)).buffer); }
+      async readValue() { return new DataView(Uint8Array.of(1, maxPromptBytes, 10, Number(enabled)).buffer); }
       async writeValueWithResponse(bytes) {
         if (writing) overlap = true;
         writing = true;
@@ -59,7 +59,7 @@ async function mockBluetooth(page, supported = true, enabled = true) {
         weight.dispatchEvent(new Event("characteristicvaluechanged"));
       },
     };
-  }, { supported, enabled });
+  }, { supported, enabled, maxPromptBytes });
 }
 
 async function waitText(page, id, text) {
@@ -88,6 +88,8 @@ async function checkLayout(page) {
     await page.locator("#connect").click();
     await waitText(page, "last-prompt", "Place glass; tare");
     await waitText(page, "connection", "Decent Scale");
+    await waitText(page, "capability", "App Text v1 / 128 characters");
+    assert.equal(await page.locator("#prompt").getAttribute("maxlength"), "128");
     assert.equal(await page.evaluate(() => ble.writes.filter((write) => write.kind === "command" && write.bytes[1] === 15).length), 0, "Connection must not tare");
     await page.evaluate(() => ble.weight(-12.3));
     await waitText(page, "weight", "-12.3");
@@ -112,6 +114,18 @@ async function checkLayout(page) {
     await page.locator("#prompt").fill("WWWWWWWWWWWWWWWWWW");
     await page.locator("#send").click();
     await waitText(page, "last-prompt", "WWWWWWWWWWWWWWWWWW");
+    const longPrompt = "A".repeat(128);
+    await page.locator("#prompt").fill(longPrompt);
+    await page.locator("#send").click();
+    await waitText(page, "last-prompt", longPrompt);
+    await waitText(page, "count", "128 / 128");
+    assert.equal(await page.evaluate(() => ble.writes.at(-1).bytes.length), 129);
+    await page.locator("#prompt").evaluate((input) => {
+      input.value = "A".repeat(129);
+      input.dispatchEvent(new Event("input"));
+    });
+    assert.ok(await page.locator("#send").isDisabled());
+    await page.locator("#prompt").fill(longPrompt);
     await checkLayout(page);
     if (screenshots) await page.screenshot({ path: path.join(screenshots, "desktop-ui.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
@@ -131,6 +145,14 @@ async function checkLayout(page) {
     assert.equal(await page.evaluate(() => ble.overlap), false, "Overlapping GATT writes");
     assert.deepEqual(errors, []);
     await page.close();
+
+    const compact = await browser.newPage();
+    await mockBluetooth(compact, true, true, 18);
+    await compact.goto(url);
+    await compact.locator("#connect").click();
+    await waitText(compact, "capability", "App Text v1 / 18 characters");
+    assert.equal(await compact.locator("#prompt").getAttribute("maxlength"), "18");
+    await compact.close();
 
     const legacy = await browser.newPage();
     await mockBluetooth(legacy, false);

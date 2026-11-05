@@ -27,11 +27,12 @@ int main() {
   assert(appPromptCommand(appPromptConnection(7, 200), show, sizeof(show), 200).active);
   assert(!appPromptConnection(APP_PROMPT_NO_CONNECTION, 200).active);
 
-  uint8_t maximum[19];
+  uint8_t maximum[APP_PROMPT_MAX_BYTES + 1];
   maximum[0] = 1;
-  std::memset(maximum + 1, '~', 18);
+  std::memset(maximum + 1, '~', APP_PROMPT_MAX_BYTES);
   const auto full = appPromptCommand(connection, maximum, sizeof(maximum), 100);
-  assert(full.active && std::strlen(full.text) == 18 && full.text[18] == '\0');
+  assert(APP_PROMPT_MAX_BYTES == 128);
+  assert(full.active && std::strlen(full.text) == APP_PROMPT_MAX_BYTES && full.text[APP_PROMPT_MAX_BYTES] == '\0');
   const uint8_t invalid[][3] = {{1, 0, 0}, {1, 31, 0}, {1, 127, 0}, {1, 255, 0}, {2, 'A', 0}, {0, 'A', 0}};
   for (const auto &frame : invalid) {
     const auto unchanged = appPromptCommand(shown, frame, 2, 100);
@@ -40,9 +41,11 @@ int main() {
   assert(!appPromptCommand(connection, nullptr, 1, 100).active);
   assert(!appPromptCommand(connection, show, 0, 100).active);
   assert(!appPromptCommand(connection, show, 1, 100).active);
-  uint8_t oversized[20] = {1};
-  std::memset(oversized + 1, 'A', 19);
+  uint8_t oversized[APP_PROMPT_MAX_BYTES + 2] = {1};
+  std::memset(oversized + 1, 'A', APP_PROMPT_MAX_BYTES + 1);
   assert(!appPromptCommand(connection, oversized, sizeof(oversized), 100).active);
+  const auto rejected = appPromptCommand(shown, oversized, sizeof(oversized), 100);
+  assert(rejected.active && std::strcmp(rejected.text, shown.text) == 0);
   for (int value = 0; value <= 255; ++value) {
     const uint8_t frame[] = {1, static_cast<uint8_t>(value)};
     assert(appPromptCommand(connection, frame, sizeof(frame), 100).active == (value >= 32 && value <= 126));

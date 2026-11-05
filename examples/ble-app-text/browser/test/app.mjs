@@ -1,4 +1,4 @@
-import { connectAppPrompts, MAX_PROMPT_BYTES } from "../hds-app-prompts.mjs?v=1";
+import { connectAppPrompts, MAX_PROMPT_BYTES } from "../hds-app-prompts.mjs?v=2";
 
 const byId = (id) => document.getElementById(id);
 const heartbeat = Object.freeze([3, 10, 3, 255, 255, 0, 10]);
@@ -34,11 +34,14 @@ function notice(message = "") {
 
 function validPrompt() {
   const text = byId("prompt").value;
-  return text.length > 0 && text.length <= MAX_PROMPT_BYTES && /^[\x20-\x7e]+$/.test(text);
+  const maxPromptBytes = session?.helper?.maxPromptBytes ?? MAX_PROMPT_BYTES;
+  return text.length > 0 && text.length <= maxPromptBytes && /^[\x20-\x7e]+$/.test(text);
 }
 
 function render() {
   const connected = Boolean(session?.helper);
+  const maxPromptBytes = session?.helper?.maxPromptBytes ?? MAX_PROMPT_BYTES;
+  byId("prompt").maxLength = maxPromptBytes;
   byId("connect").textContent = connecting || connected ? "Disconnect" : "Connect scale";
   byId("connect").disabled = !window.isSecureContext || !navigator.bluetooth;
   byId("tare").disabled = !connected || busy;
@@ -47,8 +50,8 @@ function render() {
   byId("previous").disabled = stepIndex === 0 || busy;
   byId("next").disabled = busy || (!finished && stepIndex === steps.length - 1);
   byId("finish").disabled = busy || finished;
-  byId("count").textContent = `${byId("prompt").value.length} / ${MAX_PROMPT_BYTES}`;
-  byId("prompt-error").textContent = validPrompt() ? "" : "Use 1-18 printable ASCII characters.";
+  byId("count").textContent = `${byId("prompt").value.length} / ${maxPromptBytes}`;
+  byId("prompt-error").textContent = validPrompt() ? "" : `Use 1-${maxPromptBytes} printable ASCII characters.`;
   byId("next").textContent = finished ? "Restart recipe" : "Next step \u2192";
   byId("step-count").textContent = finished ? "Complete" : `Step ${stepIndex + 1} / ${steps.length}`;
   byId("progress").value = finished ? steps.length : stepIndex + 1;
@@ -153,7 +156,7 @@ async function connect() {
     await sendHeartbeat(current);
     assertCurrent(current);
     byId("capability").textContent = !helper.supported ? "Unsupported / browser only" :
-      helper.enabled ? "App Text v1 / 18 characters" : "App Text off on scale";
+      helper.enabled ? `App Text v1 / ${helper.maxPromptBytes} characters` : "App Text off on scale";
     if (!finished) await showPrompt(current, steps[stepIndex].prompt);
     assertCurrent(current);
     connecting = false;

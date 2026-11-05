@@ -67,6 +67,10 @@ changing App Text on the scale.
 
 - Make a full recipe, including counted ingredients and garnish. Check each
   scale instruction, per-step zero, Prev/Next, and the final drink total.
+- Check a short centered instruction and a long full ingredient name. Long text
+  holds its beginning for one second, scrolls left at ten pixels per second,
+  holds with the final character visible for one second, then starts over.
+  Verify 128-byte acknowledged writes on Samsung Chrome and Windows Chrome.
 - Check Off/On, reboot persistence, Clear, completion, close/reopen, connection
   loss, expired heartbeat, and Circle cancellation. Check both display rotations
   and a running timer. Confirm priority screens keep their controls.

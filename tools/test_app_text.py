@@ -56,7 +56,7 @@ def main():
     if not compiler:
         raise RuntimeError("g++ or clang++ is required")
     with tempfile.TemporaryDirectory(prefix="hds-app-text-") as temporary:
-        for name in ("state", "runtime", "integration", "grinder_safety", "dispatcher"):
+        for name in ("state", "runtime", "scroll", "integration", "grinder_safety", "dispatcher"):
             binary = Path(temporary) / (name + (".exe" if os.name == "nt" else ""))
             source = EXAMPLE / "tests" / f"{name}.cpp"
             if name == "integration":
@@ -108,7 +108,7 @@ def main():
                 run([compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror", "-DHDS_ENABLE_GRINDER=0",
                      str(source), "-o", str(binary)])
                 run([str(binary)])
-    print("App Text native state, opt-in, interleaving, and integration selection checks passed")
+    print("App Text native state, scrolling, opt-in, interleaving, and integration selection checks passed")
     print(run(["node", str(EXAMPLE / "tests/browser.mjs")]))
 
 

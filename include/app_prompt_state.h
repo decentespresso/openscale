@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <string.h>
 
-static constexpr size_t APP_PROMPT_MAX_BYTES = 18;
+static constexpr size_t APP_PROMPT_MAX_BYTES = 128;
 static constexpr uint16_t APP_PROMPT_NO_CONNECTION = UINT16_MAX;
 static constexpr unsigned long APP_PROMPT_TIMEOUT_MS = 10000;
 
@@ -13,6 +13,7 @@ struct AppPromptState {
   uint16_t connectionHandle = APP_PROMPT_NO_CONNECTION;
   bool cancelled = false;
   bool active = false;
+  uint32_t displayGeneration = 0;
   unsigned long heartbeatAt = 0;
   char text[APP_PROMPT_MAX_BYTES + 1] = {};
 };

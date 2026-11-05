@@ -17,6 +17,12 @@ weight, battery, and connection indicators. Clear, disconnect, or ten seconds
 without a valid legacy heartbeat restores the normal display. The existing BLE
 watchdog may disconnect after five seconds, before text expiry.
 
+Text that fits stays centered. Longer text starts left-aligned for one second,
+scrolls left at ten pixels per second until the final character is visible,
+and holds that final view for one second before returning to the beginning.
+New text or a newly visible instruction restarts this cycle. Heartbeats and
+repeated identical Show requests do not restart scrolling.
+
 Hold Circle while app text is visible to cancel text for that connection without
 taring. Reconnect before sending text again. Turning App Text Off and On does
 not bypass this cancellation.
@@ -35,12 +41,14 @@ Service: `0000fff0-0000-1000-8000-00805f9b34fb`.
 Read/write characteristic: `8b8dc7c0-6bf7-4bdf-9a2c-0ba9cb9a4a01`.
 The characteristic remains available while the local setting is Off.
 
-- Capability read: `[1, 18, 10, enabled]`; `enabled` is `0` or `1`.
-- Show: `[1, ...ASCII]`, with 1-18 printable ASCII bytes, `0x20` through `0x7e`.
+- Capability read: `[1, 128, 10, enabled]`; `enabled` is `0` or `1`.
+- Show: `[1, ...ASCII]`, with 1-128 printable ASCII bytes, `0x20` through `0x7e`.
 - Clear: `[0]`.
 - Heartbeat: the existing `03 0A 03 FF FF 00 0A` packet to `36F5`, every four seconds.
 
-No terminator or checksum follows the text. The largest Show write is 19 bytes.
+No terminator or checksum follows the text. The largest Show write is 129 bytes.
+Send each Show as one acknowledged write; the BLE stack handles long writes.
+Scrolling runs locally and does not require repeated browser writes.
 Invalid or oversized writes leave the current instruction unchanged. Legacy
 weight notifications, tare, and heartbeat packets keep their existing formats.
 A GATT acknowledgement confirms transport delivery, not OLED visibility.
@@ -61,8 +69,15 @@ await text.clearPrompt();
 ```
 
 `supported` reports protocol support. `enabled` also requires local opt-in.
+`maxPromptBytes` reports the negotiated text limit, up to 128 bytes. Pass that
+limit as the fourth argument to `ingredientPrompt(action, ingredient, quantity,
+maxPromptBytes)`. Its default remains 18 for older firmware. Larger limits keep
+the full name and quantity with a colon and space; an over-limit instruction
+is rejected rather than silently shortened. The cocktail maker then displays
+its existing "Check recipe step" instruction.
 The helper accepts the prototype's three-byte capability response as enabled.
-Older or disabled firmware keeps the browser-only workflow available.
+The updated helper also accepts firmware advertising the original 18-byte limit.
+Unsupported or disabled firmware keeps the browser-only workflow available.
 Use `send(bytes)` for tare and heartbeat so writes share the same GATT queue.
 The helper sends an initial heartbeat before optional discovery, gives discovery
 and its read 2.5 seconds, and disconnects on timeout. A timeout cannot cancel an
@@ -99,7 +114,7 @@ python tools/test_app_text.py
 python tools/check_app_text_layout.py
 ```
 
-The native checks exercise text validation, expiry, cancellation, opt-in, callback
+The native checks exercise scrolling holds, repeat timing, text validation, expiry, cancellation, opt-in, callback
 interleaving, integration migration, and restart guards. Browser checks cover
 capability negotiation and serialized command writes. They use simulated hardware.
 The layout check needs the U8g2 sources from an `esp32s3` build. It checks rendered
@@ -123,7 +138,8 @@ node examples/ble-app-text/tests/local-app.cjs
 ```
 
 Physical tests must check OLED placement, both rotations, timer continuity,
-Circle behavior, priority screens, connection churn, and the real grinder's Off
+the complete scrolling cycle, 128-byte writes on Android and Windows, Circle
+behavior, priority screens, connection churn, and the real grinder's Off
 acknowledgement. Software tests do not establish physical shutdown safety.
 BLE clients are unauthenticated. Treat app text as advisory, not as a dosing or
 chemical-mixing safety control.

@@ -12,10 +12,12 @@
 IntegrationMode activeIntegration = IntegrationMode::None;
 IntegrationMode selectedIntegration = IntegrationMode::None;
 #include "app_prompt_state.h"
+#include "app_prompt_scroll.h"
 
 portMUX_TYPE appPromptMux = portMUX_INITIALIZER_UNLOCKED;
 volatile AppPromptState appPromptState;
 volatile bool appTextEnabled = false;
+AppPromptScrollState appPromptScrollState;
 #if HDS_FEATURE_WIFI
 #include "wifi_setup.h"
 

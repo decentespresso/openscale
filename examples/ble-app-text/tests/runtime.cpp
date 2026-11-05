@@ -51,7 +51,7 @@ class BLECharacteristic {
 public:
   static constexpr unsigned PROPERTY_READ = 1;
   static constexpr unsigned PROPERTY_WRITE = 2;
-  uint8_t bytes[20] = {};
+  uint8_t bytes[APP_PROMPT_MAX_BYTES + 2] = {};
   size_t length = 0;
   size_t getLength() const { return length; }
   uint8_t *getData() { return bytes; }
@@ -130,6 +130,7 @@ void testOptIn() {
   setAppPromptConnection(7);
   bleCallbacks.onRead(&characteristic);
   assert(characteristic.length == 4 && characteristic.bytes[0] == 1 && characteristic.bytes[3] == 0);
+  assert(characteristic.bytes[1] == 128 && characteristic.bytes[2] == 10);
   characteristic.setValue(show, sizeof(show));
   bleCallbacks.onWrite(&characteristic);
   assert(!snapshotAppPrompt().active);
@@ -173,6 +174,59 @@ void testOptInSaveFailure() {
   assert(saveAppTextEnabled(false) && !savedOptIn && !appTextIsEnabled());
 }
 
+void testDisplayGeneration() {
+  resetPrompt();
+  BLECharacteristic characteristic;
+  AppPromptCallbacks callbacks;
+  auto &bleCallbacks = static_cast<BLECharacteristicCallbacks &>(callbacks);
+  characteristic.setValue(show, sizeof(show));
+  const auto initial = snapshotAppPrompt();
+  recordAppPromptHeartbeat(heartbeat, sizeof(heartbeat));
+  bleCallbacks.onWrite(&characteristic);
+  processAppPromptSession();
+  assert(snapshotAppPrompt().displayGeneration == initial.displayGeneration);
+  const uint8_t changed[] = {1, 'R', 'u', 'm'};
+  characteristic.setValue(changed, sizeof(changed));
+  bleCallbacks.onWrite(&characteristic);
+  const auto updated = snapshotAppPrompt();
+  assert(updated.displayGeneration != initial.displayGeneration);
+  characteristic.setValue(show, sizeof(show));
+  bleCallbacks.onWrite(&characteristic);
+  assert(snapshotAppPrompt().displayGeneration != initial.displayGeneration);
+  const auto beforeClear = snapshotAppPrompt();
+  const uint8_t clear[] = {0};
+  characteristic.setValue(clear, sizeof(clear));
+  bleCallbacks.onWrite(&characteristic);
+  characteristic.setValue(show, sizeof(show));
+  bleCallbacks.onWrite(&characteristic);
+  assert(snapshotAppPrompt().displayGeneration != beforeClear.displayGeneration);
+  const auto beforeReconnect = snapshotAppPrompt();
+  setAppPromptConnection(APP_PROMPT_NO_CONNECTION);
+  setAppPromptConnection(beforeReconnect.connectionHandle);
+  bleCallbacks.onWrite(&characteristic);
+  assert(snapshotAppPrompt().displayGeneration != beforeReconnect.displayGeneration);
+  assert(std::strcmp(snapshotAppPrompt().text, beforeReconnect.text) == 0);
+}
+
+void testLongWrites() {
+  resetPrompt();
+  BLECharacteristic characteristic;
+  AppPromptCallbacks callbacks;
+  auto &bleCallbacks = static_cast<BLECharacteristicCallbacks &>(callbacks);
+  uint8_t maximum[APP_PROMPT_MAX_BYTES + 1] = {1};
+  std::memset(maximum + 1, 'M', APP_PROMPT_MAX_BYTES);
+  characteristic.setValue(maximum, sizeof(maximum));
+  bleCallbacks.onWrite(&characteristic);
+  const auto accepted = snapshotAppPrompt();
+  assert(accepted.active && std::strlen(accepted.text) == APP_PROMPT_MAX_BYTES);
+  uint8_t oversized[APP_PROMPT_MAX_BYTES + 2] = {1};
+  std::memset(oversized + 1, 'N', APP_PROMPT_MAX_BYTES + 1);
+  characteristic.setValue(oversized, sizeof(oversized));
+  bleCallbacks.onWrite(&characteristic);
+  assert(std::strcmp(snapshotAppPrompt().text, accepted.text) == 0);
+  assert(snapshotAppPrompt().displayGeneration == accepted.displayGeneration);
+}
+
 int main() {
   testLoopInterleaving();
   testCancelInterleaving();
@@ -180,4 +234,6 @@ int main() {
   testWriteInterleaving();
   testOptIn();
   testOptInSaveFailure();
+  testDisplayGeneration();
+  testLongWrites();
 }

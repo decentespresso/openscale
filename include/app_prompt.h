@@ -15,17 +15,24 @@ inline AppPromptState readAppPromptLocked() {
   state.connectionHandle = appPromptState.connectionHandle;
   state.cancelled = appPromptState.cancelled;
   state.active = appPromptState.active;
+  state.displayGeneration = appPromptState.displayGeneration;
   state.heartbeatAt = appPromptState.heartbeatAt;
   for (size_t index = 0; index < sizeof(state.text); ++index) state.text[index] = appPromptState.text[index];
   return state;
 }
 
 inline void storeAppPromptLocked(const AppPromptState &state) {
+  bool displayChanged = appPromptState.active != state.active ||
+    appPromptState.connectionHandle != state.connectionHandle;
   appPromptState.connectionHandle = state.connectionHandle;
   appPromptState.cancelled = state.cancelled;
   appPromptState.active = state.active;
   appPromptState.heartbeatAt = state.heartbeatAt;
-  for (size_t index = 0; index < sizeof(state.text); ++index) appPromptState.text[index] = state.text[index];
+  for (size_t index = 0; index < sizeof(state.text); ++index) {
+    if (appPromptState.text[index] != state.text[index]) displayChanged = true;
+    appPromptState.text[index] = state.text[index];
+  }
+  if (displayChanged) appPromptState.displayGeneration = appPromptState.displayGeneration + 1;
 }
 
 inline void setAppTextEnabled(bool enabled) {
