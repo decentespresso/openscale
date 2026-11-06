@@ -250,7 +250,12 @@ def main():
     assert_not_contains(ota, "python -m pip install --requirement requirements-platformio.txt")
     snapshotArtifact = nightly.split("name: HDS-snapshot-", 1)[1].split("- name: Save dependency inventory", 1)[0]
     for filename in ("firmware.bin", "bootloader.bin", "partitions.bin", "littlefs.bin"):
-        assert_contains(snapshotArtifact, filename)
+        assert_contains(snapshotArtifact, f".pio.nosync/artifacts/esp32s3/{filename}")
+    assert_contains(snapshotArtifact, "if-no-files-found: error")
+    firmwareCopy = "cp .pio.nosync/build/esp32s3/{firmware.bin,bootloader.bin,partitions.bin} .pio.nosync/artifacts/esp32s3/"
+    assert_before(nightly, "pio run -e esp32s3\n", firmwareCopy)
+    assert_before(nightly, firmwareCopy, "pio run -e esp32s3-grinder")
+    assert_before(nightly, "pio run -e esp32s3 -t buildfs", "cp .pio.nosync/build/esp32s3/littlefs.bin .pio.nosync/artifacts/esp32s3/")
     assert_not_contains(snapshotArtifact, "dependencies.txt")
     assert_contains(nightly, "name: HDS-dependencies-")
     assert_contains(nightly, ".pio.nosync/build/esp32s3/dependencies.txt")
