@@ -162,6 +162,8 @@ Stay in polling mode. Do not call `scale.beginTask()`. The library task can run 
 
 Tare averages the current buffer, often one sample in fast mode, so it is noisier than a fixed full-window tare.
 
+Drift compensation uses its own raw-weight reference at 100 ms intervals, never the held display value. Load transitions restart a three-interval settling window; tare, ADC discontinuities, and Drift Comp changes clear the filter history. The display hold accepts a sustained settled correction below 0.1 g. Weight-only compensation cannot distinguish sufficiently slow real loading from thermal drift; validate hot cups and slow pours on hardware.
+
 The USB ADS debug packet keeps its 41-byte framing and checksum. Byte 24 is the raw reset reason captured at boot. Bytes 25-37 are zero-filled because the current library does not precompute stats.
 
 ## Scale-Top Taps
@@ -283,6 +285,7 @@ Run only the checks matching the change:
 
 ```sh
 python tools/test_calibration_validation.py
+python tools/test_scale_drift_compensation.py
 python tools/test_soft_sleep_ads_wake.py
 python tools/test_tap_action_contract.py
 pio test -e native -f test_tap_detector

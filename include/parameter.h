@@ -484,6 +484,24 @@ static float f_driftCompensation = 0.0;  // Continuous temperature drift compens
 static float f_maxDriftCompensation = 0.05;  // Maximum micro-drift range for temperature compensation (g)
 // Range: 0.01g to this value will be considered as temperature drift
 // Values above this are considered as real weight changes, not drift
+static float stableOutputCandidate = 0.0f;
+static unsigned long stableOutputCandidateSince = 0;
+static const float SCALE_QUIET_THRESHOLD = 0.01f;
+static const unsigned long SCALE_SETTLING_INTERVAL_MS = 3 * WEIGHT_BASE_INTERVAL_MS;
+
+struct ScaleDriftState {
+  float referenceWeight;
+  float previousWeight;
+  float lastResidual;
+  unsigned long lastSample;
+  uint8_t quietSamples;
+  uint8_t similarSamples;
+  bool ready;
+};
+
+static ScaleDriftState scaleDriftState = {};
+void resetTracking();
+void resetStableOutput();
 static const unsigned long QUICK_ZERO_HOLD_TIMEOUT = 3000;
 static const unsigned long ZERO_DISPLAY_MISMATCH_TIMEOUT = 1500;
 static const float ZERO_DISPLAY_MISMATCH_THRESHOLD = 0.5;

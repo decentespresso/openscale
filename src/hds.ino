@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include "parameter.h"
+#include "scale_drift.h"
 #if HDS_ENABLE_ENERGY_MENU
 #include "energy_idle_wake.h"
 void applyEnergyDisplayCommand(bool enabled);
@@ -1639,11 +1640,20 @@ float applyStableOutput(float current_value) {
     return current_value;
   }
 
+  const unsigned long now = millis();
+  if (fabsf(current_value - stableOutputCandidate) > SCALE_QUIET_THRESHOLD) {
+    stableOutputCandidate = current_value;
+    stableOutputCandidateSince = now;
+  }
   float change = fabs(current_value - f_previous_stable_value);
+  const bool settledCorrection =
+    fabsf(stableOutputCandidate - f_previous_stable_value) > SCALE_QUIET_THRESHOLD &&
+    now - stableOutputCandidateSince >= SCALE_SETTLING_INTERVAL_MS;
 
-  if (change >= STABLE_OUTPUT_THRESHOLD) {
-    f_previous_stable_value = current_value;
-    t_last_stable_change = millis();
+  if (change >= STABLE_OUTPUT_THRESHOLD || settledCorrection) {
+    f_previous_stable_value = change >= STABLE_OUTPUT_THRESHOLD
+                               ? current_value : stableOutputCandidate;
+    t_last_stable_change = now;
 
     if (b_weight_in_serial) {
       Serial.print("Output updated: ");
@@ -1670,8 +1680,6 @@ void pureScale() {
   static unsigned long t_lastScaleRecovery = 0;
 #endif
   static unsigned long t_zeroDisplayMismatch = 0;
-  static int f_similar_diff_count = 0;
-  static float f_last_diff = 0.0;
 
   if (t_lastScaleData == 0) {
     t_lastScaleData = millis();
@@ -1714,39 +1722,7 @@ void pureScale() {
       Serial.printf("[TAPRAW] %lu %.3f\n", t_lastScaleData, raw_weight);
     }
 
-    float current_diff = raw_weight - f_displayedValue - f_driftCompensation;
-
-    if (fabs(current_diff) > 0.01 && fabs(current_diff) < f_maxDriftCompensation) {
-      if ((f_last_diff * current_diff) > 0) {
-        f_similar_diff_count++;
-
-        if (f_similar_diff_count >= 3) {
-          f_driftCompensation += current_diff * 0.3;
-
-          if (fabs(f_driftCompensation) > 2.0) {
-            f_driftCompensation = (f_driftCompensation > 0) ? 2.0 : -2.0;
-          }
-
-          if (b_weight_in_serial) {
-            Serial.print("TEMP-DRIFT-COMP: diff=");
-            Serial.print(current_diff, 4);
-            Serial.print("g, total_comp=");
-            Serial.print(f_driftCompensation, 4);
-            Serial.print("g, count=");
-            Serial.println(f_similar_diff_count);
-          }
-
-          f_similar_diff_count = 2;
-        }
-      } else {
-        f_similar_diff_count = 1;
-      }
-
-      f_last_diff = current_diff;
-    } else {
-      f_similar_diff_count = 0;
-      f_last_diff = 0.0;
-    }
+    updateDriftCompensation(raw_weight);
 
     float temperature_compensated = raw_weight - f_driftCompensation;
 
@@ -1784,7 +1760,7 @@ void pureScale() {
         Serial.println("Display held at zero while raw weight moved. Resetting output filters.");
         resetTracking();
         resetStableOutput();
-        f_driftCompensation = 0.0;
+        resetDriftCompensation();
         f_displayedValue = raw_weight;
         t_zeroDisplayMismatch = 0;
       }
@@ -1824,7 +1800,7 @@ void pureScale() {
     b_weight_quick_zero = false;
     resetTracking();
     resetStableOutput();
-    f_driftCompensation = 0.0;
+    resetDriftCompensation();
     f_displayedValue = 0.0;
 #if HDS_ENABLE_GRINDER
     f_grinder_fast_weight = 0.0f;
@@ -1839,7 +1815,7 @@ void pureScale() {
     b_weight_quick_zero = false;
     resetTracking();
     resetStableOutput();
-    f_driftCompensation = 0.0;
+    resetDriftCompensation();
 #if HDS_ENABLE_GRINDER
     f_grinder_fast_weight = 0.0f;
 #endif
@@ -1848,7 +1824,7 @@ void pureScale() {
 
   if (b_weight_quick_zero || b_bootTare) {
     f_displayedValue = 0.0;
-    f_driftCompensation = 0.0;
+    resetDriftCompensation();
   }
 }
 
@@ -1877,6 +1853,8 @@ void resetTracking() {
 
 void resetStableOutput() {
   f_previous_stable_value = 0.0;
+  stableOutputCandidate = 0.0f;
+  stableOutputCandidateSince = millis();
   t_last_stable_change = millis();
   if (b_weight_in_serial) {
     Serial.println("Stable output reset");
@@ -1929,7 +1907,7 @@ bool refreshScaleDatasetAfterDiscontinuity(const char *context) {
 void resetScaleOutputAfterAdcDiscontinuity() {
   resetTracking();
   resetStableOutput();
-  f_driftCompensation = 0.0;
+  resetDriftCompensation();
   f_displayedValue = 0.0;
 #if HDS_ENABLE_GRINDER
   f_grinder_fast_weight = 0.0f;
@@ -1939,7 +1917,7 @@ void resetScaleOutputAfterAdcDiscontinuity() {
 }
 
 void holdScaleOutputAtZero() {
-  f_driftCompensation = 0.0;
+  resetDriftCompensation();
   f_displayedValue = 0.0;
   formatFloatSafe(c_weight, sizeof(c_weight), f_displayedValue,
                   i_decimal_precision);
