@@ -1635,7 +1635,7 @@ float applyTrackingCompensation(float raw_weight) {
   return raw_weight;
 }
 
-float applyStableOutput(float current_value) {
+float applyStableOutput(float current_value, float driftCorrectedWeight) {
   if (!b_stable_output_enabled) {
     return current_value;
   }
@@ -1643,16 +1643,28 @@ float applyStableOutput(float current_value) {
   const unsigned long now = millis();
   if (fabsf(current_value - stableOutputCandidate) > SCALE_QUIET_THRESHOLD) {
     stableOutputCandidate = current_value;
+    stableOutputCandidateInput = driftCorrectedWeight;
     stableOutputCandidateSince = now;
   }
   float change = fabs(current_value - f_previous_stable_value);
+  const float inputChange = fabsf(driftCorrectedWeight - stableOutputInput);
+  const float inputRoundoff =
+    (fabsf(driftCorrectedWeight) + fabsf(stableOutputInput)) * FLT_EPSILON;
+  const bool changed = change >= STABLE_OUTPUT_THRESHOLD ||
+                       inputChange + inputRoundoff >= STABLE_OUTPUT_THRESHOLD;
+  if (changed) {
+    stableOutputCandidate = current_value;
+    stableOutputCandidateInput = driftCorrectedWeight;
+    stableOutputCandidateSince = now;
+  }
   const bool settledCorrection =
-    fabsf(stableOutputCandidate - f_previous_stable_value) > SCALE_QUIET_THRESHOLD &&
+    stableOutputSettling &&
     now - stableOutputCandidateSince >= SCALE_SETTLING_INTERVAL_MS;
 
-  if (change >= STABLE_OUTPUT_THRESHOLD || settledCorrection) {
-    f_previous_stable_value = change >= STABLE_OUTPUT_THRESHOLD
-                               ? current_value : stableOutputCandidate;
+  if (changed || settledCorrection) {
+    f_previous_stable_value = changed ? current_value : stableOutputCandidate;
+    stableOutputInput = changed ? driftCorrectedWeight : stableOutputCandidateInput;
+    stableOutputSettling = changed;
     t_last_stable_change = now;
 
     if (b_weight_in_serial) {
@@ -1735,7 +1747,7 @@ void pureScale() {
     }
     grinderRuntimeFreshWeightTick(f_grinder_fast_weight, grinderFastWeightSequence);
 #endif
-    float stable_output = applyStableOutput(tracking_compensated);
+    float stable_output = applyStableOutput(tracking_compensated, temperature_compensated);
 
     if (stable_output >= -0.14 && stable_output <= 0.14) {
       f_displayedValue = 0.0;
@@ -1753,15 +1765,14 @@ void pureScale() {
 
     if (!b_bootTare && !b_weight_quick_zero &&
         fabs(f_displayedValue) <= 0.14 &&
-        fabs(raw_weight) > ZERO_DISPLAY_MISMATCH_THRESHOLD) {
+        fabs(temperature_compensated) > ZERO_DISPLAY_MISMATCH_THRESHOLD) {
       if (t_zeroDisplayMismatch == 0) {
         t_zeroDisplayMismatch = millis();
       } else if (millis() - t_zeroDisplayMismatch > ZERO_DISPLAY_MISMATCH_TIMEOUT) {
-        Serial.println("Display held at zero while raw weight moved. Resetting output filters.");
+        Serial.println("Display held at zero while corrected weight moved. Resetting output filters.");
         resetTracking();
         resetStableOutput();
-        resetDriftCompensation();
-        f_displayedValue = raw_weight;
+        f_displayedValue = temperature_compensated;
         t_zeroDisplayMismatch = 0;
       }
     } else {
@@ -1854,7 +1865,10 @@ void resetTracking() {
 void resetStableOutput() {
   f_previous_stable_value = 0.0;
   stableOutputCandidate = 0.0f;
+  stableOutputCandidateInput = 0.0f;
+  stableOutputInput = 0.0f;
   stableOutputCandidateSince = millis();
+  stableOutputSettling = false;
   t_last_stable_change = millis();
   if (b_weight_in_serial) {
     Serial.println("Stable output reset");

@@ -162,7 +162,9 @@ Stay in polling mode. Do not call `scale.beginTask()`. The library task can run 
 
 Tare averages the current buffer, often one sample in fast mode, so it is noisier than a fixed full-window tare.
 
-Drift compensation uses its own raw-weight reference at 100 ms intervals, never the held display value. Load transitions restart a three-interval settling window; tare, ADC discontinuities, and Drift Comp changes clear the filter history. The display hold accepts a sustained settled correction below 0.1 g. Weight-only compensation cannot distinguish sufficiently slow real loading from thermal drift; validate hot cups and slow pours on hardware.
+Drift compensation uses its own raw-weight reference at 100 ms intervals, never the held display value. Load transitions restart a three-interval settling window; tare, ADC discontinuities, and Drift Comp changes clear the filter history. A change of at least 0.1 g arms one settled correction below the normal output hold. Once settled, smaller changes accumulate against that hold instead of continually releasing it for noise plateaus.
+
+Zero-display recovery checks drift-corrected weight before tracking. It resets stuck tracking/output filters without discarding valid drift compensation or displaying uncorrected raw weight. The existing +/-2 g compensation budget applies at zero as under load; the previous raw-weight watchdog's incidental 0.5 g limit is not a thermal-drift discriminator. Weight-only compensation cannot distinguish sufficiently slow real loading from thermal drift. Use Drift Comp Off when that slow-load sensitivity is required, and validate hot cups and slow pours on hardware.
 
 The USB ADS debug packet keeps its 41-byte framing and checksum. Byte 24 is the raw reset reason captured at boot. Bytes 25-37 are zero-filled because the current library does not precompute stats.
 

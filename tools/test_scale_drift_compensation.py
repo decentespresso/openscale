@@ -8,12 +8,16 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 THRESHOLDS = ("0", "0.05", "0.075", "0.1", "0.2")
 SCENARIOS = ("additions", "impacts", "tails", "removals", "small", "noise", "tare",
-             "mode", "adc", "drift-positive", "drift-negative")
-FAST_SCENARIOS = ("additions", "impacts", "drift-positive", "drift-negative")
+             "mode", "adc", "drift-positive", "drift-negative", "plateaus-500",
+             "plateaus-800", "plateaus-1000", "zero-positive", "zero-negative", "rescue",
+             "slow-load", "settling-age")
+FAST_SCENARIOS = ("additions", "impacts", "tails", "small", "drift-positive", "drift-negative",
+                  "plateaus-800", "zero-positive", "zero-negative", "rescue", "slow-load")
 
 
 CPP_PREFIX = r"""
 #include <cmath>
+#include <cfloat>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -81,6 +85,10 @@ void sample(float value, int count) {
     }
 }
 
+void sampleFor(float value, unsigned long duration) {
+    sample(value, (duration + sampleInterval - 1) / sampleInterval);
+}
+
 bool settled(float expected) {
     return std::isfinite(f_displayedValue) &&
            std::fabs(f_displayedValue - expected) < .05f &&
@@ -97,6 +105,10 @@ bool additions(int impact) {
             for (int recovery = 1; recovery <= 10; ++recovery) {
                 sample(weight + .085f - recovery * .0085f, 1);
             }
+        }
+        if (impact) {
+            sampleFor(weight, 500);
+            if (!settled(weight)) return false;
         }
         sample(weight, 20);
     }
@@ -126,6 +138,21 @@ bool stationaryNoise() {
     return settled(1);
 }
 
+bool plateauNoise(unsigned long duration) {
+    sampleFor(0, 1000);
+    sampleFor(1.02f, 3000);
+    const long initial = std::lround(f_displayedValue * 10);
+    for (int plateau = 0; plateau < 20; ++plateau) {
+        const float value = plateau % 2 == 0 ? 1.02f : 1.08f;
+        for (unsigned long elapsed = 0; elapsed < duration; elapsed += sampleInterval) {
+            sample(value, 1);
+            if (std::lround(f_displayedValue * 10) != initial) return false;
+            if (std::fabs(f_driftCompensation) > .01f) return false;
+        }
+    }
+    return true;
+}
+
 void warmWithDrift() {
     sample(0, 10);
     sample(1, 30);
@@ -139,7 +166,8 @@ void warmWithDrift() {
 bool resetState() {
     return f_driftCompensation == 0 && !scaleDriftState.ready &&
            f_tracking_offset == 0 && !b_tracking_active &&
-           f_previous_stable_value == 0 && stableOutputCandidate == 0;
+           f_previous_stable_value == 0 && stableOutputCandidate == 0 &&
+           stableOutputInput == 0 && stableOutputCandidateInput == 0 && !stableOutputSettling;
 }
 
 bool smallIncrements() {
@@ -147,7 +175,9 @@ bool smallIncrements() {
     sample(1, 30);
     for (int index = 1; index <= 10; ++index) {
         sample(1.0f + index * .05f, 20);
-        if (!settled(1.0f + index * .05f)) return false;
+        const float input = applyTrackingCompensation(scale.raw - f_driftCompensation);
+        if (std::fabs(f_displayedValue - input) >
+            STABLE_OUTPUT_THRESHOLD + SCALE_QUIET_THRESHOLD) return false;
     }
     return settled(1.5f);
 }
@@ -167,6 +197,80 @@ bool stationaryDrift(float direction) {
     return std::isfinite(f_displayedValue) &&
            std::fabs(f_displayedValue - expected) < .05f &&
            std::fabs(f_driftCompensation - expectedCompensation) < .05f;
+}
+
+bool zeroDrift(float direction) {
+    sampleFor(0, 3000);
+    const int count = 60000 / sampleInterval;
+    const bool enabled = f_maxDriftCompensation > 0;
+    for (int index = 1; index <= count; ++index) {
+        const float input = direction * index * .001f * sampleInterval / 100;
+        sample(input, 1);
+        if (enabled && std::fabs(f_displayedValue) > .14f) return false;
+    }
+    for (unsigned long index = 0; index < 10000 / sampleInterval; ++index) {
+        sample(direction * .6f, 1);
+        if (enabled && std::fabs(f_displayedValue) > .14f) return false;
+    }
+    const float input = applyTrackingCompensation(scale.raw - f_driftCompensation);
+    return enabled ? std::fabs(f_driftCompensation - direction * .6f) < .05f
+                   : f_driftCompensation == 0 &&
+                     std::fabs(f_displayedValue - input) <=
+                       STABLE_OUTPUT_THRESHOLD + SCALE_QUIET_THRESHOLD;
+}
+
+bool hiddenLoadRescue() {
+    sampleFor(0, 3000);
+    for (unsigned long index = 1; index <= 30000 / sampleInterval; ++index) {
+        sample(index * .001f * sampleInterval / 100, 1);
+    }
+    sampleFor(.3f, 3000);
+    const float compensation = f_driftCompensation;
+    const float expected = 1.1f - compensation;
+    TRACKING_UPDATE_INTERVAL = 100000;
+    f_tracking_offset = expected;
+    f_tracking_target = 0;
+    b_tracking_active = true;
+    sample(1.1f, 1);
+    bool rescued = false;
+    for (unsigned long elapsed = 0; elapsed < 2200; elapsed += sampleInterval) {
+        sample(1.1f, 1);
+        if (std::fabs(f_driftCompensation - compensation) > .01f) return false;
+        if (std::fabs(f_displayedValue - expected) < .05f) rescued = true;
+    }
+    return rescued;
+}
+
+bool slowLoading() {
+    sampleFor(0, 1000);
+    sampleFor(1, 3000);
+    const bool enabled = f_maxDriftCompensation > 0;
+    for (unsigned long index = 1; index <= 60000 / sampleInterval; ++index) {
+        sample(1.0f + index * .001f * sampleInterval / 100, 1);
+        if (enabled) {
+            if (std::fabs(f_displayedValue - 1) > .05f) return false;
+        } else {
+            const float input = applyTrackingCompensation(scale.raw);
+            if (std::fabs(f_displayedValue - input) >
+                STABLE_OUTPUT_THRESHOLD + SCALE_QUIET_THRESHOLD) return false;
+        }
+    }
+    return enabled ? f_driftCompensation > .55f
+                   : f_driftCompensation == 0 && f_displayedValue > 1.45f;
+}
+
+bool freshSettlingCandidate() {
+    applyStableOutput(1.0f, 1.0f);
+    clockValue += 500;
+    applyStableOutput(1.0f, 1.0f);
+    if (stableOutputSettling) return false;
+    clockValue += 500;
+    applyStableOutput(1.009f, 1.1f);
+    if (!stableOutputSettling || stableOutputCandidateSince != clockValue ||
+        std::fabs(stableOutputCandidate - 1.009f) > .00001f) return false;
+    clockValue += 100;
+    applyStableOutput(1.009f, 1.1f);
+    return stableOutputSettling;
 }
 
 bool completedTare() {
@@ -213,11 +317,19 @@ int main(int, char** argv) {
                         scenario == "removals" ? removals() :
                         scenario == "small" ? smallIncrements() :
                         scenario == "noise" ? stationaryNoise() :
+                        scenario == "plateaus-500" ? plateauNoise(500) :
+                        scenario == "plateaus-800" ? plateauNoise(800) :
+                        scenario == "plateaus-1000" ? plateauNoise(1000) :
                         scenario == "tare" ? completedTare() :
                         scenario == "mode" ? switchedMode() :
                         scenario == "adc" ? adcDiscontinuity() :
                         scenario == "drift-positive" ? stationaryDrift(1) :
-                        scenario == "drift-negative" ? stationaryDrift(-1) : false;
+                        scenario == "drift-negative" ? stationaryDrift(-1) :
+                        scenario == "zero-positive" ? zeroDrift(1) :
+                        scenario == "zero-negative" ? zeroDrift(-1) :
+                        scenario == "rescue" ? hiddenLoadRescue() :
+                        scenario == "slow-load" ? slowLoading() :
+                        scenario == "settling-age" ? freshSettlingCandidate() : false;
     std::cout << (passed ? "PASS" : "FAIL") << std::fixed << std::setprecision(6)
               << " threshold=" << f_maxDriftCompensation << " scenario=" << scenario
               << " interval=" << sampleInterval

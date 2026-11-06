@@ -485,7 +485,10 @@ static float f_maxDriftCompensation = 0.05;  // Maximum micro-drift range for te
 // Range: 0.01g to this value will be considered as temperature drift
 // Values above this are considered as real weight changes, not drift
 static float stableOutputCandidate = 0.0f;
+static float stableOutputCandidateInput = 0.0f;
+static float stableOutputInput = 0.0f;
 static unsigned long stableOutputCandidateSince = 0;
+static bool stableOutputSettling = false;
 static const float SCALE_QUIET_THRESHOLD = 0.01f;
 static const unsigned long SCALE_SETTLING_INTERVAL_MS = 3 * WEIGHT_BASE_INTERVAL_MS;
 

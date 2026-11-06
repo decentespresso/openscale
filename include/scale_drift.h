@@ -2,6 +2,7 @@
 #define HDS_SCALE_DRIFT_H
 
 #include <math.h>
+#include <float.h>
 
 void resetDriftCompensation() {
   f_driftCompensation = 0.0f;
