@@ -3,8 +3,9 @@
 App Text lets a connected BLE app display an instruction below HDS's live
 weight. The upcoming 3.1.16 firmware includes this capability in standard and
 custom builds; published 3.1.15 does not. There is no App Prompts plugin to
-select. Hosted 3.1.16 custom-build support is staged, not deployed, and the
-public configurator still defaults to 3.1.15.
+select. Hosted 3.1.16 custom-build support and its public-default change are
+prepared, not deployed; the live configurator still defaults to 3.1.15 until
+publication and service rollout are complete.
 
 ## Enable On The Scale
 
@@ -94,8 +95,8 @@ Recipes, translations, quantities, and step progression belong in the app.
 ## Combined Integrations
 
 Custom builds based on 3.1.16 or current `main` can include both Pressensor and
-Grind by Weight. The 3.1.16 compatibility mapping is staged for later service
-activation; it does not add a public firmware option during preparation.
+Grind by Weight. The 3.1.16 compatibility mapping and selector option are
+prepared for activation after publication and hosted-service readiness.
 Use either integration's Enabled menu control to select it or select neither.
 HDS saves one selection, stops the previous integration, and starts the selected
 one without leaving the menu or restarting. You can then select a plug or sensor.

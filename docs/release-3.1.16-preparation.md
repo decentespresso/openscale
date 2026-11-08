@@ -10,7 +10,9 @@ Preparation checkpoint: 2026-11-08. This release is not tagged or published.
 | Previous stable | `v3.1.15`, `a8a5a2cf8e3a30addc4f557bcc2772d180cdedf0` |
 | Audited range | 80 commits; 174 files, 18,345 insertions, 778 deletions |
 | Preparation branch | `odev/prepare-3-1-16-readiness` in a separate clone |
+| Release PR | [#278](https://github.com/decentespresso/openscale/pull/278); review and CI pending |
 | Service-support branch | `odev/stage-3-1-16-custom-support`; merge only after the real tag exists |
+| Public-activation branch | `odev/activate-3-1-16-custom-default`; activate only after publication and service readiness |
 | Final release candidate | Pending review, required CI, authorized merge, and resulting full main SHA |
 | Version | Source base is `3.1.16`; regenerated main custom metadata reports `3.1.16-main-custom` |
 | Signed draft, evidence, asset hashes | Not created |
@@ -84,9 +86,9 @@ main patch. Both integration manifests permit the new combined selection only fo
 `main` and `v3.1.16`, preserving older mappings and conflicts.
 
 Stable custom metadata reports `3.1.16-custom`. Both catalogs share the regenerated
-revision. Browser options remain `v3.1.15`, `v3.1.14`, and `main`, with `v3.1.15`
-selected by default; `BUILDER_REF` stays `main`. No hosted tagged build or deployment
-has been verified for 3.1.16.
+revision. The backend-only branch retains browser options `v3.1.15`, `v3.1.14`,
+and `main`, with `v3.1.15` selected by default; `BUILDER_REF` stays `main`.
+No hosted tagged build or deployment has been verified for 3.1.16.
 
 The frozen Pressensor patch SHA-256 is
 `9544f92b459288f332038e43cd061e4984575e32aa14ce2c436b603b4ebb80b6`,
@@ -107,6 +109,24 @@ and related tests only after that tag exists. Regenerate catalogs against the re
 tag and recheck patch application before this second merge. Worker deployment and
 browser activation remain required release phases with the recorded execution
 authorization, not optional follow-ups.
+
+## Public-Default Activation
+
+The separate local activation branch prepares four public refs: `v3.1.16`,
+`v3.1.15`, `v3.1.14`, and `main`, with `v3.1.16` first and selected by default.
+The deployed selector still defaults to `v3.1.15`; local preparation is not a
+deployment or a completed release.
+
+Keep activation separate from backend support. Do not merge or deploy the
+public-default change before the stable release is published and Worker support
+is deployed. Verify a real tagged hosted build's source/builder identities,
+`3.1.16-custom` version, signature, hashes, ZIP, and combination identity before
+activating the selector. After Pages deployment, inspect its live four options
+and default. Retain existing combinations, prior refs, and recovery assets.
+
+The activation catalog contract passed, and configurator/Worker Node tests
+passed 34/34. These checks cover the locally prepared files, not the deployed
+service. The temporary clone-local tag used for catalog validation was removed.
 
 ## Validation Evidence
 

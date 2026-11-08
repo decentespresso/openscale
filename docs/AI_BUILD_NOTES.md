@@ -91,11 +91,11 @@ affected catalogs after the base-version edit. See the completion requirements i
 `docs/AI_RELEASE_NOTES.md`; do not leave the old main version as the finished
 release state.
 
-The configurator defaults to `v3.1.15`, retains `v3.1.14`, and offers `main` for testing. `BROWSER_FIRMWARE_REFS` in `tools/configure_custom_build.py` controls the public catalog independently of backend source support. `selectableFirmwareRefs()` in `docs/custom-build/selection.mjs` excludes previews from the selector and URL selections. Main build requests, including retries, require confirmation. Backend catalogs and the Worker allow-list retain preview compatibility; hiding a source in the browser does not delete saved builds or recovery assets. Main builds still consume the shared build quota.
+The rollout catalog defaults to `v3.1.16`, retains `v3.1.15` and `v3.1.14`, and offers `main` for testing. `BROWSER_FIRMWARE_REFS` in `tools/configure_custom_build.py` controls the public catalog independently of backend source support. `selectableFirmwareRefs()` in `docs/custom-build/selection.mjs` excludes previews from the selector and URL selections. Main build requests, including retries, require confirmation. Backend catalogs and the Worker allow-list retain preview compatibility; hiding a source in the browser does not delete saved builds or recovery assets. Main builds still consume the shared build quota.
 
-That is the current staged state, not the completed 3.1.16 rollout. After stable
-publication and service readiness, add `v3.1.16` as the public default and verify
-the deployed selector, retaining existing stable refs and `main`.
+These selector changes are prepared locally, not deployed. After stable
+publication and service readiness, deploy and verify the actual `v3.1.16`
+default, retaining existing stable refs and `main`.
 
 Stable source support requires matching `FIRMWARE_REFS`, plugin manifests, generated catalogs, and Worker `ALLOWED_FIRMWARE_REFS`. Deploy the stable-default configurator only after the real tag exists, the trusted builder can build it, and Worker support is deployed. Before tagging, CI may use a temporary local tag in its disposable checkout and must pass the resolved commit explicitly when compiling. See `docs/custom-build/operations.md` for service deployment and `docs/AI_RELEASE_NOTES.md` for release authorization.
 

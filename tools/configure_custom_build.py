@@ -22,7 +22,7 @@ DEFAULT_FIRMWARE_VERSION_PATTERN = re.compile(
     re.MULTILINE,
 )
 FIRMWARE_REFS = ("v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main", "v3.1.15", "v3.1.16")
-BROWSER_FIRMWARE_REFS = ("v3.1.15", "v3.1.14", "main")
+BROWSER_FIRMWARE_REFS = ("v3.1.16", "v3.1.15", "v3.1.14", "main")
 FEATURES = {
     "wifi": ("HDS_FEATURE_WIFI", ("webserver",), FIRMWARE_REFS),
     "mdns": ("HDS_FEATURE_MDNS", ("wifi",), FIRMWARE_REFS),
