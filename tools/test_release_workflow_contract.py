@@ -123,6 +123,8 @@ def main():
     assert_before(text, "release-files/manifest.sig", "release-files/manifest.json")
     publish = (ROOT / ".github/workflows/publish-release.yml").read_text(encoding="utf-8")
     assert_contains(text, 'needs: [resolve, preflight, custom-preflight]')
+    releaseBuild = text.split('\n  build-and-release:\n', 1)[1].split('\n    steps:\n', 1)[0]
+    assert_contains(releaseBuild, 'UV_CONSTRAINT: ${{ github.workspace }}/constraints-pioarduino.txt')
     assert_contains(text, 'uses: ./.github/workflows/nightly.yml')
     assert_contains(text, 'uses: ./.github/workflows/custom-build.yml')
     assert text.count('commit: ${{ inputs.expected_commit }}') >= 2
