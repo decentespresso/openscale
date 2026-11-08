@@ -78,6 +78,13 @@ The visible weight source is `f_displayedValue`, after the scale-processing pipe
 
 `updateOled()` draws weight and time first, then icons and overlays. Later functions can overwrite or invert earlier pixels. Place passive icons early and full-screen messages late.
 
+App Text replaces the timer and button icons only on the available weighing
+screen. `updateOled()` snapshots its protected state before the page loop and
+uses `drawWeightAt()` plus a clipped scrolling line. Keep rendering and scroll
+updates on the main loop; retain `appTextScreenAvailable()` exclusions for menus,
+charging, OTA, recovery, and active integrations. See `docs/AI_PROTOCOL_NOTES.md`
+for session and local-opt-in rules.
+
 Other states own separate screens:
 
 - setup menu
@@ -186,8 +193,8 @@ The menu item type is:
 struct Menu {
   const char *name;
   void (*action)();
-  Menu *subMenu;
-  Menu *parentMenu;
+  const Menu *subMenu;
+  const Menu *parentMenu;
 };
 ```
 
@@ -205,6 +212,10 @@ continues in weighing and menus.
 Display order comes from pointer arrays such as `mainMenu[]`, not declaration order.
 
 Status, About, Logo, and WiFi Status are nonblocking information pages. They remain visible without suspending main-loop commands, battery checks, heartbeat enforcement, or OTA admission. Square release dismisses the page without selecting another action; Logo retains its next-preview toggle. Circle input is ignored while a page is open. USB text `set` also dismisses the page. Hiding and reopening the menu returns to its selected row, even when both commands arrive in one USB buffer. OTA owns the display during an update. If an update returns without leaving the menu, including an admission failure, its information page is redrawn. Weighing remains paused while the menu is open.
+
+`Bat. Info` still uses its own blocking flow in `include/fuel_gauge_menu.h`.
+It services the gauge through `power_off()` and exits for OTA; do not assume
+it has the same input or scheduling behavior as the nonblocking pages.
 
 Adding a category requires all of these:
 

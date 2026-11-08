@@ -50,6 +50,36 @@ are reference evidence, not mandatory scripts to replay for every version.
 For OTA signing, manifests, compatibility, picker, and rollback invariants,
 also read `docs/AI_OTA_NOTES.md`.
 
+## Stable Release Completion
+
+A stable release includes advancing main, custom-build support, the public
+default, and official WiFi OTA. These are required release work, not optional
+follow-ups. Preparation may stop at an authorization gate; report the release as
+incomplete while required work remains. Record an explicit request for a narrower
+scope as partial preparation, not the default definition of a release.
+
+For a target `X.Y.Z`:
+
+| Surface | Required Result |
+| --- | --- |
+| Main base version | Advance `HDS_FIRMWARE_VERSION` in `include/config.h` to `X.Y.Z` before freezing the candidate SHA. |
+| Main custom build | About and build metadata report `X.Y.Z-main-custom`. |
+| Tagged custom build | About and build metadata report `X.Y.Z-custom` from the real release tag. |
+| Public configurator | Include the new stable first in `BROWSER_FIRMWARE_REFS`, select it by default, and retain prior stable refs and `main`. |
+| Official WiFi OTA | Publish compatible `firmware.bin`, required `littlefs.bin`, `manifest.json`, and `manifest.sig` through the signed latest-stable catalog. |
+
+Tagging and publishing do not edit the source header. The release process must
+include that edit, regenerate affected catalogs, and validate the new main-build
+identity before fixing the candidate. Keep workflow version injection for exact
+official and tagged custom artifact labels. For 3.1.16, the completed release
+therefore advances main to `3.1.16`, main custom builds to `3.1.16-main-custom`,
+and tagged custom builds to `3.1.16-custom`.
+
+Keep tag-dependent support staged until the real tag exists. Activate the public
+stable/default only after publication and service readiness. Verify the previous
+stable-to-new stable OTA path after publication, or record the operator's accepted
+testing limitation; never claim an untested device update passed.
+
 ## 1. Establish the Release Range
 
 Fetch the remote state and identify the previous applicable stable tag:
@@ -208,13 +238,16 @@ Before tagging, confirm:
 - limitations or untested configurations were accepted explicitly;
 - affected AI notes and user-facing documentation are current;
 - required secrets and variables are configured without printing values;
+- the release workflow's `previous_tag` input defaults to the current published stable, with runtime validation retained;
+- main's source base version matches the target and main custom identity;
 - the intended version is consistent across release inputs and outputs;
 - no unresolved migration, OTA, asset, or hardware blocker remains.
 
 Find candidate defects before tagging where possible. Once pushed, never move
 the release tag or silently replace candidate bytes. Stop for review on a defect;
-agree a new version/candidate rather than reusing an immutable identity. Use the
-workflow's version injection; do not bump source versions just to label artifacts.
+agree a new version/candidate rather than reusing an immutable identity. Advance
+main's source base version before freezing the candidate; keep workflow version
+injection for artifact identity. A tag alone does not advance main's base version.
 
 ## 8. Release And Post-Release Verification
 
@@ -234,7 +267,9 @@ Only after explicit authorization:
 8. Verify published asset identity and compatibility. Perform the agreed real
    production OTA check, or explicitly record it as not tested; do not silently
    launch another hardware campaign.
-9. Record results, limitations, and recovery actions.
+9. Complete custom-service and public-default rollout from section 9, then record
+   results, limitations, and recovery actions. Publication alone is not full
+   release completion.
 
 If preparation fails after creating a draft, leave it unpublished. Investigate
 before explicitly cleaning up that unpublished draft and rerunning preparation.
@@ -245,28 +280,42 @@ downgrade, and rollback consequences.
 
 ## 9. Custom-Service Completion
 
-Agree once whether the release includes custom-service activation and public
-selection/default changes. Do not hide either as an unmentioned later phase.
+A complete stable release includes custom-service activation and public
+selection/default changes. Include both in the release plan and authorization
+scope from the start; do not present them as optional later work.
 Prepare builder refs, plugin compatibility, Worker allowlists and both catalogs
 together, retaining older refs, immutable combinations and recovery assets.
+
+Open linked draft PRs for tag-dependent service support and public-default
+activation during preparation, and list them in the release PR and checkpoint.
+Local-only branches do not provide reviewable release delivery. Keep these PRs
+blocked on their real-tag, publication, and service-readiness gates.
+
+Do not merge support for a missing tag into the live `main` builder. Production
+builds validate metadata for every supported ref; one missing tag can break
+existing hosted builds too. Stage those changes separately, create the approved
+release tag first, then merge and regenerate catalogs against the real tag.
 
 When activation is authorized, merge reviewed changes after relevant/required
 checks, deploy only changed components and verify the live service with the
 published catalog revision. Verify a real tagged build's source/builder commits,
 `X.Y.Z-custom` version, production signature, hashes, ZIP and combination identity.
+Verify a main custom build reports `X.Y.Z-main-custom` from the advanced base.
 Do not assign it to a scale or repeat OTA tests unless that is in the agreed scope.
 
 Backend support is not visible browser support. When public rollout is authorized,
-add the new stable to the selector, make it the agreed default, retain the prior
+add the new stable to the selector, make it the default, retain the prior
 stable and `main`, and verify the deployed page's actual options/default. A
 selector-only follow-up needs no Worker redeployment or firmware build wait.
-When asked to keep defaults unchanged, state that limitation clearly in the result.
+If the user requests staging only or retaining the old default, record that
+exception and the remaining full-release work in the checkpoint.
 
 ## Completion Report
 
 Report:
 
 - release version, exact commit, previous tag, and audited range;
+- main base version, main/tagged custom identities, live selector/default, and OTA availability;
 - AI guidance reviewed and changed;
 - user-facing documentation changed;
 - automated commands and results;

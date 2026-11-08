@@ -1,9 +1,10 @@
 # BQ27427 Quick Reference (English)
 
 Sources: TI datasheet SLUSEBSA (`bq27427_datasheet.pdf`) and Technical
-Reference Manual SLUUCD5 (`bq27427_trm_sluucd5.pdf`). Raw extracted text in
-`extracted/`. All protocol details verified on hardware (see
-`tools/probe_9.0.5/`).
+Reference Manual SLUUCD5 (`bq27427_trm_sluucd5.pdf`). Raw extracted text, when
+generated locally, belongs in ignored `extracted/`. The current low-level probe
+is `tools/bq27427_probe/`. Historical bench results are recorded in
+`README.md`; they do not certify the 3.1.16 candidate or every command below.
 
 ## Device
 

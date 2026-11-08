@@ -1,5 +1,10 @@
 # PR: HDS 9.0.5 support — BQ27427 battery fuel gauge
 
+This document records the original 9.0.5 support PR. Its implementation details
+and hardware measurements refer to that PR, not the final 3.1.16 candidate.
+For current source paths, cooperative startup, capacity recovery, and operating
+instructions, use the [9.0.5 battery guide](README.md#3116-release-candidate).
+
 ## Summary
 
 HDS 9.0.5 hardware adds a **TI BQ27427YZFR single-cell Li-ion fuel gauge**

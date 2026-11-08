@@ -1,12 +1,15 @@
 # A Quality Control Weighing Application for Decent Scales
 
-This web app is a web-based tool designed to streamline **quality control weighing processes**. Built with pure JavaScript, HTML, and CSS, it leverages **Web Bluetooth Low Energy (Web BLE)** to connect directly to your **Half Decent Scale**, providing a guided workflow for repetitive measurements, real-time feedback, and easy data export.
+Use this app for repeated pass/fail weighing on a Half Decent Scale. The
+bundled app connects to the serving scale's `/snapshot` WebSocket over WiFi;
+it does not use browser Bluetooth or a pairing dialog.
 
 ---
 
 ## Live Demo
 
-Experience the app in action! It requires a **Chrome or Edge browser (version 70 or newer)** on a device with Bluetooth enabled:
+The separately hosted Bluetooth variant is available here. Its connection
+controls differ from the firmware-bundled WiFi app described below:
 
 [https://decentespresso.com/support/scale/decentscale_qcweigh](https://decentespresso.com/support/scale/decentscale_qcweigh)
 
@@ -36,9 +39,9 @@ Experience the app in action! It requires a **Chrome or Edge browser (version 70
 
 ## How to Use
 
-1.  **Open in Browser:** Navigate to the live demo link provided above using a Chrome or Edge browser (version 70 or newer) on a device with Bluetooth.
-2.  **Ensure Scale is Ready:** Turn on your Half Decent Scale and make sure it's within Bluetooth range.
-3.  **Connect to Scale:** Click the **"Connect to Scale"** button. A browser prompt will appear; select your "Decent Scale" from the list and click "Pair".
+1.  **Ensure Scale is Ready:** Turn on your Half Decent Scale and connect it to WiFi.
+2.  **Open in Browser:** Join the scale's network and open its web page at `http://hds.local` or its displayed IP address, then select Quality Control Assistant.
+3.  **Check Connection:** Wait for `Status: Connected (WebSocket)`. The app connects to the scale serving the page; no Bluetooth pairing is needed.
 4.  **Configure Settings:**
     * Input your target **Goal Weight**, allowable **Low Threshold**, and **High Threshold**.
     * Set the **Min Weight** above 0.2 g (the empty-scale tolerance). All weight fields must be finite, with the goal between the low and high thresholds. Incomplete or inconsistent settings cannot start QC.
@@ -58,11 +61,7 @@ Experience the app in action! It requires a **Chrome or Edge browser (version 70
 
 The `decentscale_qcweigh` application relies on a few key technical aspects:
 
-* **Web BLE Communication:**
-    * The app connects to the Half Decent Scale using its **service UUID `0000fff0-0000-1000-8000-00805f9b34fb`**.
-    * **Read Characteristic:** `0000fff4-0000-1000-8000-00805f9b34fb` is used to receive weight data notifications.
-    * **Write Characteristic:** `000036f5-0000-1000-8000-00805f9b34fb` is used to send commands like `tare` to the scale.
-    * A **command queue (`commandQueue`)** ensures that commands sent to the scale are executed sequentially, preventing conflicts.
+* **WebSocket Communication:** `quality_control.js` connects to `ws://<page-host>/snapshot`, receives weight snapshots, and sends `tare` on that connection. A successful send does not acknowledge completed hardware tare. Use only a trusted network; the endpoint has no client authentication.
 * **QC State Machine:** The core of the QC logic is managed by a state machine with three states:
     * **`WAITING_FOR_NEXT`**: The scale is waiting for an object to be placed.
     * **`MEASURING`**: An object has been detected, and the app is waiting for the weight to stabilize.
@@ -82,11 +81,15 @@ To explore, modify, or contribute to this application:
 2.  **Navigate to the folder** in your terminal:
 
     ```bash
-    cd half-decent-web-apps/decentscale_qcweigh
+    cd openscale/plugins/default-web-apps/assets/Quality_Control_Assistant
     ```
 
 3.  **Serve the files locally over HTTP/HTTPS:**
-    Web BLE requires your application to be served over `https://` or `http://localhost`. You can use a simple local web server:
+    A local server lets you inspect layout, but the app tries `/snapshot` on
+    that server's host. It will not connect to a separate scale without a
+    development proxy or an explicit development-only endpoint change. For
+    end-to-end use, serve the bundled app from the scale with the shared assets.
+    You can use a local web server for the layout preview:
 
     **Using Python's `http.server` (Python 3, recommended):**
 

@@ -33,7 +33,7 @@
       }
     },
     "main": {
-      "custom_version": "3.1.15-main-custom",
+      "custom_version": "3.1.16-main-custom",
       "partition_schema": {
         "path": "partitions/default_8MB.csv",
         "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"
@@ -182,7 +182,7 @@
       "assets": [
         {
           "target": "Quality_Control_Assistant/README.md",
-          "sha256": "a59659182427eec1ce8de9c7bffce6146599dded160c9ead09f311628c9b2658"
+          "sha256": "0c97554281537510161df9527d9dad30c9f2cf90ecaaa87e86312d508990290e"
         },
         {
           "target": "Quality_Control_Assistant/quality_control.html",
@@ -226,7 +226,7 @@
         },
         {
           "target": "dosing_assistant/README.md",
-          "sha256": "6aa785521453f26d870c8bdc1a4ca14c45d988e00807ea956a01e7d93e66f50b"
+          "sha256": "2d54d1cd5418dab04ad453da443f74c1cee368c3082e32a1f068a2152a2304b0"
         },
         {
           "target": "dosing_assistant/dosing_assistant.html",

@@ -41,7 +41,11 @@ placed and removed between samples can be missed.
 ## Button and Charging Wake
 
 Normal deep sleep keeps the existing EXT1 any-low button and charging wake
-sources. A WoW micro-wake first releases their RTC holds and restores RTC input
+sources. Firmware 3.1.16 also includes the separate USB-detect input where the
+board defines one, so USB insertion can wake a scale even when Battery Protect
+has stopped charging. This addition does not establish 9.0.5 whole-cycle
+consumption or standby cutoff coverage; see Hardware Scope below.
+A WoW micro-wake first releases their RTC holds and restores RTC input
 mode and pull-ups before reading any wake pin. The pins are checked on entry,
 every 2 ms during rail settling and ADC polling, after ADC cleanup,
 and immediately before the final pin-latch/sleep sequence. A detected press
