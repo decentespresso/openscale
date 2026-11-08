@@ -11,7 +11,7 @@ Treat the firmware as a unity-style build. Do not include implementation headers
 Core files:
 
 - `src/hds.ino`: `setup()`, `loop()`, buttons, scale output, OLED helpers.
-- `src/wifi_setup.cpp`: STA/AP setup, NVS credentials, mDNS, reconnect supervision.
+- `src/wifi_setup.cpp`: STA/AP setup, mDNS, reconnect supervision; `src/wifi_settings.cpp` owns saved credentials.
 - `include/config.h`: board and feature selection.
 - `include/parameter.h`: global state.
 - `include/declare.h`: shared object instances.
@@ -32,7 +32,7 @@ gauge. Each service call performs at most one I2C transaction, with a 50 ms Wire
 timeout. `src/fuel_gauge_config.cpp` retains one-byte writes, bus-free spacing,
 checksums, and readback. Millisecond waits advance between service calls.
 Normal measurements are read at most once per second; getters and OLED frames
-use the cached snapshot. Blocking information screens service the same path.
+use the cached snapshot. Blocking menu flows service the gauge through `power_off()`.
 
 On the shared `V8_1` image without an accelerometer, the logo precedes gauge
 detection. Five address probes, spaced at least 200 ms apart, run during the
@@ -161,6 +161,10 @@ Stay in polling mode. Do not call `scale.beginTask()`. The library task can run 
 `setSamplesInUse()` clears the ring buffer and resets valid samples. After a sensitivity or sample-window change, `getData()` can briefly return `0.0` and then ramp. A physical load step also restarts the smoothing ramp. One-shot measurements after either event must wait until readings plateau for consecutive reads.
 
 Tare averages the current buffer, often one sample in fast mode, so it is noisier than a fixed full-window tare.
+
+`tareScaleWhenAdcReady()` refreshes a timed-out, stale, or incomplete dataset
+before taring. A full buffer alone does not prove freshness after a menu pause.
+Keep the timestamp check and `tools/test_tare_freshness_runtime.py` coverage.
 
 The USB ADS debug packet keeps its 41-byte framing and checksum. Byte 24 is the raw reset reason captured at boot. Bytes 25-37 are zero-filled because the current library does not precompute stats.
 

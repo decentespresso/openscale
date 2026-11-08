@@ -57,9 +57,16 @@ Current setup pages submit byte-exact SSIDs and passwords with `preserve_edges:t
 | `tap_tare` | bool | `false` |
 | `tap_timer` | bool | `false` |
 | `wow_interval` | int | `0` (off); indices 1-3 select 2-4 second sleep intervals. |
+| `bat_protect` | bool | `false` |
+| `bat_cap_set` | bool | `false`; legacy capacity-adoption hint. |
+| `bat_capacity` | int | `0`; gauge capacity migration pending. |
 | `bat_reseal` | bool | `false`; persistent gauge resealing obligation, cleared only after verified cleanup. |
 
 `schema` is a `uint16_t`, currently `1`. Do not rename a key or change its stored type in place. Add an explicit migration, preserve old data until the new schema is complete, then increment the schema version.
+
+`bat_capacity` persists the selected 300-2000 mAh value. Gauge initialization resolves
+the zero sentinel from a retained custom capacity or the 700 mAh fallback; see
+`docs/AI_FIRMWARE_NOTES.md` for POR, capacity migration, and charger safety.
 
 `bat_reseal` is optional and is not eagerly created during defaults or migration.
 An absent key means false, so adding it cannot block an otherwise valid upgrade
@@ -105,7 +112,7 @@ The retained EEPROM blob lets pre-NVS firmware recover its old settings after a 
 
 The legacy layout depends on `float == 4`, `int == 4`, and `bool == 1`, enforced by `static_assert`. The welcome slot is 128 bytes and begins with `HDSW`. Calibration, mode, buzzer, boolean, finite-number, and board-specific battery values are validated before migration; erased or invalid values fall back to defaults.
 
-If NVS initialization, migration, or the final schema write fails, `storageInit()` fails and setup stops rather than booting with partially trusted settings.
+If NVS initialization, migration, or the final schema write fails, `storageInit()` fails and ordinary startup stops rather than using partially trusted settings. A selected boot rollback continues only far enough to attempt safe gauge cleanup; see `docs/AI_OTA_NOTES.md`.
 
 ## Browser Storage
 

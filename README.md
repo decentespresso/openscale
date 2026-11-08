@@ -20,17 +20,36 @@ To build and flash the scale from your computer, make sure you have the `pio` co
 After this, one can simply use `$pio run -t upload` and platformio will build and flash the firmware to the connected Esp32s3 chip.
 
 
-# New in 3.1.14
+# New in 3.1.16 (Upcoming)
 
-## Custom firmware
+Version 3.1.16 is in preparation and is not yet a published release. The latest
+published stable is 3.1.15. The changes below describe the 3.1.16 candidate;
+they do not change an installed scale until you install the new firmware and
+its matching filesystem.
 
-The [custom build configurator](https://decentespresso.github.io/openscale/custom-build/) builds approved feature and plugin combinations. Choose `3.1.14 (stable)`, selected by default, for normal use. The other option, `main (development)`, is for testing only and requires confirmation before building. Download the build for USB installation or assign it to linked scales for signed WiFi installation and status tracking.
+## Hardware, Battery, And USB Power
 
-Plugin authors can use the [plugin development guide](docs/plugin-development.md) for package, webapp, and presentation rules.
+One standard firmware image supports 8.x and 9.0.5 hardware. On 9.0.5, the
+firmware detects the BQ27427 fuel gauge and uses its battery readings. Older
+boards retain their legacy battery-reading path. Battery level stays hidden
+until the first valid reading.
 
-## App Text (Development)
+On gauge-equipped boards, `Setup > Power > Battery Protect` defaults Off and
+remembers your choice. When enabled, it stops charging at 80% and resumes at
+75%. Gauge initialization, invalid readings, and unresolved gauge cleanup keep
+charging disabled. See the [9.0.5 battery guide](docs/9.0.5/README.md) for battery
+information, capacity settings, and the limits of this protection.
 
-Development firmware includes BLE App Text in standard and custom builds. Enable
+USB power keeps the scale awake even when Battery Protect pauses charging.
+Manual Off enters USB charging standby; its display follows the Charging OLED
+setting. Hold either button to return to weighing, or tap with Quick Boot
+enabled; the wake gesture does not also tare or start the timer. Holding both
+buttons opens setup even when the standby display is blank.
+Light Sleep builds also handle expired clicks before returning to idle sleep.
+
+## App Text
+
+Firmware 3.1.16 includes BLE App Text in standard and custom builds. Enable
 `Setup > Display > App Text` on the scale before connecting a supported app. The
 setting defaults Off and survives reboot. Apps can show up to 128 printable ASCII
 characters underneath the live weight or clear them to restore the timer area.
@@ -40,11 +59,48 @@ The timer keeps running. Menus, errors, Pressensor, and grinder-operation screen
 retain priority. Hold Circle while text is visible to block it until reconnection.
 See the [protocol and browser example](examples/ble-app-text/README.md).
 
-On updated `main`, custom firmware can include both Pressensor and Grind by Weight.
+## Combined Integrations
+
+Custom firmware based on 3.1.16 can include both Pressensor and Grind by Weight.
 Their Enabled controls switch integrations immediately in the menu; saved sensor,
 plug, and tuning settings remain intact. Switching is blocked while grinder
 shutdown is unconfirmed. App Text has its own setting and does not select a mode.
-Older firmware refs keep their existing plugin conflicts.
+Older firmware refs keep their existing plugin conflicts. Hosted 3.1.16 custom
+build support is staged, not deployed; use the availability notes below before
+choosing a build.
+
+## Weighing, WiFi, And Web Apps
+
+- Tare refreshes stale or incomplete ADC samples before setting zero. Queued
+  timer resets retain their effect when followed by Stop.
+- WiFi setup preserves network names and passwords as entered. For leading or
+  trailing spaces in manually entered names or passwords, choose Keep spaces,
+  Remove spaces, or Cancel before the connection test. Network-switch recovery
+  also handles a lost activation request without claiming success.
+- Quality Control waits for a stable weight range for 2.5 seconds and resets
+  settling after a connection interruption. Invalid thresholds cannot start QC.
+- Dosing Assistant can cancel container setup, requires a sent tare before
+  starting, and detects a heavier replacement container. QC and dosing history
+  keep concurrent-tab readings, and presets stay isolated between the apps.
+- Custom-build fleet controls preserve device credentials after unpairing and
+  pairing expiry. Browser storage and budget-refusal handling retain retry
+  history, and USB installation preserves the selected OTA source.
+
+## Custom Firmware Availability
+
+The [custom build configurator](https://decentespresso.github.io/openscale/custom-build/)
+builds approved feature and plugin combinations. Its options remain
+`3.1.15 (stable)` (the default), `3.1.14 (stable)`, and `main (development)`.
+Development builds require confirmation and are for testing. Download a build
+for USB installation or assign it to linked scales for signed WiFi installation.
+This preparation stages 3.1.16 support without deploying it, adding it to the
+public selector, or changing the default. Published 3.1.15 does not include the
+new App Text and combined-integration capabilities described above.
+
+Plugin authors can use the [plugin development guide](docs/plugin-development.md)
+for package, webapp, and presentation rules.
+
+# Features Introduced In 3.1.14
 
 ## Scale-top tap controls
 
@@ -71,7 +127,7 @@ To enable WiFi mode in 3.1.14, open `Setup > Connections` and toggle `WiFi`. Old
 
 In 3.1.15, enter the network name and password manually while `DecentScale` is active. Network search is hidden in setup AP mode, including AP+STA, because scanning can disconnect the phone from the scale. Find networks remains available when the setup AP is off.
 
-**3.1.15 setup:** Connect opens a progress dialog. For a different network, stay on the original network while the scale tests the new connection without saving credentials, then returns to report the result. When starting from `DecentScale`, the setup AP stays active during the test and reports the result before the final switch. If your phone cannot reach the setup AP while mobile data is enabled, temporarily use airplane mode with WiFi enabled. A successful test offers the scale's tested IP address and starts the final switch. Click that link to show the network-change instructions, join the new network on your phone or computer, then select Continue. IP address is selected by default; hostname is an explicit alternative. The link also opens this address choice after a confirmed connection or same-network reconnect, without asking you to change networks again. If DHCP changes the address, enter the current IP shown on the scale. The destination checks the same scale and operation before confirming that credentials were saved. Navigation never starts automatically, and losing contact does not prove success. A failed switch restores the previous network or opens the setup AP. Retry closes the result dialog and returns to the password field without resubmitting. Current setup pages use network names and passwords exactly as entered, including meaningful leading or trailing spaces.
+**3.1.15 and later setup:** Connect opens a progress dialog. For a different network, stay on the original network while the scale tests the new connection without saving credentials, then returns to report the result. When starting from `DecentScale`, the setup AP stays active during the test and reports the result before the final switch. If your phone cannot reach the setup AP while mobile data is enabled, temporarily use airplane mode with WiFi enabled. A successful test offers the scale's tested IP address and starts the final switch. Click that link to show the network-change instructions, join the new network on your phone or computer, then select Continue. IP address is selected by default; hostname is an explicit alternative. The link also opens this address choice after a confirmed connection or same-network reconnect, without asking you to change networks again. If DHCP changes the address, enter the current IP shown on the scale. The destination checks the same scale and operation before confirming that credentials were saved. Navigation never starts automatically, and losing contact does not prove success. A failed switch restores the previous network or opens the setup AP. Retry closes the result dialog and returns to the password field without resubmitting. In 3.1.16, leading or trailing spaces prompt for an explicit Keep spaces, Remove spaces, or Cancel choice before testing; keeping spaces preserves them exactly.
 
 **Reconnect:** once configured, the scale stays in STA mode and reconnects automatically after signal loss with exponential backoff (5 s → 10 → 20 → 40 → 60 s cap). Ordinary signal loss does not open the AP. After a failed 3.1.15 setup test whose previous network cannot be restored, the recovery AP retries the saved network after ten minutes; a failed retry reopens the AP.
 
