@@ -357,7 +357,7 @@
       },
       "patches": {
         "main": {
-          "sha256": "9544f92b459288f332038e43cd061e4984575e32aa14ce2c436b603b4ebb80b6"
+          "sha256": "a820251bc97b93cfacf58c42b3ea6c3a9699b5a8cf545cd5493e72908460c16c"
         },
         "v3.1.14": {
           "sha256": "4a98719ba31c44ee490d39912a752ce70fb6e270b89eedee1ef90d71d313b378"
