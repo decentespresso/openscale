@@ -1,4 +1,56 @@
-# 3.1.16 Pre-Tag Preparation
+# 3.1.16 Release Delivery
+
+<a id="3116-pre-tag-preparation"></a>
+
+## Current Delivery
+
+Delivery checkpoint: 2026-11-08. This table supersedes the pre-tag status below.
+
+| Item | Result |
+| --- | --- |
+| Official release | Published stable/latest `v3.1.16` at `2026-11-08T21:13:16Z` |
+| Immutable tag and approved candidate | `8e2174270df5fbecab136225270e0799e51a63dc` |
+| Signing | [Run 42521172994](https://github.com/decentespresso/openscale/actions/runs/42521172994) passed, using workflow commit `ad2f7011a816c16fdce1361128e88c525ce582c5` |
+| Publication | [Run 42524073608](https://github.com/decentespresso/openscale/actions/runs/42524073608) passed without rebuilding; all eight approved asset IDs and digests remained unchanged |
+| Approved evidence SHA-256 | `76730e258f4bb9ec234fd558a3724ebc273cd8acf9ee80da59087b970767d6d5` |
+| Official firmware SHA-256 | `092fe3f431faa9a0a86b7038f144164d1fe381811ac09981371e8433a46daf01` |
+| Official LittleFS SHA-256 | `e4e03605ef26d0b63da80d5da85d62f41bbedd0d2daeca103cf597df9bcc8198` |
+| Signed USB acceptance | COM5, MAC `cc:ba:97:33:27:f0`, legacy board with 16 MiB flash; fresh full-flash CurrentUser DPAPI backup verified; signed firmware/LittleFS full readback hashes, boot `3.1.16`, saved network, and byte-identical NVS passed |
+| Production WiFi OTA | Official `3.1.15` to `3.1.16` passed against published assets; full firmware/LittleFS readback hashes matched, app1 reached `VALID`, recovery state cleared, and the scale returned to normal operation |
+| Protected settings | Calibration, saved-network, pairing, and integration records remained exact across production OTA |
+| Prior physical-hardware evidence | Operator supplied prior battery/charging, USB standby/wake, and integration shutdown/switching testing for this release; accepted without repeating that campaign |
+| Backend support | [PR #279](https://github.com/decentespresso/openscale/pull/279) merged at `b12abeaa56c470538f6e672920f71b5aad14c939`; relevant head CI passed, including all four Pressensor profiles |
+| Production Worker | Active version `b17b35c4-08c4-428d-91d4-b1633ea755f5`, deployment `b300c1be-58c2-425c-83d7-03ec1446d574`, at `2026-11-08T21:16:07.470Z`, from `b12abeaa56c470538f6e672920f71b5aad14c939` using `keep-vars` |
+| Hosted stable custom build | All seven artifacts verified: source `v3.1.16` at `8e2174270df5fbecab136225270e0799e51a63dc`, builder `b12abeaa56c470538f6e672920f71b5aad14c939`, version `3.1.16-custom`, combination `8f450f0c797629628736a213c8906016e2d582ace9730cc3c408727d66302bdd` |
+| Hosted main custom build | All seven artifacts verified: source/builder `b12abeaa56c470538f6e672920f71b5aad14c939`, version `3.1.16-main-custom`, combination `32f7375fad77b2bde433086fe26d069c9ccfe846d6d2ea3ae92fd1a246d66898` |
+| Hosted verification | Release operator verified cache-entry completeness, custom manifests and public-key signatures, all hashes, ZIP contents, versions, exact approved compatibility, and forward recovery version `1` |
+| Public selector and Pages | Rollout state, resulting main SHA, Pages run, and live-selector evidence: [PR #280](https://github.com/decentespresso/openscale/pull/280); catalog default `v3.1.16`, retaining `v3.1.15`, `v3.1.14`, and `main` |
+| Next release workflow | `previous_tag` now defaults to `v3.1.16`; the runtime previous-stable guard remains unchanged |
+
+Preparation runs `42515351965` and `42518086427` stopped before asset creation.
+[PR #281](https://github.com/decentespresso/openscale/pull/281) restored the
+existing nested-tooling constraint; [PR #282](https://github.com/decentespresso/openscale/pull/282)
+preserved program images across filesystem-build cleanup. Both passed independent
+review and relevant CI. These workflow fixes did not change the firmware candidate
+or move the release tag.
+
+Hosted firmware SHA-256 values are
+`7a940ace1032682ab899f251010b6af8f0844b8384db933501f27626eb78c794`
+for the tagged build and
+`5582e3d953c33ca6a3a9224961b194d483625f1bc071ed0bf8567879b37a81ff`
+for main. Both use LittleFS SHA-256
+`d9ea49a6168ae61d1d61e931cc4fede7077d35888e3f811159da7445d263d7ae`.
+
+The operator's prior physical tests provide the hardware evidence; host checks
+do not establish charging or electrical safety. Device backups and raw private
+diagnostics remain protected and outside source control. Scale assignments and
+security-setting changes remain excluded.
+
+## Original Pre-Tag Snapshot
+
+The following record preserves the preparation phase. Its staging-only status,
+open approvals, and hardware-evidence gaps describe that earlier checkpoint,
+not the current delivery table above.
 
 ## Candidate And Authorization
 

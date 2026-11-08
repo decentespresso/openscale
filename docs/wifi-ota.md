@@ -13,7 +13,11 @@ Older firmware without the `WiFi Update` menu needs one USB update before it can
 
 To open the HDS setup menu, turn on the scale while holding both the circle and square buttons.
 
-In 3.1.14 and later, WiFi entries are under `Connections`. On 3.1.13, use `WiFi Settings` instead. The latest published stable is 3.1.15. Version 3.1.16 is in preparation and will not appear until publication; draft and preview assets are not production updates.
+In 3.1.14 and later, WiFi entries are under `Connections`. On 3.1.13, use `WiFi Settings` instead. The latest published stable is 3.1.16. Draft and preview assets are not production updates.
+
+Release acceptance verified the production update from official 3.1.15 to 3.1.16
+on a compatible legacy-board scale, including both image hashes, saved network,
+and protected settings. See the [delivery checkpoint](release-3.1.16-preparation.md#current-delivery).
 
 ## First-Time WiFi Setup
 

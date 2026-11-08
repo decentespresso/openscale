@@ -93,9 +93,10 @@ release state.
 
 The rollout catalog defaults to `v3.1.16`, retains `v3.1.15` and `v3.1.14`, and offers `main` for testing. `BROWSER_FIRMWARE_REFS` in `tools/configure_custom_build.py` controls the public catalog independently of backend source support. `selectableFirmwareRefs()` in `docs/custom-build/selection.mjs` excludes previews from the selector and URL selections. Main build requests, including retries, require confirmation. Backend catalogs and the Worker allow-list retain preview compatibility; hiding a source in the browser does not delete saved builds or recovery assets. Main builds still consume the shared build quota.
 
-These selector changes are prepared locally, not deployed. After stable
-publication and service readiness, deploy and verify the actual `v3.1.16`
-default, retaining existing stable refs and `main`.
+The deployed Worker supports `v3.1.16`. Hosted tagged and main builds have passed
+signature, hash, ZIP, version, and recovery checks. The public-selector rollout
+selects `v3.1.16` as its default; track Pages activation in the current delivery
+table in `docs/release-3.1.16-preparation.md`.
 
 Stable source support requires matching `FIRMWARE_REFS`, plugin manifests, generated catalogs, and Worker `ALLOWED_FIRMWARE_REFS`. Deploy the stable-default configurator only after the real tag exists, the trusted builder can build it, and Worker support is deployed. Before tagging, CI may use a temporary local tag in its disposable checkout and must pass the resolved commit explicitly when compiling. See `docs/custom-build/operations.md` for service deployment and `docs/AI_RELEASE_NOTES.md` for release authorization.
 
