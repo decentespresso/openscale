@@ -239,13 +239,13 @@ def main():
     assert len(pageCatalog["catalog_revision"]) == 64
     assert generatedCatalog["firmware_refs"] == list(customBuild.BROWSER_FIRMWARE_REFS)
     assert customBuild.BROWSER_FIRMWARE_REFS == (
-        "v3.1.15", "v3.1.14", "main",
+        "v3.1.16", "v3.1.15", "v3.1.14", "main",
     )
     assert customBuild.FIRMWARE_REFS == (
         "v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main", "v3.1.15", "v3.1.16",
     )
     assert serviceCatalog["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
-    assert pageCatalog["firmware_refs"][0] == "v3.1.15"
+    assert pageCatalog["firmware_refs"][0] == "v3.1.16"
     assert serviceCatalog["firmware"]["v3.1.15"]["custom_version"] == "3.1.15-custom"
     assert customBuild.customFirmwareVersion("v3.1.15", "") == "3.1.15-custom"
     assert serviceCatalog["firmware"]["v3.1.16"]["custom_version"] == "3.1.16-custom"

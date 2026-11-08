@@ -2,7 +2,7 @@
 
 This is the historical prototype integration checklist. Its branch, source
 paths, unpublished status, and remaining tasks describe that prototype, not
-the upcoming 3.1.16 release. See [current integration and battery behavior](README.md#3116-release-candidate)
+the released 3.1.16 firmware. See [current integration and battery behavior](README.md#3116-release)
 for the runtime-detected shared firmware, cooperative gauge engine, and
 current source paths. Keep the original checklist below as integration history.
 

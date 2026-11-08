@@ -20,12 +20,13 @@ To build and flash the scale from your computer, make sure you have the `pio` co
 After this, one can simply use `$pio run -t upload` and platformio will build and flash the firmware to the connected Esp32s3 chip.
 
 
-# New in 3.1.16 (Upcoming)
+<a id="new-in-3116-upcoming"></a>
 
-Version 3.1.16 is in preparation and is not yet a published release. The latest
-published stable is 3.1.15. The changes below describe the 3.1.16 candidate;
-they do not change an installed scale until you install the new firmware and
-its matching filesystem.
+# New in 3.1.16
+
+Version [3.1.16](https://github.com/decentespresso/openscale/releases/tag/v3.1.16)
+is the latest published stable release. Install its firmware and matching
+filesystem to use the changes below.
 
 ## Hardware, Battery, And USB Power
 
@@ -65,9 +66,8 @@ Custom firmware based on 3.1.16 can include both Pressensor and Grind by Weight.
 Their Enabled controls switch integrations immediately in the menu; saved sensor,
 plug, and tuning settings remain intact. Switching is blocked while grinder
 shutdown is unconfirmed. App Text has its own setting and does not select a mode.
-Older firmware refs keep their existing plugin conflicts. Hosted 3.1.16 custom
-build support is staged, not deployed; use the availability notes below before
-choosing a build.
+Older firmware refs keep their existing plugin conflicts. The hosted custom
+service supports both integrations on `v3.1.16` and `main`.
 
 ## Weighing, WiFi, And Web Apps
 
@@ -89,19 +89,20 @@ choosing a build.
 ## Custom Firmware Availability
 
 The [custom build configurator](https://decentespresso.github.io/openscale/custom-build/)
-builds approved feature and plugin combinations. Its options remain
-`3.1.15 (stable)` (the default), `3.1.14 (stable)`, and `main (development)`.
+builds approved feature and plugin combinations. The release catalog selects
+`3.1.16 (stable)` by default, retaining `3.1.15 (stable)`,
+`3.1.14 (stable)`, and `main (development)`.
 Development builds require confirmation and are for testing. Download a build
 for USB installation or assign it to linked scales for signed WiFi installation.
-This preparation stages 3.1.16 support without deploying it, adding it to the
-public selector, or changing the default. Published 3.1.15 does not include the
-new App Text and combined-integration capabilities described above.
+The hosted service has verified signed builds for both `v3.1.16` and `main`.
+See the [delivery checkpoint](docs/release-3.1.16-preparation.md#current-delivery)
+for the public-selector deployment status. Published 3.1.15 does not include
+App Text or the combined-integration capability.
 
-The complete 3.1.16 release also advances main's base version to `3.1.16`, so
-main custom builds report `3.1.16-main-custom` and tagged custom builds report
-`3.1.16-custom`. It includes signed WiFi OTA publication, tagged custom-service
-activation, and making 3.1.16 the public stable default after the service is ready.
-Those remain release work; the current staging state does not complete the release.
+Main's base version is `3.1.16`, so main custom builds report
+`3.1.16-main-custom` and tagged custom builds report `3.1.16-custom`.
+Official 3.1.16 supports signed WiFi OTA. Release acceptance verified a production
+update from official 3.1.15, including firmware, filesystem, and saved settings.
 
 Plugin authors can use the [plugin development guide](docs/plugin-development.md)
 for package, webapp, and presentation rules.

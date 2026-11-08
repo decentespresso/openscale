@@ -1,9 +1,11 @@
 # HDS 9.0.5 support
 
-## 3.1.16 Release Candidate
+<a id="3116-release-candidate"></a>
 
-Version 3.1.16 is in preparation, not yet published. The standard `esp32s3`
-image supports both 8.x and 9.0.5 boards through runtime fuel-gauge detection.
+## 3.1.16 Release
+
+Version 3.1.16 is the published stable release. The standard `esp32s3` image
+supports both 8.x and 9.0.5 boards through runtime fuel-gauge detection.
 The firmware uses BQ27427 readings on 9.0.5 and retains the legacy battery
 path on boards without the gauge. An unresolved probe or cleanup failure does
 not establish legacy hardware: the firmware keeps shared pins and charging in
@@ -46,16 +48,18 @@ Current implementation entry points:
 - `include/usbcomm.h`: capacity query and configuration.
 - `tools/bq27427_probe/`: low-level diagnostic probe.
 
-Host checks cover driver, startup, storage, and OTA cleanup behavior. They do
-not validate charger polarity, cutoff, temperature, or electrical safety on a
-physical board. Release preparation must record current hardware coverage and
-limitations separately from the historical measurements below.
+The operator supplied prior physical-hardware testing for this release,
+including battery/charging, USB standby/wake, and integration shutdown/switching.
+The [delivery checkpoint](../release-3.1.16-preparation.md#current-delivery) records
+that evidence and the signed USB and production OTA acceptance results.
+Host checks cover driver, startup, storage, and OTA cleanup behavior; they do
+not establish charger polarity, cutoff, temperature, or electrical safety.
 
 ## Historical Prototype Notes (2026-08-14)
 
 The following notes describe the original prototype, its old paths and branch,
-and its bench measurements. They are not the current implementation or evidence
-that the 3.1.16 release candidate passed hardware testing.
+and its bench measurements. Use the delivery checkpoint for 3.1.16 acceptance
+evidence and the source paths above for the current implementation.
 
 本目录记录 openscale(上一正式版 8.3.1)对 **HDS 9.0.5 硬件**的支持工作。
 9.0.5 与 8.3.1 的差异:板上新增 **TI BQ27427YZFR** 电池电量计(I2C 固定 0x55)。
