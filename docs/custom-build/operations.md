@@ -106,6 +106,12 @@ bytes.
 
 ## Deployment Order
 
+The sequence below covers initial service bootstrap. Recurring stable releases
+must also complete `docs/AI_RELEASE_NOTES.md`: advance main's base version before
+candidate freeze, enable the real tagged custom base, and promote the published
+stable to the public default. Keep missing-tag support out of the live `main`
+builder until the real tag exists; staging alone is not release completion.
+
 1. Create two custom OTA RSA key pairs, commit both public keys, save the Key 1 private key as the
    `HDS_CUSTOM_OTA_SIGNING_KEY_PEM` repository secret, and secure both private keys offline.
 2. Deploy the Worker before publishing firmware with the Custom Build menu.
