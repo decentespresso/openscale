@@ -2236,10 +2236,7 @@ uint32_t energyDisplaySignature(unsigned long now) {
   const bool wifiBlink = false;
 #endif
   const int percent = batteryPercent();
-  bool chargingNow = digitalRead(BATTERY_CHARGING) == LOW;
-#ifdef USB_DET
-  chargingNow = digitalRead(USB_DET) == LOW;
-#endif
+  const bool chargingNow = digitalRead(BATTERY_CHARGING) == LOW;
   const uint8_t batteryBucket = EnergyRuntimePolicy::batteryDisplayBucket(percent);
   const bool batteryReady = powerCadence.batterySampleSequence != 0;
   const uint8_t displayedBattery = chargingNow ? 5 : (batteryReady ? batteryBucket : 6);
@@ -2682,22 +2679,15 @@ void loop() {
 
 
 void chargingOLED(int perc, float voltage) {
-  if (millis() - t_oled_refresh >= 1000) {
-    t_oled_refresh = millis();
+  const unsigned long now = millis();
+  if (now - t_oled_refresh >= 500) {
+    t_oled_refresh = now;
     invalidateEnergyOledFrame();
     u8g2.firstPage();
     do {
-      u8g2.drawXBM(121, 51, 7, 12, image_battery_charging);
+      drawBatteryIcon(now);
     } while (u8g2.nextPage());
   }
-
-
-
-
-
-
-
-
 }
 
 
@@ -2909,19 +2899,11 @@ void drawGrinder() {
 }
 #endif
 
-void drawBattery(unsigned long now) {
-#if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
-  if (digitalRead(USB_DET) == LOW) {
-#else
+void drawBatteryIcon(unsigned long now) {
   if (digitalRead(BATTERY_CHARGING) == LOW) {
-#endif
-    b_is_charging = true;
     u8g2.drawXBM(121, 51, 7, 12, image_battery_charging);
-  } else {
-    b_is_charging = false;
-  }
-  if (!b_is_charging && powerCadence.batterySampleSequence != 0) {
-    int i_batteryPercent = batteryPercent();
+  } else if (powerCadence.batterySampleSequence != 0) {
+    const int i_batteryPercent = batteryPercent();
     switch (EnergyRuntimePolicy::batteryDisplayBucket(i_batteryPercent)) {
       case 0:
         if ((now / 500) & 1) u8g2.drawXBM(121, 52, 7, 12, image_battery_0);
@@ -2940,6 +2922,15 @@ void drawBattery(unsigned long now) {
         break;
     }
   }
+}
+
+void drawBattery(unsigned long now) {
+#if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
+  b_is_charging = digitalRead(USB_DET) == LOW;
+#else
+  b_is_charging = digitalRead(BATTERY_CHARGING) == LOW;
+#endif
+  drawBatteryIcon(now);
 
 #if HDS_FEATURE_WIFI
   if (b_wifiEnabled) {
