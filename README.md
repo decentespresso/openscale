@@ -97,6 +97,12 @@ This preparation stages 3.1.16 support without deploying it, adding it to the
 public selector, or changing the default. Published 3.1.15 does not include the
 new App Text and combined-integration capabilities described above.
 
+The complete 3.1.16 release also advances main's base version to `3.1.16`, so
+main custom builds report `3.1.16-main-custom` and tagged custom builds report
+`3.1.16-custom`. It includes signed WiFi OTA publication, tagged custom-service
+activation, and making 3.1.16 the public stable default after the service is ready.
+Those remain release work; the current staging state does not complete the release.
+
 Plugin authors can use the [plugin development guide](docs/plugin-development.md)
 for package, webapp, and presentation rules.
 

@@ -11,15 +11,22 @@ Preparation checkpoint: 2026-11-08. This release is not tagged or published.
 | Audited range | 80 commits; 174 files, 18,345 insertions, 778 deletions |
 | Preparation branch | `odev/prepare-3-1-16-readiness` in a separate clone |
 | Service-support branch | `odev/stage-3-1-16-custom-support`; merge only after the real tag exists |
-| Final release candidate | Pending documentation-only review/merge and resulting full main SHA |
-| Version | Workflow injection supplies `3.1.16`; source fallback stays unchanged |
+| Final release candidate | Pending base-version update, review/merge, and resulting full main SHA |
+| Version | Source base remains `3.1.15`; advance it to `3.1.16` before candidate freeze |
 | Signed draft, evidence, asset hashes | Not created |
-| Custom service | Support staged only; no deployment or public selector/default change |
+| Custom service | Staged only; activation and the 3.1.16 public default remain required release work |
 
 The user authorized local preparation, documentation updates, custom-build staging,
 and focused validation. Merge, push, release tagging, workflow dispatch, publication,
 device flashing, and service deployment need separate authorization. The original
 feature-branch checkout and its uncommitted work are outside this release.
+
+The release completion requirement includes advancing main's base version,
+`3.1.16-main-custom` for main custom builds, `3.1.16-custom` for tagged custom
+builds, the published stable as the public default, and signed official WiFi OTA.
+The earlier staging-only boundary describes work performed, not a completed
+release. No version bump, live default change, or deployment has occurred in this
+documentation correction. Keep the execution approvals above in place.
 
 Validation used a prospective `v3.1.16` tag at the source baseline inside the
 separate clone only. The fixture is removed before handoff; no release tag is
@@ -89,12 +96,15 @@ builds use the moving `main` builder and validate metadata for every backend ref
 merging a new ref before its tag exists would also break existing hosted builds.
 Validation-only prospective tags do not fix this production ordering constraint.
 
-Use two reviewed change sets: merge documentation-only preparation first, then
-approve and create the official tag on the resulting main candidate. Merge the
+Advance `include/config.h` to `3.1.16`, regenerate affected catalogs, and verify
+the `3.1.16-main-custom` identity before freezing the final main candidate. The
+existing documentation-only branch is not yet that final versioned candidate.
+Then approve and create the official tag on the resulting main commit. Merge the
 staged tooling, workflows, plugin manifests/patch, catalogs, Worker configuration,
 and related tests only after that tag exists. Regenerate catalogs against the real
 tag and recheck patch application before this second merge. Worker deployment and
-browser activation still require their own authorization.
+browser activation remain required release phases with the recorded execution
+authorization, not optional follow-ups.
 
 ## Validation Evidence
 
@@ -156,8 +166,9 @@ Host checks do not establish charging safety.
 
 ## Remaining Release Gates
 
-1. Review documentation-only preparation and pass its relevant required CI.
-   After merge authorization, merge it and record the resulting full main SHA.
+1. Include the source base-version update to `3.1.16`, regenerated main metadata,
+   and version-identity checks in preparation. Review and pass relevant required
+   CI. After merge authorization, merge and record the resulting full main SHA.
    Keep the service-support change set unmerged. Recheck main,
    latest stable, tag availability, and the frozen patch before accepting it.
 2. After tagging/draft authorization, create immutable `v3.1.16` on that candidate.
@@ -178,7 +189,13 @@ Host checks do not establish charging safety.
    tag, candidate, and approved evidence digest. Verify stable/latest status and
    asset identity. Check production older-to-newer OTA after publication, or
    record it untested; production firmware cannot read draft-only assets.
+6. After the real tag exists, merge and activate tagged custom support, verify a
+   real signed `3.1.16-custom` hosted build and a `3.1.16-main-custom` build, then
+   deploy the public selector with 3.1.16 as its stable default after publication
+   and service readiness. Retain prior stable refs and `main`. Verify the live
+   options/default before reporting the full release complete.
 
-Custom-service deployment, public selector/default activation, scale assignments,
-and security-setting changes remain outside this preparation. Respect configured
+Custom-service deployment and public selector/default activation have not run;
+they remain part of the full release and need execution authorization. Scale
+assignments and security-setting changes remain excluded. Respect configured
 protections; do not change repository secrets, variables, or security settings.
