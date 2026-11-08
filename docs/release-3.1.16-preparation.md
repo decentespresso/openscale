@@ -11,22 +11,24 @@ Preparation checkpoint: 2026-11-08. This release is not tagged or published.
 | Audited range | 80 commits; 174 files, 18,345 insertions, 778 deletions |
 | Preparation branch | `odev/prepare-3-1-16-readiness` in a separate clone |
 | Service-support branch | `odev/stage-3-1-16-custom-support`; merge only after the real tag exists |
-| Final release candidate | Pending base-version update, review/merge, and resulting full main SHA |
-| Version | Source base remains `3.1.15`; advance it to `3.1.16` before candidate freeze |
+| Final release candidate | Pending review, required CI, authorized merge, and resulting full main SHA |
+| Version | Source base is `3.1.16`; regenerated main custom metadata reports `3.1.16-main-custom` |
 | Signed draft, evidence, asset hashes | Not created |
 | Custom service | Staged only; activation and the 3.1.16 public default remain required release work |
 
 The user authorized local preparation, documentation updates, custom-build staging,
-and focused validation. Merge, push, release tagging, workflow dispatch, publication,
-device flashing, and service deployment need separate authorization. The original
-feature-branch checkout and its uncommitted work are outside this release.
+focused validation, and opening the reviewed release PR. Merge, release tagging,
+workflow dispatch, publication, device flashing, and service deployment need
+separate authorization. The original feature-branch checkout and its uncommitted
+work are outside this release.
 
 The release completion requirement includes advancing main's base version,
 `3.1.16-main-custom` for main custom builds, `3.1.16-custom` for tagged custom
 builds, the published stable as the public default, and signed official WiFi OTA.
 The earlier staging-only boundary describes work performed, not a completed
-release. No version bump, live default change, or deployment has occurred in this
-documentation correction. Keep the execution approvals above in place.
+release. The pre-tag release PR now advances the source base and main metadata;
+no live default change or deployment has occurred. Keep the execution approvals
+above in place.
 
 Validation used a prospective `v3.1.16` tag at the source baseline inside the
 separate clone only. The fixture is removed before handoff; no release tag is
@@ -96,10 +98,10 @@ builds use the moving `main` builder and validate metadata for every backend ref
 merging a new ref before its tag exists would also break existing hosted builds.
 Validation-only prospective tags do not fix this production ordering constraint.
 
-Advance `include/config.h` to `3.1.16`, regenerate affected catalogs, and verify
-the `3.1.16-main-custom` identity before freezing the final main candidate. The
-existing documentation-only branch is not yet that final versioned candidate.
-Then approve and create the official tag on the resulting main commit. Merge the
+The pre-tag branch advances `include/config.h` to `3.1.16`, regenerates main
+metadata, and checks the `3.1.16-main-custom` identity. Review and pass required CI
+before freezing the final main candidate. Then approve and create the official
+tag on the resulting main commit. Merge the
 staged tooling, workflows, plugin manifests/patch, catalogs, Worker configuration,
 and related tests only after that tag exists. Regenerate catalogs against the real
 tag and recheck patch application before this second merge. Worker deployment and
@@ -119,7 +121,9 @@ authorization, not optional follow-ups.
 | Raw review | Full preparation patches reviewed; `git diff-files --check` passed, including the frozen patch |
 | Pressensor profile | Passed `esp32s3-pressensor` on the baseline plus frozen patch; RAM 58,652 bytes, flash 1,771,093 bytes |
 | Combined profile | Passed `esp32s3-custom` firmware and LittleFS with `v3.1.16`, Pull OTA, Pressensor, Grind by Weight, and default web apps; embedded `FW: 3.1.16-custom` verified |
-| Final-candidate CI | Pending required CI before an authorized merge; baseline results do not certify preparation changes |
+| Version correction | Main base and metadata advance together; prior stable custom identities remain unchanged |
+| Independent re-review | No remaining pre-tag PR blocker after fixing the main version and metadata; post-tag release gates remain open |
+| Final-candidate CI | Pending required CI on the release PR before an authorized merge; baseline results do not certify preparation changes |
 
 Local builds use a task-isolated PlatformIO core, pinned dependencies, and
 sequential PlatformIO commands. They do not sign, publish, upload, or flash.
@@ -166,8 +170,8 @@ Host checks do not establish charging safety.
 
 ## Remaining Release Gates
 
-1. Include the source base-version update to `3.1.16`, regenerated main metadata,
-   and version-identity checks in preparation. Review and pass relevant required
+1. Review the source base-version update to `3.1.16`, regenerated main metadata,
+   and version-identity checks included in preparation. Pass relevant required
    CI. After merge authorization, merge and record the resulting full main SHA.
    Keep the service-support change set unmerged. Recheck main,
    latest stable, tag availability, and the frozen patch before accepting it.
