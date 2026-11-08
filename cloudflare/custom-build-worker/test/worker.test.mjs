@@ -55,7 +55,7 @@ test("main build identities distinguish development firmware from the stable tag
   const selection = {firmware_ref: "main", features: ["pull-ota"], plugins: []};
   const development = identityForSelection(catalog, source, selection, builder);
   const stable = identityForSelection(catalog, source, {...selection, firmware_ref: "v3.1.15"}, builder);
-  assert.equal(development.firmware_version, "3.1.15-main-custom");
+  assert.equal(development.firmware_version, "3.1.16-main-custom");
   assert.equal(stable.firmware_version, "3.1.15-custom");
   assert.notEqual(development.firmware_version, stable.firmware_version);
 });
