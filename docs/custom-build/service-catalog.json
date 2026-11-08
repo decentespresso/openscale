@@ -1,13 +1,14 @@
 {
   "schema": 2,
   "custom_ota_signing_key_generation": 1,
-  "catalog_revision": "961aaa3309c748934b4ba9ffa31ed67653f09d5ead18e4593ac262f7a53088ac",
+  "catalog_revision": "4338913880a8af465c8bafaf984039a65ecbf89b5cee063c4f9c81358aedaf8e",
   "firmware_refs": [
     "v3.1.14",
     "v3.1.14-preview.3",
     "v3.1.14-preview.4",
     "main",
-    "v3.1.15"
+    "v3.1.15",
+    "v3.1.16"
   ],
   "platformio_environment": "esp32s3-custom",
   "firmware": {
@@ -45,6 +46,13 @@
         "path": "partitions/default_8MB.csv",
         "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"
       }
+    },
+    "v3.1.16": {
+      "custom_version": "3.1.16-custom",
+      "partition_schema": {
+        "path": "partitions/default_8MB.csv",
+        "sha256": "ab2f33c14eb855054613fd3a4ba85457ae281c6f371c25931ccc763bc79cb0e2"
+      }
     }
   },
   "features": {
@@ -57,7 +65,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ]
     },
     "mdns": {
@@ -69,7 +78,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ]
     },
     "webserver": {
@@ -81,7 +91,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ]
     },
     "websocket": {
@@ -94,7 +105,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ]
     },
     "littlefs": {
@@ -104,7 +116,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ]
     },
     "elegant-ota": {
@@ -117,7 +130,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ]
     },
     "pull-ota": {
@@ -129,7 +143,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ]
     },
     "grinder": {
@@ -142,7 +157,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ]
     },
     "energy-menu": {
@@ -152,7 +168,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ]
     }
   },
@@ -164,7 +181,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ],
       "requires": [
         "littlefs",
@@ -309,7 +327,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ],
       "requires": [
         "grinder"
@@ -319,7 +338,8 @@
         "pressensor"
       ],
       "conflicts_by_ref": {
-        "main": []
+        "main": [],
+        "v3.1.16": []
       },
       "conflicts_features": [],
       "recommends": {
@@ -340,7 +360,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ],
       "requires": [],
       "depends_on": [],
@@ -348,7 +369,8 @@
         "grind-by-weight"
       ],
       "conflicts_by_ref": {
-        "main": []
+        "main": [],
+        "v3.1.16": []
       },
       "conflicts_features": [],
       "recommends": {
@@ -370,6 +392,9 @@
         },
         "v3.1.15": {
           "sha256": "4a98719ba31c44ee490d39912a752ce70fb6e270b89eedee1ef90d71d313b378"
+        },
+        "v3.1.16": {
+          "sha256": "9544f92b459288f332038e43cd061e4984575e32aa14ce2c436b603b4ebb80b6"
         }
       },
       "assets": []

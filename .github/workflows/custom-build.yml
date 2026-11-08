@@ -89,6 +89,9 @@ jobs:
           if ! git show-ref --verify --quiet refs/tags/v3.1.15; then
             git tag v3.1.15 HEAD
           fi
+          if ! git show-ref --verify --quiet refs/tags/v3.1.16; then
+            git tag v3.1.16 HEAD
+          fi
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
@@ -140,6 +143,9 @@ jobs:
           fi
           if ! git show-ref --verify --quiet refs/tags/v3.1.15; then
             git tag v3.1.15 HEAD
+          fi
+          if ! git show-ref --verify --quiet refs/tags/v3.1.16; then
+            git tag v3.1.16 HEAD
           fi
       - uses: actions/cache@v6
         with:
@@ -206,6 +212,9 @@ jobs:
           fi
           if ! git show-ref --verify --quiet refs/tags/v3.1.15; then
             git tag v3.1.15 HEAD
+          fi
+          if ! git show-ref --verify --quiet refs/tags/v3.1.16; then
+            git tag v3.1.16 HEAD
           fi
       - uses: actions/cache@v6
         with:

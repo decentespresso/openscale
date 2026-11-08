@@ -10,10 +10,12 @@ const encoder = new TextEncoder();
 const token = "test-token-with-at-least-32-characters";
 const origin = "https://decentespresso.github.io";
 
-test("combined integrations use main-only conflicts and reject invalid overrides", async () => {
+test("combined integrations use supported refs and reject invalid overrides", async () => {
   const catalog = JSON.parse(await readFile(new URL("../../../docs/custom-build/service-catalog.json", import.meta.url), "utf8"));
   const selection = {firmware_ref: "main", features: [], plugins: ["pressensor", "grind-by-weight"]};
-  assert.doesNotThrow(() => identityForSelection(catalog, "1".repeat(40), selection));
+  for (const ref of ["main", "v3.1.16"]) {
+    assert.doesNotThrow(() => identityForSelection(catalog, "1".repeat(40), {...selection, firmware_ref: ref}));
+  }
   for (const ref of ["v3.1.15", "v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4"]) {
     assert.throws(() => identityForSelection(catalog, "1".repeat(40), {...selection, firmware_ref: ref}), /plugin_conflict/);
   }
@@ -24,20 +26,20 @@ test("combined integrations use main-only conflicts and reject invalid overrides
   }
 });
 
-test("staged 3.1.15 identities retain older refs and bind candidate and builder", async () => {
+test("staged 3.1.16 identities retain older refs and bind candidate and builder", async () => {
   const catalog = JSON.parse(await readFile(
     new URL("../../../docs/custom-build/service-catalog.json", import.meta.url), "utf8",
   ));
   const candidate = "1".repeat(40);
   const builder = "2".repeat(40);
-  const selection = {firmware_ref: "v3.1.15", features: ["pull-ota"], plugins: []};
+  const selection = {firmware_ref: "v3.1.16", features: ["pull-ota"], plugins: []};
   const identity = identityForSelection(catalog, candidate, selection, builder);
-  assert.equal(identity.firmware_version, "3.1.15-custom");
+  assert.equal(identity.firmware_version, "3.1.16-custom");
   assert.equal(identity.base_source, candidate);
   assert.equal(identity.builder_source, builder);
   assert.ok(identity.features.includes("pull-ota"));
   assert.ok(!identity.features.includes("littlefs"));
-  for (const ref of ["v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main"]) {
+  for (const ref of ["v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main", "v3.1.15"]) {
     assert.ok(catalog.firmware_refs.includes(ref));
     assert.ok(catalog.firmware[ref]);
   }

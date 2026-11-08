@@ -242,12 +242,14 @@ def main():
         "v3.1.15", "v3.1.14", "main",
     )
     assert customBuild.FIRMWARE_REFS == (
-        "v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main", "v3.1.15",
+        "v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main", "v3.1.15", "v3.1.16",
     )
     assert serviceCatalog["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
     assert pageCatalog["firmware_refs"][0] == "v3.1.15"
     assert serviceCatalog["firmware"]["v3.1.15"]["custom_version"] == "3.1.15-custom"
     assert customBuild.customFirmwareVersion("v3.1.15", "") == "3.1.15-custom"
+    assert serviceCatalog["firmware"]["v3.1.16"]["custom_version"] == "3.1.16-custom"
+    assert customBuild.customFirmwareVersion("v3.1.16", "") == "3.1.16-custom"
     assert pageCatalog["custom_ota_signing_key_generation"] == 1
     assert serviceCatalog["custom_ota_signing_key_generation"] == 1
     assert all(
@@ -355,15 +357,16 @@ def main():
         assert all(not target.is_absolute() and ".." not in target.parts for _, target in configuration["assets"])
     with tempfile.TemporaryDirectory() as temporaryDirectory:
         root = Path(temporaryDirectory)
-        for features, plugins in (
-            ([], []), (["wifi"], []), (["pull-ota"], []),
-            (["elegant-ota", "pull-ota"], ["default-web-apps"]),
-            ([], ["pressensor"]), (["pull-ota"], ["grind-by-weight"]),
-        ):
-            candidate = customBuild.resolveConfiguration(
-                writeConfig(root, features, plugins, "v3.1.15")
-            )
-            assert candidate["firmware_ref"] == "v3.1.15"
+        for ref in ("v3.1.15", "v3.1.16"):
+            for features, plugins in (
+                ([], []), (["wifi"], []), (["pull-ota"], []),
+                (["elegant-ota", "pull-ota"], ["default-web-apps"]),
+                ([], ["pressensor"]), (["pull-ota"], ["grind-by-weight"]),
+            ):
+                candidate = customBuild.resolveConfiguration(
+                    writeConfig(root, features, plugins, ref)
+                )
+                assert candidate["firmware_ref"] == ref
         for feature, (_, dependencies, _) in customBuild.FEATURES.items():
             resolvedFeature = customBuild.resolveConfiguration(writeConfig(root, [feature], []))
             assert set(dependencies).issubset(resolvedFeature["features"])
@@ -386,10 +389,11 @@ def main():
         assertRejected(lambda: customBuild.resolveConfiguration(
             writeConfig(root, [], ["grind-by-weight", "pressensor"])
         ))
-        combined = customBuild.resolveConfiguration(
-            writeConfig(root, [], ["grind-by-weight", "pressensor"], "main")
-        )
-        assert {plugin["id"] for plugin in combined["plugins"]} == {"grind-by-weight", "pressensor"}
+        for ref in ("main", "v3.1.16"):
+            combined = customBuild.resolveConfiguration(
+                writeConfig(root, [], ["grind-by-weight", "pressensor"], ref)
+            )
+            assert {plugin["id"] for plugin in combined["plugins"]} == {"grind-by-weight", "pressensor"}
         for ref in ("v3.1.15", "v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4"):
             assertRejected(lambda ref=ref: customBuild.resolveConfiguration(
                 writeConfig(root, [], ["grind-by-weight", "pressensor"], ref)
