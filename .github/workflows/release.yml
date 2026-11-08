@@ -60,6 +60,8 @@ jobs:
   build-and-release:
     needs: [resolve, preflight, custom-preflight]
     runs-on: ubuntu-latest
+    env:
+      UV_CONSTRAINT: ${{ github.workspace }}/constraints-pioarduino.txt
     timeout-minutes: 45
     environment: firmware-release
     permissions:
