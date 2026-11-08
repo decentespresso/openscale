@@ -63,6 +63,8 @@ def testPreflightArtifactSha(nightly):
 def main():
     config = CONFIG.read_text(encoding="utf-8")
     text = WORKFLOW.read_text(encoding="utf-8")
+    previousTagInput = text.split("      previous_tag:\n", 1)[1].split("      bootstrap_catalog:\n", 1)[0]
+    assert_contains(previousTagInput, "default: v3.1.15")
     assert_contains(text, 'TAG: ${{ github.event.inputs.tag }}')
     nightly = NIGHTLY_WORKFLOW.read_text(encoding="utf-8")
     ota = OTA_WORKFLOW.read_text(encoding="utf-8")

@@ -11,7 +11,7 @@ on:
         required: true
       previous_tag:
         description: "Expected previous published stable tag; empty only for bootstrap"
-        default: v3.1.13
+        default: v3.1.15
       bootstrap_catalog:
         description: "First release only: allow no previous stable catalog"
         type: boolean

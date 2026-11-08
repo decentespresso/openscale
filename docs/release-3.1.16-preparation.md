@@ -12,7 +12,7 @@ Preparation checkpoint: 2026-11-08. This release is not tagged or published.
 | Preparation branch | `odev/prepare-3-1-16-readiness` in a separate clone |
 | Release PR | [#278](https://github.com/decentespresso/openscale/pull/278); review and CI pending |
 | Service-support branch | `odev/stage-3-1-16-custom-support`; merge only after the real tag exists |
-| Public-activation branch | `odev/activate-3-1-16-custom-default`; activate only after publication and service readiness |
+| Public-default branch | `odev/activate-3-1-16-custom-default`; activate only after publication and service readiness |
 | Final release candidate | Pending review, required CI, authorized merge, and resulting full main SHA |
 | Version | Source base is `3.1.16`; regenerated main custom metadata reports `3.1.16-main-custom` |
 | Signed draft, evidence, asset hashes | Not created |
@@ -31,6 +31,13 @@ The earlier staging-only boundary describes work performed, not a completed
 release. The pre-tag release PR now advances the source base and main metadata;
 no live default change or deployment has occurred. Keep the execution approvals
 above in place.
+
+The release delivery consists of [PR #278](https://github.com/decentespresso/openscale/pull/278)
+and two linked draft change sets: [tagged custom support](https://github.com/decentespresso/openscale/tree/odev/stage-3-1-16-custom-support)
+and [public-default activation](https://github.com/decentespresso/openscale/tree/odev/activate-3-1-16-custom-default).
+Keep their PR dependencies and hold conditions in #278. Review the later phases
+before release approval; do not treat local-only preparation or passing CI as
+published, production-signed release or service validation.
 
 Validation used a prospective `v3.1.16` tag at the source baseline inside the
 separate clone only. The fixture is removed before handoff; no release tag is
@@ -143,6 +150,8 @@ service. The temporary clone-local tag used for catalog validation was removed.
 | Combined profile | Passed `esp32s3-custom` firmware and LittleFS with `v3.1.16`, Pull OTA, Pressensor, Grind by Weight, and default web apps; embedded `FW: 3.1.16-custom` verified |
 | Version correction | Main base and metadata advance together; prior stable custom identities remain unchanged |
 | Independent re-review | No remaining pre-tag PR blocker after fixing the main version and metadata; post-tag release gates remain open |
+| Preparation CI at `2bc688c` | Runs 42509197194, 42509197220, and 42509197296 passed; later workflow/default and delivery changes require their own head checks |
+| Previous stable input | `Release firmware` defaults to `v3.1.15`; the signed catalog history floor remains `v3.1.13` and the runtime previous-stable guard remains active |
 | Final-candidate CI | Pending required CI on the release PR before an authorized merge; baseline results do not certify preparation changes |
 
 Local builds use a task-isolated PlatformIO core, pinned dependencies, and
