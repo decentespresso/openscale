@@ -238,6 +238,7 @@ Before tagging, confirm:
 - limitations or untested configurations were accepted explicitly;
 - affected AI notes and user-facing documentation are current;
 - required secrets and variables are configured without printing values;
+- the release workflow's `previous_tag` input defaults to the current published stable, with runtime validation retained;
 - main's source base version matches the target and main custom identity;
 - the intended version is consistent across release inputs and outputs;
 - no unresolved migration, OTA, asset, or hardware blocker remains.
@@ -284,6 +285,11 @@ selection/default changes. Include both in the release plan and authorization
 scope from the start; do not present them as optional later work.
 Prepare builder refs, plugin compatibility, Worker allowlists and both catalogs
 together, retaining older refs, immutable combinations and recovery assets.
+
+Open linked draft PRs for tag-dependent service support and public-default
+activation during preparation, and list them in the release PR and checkpoint.
+Local-only branches do not provide reviewable release delivery. Keep these PRs
+blocked on their real-tag, publication, and service-readiness gates.
 
 Do not merge support for a missing tag into the live `main` builder. Production
 builds validate metadata for every supported ref; one missing tag can break
