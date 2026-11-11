@@ -175,6 +175,12 @@ trusted until existing firmware has migrated to its replacement.
 
 ## Public Failure Codes
 
+Availability checks retry network failures and HTTP 408/5xx responses up to five times,
+backing off from 2 to 30 seconds. After retries stop, `Retry check` checks status again without
+starting a build.
+The configurator does not replay build requests automatically. GitHub source lookup failures
+occur before plugin validation; record the API error code when diagnosing an unavailable build.
+
 | Code | Meaning |
 | --- | --- |
 | `dispatch_failed` | The Worker could not start the GitHub Actions workflow. |
