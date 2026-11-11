@@ -5,6 +5,7 @@ import {runInNewContext} from "node:vm";
 
 import {
   buildLabel,
+  buildSourceLabel,
   buildSummary,
   deploymentState,
   lastSeenLabel,
@@ -260,6 +261,19 @@ test("detects a new static catalog after a stale reload", async () => {
 });
 
 
+test("distinguishes saved-build source commits without guessing legacy provenance", () => {
+  const source = "ac3df004e5856c6f84cad2a5ff89ba037ea058c6";
+  assert.equal(buildSourceLabel({firmware_ref: "main", base_source: source}), "main @ ac3df004");
+  assert.equal(buildSourceLabel({firmware_ref: "v3.1.16", base_source: source}), "v3.1.16 @ ac3df004");
+  assert.equal(buildSourceLabel({firmware_ref: "main", base_source: "b".repeat(40)}), "main @ bbbbbbbb");
+  assert.equal(buildSourceLabel({firmware_ref: "main"}), "main");
+  assert.equal(buildSourceLabel({base_source: source}), "ac3df004");
+  assert.equal(buildSourceLabel({firmware_ref: "main", base_source: "invalid"}), "main");
+  assert.equal(buildSourceLabel({base_source: [source]}), "Source unknown");
+  assert.equal(buildSourceLabel({firmware_version: "3.1.16-main-custom", combination_hash: "a".repeat(64)}), "Source unknown");
+  assert.equal(buildSourceLabel({}), "Source unknown");
+});
+
 test("formats fleet build identity and deployment state", () => {
   const hash = "8c6df20ccb1b9855f19dce3868b9310ecb26238cccf48557843bd428ebbc1f63";
   const now = Date.parse("2026-09-03T12:00:00.000Z");
@@ -437,6 +451,9 @@ test("fleet build identity stays separate from editable names", async () => {
   assert.ok(source.includes('new Option(identityForBuild(build.combination_hash)'));
   assert.ok(source.includes('label.value = labelForBuild(build.combination_hash)'));
   assert.ok(source.includes('row.querySelector(".build-hash").textContent = shortHash(build.combination_hash, 8)'));
+  assert.ok(source.includes('source.textContent = buildSourceLabel(build)'));
+  assert.ok(source.includes('source.title = build.base_source || ""'));
+  assert.ok(source.includes('row.querySelector(".fleet-build-version details span").textContent = buildSummary(build)'));
   assert.ok(source.includes('identityForBuild(scale.installed_combination)'));
   assert.ok(source.includes('identityForBuild(scale.desired_combination)'));
 });

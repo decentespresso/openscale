@@ -80,6 +80,29 @@ stable/default only after publication and service readiness. Verify the previous
 stable-to-new stable OTA path after publication, or record the operator's accepted
 testing limitation; never claim an untested device update passed.
 
+## Version Identity Gate
+
+For each release, preserve these identities: ordinary firmware `X.Y.Z`, tagged
+custom firmware `X.Y.Z-custom`, and main custom firmware `X.Y.Z-main-custom`.
+Advance `include/config.h` before candidate freeze. Keep version tests independent
+of the current release: exercise a numeric version matrix with distinct base and
+tag versions rather than replacing one hardcoded release assertion.
+
+Keep the source ref (`firmware_ref`) and actual source commit (`base_source`)
+visible in saved builds, alongside the firmware version. Menu About must retain
+the source commit and combination prefix. A combination hash identifies the build
+configuration, not the source commit. Read older saved builds' provenance from
+their original manifests; show unknown when unavailable. Do not relabel existing
+saved builds from the latest release or change previous immutable artifacts.
+
+Before declaring custom-service rollout complete, verify a real hosted `main`
+build and a real tagged build. For each, check `build-manifest.json`, download
+the actual `firmware.bin` and ZIP, match their SHA-256 hashes to the manifest,
+and inspect the version and source commit embedded in those final binaries after
+`buildfs`. Confirm the live saved-build UI shows each original source ref and
+commit. Passing catalog tests alone does not satisfy this gate. Record hashes,
+source/builder commits, build IDs, and any unverified hardware display check.
+
 ## 1. Establish the Release Range
 
 Fetch the remote state and identify the previous applicable stable tag:
@@ -301,6 +324,7 @@ checks, deploy only changed components and verify the live service with the
 published catalog revision. Verify a real tagged build's source/builder commits,
 `X.Y.Z-custom` version, production signature, hashes, ZIP and combination identity.
 Verify a main custom build reports `X.Y.Z-main-custom` from the advanced base.
+Complete the Version Identity Gate against both hosted artifacts and saved builds.
 Do not assign it to a scale or repeat OTA tests unless that is in the agreed scope.
 
 Backend support is not visible browser support. When public rollout is authorized,

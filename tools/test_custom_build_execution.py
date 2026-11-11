@@ -133,7 +133,38 @@ def assertRejected(action, exceptionType=ValueError):
     raise AssertionError("invalid custom build operation accepted")
 
 
+def testFirmwareIdentity():
+    sourceCommit = "abcdef" + "0" * 34
+    with tempfile.TemporaryDirectory() as directory:
+        buildDir = Path(directory)
+        firmwarePath = buildDir / "firmware.bin"
+        for version in ("3.1.15", "3.1.16", "9.8.7"):
+            for firmwareRef, expected in (
+                (f"v{version}", f"{version}-custom"),
+                ("main", f"{version}-main-custom"),
+            ):
+                baseVersion = version if firmwareRef == "main" else "0.0.1"
+                header = f'#define HDS_FIRMWARE_VERSION "{baseVersion}"'
+                actual = customBuild.customFirmwareVersion(firmwareRef, header)
+                assert actual == expected
+                firmwarePath.write_bytes(f"FW: {actual}\0{sourceCommit[:6]}\0".encode("ascii"))
+                customRunner.verifyFirmwareIdentity(buildDir, actual, sourceCommit)
+                otherSource = f"{version}-custom" if firmwareRef == "main" else f"{version}-main-custom"
+                for incorrect in (version, otherSource, f"{actual}-extra", "1.0.0-custom"):
+                    firmwarePath.write_bytes(
+                        f"FW: {incorrect}\0{sourceCommit[:6]}\0".encode("ascii")
+                    )
+                    assertRejected(lambda: customRunner.verifyFirmwareIdentity(
+                        buildDir, actual, sourceCommit
+                    ))
+                firmwarePath.write_bytes(f"FW: {actual}\0fedcba\0".encode("ascii"))
+                assertRejected(lambda: customRunner.verifyFirmwareIdentity(
+                    buildDir, actual, sourceCommit
+                ))
+
+
 def main():
+    testFirmwareIdentity()
     assertRejected(lambda: customBuild.safeRelativePath("plugins/naive-\u00e9.html", "test path"))
     with patch.dict(os.environ, {}, clear=True):
         assert customRunner.pullRequestCommit() is None

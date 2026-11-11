@@ -34,6 +34,11 @@ contains device IDs and immutable build references. Each build reference contain
 time it was added. The binaries remain in R2 under `v1/<combination-hash>/`; adding or removing a
 fleet reference never copies or deletes those objects.
 
+Saved builds also expose the original `firmware_ref` and `base_source` commit from their build
+manifest. For older references, recover missing provenance from that same immutable manifest;
+show unknown if it is unavailable. Keep existing labels, firmware versions, and artifacts intact.
+Do not infer source identity from the latest catalog or treat the combination hash as a commit.
+
 A ready build can create the library before any scale is paired. New libraries share the bounded
 pairing-creation quota. Pairing later preserves saved builds and does not automatically assign one.
 
@@ -111,6 +116,8 @@ must also complete `docs/AI_RELEASE_NOTES.md`: advance main's base version befor
 candidate freeze, enable the real tagged custom base, and promote the published
 stable to the public default. Keep missing-tag support out of the live `main`
 builder until the real tag exists; staging alone is not release completion.
+Complete the Version Identity Gate in `docs/AI_RELEASE_NOTES.md` with hosted main and tagged
+manifests, SHA-256-matched final binaries after `buildfs`, and live saved-build provenance.
 
 1. Create two custom OTA RSA key pairs, commit both public keys, save the Key 1 private key as the
    `HDS_CUSTOM_OTA_SIGNING_KEY_PEM` repository secret, and secure both private keys offline.

@@ -145,6 +145,22 @@ def main():
         if snippet not in completion:
             raise AssertionError(f"AI_RELEASE_NOTES.md is missing stable release completion: {snippet}")
 
+    identity_gate = release_notes.split("## Version Identity Gate\n", 1)[-1].split("\n## ", 1)[0]
+    for snippet in (
+        "ordinary firmware `X.Y.Z`", "`X.Y.Z-custom`", "`X.Y.Z-main-custom`",
+        "numeric version matrix", "`firmware_ref`", "`base_source`", "Menu About",
+        "source commit", "combination hash", "original manifests", "previous immutable artifacts",
+        "real hosted `main`", "real tagged build", "`firmware.bin`", "SHA-256",
+        "final binaries after", "`buildfs`", "live saved-build UI", "Passing catalog tests alone",
+    ):
+        if snippet not in identity_gate:
+            raise AssertionError(f"AI_RELEASE_NOTES.md is missing version identity gate: {snippet}")
+    operations = read("docs/custom-build/operations.md")
+    for path, source in (("AI_BUILD_NOTES.md", build_notes), ("custom-build/operations.md", operations)):
+        for snippet in ("Version Identity Gate", "`firmware_ref`", "`base_source`"):
+            if snippet not in source:
+                raise AssertionError(f"{path} is missing source identity guidance: {snippet}")
+
     repo_map = read("docs/AI_REPO_MAP.md")
     references = set(re.findall(r"`([^`]+)`", repo_map))
     path_prefixes = (
