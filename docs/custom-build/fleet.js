@@ -1,4 +1,4 @@
-import {buildLabel, buildSummary, deploymentState, lastSeenLabel, shortHash} from "./fleet-state.mjs?v=3";
+import {buildLabel, buildSourceLabel, buildSummary, deploymentState, lastSeenLabel, shortHash} from "./fleet-state.mjs?v=4";
 import {startFleetPolling} from "./fleet-polling.mjs";
 
 const storageKey = "hds-custom-build-fleet-v2";
@@ -240,7 +240,7 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
       row.className = "fleet-build-row";
       row.innerHTML = `
         <div class="fleet-build-name"><input class="build-label" maxlength="40" aria-label="Build label"><span class="build-hash"></span></div>
-        <div class="fleet-build-version"><strong></strong><details><summary>Options</summary><span></span></details></div>
+        <div class="fleet-build-version"><strong></strong><span class="fleet-build-source"></span><details><summary>Options</summary><span></span></details></div>
         <span class="deployment-state"></span>
         <div class="fleet-row-actions">
           <button class="ghost-button remove-build" type="button">Remove</button>
@@ -250,7 +250,10 @@ export function initFleet({apiBase, getReadyHash, showToast}) {
       row.querySelector(".build-hash").textContent = shortHash(build.combination_hash, 8);
       label.addEventListener("keydown", event => { if (event.key === "Enter") label.blur(); });
       row.querySelector(".fleet-build-version strong").textContent = build.firmware_version;
-      row.querySelector(".fleet-build-version span").textContent = buildSummary(build);
+      const source = row.querySelector(".fleet-build-source");
+      source.textContent = buildSourceLabel(build);
+      source.title = build.base_source || "";
+      row.querySelector(".fleet-build-version details span").textContent = buildSummary(build);
       const state = row.querySelector(".deployment-state");
       state.textContent = build.state === "ready" ? "Ready" : "Unavailable";
       state.dataset.state = build.state;
