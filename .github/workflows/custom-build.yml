@@ -107,7 +107,7 @@ jobs:
           python tools/test_custom_cache_transport.py
           python tools/test_plugin_ci_contract.py
           node --test cloudflare/custom-build-worker/test/configurator.test.mjs cloudflare/custom-build-worker/test/status-recovery.test.mjs
-          node --test cloudflare/custom-build-worker/test/worker.test.mjs
+          node --test cloudflare/custom-build-worker/test/worker.test.mjs cloudflare/custom-build-worker/test/github-auth.test.mjs
           node --test cloudflare/custom-build-worker/test/fleet.test.mjs
           node --test cloudflare/custom-build-worker/test/fleet-unpair.test.mjs
           node --test cloudflare/custom-build-worker/test/fleet-polling.test.mjs
@@ -338,7 +338,7 @@ jobs:
           python tools/test_custom_build_execution.py
           python tools/test_custom_cache_transport.py
           node --test cloudflare/custom-build-worker/test/configurator.test.mjs cloudflare/custom-build-worker/test/status-recovery.test.mjs
-          node --test cloudflare/custom-build-worker/test/worker.test.mjs
+          node --test cloudflare/custom-build-worker/test/worker.test.mjs cloudflare/custom-build-worker/test/github-auth.test.mjs
           node --test cloudflare/custom-build-worker/test/fleet.test.mjs
           node --test cloudflare/custom-build-worker/test/fleet-unpair.test.mjs
           node --test cloudflare/custom-build-worker/test/fleet-polling.test.mjs

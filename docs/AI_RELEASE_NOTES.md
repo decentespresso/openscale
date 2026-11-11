@@ -296,6 +296,11 @@ builds validate metadata for every supported ref; one missing tag can break
 existing hosted builds too. Stage those changes separately, create the approved
 release tag first, then merge and regenerate catalogs against the real tag.
 
+Verify source lookups for `main` and the stable tags with the existing repository-scoped
+GitHub App token before deploying Worker changes. Do not broaden App permissions to hide a
+lookup failure. Keep failed upstream responses out of caches and distinguish lookup failure
+from missing artifacts by checking a completed build's immutable hash directly.
+
 When activation is authorized, merge reviewed changes after relevant/required
 checks, deploy only changed components and verify the live service with the
 published catalog revision. Verify a real tagged build's source/builder commits,

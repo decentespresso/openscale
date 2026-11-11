@@ -11,6 +11,10 @@ The Worker rejects any `GITHUB_REPOSITORY` value other than
 `decentespresso/openscale`. Installation tokens are additionally requested for only the
 `openscale` repository and only the Actions write permission.
 
+Public source lookups reuse these installation tokens. Cache tokens only in Worker memory,
+refresh before expiry, and never persist or log tokens or private keys. Cache successful commit
+lookups only; do not cache upstream authentication or rate-limit failures.
+
 Custom OTA manifests use two key slots that are separate from the official release keys. Commit
 both public keys under `keys/ota/`. Store the active Key 1 private key only as the
 `HDS_CUSTOM_OTA_SIGNING_KEY_PEM` GitHub Actions secret and keep both private keys in an encrypted
@@ -123,6 +127,12 @@ builder until the real tag exists; staging alone is not release completion.
 7. Treat sustained `409 catalog_stale` responses as an incomplete deployment. The browser
    retries one catalog reload and then displays `Configurator update in progress`.
 
+Before deploying lookup changes, verify the configured App can resolve `main` and every public
+stable tag with its existing repository-scoped token. GitHub permits public commit reads without
+Contents permission; if that exact token receives an integration-permission rejection, stop rather
+than expanding permissions. Check a completed build by hash separately from selection status:
+`firmware_ref_unavailable` does not mean its immutable firmware artifacts have disappeared.
+
 ## Clearing Pre-Launch Builds
 
 Builds live in the private `openscale-custom-builds` R2 bucket under
@@ -183,6 +193,9 @@ occur before plugin validation; record the API error code when diagnosing an una
 
 | Code | Meaning |
 | --- | --- |
+| `github_app_unavailable` | The service could not obtain its repository-scoped GitHub App token. |
+| `builder_ref_unavailable` | GitHub could not resolve the trusted builder source. |
+| `firmware_ref_unavailable` | GitHub could not resolve the selected firmware source. |
 | `dispatch_failed` | The Worker could not start the GitHub Actions workflow. |
 | `build_failed` | The workflow completed unsuccessfully. |
 | `build_timeout` | A queued or running build exceeded its lease. |
