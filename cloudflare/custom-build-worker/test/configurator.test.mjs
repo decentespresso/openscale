@@ -108,6 +108,7 @@ test("main builds require confirmation and cancellation sends no request", async
     const states = [];
     const context = {
       selectionGeneration: 1,
+      currentBuildState: "missing",
       currentSelection: {firmware_ref: ref, features: [], plugins: []},
       selectionController: {signal: new AbortController().signal},
       buildButton: {disabled: false, addEventListener: (event, listener) => { context.click = listener; }},
