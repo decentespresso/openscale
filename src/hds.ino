@@ -364,6 +364,12 @@ unsigned long energyMainLoopWaitMs(unsigned long now) {
   }
   if (!b_u8g2Sleep) {
     waitMs = EnergyRuntimePolicy::earlier(waitMs, ENERGY_DISPLAY_DEADLINE_MS);
+    if (!b_softSleep && appPromptScrollState.visible && appPromptScrollState.textWidth > LCDWidth) {
+      const unsigned long scrollWait = appPromptScrollWaitMs(
+        appPromptScrollState, appPromptScrollState.textWidth, LCDWidth, t_oled_refresh);
+      waitMs = EnergyRuntimePolicy::earlier(
+        waitMs, EnergyRuntimePolicy::timeUntil(now, t_oled_refresh, scrollWait));
+    }
   }
   waitMs = EnergyRuntimePolicy::earlier(waitMs, 200);
   if (!b_softSleep) {
@@ -2705,13 +2711,22 @@ void updateOled() {
   const AppPromptState promptFrame = snapshotAppPrompt();
   const bool showPrompt = promptFrame.active && appTextScreenAvailable();
   const unsigned long frameNow = millis();
-  if (frameNow - t_oled_refresh >= i_oled_print_interval) {
-    t_oled_refresh = frameNow;
-    appPromptScrollState = appPromptScrollUpdate(appPromptScrollState, showPrompt,
-                                                promptFrame.displayGeneration, frameNow);
+  const bool promptChanged = showPrompt != appPromptScrollState.visible ||
+    (showPrompt && promptFrame.displayGeneration != appPromptScrollState.generation);
+  if (promptChanged) {
     u8g2.setFont(u8g2_font_6x10_tr);
     const int promptWidth = showPrompt ? u8g2.getStrWidth(promptFrame.text) : 0;
-    const int promptX = appPromptTextX(appPromptScrollState, promptWidth, LCDWidth, frameNow);
+    const auto scrollFrame = appPromptScrollUpdate(appPromptScrollState, showPrompt,
+                                                  promptFrame.displayGeneration, frameNow);
+    appPromptScrollState = {scrollFrame.visible, scrollFrame.generation,
+                            scrollFrame.startedAt, promptWidth};
+  }
+  const int promptWidth = appPromptScrollState.textWidth;
+  const int promptX = appPromptTextX(appPromptScrollState, promptWidth, LCDWidth, frameNow);
+  const bool scrollMoved = showPrompt && promptX !=
+    appPromptTextX(appPromptScrollState, promptWidth, LCDWidth, t_oled_refresh);
+  if (frameNow - t_oled_refresh >= i_oled_print_interval || promptChanged || scrollMoved) {
+    t_oled_refresh = frameNow;
 
 #if HDS_ENABLE_ENERGY_MENU
     const bool oledRedraw = energyPolicy.featureEnabled(EnergyFeature::OledRedraw);
