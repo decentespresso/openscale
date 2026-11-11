@@ -308,6 +308,10 @@ published catalog revision. Verify a real tagged build's source/builder commits,
 Verify a main custom build reports `X.Y.Z-main-custom` from the advanced base.
 Do not assign it to a scale or repeat OTA tests unless that is in the agreed scope.
 
+Test initial status recovery with a transient 503 followed by success. The page must
+recover without changing plugins, bound retries, and offer a manual status recheck
+after exhaustion. Neither automatic retries nor manual rechecks may submit a build.
+
 Backend support is not visible browser support. When public rollout is authorized,
 add the new stable to the selector, make it the default, retain the prior
 stable and `main`, and verify the deployed page's actual options/default. A
