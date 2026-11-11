@@ -339,7 +339,7 @@ test("publishes immutable cache entries and deduplicates public builds", async (
       assert.deepEqual(JSON.parse(options.body), {
         repositories: ["openscale"], permissions: {actions: "write"},
       });
-      return Response.json({token: "installation-token"});
+      return Response.json({token: "installation-token", expires_at: new Date(Date.now() + 3600000).toISOString()});
     }
     if (target.includes("/dispatches")) {
       dispatches += 1;
@@ -733,7 +733,7 @@ test("budget refusals preserve attempts and weekly slots for a later dispatch", 
   let dispatches = 0;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async url => {
-    if (String(url).endsWith("/access_tokens")) return Response.json({token: "test-token"});
+    if (String(url).endsWith("/access_tokens")) return Response.json({token: "test-token", expires_at: new Date(Date.now() + 3600000).toISOString()});
     assert.ok(String(url).endsWith("/custom-build.yml/dispatches"));
     dispatches += 1;
     return new Response(null, {status: 204});
