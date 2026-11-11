@@ -17,7 +17,9 @@ def main():
 #include "app_prompt_scroll.h"
 #include "energy_policy.h"
 #include "energy_runtime_policy.h"
+#ifndef HDS_ENABLE_ENERGY_MENU
 #define HDS_ENABLE_ENERGY_MENU 1
+#endif
 #define HDS_FEATURE_WIFI 1
 #define USB_DET 4
 constexpr int LOW = 0, HIGH = 1, BATTERY_CHARGING = 3;
@@ -63,6 +65,7 @@ struct {
   unsigned bitmapCalls = 0;
   bool frameOpen = false;
   int promptX = 0;
+  unsigned widthReads = 0;
   std::string promptText;
   void firstPage() { assert(!frameOpen); frameOpen = true; icon = false; bitmapCalls = 0; promptText.clear(); frames++; }
   bool nextPage() { frameOpen = false; return false; }
@@ -70,7 +73,7 @@ struct {
   void setFont(const uint8_t *) {}
   void setFontMode(int) {}
   void setDrawColor(int) {}
-  int getStrWidth(const char *text) { return static_cast<int>(std::strlen(text)) * 6; }
+  int getStrWidth(const char *text) { widthReads++; return static_cast<int>(std::strlen(text)) * 6; }
   void drawStr(int x, int y, const char *text) {
     assert(y == LCDHeight - 16);
     promptX = x;
@@ -121,6 +124,7 @@ void drawDebug() {}
         source += f"void updatePressensorOled{index}() {{" + body(added, "void updatePressensorOled()") + "}\n"
     source += r'''
 void testPromptRedraw(bool redraw) {
+  const bool gatedRedraw = HDS_ENABLE_ENERGY_MENU && redraw;
   energyRuntime.oledFrames.invalidate();
   energyPolicy.settings.select(EnergyFeature::OledRedraw, redraw);
   b_ble_enabled = connected = true;
@@ -135,7 +139,10 @@ void testPromptRedraw(bool redraw) {
   updateOled();
   assert(u8g2.promptText == "Gin" && u8g2.promptX == 55);
   unsigned previousFrames = u8g2.frames;
-  now += 100;
+  now += 19;
+  updateOled();
+  assert(u8g2.frames == previousFrames);
+  now += 81;
   std::strcpy(promptState.text, "Rum");
   ++promptState.displayGeneration;
   updateOled();
@@ -145,14 +152,27 @@ void testPromptRedraw(bool redraw) {
   now += 100;
   updateOled();
   assert(u8g2.promptX == 0 && u8g2.promptText == promptState.text);
-  previousFrames = u8g2.frames;
-  now += 900;
-  updateOled();
-  assert(u8g2.frames == previousFrames + (redraw ? 0 : 1) && u8g2.promptX == 0);
-  previousFrames = u8g2.frames;
-  now += 200;
-  updateOled();
-  assert(u8g2.frames == previousFrames + 1 && u8g2.promptX == -1);
+  const unsigned long scrollStart = now;
+  const unsigned scrollFrames = u8g2.frames;
+  const unsigned widthReads = u8g2.widthReads;
+  int previousX = 0;
+  for (unsigned long elapsed = 1; elapsed <= 3462; ++elapsed) {
+    now = scrollStart + elapsed;
+    previousFrames = u8g2.frames;
+    const unsigned long previousRefresh = t_oled_refresh;
+    updateOled();
+    const int expectedX = appPromptTextX(appPromptScrollState, 204, LCDWidth, now);
+    assert(u8g2.promptX == expectedX);
+    if (expectedX != previousX) {
+      assert(u8g2.frames == previousFrames + 1);
+      if (elapsed != 3462) assert(expectedX == previousX - 1);
+    } else if (now - previousRefresh < i_oled_print_interval) {
+      assert(u8g2.frames == previousFrames);
+    }
+    if (elapsed == 900) assert(u8g2.frames == scrollFrames + (gatedRedraw ? 0 : 9));
+    assert(u8g2.widthReads == widthReads);
+    previousX = expectedX;
+  }
   b_menu = true;
   now += 100;
   updateOled();
@@ -237,11 +257,13 @@ int main() {
         path = Path(directory)
         cpp, binary = path / "redraw.cpp", path / "redraw.exe"
         cpp.write_text(source, encoding="utf-8")
-        subprocess.run([
-            compiler, "-std=c++17", "-include", "initializer_list",
-            "-I" + str(ROOT / "include"), str(cpp), "-o", str(binary),
-        ], check=True)
-        subprocess.run([str(binary)], check=True)
+        for energy_menu in (0, 1):
+            subprocess.run([
+                compiler, "-std=c++17", "-include", "initializer_list",
+                f"-DHDS_ENABLE_ENERGY_MENU={energy_menu}",
+                "-I" + str(ROOT / "include"), str(cpp), "-o", str(binary),
+            ], check=True)
+            subprocess.run([str(binary)], check=True)
     print("BLE, App Text scrolling, and all Pressensor ADC recovery render paths passed")
 
 
