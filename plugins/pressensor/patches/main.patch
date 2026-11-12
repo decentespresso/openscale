@@ -1446,7 +1446,7 @@ index 6c2390f..db7841a 100644
  #if HDS_ENABLE_GRINDER
          grinderRuntimeTick(f_displayedValue);
  #endif
-@@ -2779,6 +2794,123 @@ void drawGrinder() {
+@@ -2899,6 +2914,123 @@ void drawGrinder() {
  }
  #endif
 
@@ -1567,9 +1567,9 @@ index 6c2390f..db7841a 100644
 +}
 +#endif
 +
- void drawBattery(unsigned long now) {
- #if defined(V7_4) || defined(V7_5) || defined(V8_0) || defined(V8_1)
-   if (digitalRead(USB_DET) == LOW) {
+ void drawBatteryIcon(unsigned long now) {
+   if (digitalRead(BATTERY_CHARGING) == LOW) {
+     u8g2.drawXBM(121, 51, 7, 12, image_battery_charging);
 diff --git a/tools/test_menu_memory_contract.py b/tools/test_menu_memory_contract.py
 index bc30912..0199882 100644
 --- a/tools/test_menu_memory_contract.py
