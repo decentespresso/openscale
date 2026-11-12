@@ -1,5 +1,11 @@
 # HDS 9.0.5 合入改动清单(openscale9_0_5 分支)
 
+This is the historical prototype integration checklist. Its branch, source
+paths, unpublished status, and remaining tasks describe that prototype, not
+the released 3.1.16 firmware. See [current integration and battery behavior](README.md#3116-release)
+for the runtime-detected shared firmware, cooperative gauge engine, and
+current source paths. Keep the original checklist below as integration history.
+
 本次合入的完整改动。未推送 GitHub。
 
 ## 已改文件

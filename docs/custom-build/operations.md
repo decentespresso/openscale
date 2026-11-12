@@ -11,6 +11,10 @@ The Worker rejects any `GITHUB_REPOSITORY` value other than
 `decentespresso/openscale`. Installation tokens are additionally requested for only the
 `openscale` repository and only the Actions write permission.
 
+Public source lookups reuse these installation tokens. Cache tokens only in Worker memory,
+refresh before expiry, and never persist or log tokens or private keys. Cache successful commit
+lookups only; do not cache upstream authentication or rate-limit failures.
+
 Custom OTA manifests use two key slots that are separate from the official release keys. Commit
 both public keys under `keys/ota/`. Store the active Key 1 private key only as the
 `HDS_CUSTOM_OTA_SIGNING_KEY_PEM` GitHub Actions secret and keep both private keys in an encrypted
@@ -106,6 +110,12 @@ bytes.
 
 ## Deployment Order
 
+The sequence below covers initial service bootstrap. Recurring stable releases
+must also complete `docs/AI_RELEASE_NOTES.md`: advance main's base version before
+candidate freeze, enable the real tagged custom base, and promote the published
+stable to the public default. Keep missing-tag support out of the live `main`
+builder until the real tag exists; staging alone is not release completion.
+
 1. Create two custom OTA RSA key pairs, commit both public keys, save the Key 1 private key as the
    `HDS_CUSTOM_OTA_SIGNING_KEY_PEM` repository secret, and secure both private keys offline.
 2. Deploy the Worker before publishing firmware with the Custom Build menu.
@@ -116,6 +126,12 @@ bytes.
 6. Confirm that a status request with the published `catalog_revision` succeeds.
 7. Treat sustained `409 catalog_stale` responses as an incomplete deployment. The browser
    retries one catalog reload and then displays `Configurator update in progress`.
+
+Before deploying lookup changes, verify the configured App can resolve `main` and every public
+stable tag with its existing repository-scoped token. GitHub permits public commit reads without
+Contents permission; if that exact token receives an integration-permission rejection, stop rather
+than expanding permissions. Check a completed build by hash separately from selection status:
+`firmware_ref_unavailable` does not mean its immutable firmware artifacts have disappeared.
 
 ## Clearing Pre-Launch Builds
 
@@ -169,8 +185,17 @@ trusted until existing firmware has migrated to its replacement.
 
 ## Public Failure Codes
 
+Availability checks retry network failures and HTTP 408/5xx responses up to five times,
+backing off from 2 to 30 seconds. After retries stop, `Retry check` checks status again without
+starting a build.
+The configurator does not replay build requests automatically. GitHub source lookup failures
+occur before plugin validation; record the API error code when diagnosing an unavailable build.
+
 | Code | Meaning |
 | --- | --- |
+| `github_app_unavailable` | The service could not obtain its repository-scoped GitHub App token. |
+| `builder_ref_unavailable` | GitHub could not resolve the trusted builder source. |
+| `firmware_ref_unavailable` | GitHub could not resolve the selected firmware source. |
 | `dispatch_failed` | The Worker could not start the GitHub Actions workflow. |
 | `build_failed` | The workflow completed unsuccessfully. |
 | `build_timeout` | A queued or running build exceeded its lease. |

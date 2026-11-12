@@ -1,8 +1,9 @@
 # BLE App Text
 
 App Text lets a connected BLE app display an instruction below HDS's live
-weight. Firmware includes this capability in standard and custom builds.
-There is no App Prompts plugin to select.
+weight. Released firmware 3.1.16 includes this capability in standard and
+custom builds; published 3.1.15 does not. There is no App Prompts plugin to
+select. The hosted custom service supports `v3.1.16` and `main` builds.
 
 ## Enable On The Scale
 
@@ -91,7 +92,9 @@ Recipes, translations, quantities, and step progression belong in the app.
 
 ## Combined Integrations
 
-On updated `main`, custom builds can include both Pressensor and Grind by Weight.
+Custom builds based on 3.1.16 or current `main` can include both Pressensor and
+Grind by Weight. The hosted service supports this combined selection for
+`v3.1.16` and `main`; older refs retain their existing plugin conflicts.
 Use either integration's Enabled menu control to select it or select neither.
 HDS saves one selection, stops the previous integration, and starts the selected
 one without leaving the menu or restarting. You can then select a plug or sensor.

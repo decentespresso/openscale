@@ -86,6 +86,10 @@ The `/snapshot` WebSocket carries the same request as a `wifi_update` control co
 
 ADS debug responses are separate fixed formats: the debug packet is 41 bytes and the reset response is 5 bytes. Keep their Python helpers, decoder, and firmware builders aligned.
 
+Host packet readers consume complete known checksummed frames before searching
+for another response type. Do not treat model/opcode bytes inside a weight or
+debug payload as a fresh frame; retain incomplete frames across reads.
+
 Because WebSocket OTA uses the same target dispatcher, `wifi_update 0.0.0` also
 requests the assigned Custom Build. Ordinary release versions and the bare picker
 command retain their existing behavior.

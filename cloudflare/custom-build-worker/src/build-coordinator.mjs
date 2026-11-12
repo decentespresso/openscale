@@ -37,7 +37,9 @@ function repository(env) {
   return trustedRepository;
 }
 
-async function createAppToken(env) {
+let appTokenCache = null;
+
+async function issueAppToken(env) {
   if (!env.GITHUB_APP_ID || !env.GITHUB_APP_INSTALLATION_ID || !env.GITHUB_APP_PRIVATE_KEY_PKCS8) {
     throw new Error("github_app_unavailable");
   }
@@ -61,6 +63,7 @@ async function createAppToken(env) {
   const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(unsigned));
   const response = await fetch(`https://api.github.com/app/installations/${env.GITHUB_APP_INSTALLATION_ID}/access_tokens`, {
     method: "POST",
+    redirect: "manual",
     headers: githubHeaders({
       Authorization: `Bearer ${unsigned}.${base64Url(signature)}`,
       "Content-Type": "application/json",
@@ -69,8 +72,35 @@ async function createAppToken(env) {
   });
   if (!response.ok) throw new Error("github_app_unavailable");
   const result = await response.json();
-  if (!result.token) throw new Error("github_app_unavailable");
-  return result.token;
+  const expiresAt = Math.min(Date.parse(result.expires_at), Date.now() + 3600000);
+  if (typeof result.token !== "string" || !result.token || result.token.length > 4096 ||
+      typeof result.expires_at !== "string" || !Number.isFinite(expiresAt) || expiresAt <= Date.now() + 60000) {
+    throw new Error("github_app_unavailable");
+  }
+  return {token: result.token, expiresAt};
+}
+
+export async function createAppToken(env) {
+  repository(env);
+  const credentials = [env.GITHUB_APP_ID, env.GITHUB_APP_INSTALLATION_ID, env.GITHUB_APP_PRIVATE_KEY_PKCS8];
+  if (appTokenCache?.credentials.every((value, index) => value === credentials[index])) {
+    if (appTokenCache.pending) return (await appTokenCache.pending).token;
+    if (appTokenCache.expiresAt > Date.now() + 60000) return appTokenCache.token;
+  }
+  const entry = {credentials, pending: issueAppToken(env)};
+  appTokenCache = entry;
+  try {
+    const result = await entry.pending;
+    if (appTokenCache === entry) appTokenCache = {credentials, ...result};
+    return result.token;
+  } catch (error) {
+    if (appTokenCache === entry) appTokenCache = null;
+    throw error;
+  }
+}
+
+export function invalidateAppToken(token) {
+  if (appTokenCache?.token === token) appTokenCache = null;
 }
 
 async function dispatchBuild(env, build) {
@@ -78,6 +108,7 @@ async function dispatchBuild(env, build) {
   const token = await createAppToken(env);
   const response = await fetch(`https://api.github.com/repos/${repository(env)}/actions/workflows/${workflow}/dispatches`, {
     method: "POST",
+    redirect: "manual",
     headers: githubHeaders({Authorization: `Bearer ${token}`, "Content-Type": "application/json"}),
     body: JSON.stringify({
       ref: build.builderRef,
@@ -93,6 +124,7 @@ async function dispatchBuild(env, build) {
       },
     }),
   });
+  if (response.status === 401) invalidateAppToken(token);
   if (response.status !== 204) throw new Error("dispatch_failed");
 }
 

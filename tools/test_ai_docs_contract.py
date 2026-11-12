@@ -133,6 +133,18 @@ def main():
         if snippet not in release_notes:
             raise AssertionError(f"AI_RELEASE_NOTES.md is missing current release check or asset: {snippet}")
 
+    completion = release_notes.split("## Stable Release Completion\n", 1)[-1].split("\n## ", 1)[0]
+    for snippet in (
+        "| Main base version |", "before freezing the candidate SHA",
+        "| Main custom build |", "`X.Y.Z-main-custom`",
+        "| Tagged custom build |", "`X.Y.Z-custom`",
+        "| Public configurator |", "`BROWSER_FIRMWARE_REFS`", "select it by default",
+        "| Official WiFi OTA |", "`firmware.bin`", "`littlefs.bin`",
+        "`manifest.json`", "`manifest.sig`",
+    ):
+        if snippet not in completion:
+            raise AssertionError(f"AI_RELEASE_NOTES.md is missing stable release completion: {snippet}")
+
     repo_map = read("docs/AI_REPO_MAP.md")
     references = set(re.findall(r"`([^`]+)`", repo_map))
     path_prefixes = (

@@ -60,9 +60,44 @@ def testPreflightArtifactSha(nightly):
     assert_contains(nightly, "name: HDS-dependencies-esp32s3-${{ steps.slugify.outputs.sha }}")
 
 
+def testReleaseProgramPreservation(workflow):
+    step = workflow.split("      - name: Build PlatformIO Project\n", 1)[1].split("\n      - name:", 1)[0]
+    script = textwrap.dedent(step.split("        run: |\n", 1)[1])
+    bash = "C:/Program Files/Git/bin/bash.exe" if os.name == "nt" else "bash"
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        stub = root / "pio.py"
+        stub.write_text(textwrap.dedent('''\
+            from pathlib import Path
+            import shutil
+            import sys
+            build = Path('.pio.nosync/build/esp32s3')
+            if 'buildfs' in sys.argv:
+                shutil.rmtree(build)
+                build.mkdir(parents=True)
+                (build / 'littlefs.bin').write_bytes(b'filesystem')
+            else:
+                build.mkdir(parents=True)
+                for name, data in (('firmware.bin', b'FW: 3.1.16'), ('bootloader.bin', b'bootloader'), ('partitions.bin', b'partitions')):
+                    (build / name).write_bytes(data)
+            '''), encoding="utf-8")
+        subprocess.run([bash, "-e", "-o", "pipefail", "-c",
+                        'pio() { "$TEST_PYTHON" "$TEST_PIO" "$@"; }\n' + script],
+                       cwd=root, check=True, capture_output=True, text=True,
+                       env={**os.environ, "TEST_PYTHON": Path(sys.executable).as_posix(),
+                            "TEST_PIO": stub.as_posix(), "HDS_FIRMWARE_VERSION": "3.1.16"})
+        build = root / ".pio.nosync/build/esp32s3"
+        for name, data in (("firmware.bin", b"FW: 3.1.16"), ("bootloader.bin", b"bootloader"),
+                           ("partitions.bin", b"partitions"), ("littlefs.bin", b"filesystem")):
+            assert (build / name).read_bytes() == data, name
+
+
 def main():
     config = CONFIG.read_text(encoding="utf-8")
     text = WORKFLOW.read_text(encoding="utf-8")
+    testReleaseProgramPreservation(text)
+    previousTagInput = text.split("      previous_tag:\n", 1)[1].split("      bootstrap_catalog:\n", 1)[0]
+    assert_contains(previousTagInput, "default: v3.1.16")
     assert_contains(text, 'TAG: ${{ github.event.inputs.tag }}')
     nightly = NIGHTLY_WORKFLOW.read_text(encoding="utf-8")
     ota = OTA_WORKFLOW.read_text(encoding="utf-8")
@@ -121,6 +156,8 @@ def main():
     assert_before(text, "release-files/manifest.sig", "release-files/manifest.json")
     publish = (ROOT / ".github/workflows/publish-release.yml").read_text(encoding="utf-8")
     assert_contains(text, 'needs: [resolve, preflight, custom-preflight]')
+    releaseBuild = text.split('\n  build-and-release:\n', 1)[1].split('\n    steps:\n', 1)[0]
+    assert_contains(releaseBuild, 'UV_CONSTRAINT: ${{ github.workspace }}/constraints-pioarduino.txt')
     assert_contains(text, 'uses: ./.github/workflows/nightly.yml')
     assert_contains(text, 'uses: ./.github/workflows/custom-build.yml')
     assert text.count('commit: ${{ inputs.expected_commit }}') >= 2

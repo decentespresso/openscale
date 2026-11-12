@@ -1,7 +1,8 @@
 {
-  "catalog_revision": "961aaa3309c748934b4ba9ffa31ed67653f09d5ead18e4593ac262f7a53088ac",
+  "catalog_revision": "4338913880a8af465c8bafaf984039a65ecbf89b5cee063c4f9c81358aedaf8e",
   "custom_ota_signing_key_generation": 1,
   "firmware_refs": [
+    "v3.1.16",
     "v3.1.15",
     "v3.1.14",
     "main"
@@ -20,7 +21,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ],
       "default": true
     },
@@ -37,7 +39,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ],
       "default": true
     },
@@ -54,7 +57,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ],
       "default": true
     },
@@ -72,7 +76,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ],
       "default": true
     },
@@ -87,7 +92,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ],
       "default": true
     },
@@ -105,7 +111,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ],
       "default": true
     },
@@ -122,7 +129,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ],
       "default": true
     },
@@ -140,7 +148,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ],
       "hidden": true
     },
@@ -155,7 +164,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ]
     }
   ],
@@ -171,7 +181,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ],
       "requires": [
         "littlefs",
@@ -230,7 +241,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ],
       "requires": [
         "grinder"
@@ -241,7 +253,8 @@
       ],
       "conflicts_features": [],
       "conflicts_by_ref": {
-        "main": []
+        "main": [],
+        "v3.1.16": []
       },
       "recommends": {
         "features": [
@@ -267,7 +280,8 @@
         "v3.1.14-preview.3",
         "v3.1.14-preview.4",
         "main",
-        "v3.1.15"
+        "v3.1.15",
+        "v3.1.16"
       ],
       "requires": [],
       "depends_on": [],
@@ -276,7 +290,8 @@
       ],
       "conflicts_features": [],
       "conflicts_by_ref": {
-        "main": []
+        "main": [],
+        "v3.1.16": []
       },
       "recommends": {
         "features": [],

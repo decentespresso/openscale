@@ -1,5 +1,66 @@
 # HDS 9.0.5 support
 
+<a id="3116-release-candidate"></a>
+
+## 3.1.16 Release
+
+Version 3.1.16 is the published stable release. The standard `esp32s3` image
+supports both 8.x and 9.0.5 boards through runtime fuel-gauge detection.
+The firmware uses BQ27427 readings on 9.0.5 and retains the legacy battery
+path on boards without the gauge. An unresolved probe or cleanup failure does
+not establish legacy hardware: the firmware keeps shared pins and charging in
+their safe state until detection or recovery completes.
+
+Open `Setup > Info > Bat. Info` to inspect battery readings. On a detected
+gauge board, the page includes voltage, state of charge, current, temperature,
+capacity, and charging/USB state. Older boards show their available voltage,
+battery level, and charging/USB information. The normal display waits for the
+first published battery reading before showing battery level.
+
+`Setup > Power > Battery Protect` appears only on detected gauge boards. It
+defaults Off and persists across reboots. On limits charging at 80% state of
+charge and permits it again at 75%. Off permits normal full charging only after
+the gauge is ready. Invalid readings, pending configuration, or unresolved
+resealing keep charging disabled. This charging limit does not add an ongoing
+low-voltage cutoff to Wake-on-Weight standby or replace hardware cell protection.
+
+USB power keeps normal weighing awake even when charging pauses. Manual Off
+enters USB charging standby; Charging OLED controls whether its display stays
+visible. Hold either button to return to weighing, or tap with Quick Boot
+enabled. Hold both buttons to open setup.
+
+The USB text command `bc` reports design capacity. `bc <mAh>` accepts an integer
+from 300 to 2000 and saves it before requesting gauge configuration. Use only
+the fitted battery's rated capacity. A saved-capacity message with a gauge
+configuration failure means charging remains disabled while recovery retries;
+it does not confirm successful gauge configuration. If legacy settings mark
+capacity configured but store no capacity value, migration can adopt the
+gauge's valid capacity when no power-on reset occurred. Otherwise it uses
+700 mAh. A gauge power-on reset with no saved capacity persists that fallback
+before cleanup.
+
+Current implementation entry points:
+
+- `include/fuel_gauge.h`, `include/fuel_gauge_engine.h`: readings and engine state.
+- `src/fuel_gauge.cpp`, `src/fuel_gauge_config.cpp`, `src/fuel_gauge_engine.cpp`: detection, cooperative configuration, sampling, and cleanup.
+- `include/fuel_gauge_menu.h`, `include/menu.h`: battery pages and protection setting.
+- `include/power.h`, `src/hds.ino`: battery publication, charging standby, startup, and shutdown.
+- `include/usbcomm.h`: capacity query and configuration.
+- `tools/bq27427_probe/`: low-level diagnostic probe.
+
+The operator supplied prior physical-hardware testing for this release,
+including battery/charging, USB standby/wake, and integration shutdown/switching.
+The [delivery checkpoint](../release-3.1.16-preparation.md#current-delivery) records
+that evidence and the signed USB and production OTA acceptance results.
+Host checks cover driver, startup, storage, and OTA cleanup behavior; they do
+not establish charger polarity, cutoff, temperature, or electrical safety.
+
+## Historical Prototype Notes (2026-08-14)
+
+The following notes describe the original prototype, its old paths and branch,
+and its bench measurements. Use the delivery checkpoint for 3.1.16 acceptance
+evidence and the source paths above for the current implementation.
+
 本目录记录 openscale(上一正式版 8.3.1)对 **HDS 9.0.5 硬件**的支持工作。
 9.0.5 与 8.3.1 的差异:板上新增 **TI BQ27427YZFR** 电池电量计(I2C 固定 0x55)。
 

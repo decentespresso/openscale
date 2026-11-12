@@ -11,7 +11,7 @@ on:
         required: true
       previous_tag:
         description: "Expected previous published stable tag; empty only for bootstrap"
-        default: v3.1.13
+        default: v3.1.16
       bootstrap_catalog:
         description: "First release only: allow no previous stable catalog"
         type: boolean
@@ -60,6 +60,8 @@ jobs:
   build-and-release:
     needs: [resolve, preflight, custom-preflight]
     runs-on: ubuntu-latest
+    env:
+      UV_CONSTRAINT: ${{ github.workspace }}/constraints-pioarduino.txt
     timeout-minutes: 45
     environment: firmware-release
     permissions:
@@ -144,7 +146,10 @@ jobs:
             echo "Error: firmware does not contain version $HDS_FIRMWARE_VERSION"
             exit 1
           fi
+          mkdir -p release-program
+          cp .pio.nosync/build/esp32s3/{firmware,bootloader,partitions}.bin release-program/
           pio run -e esp32s3 -t buildfs || exit 1
+          cp release-program/{firmware,bootloader,partitions}.bin .pio.nosync/build/esp32s3/
 
       - name: Prepare release assets
         env:

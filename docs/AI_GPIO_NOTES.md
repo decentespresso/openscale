@@ -31,6 +31,11 @@ Trace sleep, wake, boot, USB, OLED, load-cell, WiFi/BLE, and power-gating flows 
 
 Current active config is `V8_1` with `TWO_BUTTON`.
 
+The shared image detects 9.0.5 gauge hardware at runtime. On that board GPIO6 is
+`CHRG_CTRL`, not a battery ADC input, and GPIO14 is the gauge's `GPOUT` input,
+not accessory power. Use neither legacy role before confirming Legacy hardware.
+The charger-control circuit inverts GPIO6: LOW enables charging, HIGH disables it.
+
 | Macro | GPIO | Role | Sleep or boot note |
 | --- | ---: | --- | --- |
 | `BUTTON_CIRCLE` | 1 | Wake button, UI button | RTC wake, input pull-up |
@@ -76,7 +81,7 @@ Current active config is `V8_1` with `TWO_BUTTON`.
 | Primary ADS1232 `DOUT` | input, `gpio_hold_en` | yes |
 | Secondary ADS1232 pins | `SCLK`/`PDWN` output low, `DOUT` input, all held | yes |
 | I2C pins | output low, `gpio_hold_en` | yes |
-| `ACC_PWR_CTRL` | output low, `gpio_hold_en` | yes |
+| `ACC_PWR_CTRL` on confirmed Legacy hardware | output low, `gpio_hold_en`; gauge GPIO14 remains input | yes |
 | `PWR_CTRL` | output low, `gpio_hold_en` | yes |
 | `BUTTON_CIRCLE`, `BUTTON_SQUARE`, `BATTERY_CHARGING`, `USB_DET` when defined | RTC input pull-up, EXT1 wake any-low | RTC mode released in setup |
 

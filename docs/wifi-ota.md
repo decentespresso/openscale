@@ -13,7 +13,11 @@ Older firmware without the `WiFi Update` menu needs one USB update before it can
 
 To open the HDS setup menu, turn on the scale while holding both the circle and square buttons.
 
-In 3.1.14, WiFi entries are under `Connections`. On 3.1.13, use `WiFi Settings` instead. Stable 3.1.14 will not appear until it is published; a draft or preview is not a production update.
+In 3.1.14 and later, WiFi entries are under `Connections`. On 3.1.13, use `WiFi Settings` instead. The latest published stable is 3.1.16. Draft and preview assets are not production updates.
+
+Release acceptance verified the production update from official 3.1.15 to 3.1.16
+on a compatible legacy-board scale, including both image hashes, saved network,
+and protected settings. See the [delivery checkpoint](release-3.1.16-preparation.md#current-delivery).
 
 ## First-Time WiFi Setup
 
@@ -23,7 +27,12 @@ Skip this section if the scale already connects to your WiFi network.
 2. Exit setup and let the scale restart.
 3. Connect a phone or computer to the `DecentScale` access point with password `12345678`.
 4. Open [http://hds.local](http://hds.local) or `http://192.168.1.1`.
-5. Enter the home WiFi credentials and wait for the scale to restart.
+5. Enter the home WiFi credentials. On 3.1.14, saving restarts the scale. On 3.1.15 and later, follow the connection-test result and Open scale link, join the chosen network, then select Continue to confirm the same scale and saved settings.
+
+On 3.1.16, leading or trailing spaces in a manually entered network name or
+password prompt for Keep spaces, Remove spaces, or Cancel before testing.
+Keep spaces preserves the entered values. Network search stays hidden while
+the setup access point is active, so enter the network name manually there.
 
 ## Install An Update
 
@@ -41,6 +50,11 @@ Skip this section if the scale already connects to your WiFi network.
 Hold the circle button to cancel from the version list. The selection and confirmation screens also cancel if left idle.
 
 The catalog may include a compatible older release. Check the version before confirming if you do not want to downgrade.
+
+The 3.1.16 updater excludes legacy targets whose firmware cannot recover this
+installation safely. Do not force a hidden target through a firmware-only
+upload. Use a complete compatible USB release when changing to an older
+firmware/filesystem layout, and preserve calibration and saved settings.
 
 ## What To Expect
 
@@ -69,7 +83,7 @@ Firmware with 3.1.14 recovery support can pause a failed transaction and continu
 
 ### Preview And Custom Sources
 
-Official 3.1.13 is the production source for the 3.1.14 update. A non-custom preview.3 installation has no matching signed recovery assets and needs USB to reach the new recovery implementation. Preview.4 has signed recovery assets and can select stable 3.1.14 once published. Hosted custom builds use their own immutable signed recovery manifests; keep those assets available. Newer firmware may use signed forward recovery when no source assets exist, but older installed firmware cannot gain that capability before updating.
+Official 3.1.13 supports the production update path to 3.1.14. A non-custom preview.3 installation has no matching signed recovery assets and needs USB to reach the new recovery implementation. Preview.4 has signed recovery assets and can select stable 3.1.14. Hosted custom builds use their own immutable signed recovery manifests; keep those assets available. Newer firmware may use signed forward recovery when no source assets exist, but older installed firmware cannot gain that capability before updating.
 
 `WiFi Update` installs official firmware, not a selected custom feature set. Use `Connections > Custom Build` for an assigned custom build. A build without `pull-ota` has no signed WiFi update menu; use USB for a complete firmware-and-filesystem release update. If selected, ElegantOTA still accepts firmware-only uploads, not filesystem updates.
 
@@ -99,7 +113,7 @@ Install a firmware version that includes WiFi OTA over USB first. WiFi OTA canno
 
 ### The Scale Cannot Connect
 
-Open `WiFi Status` and confirm the saved network. If the network name or password changed, use `Reset WiFi`, restart the scale, and repeat first-time setup.
+Open `WiFi Status` and confirm the saved network. On 3.1.15 and later, use the embedded WiFi setup page to test changed credentials before saving them. Use `Reset WiFi` only when you intend to clear the saved network; it opens `DecentScale` setup and leaves other settings intact.
 
 The scale must reach GitHub over HTTPS. A local-only network, captive portal, DNS block, or firewall can prevent the update.
 

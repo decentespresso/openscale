@@ -11,7 +11,7 @@ Treat the firmware as a unity-style build. Do not include implementation headers
 Core files:
 
 - `src/hds.ino`: `setup()`, `loop()`, buttons, scale output, OLED helpers.
-- `src/wifi_setup.cpp`: STA/AP setup, NVS credentials, mDNS, reconnect supervision.
+- `src/wifi_setup.cpp`: STA/AP setup, mDNS, reconnect supervision; `src/wifi_settings.cpp` owns saved credentials.
 - `include/config.h`: board and feature selection.
 - `include/parameter.h`: global state.
 - `include/declare.h`: shared object instances.
@@ -32,7 +32,7 @@ gauge. Each service call performs at most one I2C transaction, with a 50 ms Wire
 timeout. `src/fuel_gauge_config.cpp` retains one-byte writes, bus-free spacing,
 checksums, and readback. Millisecond waits advance between service calls.
 Normal measurements are read at most once per second; getters and OLED frames
-use the cached snapshot. Blocking information screens service the same path.
+use the cached snapshot. Blocking menu flows service the gauge through `power_off()`.
 
 On the shared `V8_1` image without an accelerometer, the logo precedes gauge
 detection. Five address probes, spaced at least 200 ms apart, run during the
@@ -165,6 +165,10 @@ Tare averages the current buffer, often one sample in fast mode, so it is noisie
 Drift compensation uses its own raw-weight reference at 100 ms intervals, never the held display value. Load transitions restart a three-interval settling window; tare, ADC discontinuities, and Drift Comp changes clear the filter history. A change of at least 0.1 g arms one settled correction below the normal output hold. Once settled, smaller changes accumulate against that hold instead of continually releasing it for noise plateaus.
 
 Zero-display recovery checks drift-corrected weight before tracking. It resets stuck tracking/output filters without discarding valid drift compensation or displaying uncorrected raw weight. The existing +/-2 g compensation budget applies at zero as under load; the previous raw-weight watchdog's incidental 0.5 g limit is not a thermal-drift discriminator. Weight-only compensation cannot distinguish sufficiently slow real loading from thermal drift. Use Drift Comp Off when that slow-load sensitivity is required, and validate hot cups and slow pours on hardware.
+
+`tareScaleWhenAdcReady()` refreshes a timed-out, stale, or incomplete dataset
+before taring. A full buffer alone does not prove freshness after a menu pause.
+Keep the timestamp check and `tools/test_tare_freshness_runtime.py` coverage.
 
 The USB ADS debug packet keeps its 41-byte framing and checksum. Byte 24 is the raw reset reason captured at boot. Bytes 25-37 are zero-filled because the current library does not precompute stats.
 

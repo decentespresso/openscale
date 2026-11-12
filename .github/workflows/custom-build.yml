@@ -89,6 +89,9 @@ jobs:
           if ! git show-ref --verify --quiet refs/tags/v3.1.15; then
             git tag v3.1.15 HEAD
           fi
+          if ! git show-ref --verify --quiet refs/tags/v3.1.16; then
+            git tag v3.1.16 HEAD
+          fi
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
@@ -103,8 +106,8 @@ jobs:
           python tools/test_custom_build_execution.py
           python tools/test_custom_cache_transport.py
           python tools/test_plugin_ci_contract.py
-          node --test cloudflare/custom-build-worker/test/configurator.test.mjs
-          node --test cloudflare/custom-build-worker/test/worker.test.mjs
+          node --test cloudflare/custom-build-worker/test/configurator.test.mjs cloudflare/custom-build-worker/test/status-recovery.test.mjs
+          node --test cloudflare/custom-build-worker/test/worker.test.mjs cloudflare/custom-build-worker/test/github-auth.test.mjs
           node --test cloudflare/custom-build-worker/test/fleet.test.mjs
           node --test cloudflare/custom-build-worker/test/fleet-unpair.test.mjs
           node --test cloudflare/custom-build-worker/test/fleet-polling.test.mjs
@@ -140,6 +143,9 @@ jobs:
           fi
           if ! git show-ref --verify --quiet refs/tags/v3.1.15; then
             git tag v3.1.15 HEAD
+          fi
+          if ! git show-ref --verify --quiet refs/tags/v3.1.16; then
+            git tag v3.1.16 HEAD
           fi
       - uses: actions/cache@v6
         with:
@@ -206,6 +212,9 @@ jobs:
           fi
           if ! git show-ref --verify --quiet refs/tags/v3.1.15; then
             git tag v3.1.15 HEAD
+          fi
+          if ! git show-ref --verify --quiet refs/tags/v3.1.16; then
+            git tag v3.1.16 HEAD
           fi
       - uses: actions/cache@v6
         with:
@@ -328,8 +337,8 @@ jobs:
           python tools/test_webapp_contract.py
           python tools/test_custom_build_execution.py
           python tools/test_custom_cache_transport.py
-          node --test cloudflare/custom-build-worker/test/configurator.test.mjs
-          node --test cloudflare/custom-build-worker/test/worker.test.mjs
+          node --test cloudflare/custom-build-worker/test/configurator.test.mjs cloudflare/custom-build-worker/test/status-recovery.test.mjs
+          node --test cloudflare/custom-build-worker/test/worker.test.mjs cloudflare/custom-build-worker/test/github-auth.test.mjs
           node --test cloudflare/custom-build-worker/test/fleet.test.mjs
           node --test cloudflare/custom-build-worker/test/fleet-unpair.test.mjs
           node --test cloudflare/custom-build-worker/test/fleet-polling.test.mjs
