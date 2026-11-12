@@ -240,7 +240,7 @@ def test_pending_command_timeouts_source_contracts():
 
 def test_weight_and_loop_source_order():
     hds = source(HDS_SOURCE)
-    assert hds.index("f_grinder_fast_weight = tracking_compensated;") < hds.index("float stable_output = applyStableOutput(tracking_compensated);")
+    assert hds.index("f_grinder_fast_weight = tracking_compensated;") < hds.index("float stable_output = applyStableOutput(tracking_compensated, temperature_compensated);")
     assert "grinderRuntimeFreshWeightTick(f_grinder_fast_weight, grinderFastWeightSequence);" in hds
     assert "grinderRuntimeTick(f_displayedValue);" in hds
     assert hds.index("pureScale();") < hds.index("updateOled();") < hds.rindex("grinderRuntimeTick(f_displayedValue);")

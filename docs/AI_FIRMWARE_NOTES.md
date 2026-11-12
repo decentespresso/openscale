@@ -162,6 +162,10 @@ Stay in polling mode. Do not call `scale.beginTask()`. The library task can run 
 
 Tare averages the current buffer, often one sample in fast mode, so it is noisier than a fixed full-window tare.
 
+Drift compensation uses its own raw-weight reference at 100 ms intervals, never the held display value. Load transitions restart a three-interval settling window; tare, ADC discontinuities, and Drift Comp changes clear the filter history. A change of at least 0.1 g arms one settled correction below the normal output hold. Once settled, smaller changes accumulate against that hold instead of continually releasing it for noise plateaus.
+
+Zero-display recovery checks drift-corrected weight before tracking. It resets stuck tracking/output filters without discarding valid drift compensation or displaying uncorrected raw weight. The existing +/-2 g compensation budget applies at zero as under load; the previous raw-weight watchdog's incidental 0.5 g limit is not a thermal-drift discriminator. Weight-only compensation cannot distinguish sufficiently slow real loading from thermal drift. Use Drift Comp Off when that slow-load sensitivity is required, and validate hot cups and slow pours on hardware.
+
 `tareScaleWhenAdcReady()` refreshes a timed-out, stale, or incomplete dataset
 before taring. A full buffer alone does not prove freshness after a menu pause.
 Keep the timestamp check and `tools/test_tare_freshness_runtime.py` coverage.
@@ -287,6 +291,7 @@ Run only the checks matching the change:
 
 ```sh
 python tools/test_calibration_validation.py
+python tools/test_scale_drift_compensation.py
 python tools/test_soft_sleep_ads_wake.py
 python tools/test_tap_action_contract.py
 pio test -e native -f test_tap_detector

@@ -672,7 +672,7 @@ void cycleDriftComp() {
   }
   const float next = values[(current + 1) % getMenuSize(values)];
   const bool stored = storagePutFloat(KEY_DRIFT_MAX, next);
-  if (stored) f_maxDriftCompensation = next;
+  if (stored) setMaxDriftCompensation(next);
   refreshMenuRows();
   actionMessage = stored ? "Drift" : "Save Failed";
   actionMessage2 = stored ? String(menuDriftLabel + 7) : "Drift";
