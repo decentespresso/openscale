@@ -1850,6 +1850,14 @@ bool renderMenuInfoPage() {
   return true;
 }
 
+void drawMenuButtonIndicators() {
+  u8g2.setDrawColor(2);
+  u8g2.setBitmapMode(1);
+  drawButton();
+  u8g2.setDrawColor(1);
+  u8g2.setBitmapMode(0);
+}
+
 void showMenu() {
   processMenuInfoPageExit();
   if (renderMenuInfoPage()) return;
@@ -1897,6 +1905,7 @@ void showMenu() {
                        currentMenu[i]->name);
       }
     }
+    drawMenuButtonIndicators();
   } while (u8g2.nextPage());
   lastMenuFrameRender = now;
   menuFrameShowsActionMessage = actionMessageVisible;
