@@ -1879,7 +1879,6 @@ void showMenu() {
                      actionMessage2.c_str());
       }
     } else {
-      actionMessage == "Default";
       currentPage = currentIndex / linesPerPage + 1;
       totalPages = (currentMenuSize + linesPerPage - 1) / linesPerPage;
       char pageInfo[10];
