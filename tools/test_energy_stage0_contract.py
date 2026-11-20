@@ -331,10 +331,15 @@ class EnergyLightSleepContractTests(unittest.TestCase):
 
         draw_ble = body(FIRMWARE, "void drawBle(unsigned long now)")
         self.assertIn("(now / 1000) & 1", draw_ble)
-        battery_start = FIRMWARE.index("void drawBattery(unsigned long now)")
-        draw_battery = FIRMWARE[battery_start:FIRMWARE.index("void drawAbout()", battery_start)]
+        draw_battery = body(FIRMWARE, "void drawBattery(unsigned long now)")
         self.assertIn("(now / 500) & 1", draw_battery)
-        self.assertIn("EnergyRuntimePolicy::batteryDisplayBucket", draw_battery)
+        self.assertIn("drawBatteryIcon(now)", draw_battery)
+        draw_battery_icon = body(FIRMWARE, "void drawBatteryIcon(unsigned long now)")
+        self.assertIn("(now / 500) & 1", draw_battery_icon)
+        self.assertIn("EnergyRuntimePolicy::batteryDisplayBucket", draw_battery_icon)
+        self.assertIn("digitalRead(BATTERY_CHARGING) == LOW", draw_battery_icon)
+        self.assertIn("digitalRead(BATTERY_CHARGING) == LOW", signature)
+        self.assertNotIn("USB_DET", signature)
         self.assertNotIn("b_drawBle", FIRMWARE)
         self.assertNotIn("t_ble_box", FIRMWARE)
         self.assertNotIn("b_showBatteryIcon", FIRMWARE + PARAMETER)
