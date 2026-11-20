@@ -1850,6 +1850,15 @@ bool renderMenuInfoPage() {
   return true;
 }
 
+void drawMenuButtonIndicators() {
+  u8g2.setDrawColor(2);
+  if (digitalRead(BUTTON_CIRCLE) == LOW)
+    u8g2.drawBox(0, 0, 12, LCDHeight);
+  if (digitalRead(BUTTON_SQUARE) == LOW)
+    u8g2.drawBox(LCDWidth - 13, 0, 12, LCDHeight);
+  u8g2.setDrawColor(1);
+}
+
 void showMenu() {
   processMenuInfoPageExit();
   if (renderMenuInfoPage()) return;
@@ -1896,6 +1905,7 @@ void showMenu() {
                        currentMenu[i]->name);
       }
     }
+    drawMenuButtonIndicators();
   } while (u8g2.nextPage());
   lastMenuFrameRender = now;
   menuFrameShowsActionMessage = actionMessageVisible;

@@ -225,6 +225,7 @@ void showStatus() { @STATUS@ }
 void showAbout() { @ABOUT@ }
 void showLogo() { @LOGO@ }
 bool renderMenuInfoPage() { @RENDER@ }
+void drawMenuButtonIndicators() { assert(u8g2.inFrame); }
 void showMenu() { @MENU@ }
 void navigateMenu(int direction) { @NAVIGATE@ }
 void selectMenu() { @SELECT@ }
