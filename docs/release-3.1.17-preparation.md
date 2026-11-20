@@ -74,6 +74,18 @@ supported ref, so an absent tag can break existing builds. Prepare a separate
 support PR, create the approved real tag later, then merge/regenerate against it.
 Retain old refs, plugin compatibility, immutable combinations and recovery assets.
 
+The separate support branch prepares backend refs, plugin mappings, CI-only
+prospective-tag fixtures and a frozen Pressensor patch without changing the
+public `v3.1.16` default. The frozen patch copies the reviewed moving `main`
+patch, SHA-256 `a820251bc97b93cfacf58c42b3ea6c3a9699b5a8cf545cd5493e72908460c16c`;
+older frozen patches remain unchanged. Catalog generation and tag-dependent
+validation use approved main `1efca39865dea78c7da0b15c845da6ab30228e8f` as
+their source. The synthetic `v3.1.17` tag exists only in an independent disposable
+clone, never the shared repository. Both catalogs were generated there. Catalog,
+execution/cache and historical patch contracts passed, as did 86 Worker/browser
+tests. These are prospective-ref checks, not real-tag or hosted build evidence.
+Real-tag regeneration, affected profile CI and service rollout remain later gates.
+
 Real hosted main and tagged builds remain a later Version Identity Gate. Verify
 source/builder commits, `3.1.17-main-custom` / `3.1.17-custom`, final binary and
 ZIP hashes, production signatures, combination identity and live saved-build

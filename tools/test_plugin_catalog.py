@@ -242,7 +242,7 @@ def main():
         "v3.1.16", "v3.1.15", "v3.1.14", "main",
     )
     assert customBuild.FIRMWARE_REFS == (
-        "v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main", "v3.1.15", "v3.1.16",
+        "v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main", "v3.1.15", "v3.1.16", "v3.1.17",
     )
     assert serviceCatalog["firmware_refs"] == list(customBuild.FIRMWARE_REFS)
     assert pageCatalog["firmware_refs"][0] == "v3.1.16"
@@ -250,6 +250,8 @@ def main():
     assert customBuild.customFirmwareVersion("v3.1.15", "") == "3.1.15-custom"
     assert serviceCatalog["firmware"]["v3.1.16"]["custom_version"] == "3.1.16-custom"
     assert customBuild.customFirmwareVersion("v3.1.16", "") == "3.1.16-custom"
+    assert serviceCatalog["firmware"]["v3.1.17"]["custom_version"] == "3.1.17-custom"
+    assert customBuild.customFirmwareVersion("v3.1.17", "") == "3.1.17-custom"
     assert pageCatalog["custom_ota_signing_key_generation"] == 1
     assert serviceCatalog["custom_ota_signing_key_generation"] == 1
     assert all(
@@ -357,7 +359,7 @@ def main():
         assert all(not target.is_absolute() and ".." not in target.parts for _, target in configuration["assets"])
     with tempfile.TemporaryDirectory() as temporaryDirectory:
         root = Path(temporaryDirectory)
-        for ref in ("v3.1.15", "v3.1.16"):
+        for ref in ("v3.1.15", "v3.1.16", "v3.1.17"):
             for features, plugins in (
                 ([], []), (["wifi"], []), (["pull-ota"], []),
                 (["elegant-ota", "pull-ota"], ["default-web-apps"]),
@@ -389,7 +391,7 @@ def main():
         assertRejected(lambda: customBuild.resolveConfiguration(
             writeConfig(root, [], ["grind-by-weight", "pressensor"])
         ))
-        for ref in ("main", "v3.1.16"):
+        for ref in ("main", "v3.1.16", "v3.1.17"):
             combined = customBuild.resolveConfiguration(
                 writeConfig(root, [], ["grind-by-weight", "pressensor"], ref)
             )

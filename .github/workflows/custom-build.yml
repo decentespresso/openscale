@@ -92,6 +92,9 @@ jobs:
           if ! git show-ref --verify --quiet refs/tags/v3.1.16; then
             git tag v3.1.16 HEAD
           fi
+          if ! git show-ref --verify --quiet refs/tags/v3.1.17; then
+            git tag v3.1.17 HEAD
+          fi
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
@@ -147,6 +150,9 @@ jobs:
           if ! git show-ref --verify --quiet refs/tags/v3.1.16; then
             git tag v3.1.16 HEAD
           fi
+          if ! git show-ref --verify --quiet refs/tags/v3.1.17; then
+            git tag v3.1.17 HEAD
+          fi
       - uses: actions/cache@v6
         with:
           path: |
@@ -178,7 +184,24 @@ jobs:
               os.environ["FIRMWARE_REF"],
           )
           path.write_text(json.dumps(selection) + "\n", encoding="utf-8")
+          if os.environ["PLUGIN_ID"] == "pressensor" and os.environ["FIRMWARE_REF"] in ("main", "v3.1.17"):
+              path.with_name("plugin-combined-ci.json").write_text(json.dumps({
+                  "firmware_ref": os.environ["FIRMWARE_REF"],
+                  "features": [],
+                  "plugins": ["pressensor", "grind-by-weight"],
+              }) + "\n", encoding="utf-8")
           PY
+      - name: Create test custom OTA key for combined integrations
+        if: matrix.plugin == 'pressensor' && (matrix.firmware_ref == 'main' || matrix.firmware_ref == 'v3.1.17')
+        run: |
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$RUNNER_TEMP/custom-ota.pem" 2>/dev/null
+          openssl pkey -in "$RUNNER_TEMP/custom-ota.pem" -pubout \
+            -out keys/ota/hds_custom_ota_manifest_public_key_1.pem
+          {
+            echo 'HDS_CUSTOM_OTA_SIGNING_KEY_PEM<<CUSTOM_OTA_KEY'
+            cat "$RUNNER_TEMP/custom-ota.pem"
+            echo 'CUSTOM_OTA_KEY'
+          } >> "$GITHUB_ENV"
       - name: Build plugin environment
         env:
           PLUGIN_ID: ${{ matrix.plugin }}
@@ -193,6 +216,16 @@ jobs:
             --config .pio.nosync/plugin-ci.json \
             --verify-plugin-environment "esp32s3-$PLUGIN_ID" \
             "${source_args[@]}"
+          if [ "$PLUGIN_ID" = "pressensor" ] && { [ "$FIRMWARE_REF" = "main" ] || [ "$FIRMWARE_REF" = "v3.1.17" ]; }; then
+            if [ "$FIRMWARE_REF" = "v3.1.17" ]; then
+              source_commit="$(git rev-parse "refs/tags/$FIRMWARE_REF^{commit}")"
+              source_args=(--source-commit "$source_commit")
+            fi
+            python tools/build_custom_firmware.py \
+              --config .pio.nosync/plugin-combined-ci.json \
+              --builder-commit "$CANDIDATE_COMMIT" \
+              "${source_args[@]}"
+          fi
 
   compile_custom:
     if: github.event_name != 'workflow_dispatch' || inputs.commit != ''
@@ -215,6 +248,9 @@ jobs:
           fi
           if ! git show-ref --verify --quiet refs/tags/v3.1.16; then
             git tag v3.1.16 HEAD
+          fi
+          if ! git show-ref --verify --quiet refs/tags/v3.1.17; then
+            git tag v3.1.17 HEAD
           fi
       - uses: actions/cache@v6
         with:
