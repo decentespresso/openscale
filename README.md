@@ -22,10 +22,10 @@ After this, one can simply use `$pio run -t upload` and platformio will build an
 
 # 3.1.17 Preparation
 
-Version 3.1.17 is in pre-tag preparation. The latest published stable release
-and the public custom-build default remain 3.1.16. See the
+This prepared default activation targets 3.1.17. Merge and deploy it only after
+the real tag, publication and hosted-service readiness. See the
 [preparation checkpoint](docs/release-3.1.17-preparation.md) for validation and
-remaining release gates.
+remaining rollout gates.
 
 The candidate preserves settled weight after bean impacts, follows actual
 charger status for the battery icon, scrolls long App Text at 52 pixels per
@@ -39,8 +39,8 @@ published release or a completed service rollout.
 # New in 3.1.16
 
 Version [3.1.16](https://github.com/decentespresso/openscale/releases/tag/v3.1.16)
-is the latest published stable release. Install its firmware and matching
-filesystem to use the changes below.
+introduced the changes below. Install its firmware and matching filesystem to
+use them.
 
 ## Hardware, Battery, And USB Power
 
@@ -103,16 +103,17 @@ service supports both integrations on `v3.1.16` and `main`.
 ## Custom Firmware Availability
 
 The [custom build configurator](https://decentespresso.github.io/openscale/custom-build/)
-builds approved feature and plugin combinations. The release catalog selects
-`3.1.16 (stable)` by default, retaining `3.1.15 (stable)`,
-`3.1.14 (stable)`, and `main (development)`.
+builds approved feature and plugin combinations. The prepared release catalog
+selects `3.1.17 (stable)` by default, retaining `3.1.16 (stable)`,
+`3.1.15 (stable)`, `3.1.14 (stable)`, and `main (development)`.
 Development builds require confirmation and are for testing. Download a build
 for USB installation or assign it to linked scales for signed WiFi installation.
 The 3.1.16 delivery record contains verified signed builds for `v3.1.16` and
 the then-current `main`; it does not certify the 3.1.17 candidate.
-See the [delivery checkpoint](docs/release-3.1.16-preparation.md#current-delivery)
-for the public-selector deployment status. Published 3.1.15 does not include
-App Text or the combined-integration capability.
+See the [3.1.16 delivery checkpoint](docs/release-3.1.16-preparation.md#current-delivery)
+for historical evidence and the [3.1.17 checkpoint](docs/release-3.1.17-preparation.md)
+for pending rollout gates. Published 3.1.15 does not include App Text or the
+combined-integration capability.
 
 The candidate source base is `3.1.17`, with expected main custom identity
 `3.1.17-main-custom`. Builds from `v3.1.16` retain `3.1.16-custom`, and earlier

@@ -17,7 +17,7 @@ own source SHA back into the candidate.
 | Release candidate | Pending the pre-tag PR, review, required CI and resulting full main SHA |
 | Source version | `3.1.17`; main custom metadata must report `3.1.17-main-custom` |
 | Tagged custom identity | `3.1.17-custom`, gated on the real tag |
-| Public latest/default | Keep `v3.1.16`, prior stable refs and `main` |
+| Public latest/default | Prepared `v3.1.17` activation; gated on the real tag, publication and hosted-service readiness |
 | Signed draft, evidence, new asset hashes | Not created |
 | Support/default follow-up PRs | Separate reviewed stages; current links and gates belong in the pre-tag PR evidence |
 
@@ -93,10 +93,13 @@ provenance. Catalog/unit checks alone do not prove those hosted artifacts.
 
 ## Public-Default Activation
 
-Keep the public selector/default at `v3.1.16`. Prepare activation as a separate
-reviewed PR, gated on publication and service readiness. Later verify the live
-options/default after Pages deployment. The source version bump does not prove
-a Worker deployment, hosted build or public-default activation occurred.
+The separate dependent activation draft prepares `v3.1.17` as the first option
+and default, retaining `v3.1.16`, `v3.1.15`, `v3.1.14` and `main`. Merge and deploy
+only after the real tag exists, [support PR #290](https://github.com/decentespresso/openscale/pull/290)
+is merged, the stable release is published and hosted-service readiness is verified.
+After Pages deployment, verify the live options/default. The source version bump
+and catalog checks do not prove a Worker deployment, hosted build or public-default
+activation occurred.
 
 ## Validation Evidence
 
@@ -109,7 +112,7 @@ or uncovered risk before rerunning a check.
 | Six-PR scope and exclusions; full raw diff and whitespace | Review completed integration; attach final pre-tag evidence |
 | AI documentation contract | Passed locally after prose and current-main identity inputs were prepared; recheck the final reviewed diff |
 | Focused drift, charger-icon, scrolling and menu contracts | 21 focused checks passed on the six-PR tree with the 3.1.17 version bump; raw logs retained locally |
-| Current-main custom identity and historical refs | 35 Worker/configurator tests, plugin catalog and the identity matrix passed; public default remains v3.1.16 |
+| Current-main custom identity and historical refs | 35 Worker/configurator tests, plugin catalog and the identity matrix passed on pre-tag inputs with catalog default v3.1.16 |
 | Python/Worker contracts and native tests | Successful final-head automatic CI pending |
 | Standard, grinder, LittleFS, energy/regression jobs and `release-ready` | Successful final-head automatic CI pending |
 | Minimal custom and affected plugin profiles | Final-head CI and final-after-buildfs identity evidence pending |
