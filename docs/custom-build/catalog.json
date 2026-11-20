@@ -2,6 +2,7 @@
   "catalog_revision": "0dd079356e9bbfa3a9cc47b3285670424db1950ddf77cc538cd48a87e71a50b7",
   "custom_ota_signing_key_generation": 1,
   "firmware_refs": [
+    "v3.1.17",
     "v3.1.16",
     "v3.1.15",
     "v3.1.14",

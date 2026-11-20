@@ -93,13 +93,14 @@ affected catalogs after the base-version edit. See the completion requirements i
 `docs/AI_RELEASE_NOTES.md`; do not leave the old main version as the finished
 release state.
 
-The rollout catalog defaults to `v3.1.16`, retains `v3.1.15` and `v3.1.14`, and offers `main` for testing. `BROWSER_FIRMWARE_REFS` in `tools/configure_custom_build.py` controls the public catalog independently of backend source support. `selectableFirmwareRefs()` in `docs/custom-build/selection.mjs` excludes previews from the selector and URL selections. Main build requests, including retries, require confirmation. Backend catalogs and the Worker allow-list retain preview compatibility; hiding a source in the browser does not delete saved builds or recovery assets. Main builds still consume the shared build quota.
+The prepared activation catalog defaults to `v3.1.17`, retains `v3.1.16`, `v3.1.15` and `v3.1.14`, and offers `main` for testing. `BROWSER_FIRMWARE_REFS` in `tools/configure_custom_build.py` controls the public catalog independently of backend source support. `selectableFirmwareRefs()` in `docs/custom-build/selection.mjs` excludes previews from the selector and URL selections. Main build requests, including retries, require confirmation. Backend catalogs and the Worker allow-list retain preview compatibility; hiding a source in the browser does not delete saved builds or recovery assets. Main builds still consume the shared build quota.
 
-The deployed Worker supports `v3.1.16`. Its delivery record contains verified
-tagged and then-current main builds; those results do not certify the `3.1.17`
-candidate. The public selector retains `v3.1.16` as its default. Keep the
-historical evidence in `docs/release-3.1.16-preparation.md` and track pending
-candidate gates in `docs/release-3.1.17-preparation.md`.
+The `3.1.16` delivery record contains verified tagged and then-current main
+builds; those results do not certify the `3.1.17` candidate. Merge and deploy this
+prepared default only after the real tag, backend support merge, publication and
+hosted-service readiness. Keep historical evidence in
+`docs/release-3.1.16-preparation.md` and track pending rollout gates in
+`docs/release-3.1.17-preparation.md`.
 
 Stable source support requires matching `FIRMWARE_REFS`, plugin manifests, generated catalogs, and Worker `ALLOWED_FIRMWARE_REFS`. Deploy the stable-default configurator only after the real tag exists, the trusted builder can build it, and Worker support is deployed. Before tagging, CI may use a temporary local tag in its disposable checkout and must pass the resolved commit explicitly when compiling. See `docs/custom-build/operations.md` for service deployment and `docs/AI_RELEASE_NOTES.md` for release authorization.
 

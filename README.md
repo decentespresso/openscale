@@ -20,27 +20,27 @@ To build and flash the scale from your computer, make sure you have the `pio` co
 After this, one can simply use `$pio run -t upload` and platformio will build and flash the firmware to the connected Esp32s3 chip.
 
 
-# 3.1.17 Preparation
+# New in 3.1.17
 
-Version 3.1.17 is in pre-tag preparation. The latest published stable release
-and the public custom-build default remain 3.1.16. See the
-[preparation checkpoint](docs/release-3.1.17-preparation.md) for validation and
-remaining release gates.
+See the [v3.1.17 release notes and downloads](https://github.com/decentespresso/openscale/releases/tag/v3.1.17)
+for the standard firmware and matching filesystem.
 
-The candidate preserves settled weight after bean impacts, follows actual
-charger status for the battery icon, scrolls long App Text at 52 pixels per
-second, and shows XOR side strips while menu buttons are held. Custom builds
-also check their final firmware version/source revision and show saved builds'
-original source provenance. These candidate changes do not establish a new
-published release or a completed service rollout.
+- Fixed a case where the display held the wrong weight after beans hit the scale and settled.
+- With USB connected, the display shows the battery level unless the battery is charging.
+- Long App Text scrolls at 52 pixels per second, up from 10, with a one-second
+  pause at each end. Short messages stay centered and still.
+- In menus, hold Circle to highlight the left edge or Square to highlight the
+  right. Release the button to clear the highlight.
+- The custom builder checks the version and source commit in the finished
+  firmware. Saved builds show which source they came from.
 
 <a id="new-in-3116-upcoming"></a>
 
 # New in 3.1.16
 
 Version [3.1.16](https://github.com/decentespresso/openscale/releases/tag/v3.1.16)
-is the latest published stable release. Install its firmware and matching
-filesystem to use the changes below.
+introduced the changes below. Install its firmware and matching filesystem to
+use them.
 
 ## Hardware, Battery, And USB Power
 
@@ -103,23 +103,21 @@ service supports both integrations on `v3.1.16` and `main`.
 ## Custom Firmware Availability
 
 The [custom build configurator](https://decentespresso.github.io/openscale/custom-build/)
-builds approved feature and plugin combinations. The release catalog selects
-`3.1.16 (stable)` by default, retaining `3.1.15 (stable)`,
-`3.1.14 (stable)`, and `main (development)`.
+builds approved feature and plugin combinations. The release catalog
+selects `3.1.17 (stable)` by default, retaining `3.1.16 (stable)`,
+`3.1.15 (stable)`, `3.1.14 (stable)`, and `main (development)`.
 Development builds require confirmation and are for testing. Download a build
 for USB installation or assign it to linked scales for signed WiFi installation.
-The 3.1.16 delivery record contains verified signed builds for `v3.1.16` and
-the then-current `main`; it does not certify the 3.1.17 candidate.
-See the [delivery checkpoint](docs/release-3.1.16-preparation.md#current-delivery)
-for the public-selector deployment status. Published 3.1.15 does not include
-App Text or the combined-integration capability.
 
-The candidate source base is `3.1.17`, with expected main custom identity
-`3.1.17-main-custom`. Builds from `v3.1.16` retain `3.1.16-custom`, and earlier
-refs retain their own versions. Support for `3.1.17-custom` stays staged until
-the real tag exists.
-Official 3.1.16 supports signed WiFi OTA. Release acceptance verified a production
-update from official 3.1.15, including firmware, filesystem, and saved settings.
+Custom builds from the `v3.1.17` release tag use `3.1.17-custom`; builds
+from this version of `main` use `3.1.17-main-custom`. Older tags keep their
+own version numbers. Firmware 3.1.15 does not include App Text or the
+combined Pressensor and Grind by Weight integration.
+
+See the [3.1.17 release checkpoint](docs/release-3.1.17-preparation.md)
+for signed stock release evidence and device-test limits. The
+[3.1.16 delivery record](docs/release-3.1.16-preparation.md#current-delivery)
+covers the earlier custom builds and the physical WiFi update from 3.1.15 to 3.1.16.
 
 Plugin authors can use the [plugin development guide](docs/plugin-development.md)
 for package, webapp, and presentation rules.
