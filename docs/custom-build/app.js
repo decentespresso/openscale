@@ -210,14 +210,16 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
       building: "The firmware and filesystem images are being built.",
       ready: "The build archive is ready to download.",
       failed: failureMessages[result.failure_code] || "The build did not complete.",
-      unavailable: "The build service is currently unavailable.",
+      unavailable: ["builder_ref_unavailable", "firmware_ref_unavailable"].includes(result.errorCode)
+        ? "GitHub could not resolve the selected firmware source."
+        : "Build availability could not be checked.",
       updating: "Configurator update in progress.",
       "rate-limited": "The weekly build limit has been reached. Existing cached builds remain available.",
       checking: "Checking the build cache."
     };
     const labels = {"rate-limited": "Rate limited", updating: "Updating"};
     buildState.className = `ready state-${result.connectionLost ? "unavailable" : result.state}`;
-    buildState.textContent = result.connectionLost ? "Reconnecting"
+    buildState.textContent = result.connectionLost || result.retryDelay ? "Reconnecting"
       : labels[result.state] || result.state[0].toUpperCase() + result.state.slice(1);
     currentCombinationHash = combinationHash;
     currentBuildState = result.state;
@@ -229,12 +231,14 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
     updaterLink.setAttribute(
       "aria-label", updaterReady ? "Open HDS Updater for this build" : "Open HDS Updater",
     );
-    const retryMessage = result.state === "failed" ?
-      (result.retryable ? " One retry is available." : " No retries remain.") : "";
+    const retryMessage = result.retryDelay ? `Checking again in ${result.retryDelay / 1000} seconds.`
+      : result.state === "failed" ? (result.retryable ? " One retry is available." : " No retries remain.") : "";
     document.querySelector("#status-message").textContent =
       result.connectionLost ? "Waiting for the build service to respond. The last confirmed build state is shown."
         : [messages[result.state] ?? messages.unavailable, retryMessage, buildEstimate(result, currentSelection)].filter(Boolean).join(" ");
-    buildButton.disabled = result.state !== "missing" && !(result.state === "failed" && result.retryable);
+    buildButton.textContent = result.state === "unavailable" ? "Retry check" : "Request build";
+    buildButton.disabled = Boolean(result.retryDelay) ||
+      (!["missing", "unavailable"].includes(result.state) && !(result.state === "failed" && result.retryable));
     const downloads = document.querySelector("#downloads");
     downloads.replaceChildren();
     if (result.state === "ready") {
@@ -325,7 +329,9 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
     }, 10000);
   };
 
-  const checkStatus = async (selection, generation) => {
+  const checkStatus = async (selection, generation, attempt = 0) => {
+    if (generation !== selectionGeneration) return;
+    clearTimeout(statusTimer);
     clearTimeout(pollTimer);
     pollRemaining = 300;
     setStatus({state: "checking"}, generation);
@@ -335,11 +341,17 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
         body: JSON.stringify(selection),
         signal: selectionController.signal
       });
+      if (generation !== selectionGeneration) return;
       clearCatalogReload();
       setStatus(result, generation);
     } catch (error) {
-      if (error.name !== "AbortError" && !handleCatalogStale(error, generation, selection)) {
-        setStatus({state: "unavailable"}, generation);
+      if (error.name === "AbortError" || generation !== selectionGeneration) return;
+      if (handleCatalogStale(error, generation, selection)) return;
+      const retryable = !error.status || error.status === 408 || error.status >= 500;
+      const retryDelay = retryable && attempt < 5 ? Math.min(2000 * 2 ** attempt, 30000) : 0;
+      setStatus({state: "unavailable", errorCode: error.result?.error, retryDelay}, generation);
+      if (retryDelay) {
+        statusTimer = setTimeout(() => checkStatus(selection, generation, attempt + 1), retryDelay);
       }
     }
   };
@@ -528,6 +540,10 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
   buildButton.addEventListener("click", async () => {
     const generation = selectionGeneration;
     const selection = currentSelection;
+    if (currentBuildState === "unavailable") {
+      await checkStatus(selection, generation);
+      return;
+    }
     if (selection.firmware_ref === "main" &&
         !window.confirm("Main is only for testing, not normal use. Build testing firmware from main?")) return;
     buildButton.disabled = true;

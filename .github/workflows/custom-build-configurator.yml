@@ -52,5 +52,5 @@ jobs:
           python tools/test_custom_build_execution.py
           node --check docs/custom-build/app.js
           node --check docs/custom-build/fleet.js
-          node --test cloudflare/custom-build-worker/test/configurator.test.mjs
+          node --test cloudflare/custom-build-worker/test/configurator.test.mjs cloudflare/custom-build-worker/test/status-recovery.test.mjs
           node --test cloudflare/custom-build-worker/test/fleet-polling.test.mjs

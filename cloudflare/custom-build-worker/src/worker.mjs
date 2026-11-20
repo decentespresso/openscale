@@ -1,5 +1,5 @@
 import {isDeviceApi, isFleetApi} from "./fleet.mjs";
-import {BuildCoordinator, maxAttempts} from "./build-coordinator.mjs";
+import {BuildCoordinator, createAppToken, invalidateAppToken, maxAttempts} from "./build-coordinator.mjs";
 import {guardedBucket} from "./build-retention.mjs";
 
 export {BuildCoordinator};
@@ -161,11 +161,28 @@ function githubHeaders(extra = {}) {
 }
 
 async function resolveGithubCommit(env, ref, unavailableCode) {
-  const response = await fetch(`https://api.github.com/repos/${repository(env)}/commits/${encodeURIComponent(ref)}`, {
-    headers: githubHeaders(),
-    cf: {cacheEverything: true, cacheTtl: 60},
+  const repositoryName = repository(env);
+  let token;
+  try {
+    token = await createAppToken(env);
+  } catch {
+    throw new ApiError(503, "github_app_unavailable");
+  }
+  const response = await fetch(`https://api.github.com/repos/${repositoryName}/commits/${encodeURIComponent(ref)}`, {
+    headers: githubHeaders({Authorization: `Bearer ${token}`}),
+    redirect: "manual",
+    cf: {cacheEverything: true, cacheTtlByStatus: {"200-299": 60, "300-599": -1}},
   });
-  if (!response.ok) throw new ApiError(503, unavailableCode);
+  if (response.status === 401) invalidateAppToken(token);
+  if (!response.ok) {
+    console.warn(JSON.stringify({
+      event: "github-ref-unavailable", ref, status: response.status,
+      rateLimitRemaining: response.headers.get("X-RateLimit-Remaining"),
+      rateLimitReset: response.headers.get("X-RateLimit-Reset"),
+      retryAfter: response.headers.get("Retry-After"),
+    }));
+    throw new ApiError(503, unavailableCode);
+  }
   const commit = await response.json();
   if (!commitPattern.test(commit.sha || "")) throw new ApiError(503, "invalid_github_commit");
   return commit.sha;

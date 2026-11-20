@@ -319,6 +319,11 @@ builds validate metadata for every supported ref; one missing tag can break
 existing hosted builds too. Stage those changes separately, create the approved
 release tag first, then merge and regenerate catalogs against the real tag.
 
+Verify source lookups for `main` and the stable tags with the existing repository-scoped
+GitHub App token before deploying Worker changes. Do not broaden App permissions to hide a
+lookup failure. Keep failed upstream responses out of caches and distinguish lookup failure
+from missing artifacts by checking a completed build's immutable hash directly.
+
 When activation is authorized, merge reviewed changes after relevant/required
 checks, deploy only changed components and verify the live service with the
 published catalog revision. Verify a real tagged build's source/builder commits,
@@ -326,6 +331,10 @@ published catalog revision. Verify a real tagged build's source/builder commits,
 Verify a main custom build reports `X.Y.Z-main-custom` from the advanced base.
 Complete the Version Identity Gate against both hosted artifacts and saved builds.
 Do not assign it to a scale or repeat OTA tests unless that is in the agreed scope.
+
+Test initial status recovery with a transient 503 followed by success. The page must
+recover without changing plugins, bound retries, and offer a manual status recheck
+after exhaustion. Neither automatic retries nor manual rechecks may submit a build.
 
 Backend support is not visible browser support. When public rollout is authorized,
 add the new stable to the selector, make it the default, retain the prior
