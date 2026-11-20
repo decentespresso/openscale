@@ -66,17 +66,30 @@ def main():
     assert 'if [ "$FIRMWARE_REF" = "main" ]; then\n            source_args+=(--source-commit "$CANDIDATE_COMMIT")\n          fi' in verifyPlugins
     assert '"${source_args[@]}"' in verifyPlugins
     assert 'python tools/build_custom_firmware.py \\\n' in verifyPlugins
+    assert '"plugins": ["pressensor", "grind-by-weight"]' in verifyPlugins
+    assert "if: matrix.plugin == 'pressensor' && (matrix.firmware_ref == 'main' || matrix.firmware_ref == 'v3.1.17')" in verifyPlugins
     bash = shutil.which("bash") if os.name != "nt" else None
     if bash:
         pluginStep = verifyPlugins.split("- name: Build plugin environment", 1)[1]
         script = textwrap.dedent(pluginStep.split("run: |\n", 1)[1])
-        for ref in ("main", "v3.1.14", "v3.1.15", "v3.1.16", "v3.1.17"):
-            result = subprocess.run([bash, "-c", "python() { printf '%s\\n' \"$@\"; }\n" + script],
-                env={**os.environ, "PLUGIN_ID": "pressensor", "FIRMWARE_REF": ref, "CANDIDATE_COMMIT": "1" * 40},
-                capture_output=True, text=True, check=True)
-            expected = ["tools/build_custom_firmware.py", "--config", ".pio.nosync/plugin-ci.json",
-                        "--verify-plugin-environment", "esp32s3-pressensor"]
-            assert result.stdout.splitlines() == expected + (["--source-commit", "1" * 40] if ref == "main" else [])
+        stubs = (
+            "python() { printf '%s\\n' \"$@\"; }\n"
+            "git() { test \"$*\" = 'rev-parse refs/tags/v3.1.17^{commit}' || return 1; "
+            "printf '%s\\n' '" + "2" * 40 + "'; }\n"
+        )
+        for pluginId in ("pressensor", "grind-by-weight"):
+            for ref in ("main", "v3.1.14", "v3.1.15", "v3.1.16", "v3.1.17"):
+                result = subprocess.run([bash, "-e", "-c", stubs + script],
+                    env={**os.environ, "PLUGIN_ID": pluginId, "FIRMWARE_REF": ref, "CANDIDATE_COMMIT": "1" * 40},
+                    capture_output=True, text=True, check=True)
+                expected = ["tools/build_custom_firmware.py", "--config", ".pio.nosync/plugin-ci.json",
+                            "--verify-plugin-environment", f"esp32s3-{pluginId}",
+                            *(["--source-commit", "1" * 40] if ref == "main" else [])]
+                if pluginId == "pressensor" and ref in ("main", "v3.1.17"):
+                    expected = [*expected, "tools/build_custom_firmware.py", "--config",
+                                ".pio.nosync/plugin-combined-ci.json", "--builder-commit", "1" * 40,
+                                "--source-commit", ("1" if ref == "main" else "2") * 40]
+                assert result.stdout.splitlines() == expected
     assert "verify-pressensor:" not in customWorkflow
     assert "compile-matrix:" not in customWorkflow
     dispatchBuild = customWorkflow.split("\n  build:\n", 1)[1]
