@@ -88,9 +88,9 @@ Use `conflicts` for plugin IDs and optional `conflicts_features` for feature IDs
 Optional `conflicts_by_ref` replaces `conflicts` for an explicit supported firmware
 ref. Its values must be unique known plugin IDs without self-conflicts. Omitted
 refs keep the default conflicts. Pressensor and Grind by Weight permit combined
-builds on `main` and `v3.1.16`; older release/preview mappings retain their
-original patches and conflicts. Freeze the release patch separately from the
-moving `main` patch. Regenerate both catalogs after changing mappings.
+builds on `main`, `v3.1.16` and the staged `v3.1.17` ref; older release/preview
+mappings retain their original patches and conflicts. Freeze the release patch
+separately from the moving `main` patch. Regenerate both catalogs after changing mappings.
 App Text is core BLE firmware and must not appear as a selectable plugin.
 
 Do not infer WiFi, WebServer, or runtime LittleFS from the fact that a custom ZIP contains `littlefs.bin`. Runtime filesystem use and staged filesystem replacement are separate concerns. Pull OTA continues to use its mandatory staged `littlefs.bin` transaction independently of `HDS_FEATURE_LITTLEFS`.

@@ -36,6 +36,8 @@ def main():
     assert 'git tag v3.1.15 HEAD' in configuratorWorkflow
     assert 'git tag v3.1.16 HEAD' in pythonContracts
     assert 'git tag v3.1.16 HEAD' in configuratorWorkflow
+    assert 'git tag v3.1.17 HEAD' in pythonContracts
+    assert 'git tag v3.1.17 HEAD' in configuratorWorkflow
     stockBuild = firmwareWorkflow.split("\n  build:\n", 1)[1].split("\n  energy-build:\n", 1)[0]
     energyBuild = firmwareWorkflow.split("\n  energy-build:\n", 1)[1]
     assert firmwareWorkflow.count("pio run -e esp32s3\n") == 1
@@ -68,7 +70,7 @@ def main():
     if bash:
         pluginStep = verifyPlugins.split("- name: Build plugin environment", 1)[1]
         script = textwrap.dedent(pluginStep.split("run: |\n", 1)[1])
-        for ref in ("main", "v3.1.14", "v3.1.15", "v3.1.16"):
+        for ref in ("main", "v3.1.14", "v3.1.15", "v3.1.16", "v3.1.17"):
             result = subprocess.run([bash, "-c", "python() { printf '%s\\n' \"$@\"; }\n" + script],
                 env={**os.environ, "PLUGIN_ID": "pressensor", "FIRMWARE_REF": ref, "CANDIDATE_COMMIT": "1" * 40},
                 capture_output=True, text=True, check=True)
@@ -83,6 +85,7 @@ def main():
     assert 'git tag v3.1.14 "${{ github.sha }}"' in dispatchBuild
     assert 'git tag v3.1.15' not in dispatchBuild
     assert 'git tag v3.1.16' not in dispatchBuild
+    assert 'git tag v3.1.17' not in dispatchBuild
 
     assert "dependency-build:" not in otaWorkflow
     assert "pio run -e" not in otaWorkflow
@@ -98,8 +101,9 @@ def main():
         "main": "patches/main.patch",
         "v3.1.15": "patches/v3.1.15.patch",
         "v3.1.16": "patches/v3.1.16.patch",
+        "v3.1.17": "patches/v3.1.17.patch",
     }
-    assert workerConfig["vars"]["ALLOWED_FIRMWARE_REFS"] == "main,v3.1.14,v3.1.14-preview.3,v3.1.14-preview.4,v3.1.15,v3.1.16"
+    assert workerConfig["vars"]["ALLOWED_FIRMWARE_REFS"] == "main,v3.1.14,v3.1.14-preview.3,v3.1.14-preview.4,v3.1.15,v3.1.16,v3.1.17"
     assert workerConfig["vars"]["BUILDER_REF"] == "main"
     assert changedPlugins.changedPluginIds([
         "plugins/pressensor/plugin.json",
@@ -113,6 +117,7 @@ def main():
         {"plugin": "pressensor", "firmware_ref": "v3.1.14"},
         {"plugin": "pressensor", "firmware_ref": "v3.1.15"},
         {"plugin": "pressensor", "firmware_ref": "v3.1.16"},
+        {"plugin": "pressensor", "firmware_ref": "v3.1.17"},
     ]
     assert changedPlugins.changedPluginMatrix([
         "plugins/default-web-apps/assets/index.html"
@@ -146,6 +151,8 @@ def main():
     assert 'git tag v3.1.15 HEAD' in compileCustom
     assert 'git tag v3.1.16 HEAD' in verifyPlugins
     assert 'git tag v3.1.16 HEAD' in compileCustom
+    assert 'git tag v3.1.17 HEAD' in verifyPlugins
+    assert 'git tag v3.1.17 HEAD' in compileCustom
     assert '--source-commit "$CANDIDATE_COMMIT"' in compileCustom
     assert '--builder-commit "$CANDIDATE_COMMIT"' in compileCustom
     assert 'ref: ${{ inputs.commit || github.sha }}' in compileCustom
