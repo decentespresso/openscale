@@ -1,9 +1,15 @@
 # 3.1.17 Pre-Tag Preparation
 
-Checkpoint: 2026-11-20. This record describes preparation, not a tagged or
-published release. Keep final candidate and run evidence in the forthcoming
-pre-tag PR description and its local report, rather than committing a document's
-own source SHA back into the candidate.
+**Stock release, 2026-11-20:** [v3.1.17 release notes and downloads](https://github.com/decentespresso/openscale/releases/tag/v3.1.17)
+correspond to commit `1efca39865dea78c7da0b15c845da6ab30228e8f`.
+The [preparation run](https://github.com/decentespresso/openscale/actions/runs/44753050136)
+signed the release artifacts; the [publication run](https://github.com/decentespresso/openscale/actions/runs/44757985881)
+verified and published those same bytes. Release approval accepted the physical
+qualification limits listed below. No scale was flashed over USB or tested
+with a production WiFi update from 3.1.16 to 3.1.17 for this release.
+
+The sections below preserve the earlier preparation checkpoints. Their pending
+items describe what was known at the time, not the current publication status.
 
 ## Candidate And Authorization
 
