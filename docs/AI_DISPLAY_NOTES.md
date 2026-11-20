@@ -161,6 +161,12 @@ Occupied regions include:
 
 Check every persistent icon against both rotations and all connection states.
 
+`drawBatteryIcon(now)` selects the charging bolt from `BATTERY_CHARGING`, not
+USB presence. The weighing and charging screens share its battery buckets,
+first-reading guard and low-battery blink. `chargingOLED()` refreshes at 500 ms.
+Keep the legacy `b_is_charging` USB-control assignment in `drawBattery()` separate
+from this display decision; an icon change must not alter standby or wake guards.
+
 For a full-screen transient overlay:
 
 1. gate it with runtime state and `millis()`
@@ -230,6 +236,13 @@ Adding a category requires all of these:
 Do not add a third ordinary menu level. Dedicated calibration, discovery, OTA, and numeric editors may temporarily own their own interaction flow.
 
 `showMenu()` currently uses four rows per page, a `>` marker, and a top-right page count. Long labels do not wrap. After changing font, row spacing, or labels, check every menu and the page indicator.
+
+Inside that frame, `drawMenuButtonIndicators()` runs after list or action-feedback
+content. While held, Circle XORs a 12-pixel full-height strip at the left edge;
+Square XORs the strip starting at `LCDWidth - 13`. Text beneath those strips
+inverts. The helper restores draw color 1 and must not start a page loop.
+Nonblocking information pages return before this overlay, and weighing-mode
+button icons remain unchanged. Check text overlap and both display rotations.
 
 Ordinary booleans are direct rows with a visible `o` or `x`. Square calculates the desired value, persists and applies it, refreshes the row, shows brief feedback, and remains on the row. A failed persistence call must leave runtime state and the row truthful. Drift compensation cycles directly through `Off`, `0.05g`, `0.075g`, `0.10g`, and `0.20g`. Timer position alternates directly between `Top: Time` and `Top: Weight`.
 
