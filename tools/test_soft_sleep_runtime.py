@@ -28,6 +28,7 @@ def main():
 #include <cstdint>
 #include <initializer_list>
 #include <mutex>
+#include "app_prompt_scroll.h"
 #include "energy_runtime_policy.h"
 using std::isfinite;
 template<typename L, typename R> auto max(L left, R right) { return left > right ? left : right; }
@@ -227,11 +228,13 @@ void testTimerCommands() {
   }
 }
 #if HDS_ENABLE_ENERGY_MENU
+AppPromptScrollState appPromptScrollState;
+constexpr int LCDWidth = 128;
 int remoteTareMux = 0;
 uint8_t i_remoteTareRequests = 0;
 bool b_tareByBle = false;
 unsigned long t_tareByBle = 0;
-unsigned long t_batteryRefresh = 0;
+unsigned long t_batteryRefresh = 0, t_oled_refresh = 0;
 unsigned long i_batteryRefreshTareInterval = 30000;
 unsigned long t_firstConnect = 0, t_heartBeat = 0, t_lastDisconnectAttempt = 0;
 bool b_weight_in_serial = false, b_usbweight_enabled = false, b_requireHeartBeat = true;
@@ -532,6 +535,28 @@ int main() {
   assert(consumeRemoteTareRequests() == 1 && !hasRemoteTareRequest());
   clockMs = 31001;
   assert(energyMainLoopWaitMs(clockMs) == 0);
+  energyIdle.lastScaleData = t_batteryRefresh = clockMs;
+  appPromptScrollState = appPromptScrollUpdate({}, true, 1, clockMs - 1000);
+  appPromptScrollState.textWidth = 204;
+  t_oled_refresh = clockMs;
+  assert(energyMainLoopWaitMs(clockMs) == 20);
+  assert(energyMainLoopWaitMs(clockMs + 19) == 1);
+  assert(energyMainLoopWaitMs(clockMs + 20) == 0);
+  t_oled_refresh = clockMs + 20;
+  assert(energyMainLoopWaitMs(clockMs + 20) == 19);
+  assert(energyMainLoopWaitMs(clockMs + 60) == 0);
+  t_oled_refresh = clockMs + 39;
+  assert(energyMainLoopWaitMs(clockMs + 39) == 19);
+  b_softSleep = true;
+  assert(energyMainLoopWaitMs(clockMs + 39) == 200);
+  b_softSleep = false;
+  b_u8g2Sleep = true;
+  assert(energyMainLoopWaitMs(clockMs) == 200);
+  b_u8g2Sleep = false;
+  appPromptScrollState.textWidth = LCDWidth;
+  assert(energyMainLoopWaitMs(clockMs) == 200);
+  appPromptScrollState = {};
+  assert(energyMainLoopWaitMs(clockMs) == 200);
 #endif
   b_wifiEnabled = false;
   supervise();

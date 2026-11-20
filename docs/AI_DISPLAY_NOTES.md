@@ -72,7 +72,10 @@ loop()
        -> drawDebug()
 ```
 
-`i_oled_print_interval` is currently 100 ms. Keep the 10 Hz render path lightweight.
+`i_oled_print_interval` is 100 ms for normal weighing, short App Text, and scroll
+holds. Long App Text scrolls at 52 pixels per second, requesting each pixel's
+redraw at 19-20 ms intervals. Keep those deadlines in the Energy Menu main-loop
+wait calculation; do not increase the normal display cadence globally.
 
 The visible weight source is `f_displayedValue`, after the scale-processing pipeline. A visual-only request must not replace it with raw ADC data or alter drift, tracking, stable-output, or tare logic.
 

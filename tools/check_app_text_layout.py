@@ -85,7 +85,7 @@ int main() {
         const int textWidth = u8g2_GetStrWidth(&display, text);
         assert(textWidth > 0);
         const int overflow = textWidth > width ? textWidth - width : 0;
-        const unsigned long endAt = 1000UL + overflow * 100UL;
+        const unsigned long endAt = 1000UL + appPromptScrollTravelMs(overflow);
         for (const unsigned long now : {0UL, 999UL, 1100UL, endAt, endAt + 999UL, endAt + 1000UL}) {
           const int x = appPromptTextX(scroll, textWidth, width, now);
           if (overflow == 0) assert(x == (width - textWidth) / 2);
@@ -97,9 +97,14 @@ int main() {
     }
     const char *text = "Carpano Antica Sweet Vermouth: 31g";
     const int textWidth = u8g2_GetStrWidth(&display, text);
-    const unsigned long endAt = 1000UL + (textWidth - width) * 100UL;
+    const unsigned long endAt = 1000UL + appPromptScrollTravelMs(textWidth - width);
     const auto first = promptPixels(display, text, appPromptTextX(scroll, textWidth, width, 0));
     assert(first == promptPixels(display, text, appPromptTextX(scroll, textWidth, width, 999)));
+    assert(first == promptPixels(display, text, appPromptTextX(scroll, textWidth, width, 1019)));
+    const auto onePixel = promptPixels(display, text, appPromptTextX(scroll, textWidth, width, 1020));
+    assert(onePixel == promptPixels(display, text, -1) && onePixel != first);
+    const auto twoPixels = promptPixels(display, text, appPromptTextX(scroll, textWidth, width, 1039));
+    assert(twoPixels == promptPixels(display, text, -2) && twoPixels != onePixel);
     const auto moved = promptPixels(display, text, appPromptTextX(scroll, textWidth, width, 1600));
     assert(first != moved);
     const auto last = promptPixels(display, text, appPromptTextX(scroll, textWidth, width, endAt));

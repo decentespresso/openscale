@@ -19,10 +19,16 @@ without a valid legacy heartbeat restores the normal display. The existing BLE
 watchdog may disconnect after five seconds, before text expiry.
 
 Text that fits stays centered. Longer text starts left-aligned for one second,
-scrolls left at ten pixels per second until the final character is visible,
+scrolls left at 52 pixels per second until the final character is visible,
 and holds that final view for one second before returning to the beginning.
 New text or a newly visible instruction restarts this cycle. Heartbeats and
 repeated identical Show requests do not restart scrolling.
+
+The 52-pixel rate is newer than published firmware 3.1.16, which uses 10 pixels
+per second.
+
+Scrolling requests a redraw for each pixel change, at 19-20 ms intervals. Short
+text and the one-second holds retain the normal 100 ms display cadence.
 
 Hold Circle while app text is visible to cancel text for that connection without
 taring. Reconnect before sending text again. Turning App Text Off and On does
