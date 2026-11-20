@@ -256,6 +256,18 @@ function normalizedFirmwareVersion(value) {
   return normalizedText(value, 64, "invalid_firmware_version");
 }
 
+function buildSourceIdentity(build) {
+  return {
+    firmware_ref: typeof build.firmware_ref === "string" && build.firmware_ref.length <= 64 &&
+      build.firmware_ref.trim() === build.firmware_ref &&
+      /^(?:main|v?[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9]+(?:[.-][a-z0-9]+)*)?)$/.test(build.firmware_ref)
+      ? build.firmware_ref : null,
+    base_source: typeof build.base_source === "string" && build.base_source.length === 40 &&
+      /^[0-9a-f]{40}$/.test(build.base_source)
+      ? build.base_source : null,
+  };
+}
+
 async function readyBuildReference(env, combinationHash) {
   if (!hashPattern.test(combinationHash || "")) {
     throw new FleetError(400, "invalid_combination_hash");
@@ -285,9 +297,26 @@ async function readyBuildReference(env, combinationHash) {
   return {
     combination_hash: combinationHash,
     firmware_version: manifest.firmware_version,
+    ...buildSourceIdentity(manifest),
     features,
     plugins,
   };
+}
+
+async function savedBuildReferences(builds, states, env) {
+  return Promise.all(builds.map(async build => {
+    const identity = buildSourceIdentity(build);
+    if (states[build.combination_hash] !== "ready" || (identity.firmware_ref && identity.base_source)) {
+      return {...build, ...identity, state: states[build.combination_hash]};
+    }
+    try {
+      const reference = await readyBuildReference(env, build.combination_hash);
+      return {...build, ...reference, state: "ready"};
+    } catch (error) {
+      if (!(error instanceof FleetError) || error.code !== "build_not_ready") throw error;
+      return {...build, ...identity, state: states[build.combination_hash]};
+    }
+  }));
 }
 
 async function buildStates(hashes, storage, env) {
@@ -334,7 +363,7 @@ async function fleetSnapshot(ownerFleetId, storage, env) {
     ...scales.map(scale => scale.desired_combination),
   ], storage, env);
   return {
-    builds: builds.map(build => ({...build, state: states[build.combination_hash]})),
+    builds: await savedBuildReferences(builds, states, env),
     scales,
     build_states: states,
   };
@@ -405,7 +434,7 @@ async function listBuilds(request, storage, env) {
   const fleet = await storage.get(`fleet:${ownerFleetId}`);
   const builds = fleetBuilds(fleet);
   const states = await buildStates(builds.map(build => build.combination_hash), storage, env);
-  return {builds: builds.map(build => ({...build, state: states[build.combination_hash]}))};
+  return {builds: await savedBuildReferences(builds, states, env)};
 }
 
 async function addBuild(request, storage, env) {
@@ -418,7 +447,7 @@ async function addBuild(request, storage, env) {
     if (!fleet) await enforcePairCreationRate(request, transaction, Date.now());
     const builds = fleetBuilds(fleet);
     const existing = builds.find(build => build.combination_hash === reference.combination_hash);
-    if (existing) return {...existing, state: "ready"};
+    if (existing) return {...existing, ...reference, state: "ready"};
     if (builds.length >= maxFleetBuilds) throw new FleetError(409, "build_library_full");
     const added = {
       ...reference,

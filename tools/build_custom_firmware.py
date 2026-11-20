@@ -231,6 +231,13 @@ def copyBuildFiles(sourceDir, targetDir, names):
         shutil.copy2(sourceDir / name, targetDir / name)
 
 
+def verifyFirmwareIdentity(buildDir, firmwareVersion, sourceCommit):
+    firmware = (buildDir / "firmware.bin").read_bytes()
+    for value in (f"FW: {firmwareVersion}", sourceCommit[:6]):
+        if value.encode("ascii") + b"\0" not in firmware:
+            raise ValueError(f"custom firmware does not contain expected identity: {value}")
+
+
 def writeDependencyInventory(buildDir, checkoutRoot, environment, platformioEnvironment):
     version = runCommand(["pio", "--version"], checkoutRoot, capture=True, environment=environment).stdout
     packages = runCommand(
@@ -441,6 +448,7 @@ def buildCustomFirmware(
                 environment=environment,
             )
             copyBuildFiles(preservedBinaries, buildDir, PROGRAM_BINARIES)
+        verifyFirmwareIdentity(buildDir, identity["firmware_version"], commitSha)
         writeDependencyInventory(buildDir, checkoutRoot, environment, platformioEnvironment)
         createFirmwareArchive(buildDir)
         customBuild.writeBuildManifest(

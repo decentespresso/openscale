@@ -102,6 +102,8 @@
   line-height: 1.35;
 }
 
+.fleet-build-source { font-family: monospace; }
+
 .fleet-build-version summary {
   margin-top: 6px;
   color: var(--green-dark);

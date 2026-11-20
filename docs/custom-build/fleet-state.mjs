@@ -7,6 +7,13 @@ export const shortHash = (value, length = 12) =>
 export const buildLabel = (build, index) => /^Build [0-9A-F]{12}$/i.test(build.label || "")
   ? `Build ${index + 1}` : build.label;
 
+export function buildSourceLabel(build) {
+  const ref = typeof build?.firmware_ref === "string" ? build.firmware_ref : "";
+  const commit = typeof build?.base_source === "string" && /^[0-9a-f]{40}$/.test(build.base_source)
+    ? build.base_source.slice(0, 8) : "";
+  return [ref, commit].filter(Boolean).join(" @ ") || "Source unknown";
+}
+
 export function buildSummary(build) {
   const features = Array.isArray(build?.features) ? build.features : [];
   const plugins = Array.isArray(build?.plugins)
