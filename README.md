@@ -20,6 +20,20 @@ To build and flash the scale from your computer, make sure you have the `pio` co
 After this, one can simply use `$pio run -t upload` and platformio will build and flash the firmware to the connected Esp32s3 chip.
 
 
+# 3.1.17 Preparation
+
+Version 3.1.17 is in pre-tag preparation. The latest published stable release
+and the public custom-build default remain 3.1.16. See the
+[preparation checkpoint](docs/release-3.1.17-preparation.md) for validation and
+remaining release gates.
+
+The candidate preserves settled weight after bean impacts, follows actual
+charger status for the battery icon, scrolls long App Text at 52 pixels per
+second, and shows XOR side strips while menu buttons are held. Custom builds
+also check their final firmware version/source revision and show saved builds'
+original source provenance. These candidate changes do not establish a new
+published release or a completed service rollout.
+
 <a id="new-in-3116-upcoming"></a>
 
 # New in 3.1.16
@@ -94,13 +108,16 @@ builds approved feature and plugin combinations. The release catalog selects
 `3.1.14 (stable)`, and `main (development)`.
 Development builds require confirmation and are for testing. Download a build
 for USB installation or assign it to linked scales for signed WiFi installation.
-The hosted service has verified signed builds for both `v3.1.16` and `main`.
+The 3.1.16 delivery record contains verified signed builds for `v3.1.16` and
+the then-current `main`; it does not certify the 3.1.17 candidate.
 See the [delivery checkpoint](docs/release-3.1.16-preparation.md#current-delivery)
 for the public-selector deployment status. Published 3.1.15 does not include
 App Text or the combined-integration capability.
 
-Main's base version is `3.1.16`, so main custom builds report
-`3.1.16-main-custom` and tagged custom builds report `3.1.16-custom`.
+The candidate source base is `3.1.17`, with expected main custom identity
+`3.1.17-main-custom`. Builds from `v3.1.16` retain `3.1.16-custom`, and earlier
+refs retain their own versions. Support for `3.1.17-custom` stays staged until
+the real tag exists.
 Official 3.1.16 supports signed WiFi OTA. Release acceptance verified a production
 update from official 3.1.15, including firmware, filesystem, and saved settings.
 

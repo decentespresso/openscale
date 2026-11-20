@@ -86,8 +86,8 @@ the energy-menu build and `build\normal-core` for the normal build, setting
 The builder derives tagged versions from the tag rather than the source header. `v3.1.14` produces `3.1.14-custom`; `v3.1.14-preview.3` produces `3.1.14-preview.3-custom`. Custom preview builds have their own signed manifests and combination hashes. The non-custom preview.3 release has no signed rollback manifest; official preview.4 has signed firmware/LittleFS recovery assets.
 
 A complete stable release advances the base version in `include/config.h` before
-freezing its candidate. For `3.1.16`, main custom builds must report
-`3.1.16-main-custom`, while builds from the real tag report `3.1.16-custom`.
+freezing its candidate. The `3.1.17` candidate requires `3.1.17-main-custom` for
+main custom builds; `3.1.17-custom` remains gated on the real release tag.
 Tagging does not update the header. Keep workflow version injection and regenerate
 affected catalogs after the base-version edit. See the completion requirements in
 `docs/AI_RELEASE_NOTES.md`; do not leave the old main version as the finished
@@ -95,10 +95,11 @@ release state.
 
 The rollout catalog defaults to `v3.1.16`, retains `v3.1.15` and `v3.1.14`, and offers `main` for testing. `BROWSER_FIRMWARE_REFS` in `tools/configure_custom_build.py` controls the public catalog independently of backend source support. `selectableFirmwareRefs()` in `docs/custom-build/selection.mjs` excludes previews from the selector and URL selections. Main build requests, including retries, require confirmation. Backend catalogs and the Worker allow-list retain preview compatibility; hiding a source in the browser does not delete saved builds or recovery assets. Main builds still consume the shared build quota.
 
-The deployed Worker supports `v3.1.16`. Hosted tagged and main builds have passed
-signature, hash, ZIP, version, and recovery checks. The public-selector rollout
-selects `v3.1.16` as its default; track Pages activation in the current delivery
-table in `docs/release-3.1.16-preparation.md`.
+The deployed Worker supports `v3.1.16`. Its delivery record contains verified
+tagged and then-current main builds; those results do not certify the `3.1.17`
+candidate. The public selector retains `v3.1.16` as its default. Keep the
+historical evidence in `docs/release-3.1.16-preparation.md` and track pending
+candidate gates in `docs/release-3.1.17-preparation.md`.
 
 Stable source support requires matching `FIRMWARE_REFS`, plugin manifests, generated catalogs, and Worker `ALLOWED_FIRMWARE_REFS`. Deploy the stable-default configurator only after the real tag exists, the trusted builder can build it, and Worker support is deployed. Before tagging, CI may use a temporary local tag in its disposable checkout and must pass the resolved commit explicitly when compiling. See `docs/custom-build/operations.md` for service deployment and `docs/AI_RELEASE_NOTES.md` for release authorization.
 
