@@ -57,8 +57,8 @@ static void drawBatInfoPage(uint8_t page) {
       snprintf(r, sizeof(r), "FCC %u", reading.fullCapacityMah);
       u8g2.drawUTF8(0, 36, l);
       u8g2.drawUTF8(64, 36, r);
-      snprintf(l, sizeof(l), "Health %u%%", reading.soh);
-      snprintf(r, sizeof(r), "Bat. %u%%", reading.soc);
+      snprintf(l, sizeof(l), "BH%u", static_cast<unsigned int>(reading.soh));
+      snprintf(r, sizeof(r), "CL%u", static_cast<unsigned int>(reading.soc));
       u8g2.drawUTF8(0, 48, l);
       u8g2.drawUTF8(64, 48, r);
       snprintf(l, sizeof(l), "CRG %s", charging ? "Y" : "N");
