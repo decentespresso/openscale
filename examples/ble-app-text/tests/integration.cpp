@@ -76,10 +76,8 @@ void leaveMenu() { @LEAVE@ }
 void blockIntegrationChange() { ++blockedCount; }
 void showStoredAction(const char *, bool, bool stored) { if (!stored) ++failedSaves; }
 void grinderFlushSettingsIfDirty() {}
-bool b_wifiOnBoot = false, b_wifiEnabled = false;
-int wifiStarts = 0, grinderStarts = 0, sensorStarts = 0;
+int grinderStarts = 0, sensorStarts = 0;
 struct { bool pressureReady = false; } pressensorShot;
-void wifi_init() { assert(b_wifiOnBoot); ++wifiStarts; }
 void grinderRuntimeReset() { assert(!grinderSettings.enabled); }
 void grinderRuntimeBegin() {
   assert(grinderSettings.enabled && !pressensorSettings.enabled);
@@ -199,23 +197,23 @@ void testImmediateMenuSelection() {
       assert(grinderSettings.enabled == (expected == Mode::Grinder));
       assert(pressensorSettings.enabled == (expected == Mode::Pressensor));
       assert(b_menu && !b_menuRestartRequired && wsPendingMask == 0 && resetCount == 0);
-      if (grinderSettings.enabled) assert(b_wifiOnBoot && grinderRuntime.menuPaused);
+      if (grinderSettings.enabled) assert(grinderRuntime.menuPaused);
       if (pressensorSettings.enabled) assert(pressensorShot.pressureReady);
     }
     const Mode saved = selectedIntegration;
-    const int starts = grinderStarts + sensorStarts + wifiStarts;
+    const int starts = grinderStarts + sensorStarts;
     saveFails = true;
     toggleIntegration(Mode::Pressensor);
     saveFails = false;
     assert(failedSaves > 0 && selectedIntegration == saved && resetCount == 0);
-    assert(activeIntegration == saved && starts == grinderStarts + sensorStarts + wifiStarts);
+    assert(activeIntegration == saved && starts == grinderStarts + sensorStarts);
     leaveMenu();
     assert(!b_menu && !b_menuRestartRequired && wsPendingMask == 0 && resetCount == 0);
     dispatchReset();
     assert(resetCount == 0);
     assert(loadIntegrationSelection() && activeIntegration == saved && selectedIntegration == saved);
   }
-  assert(grinderStarts > 0 && sensorStarts > 0 && wifiStarts > 0);
+  assert(grinderStarts > 0 && sensorStarts > 0);
   assert(storeIntegrationMode(Mode::Pressensor) && loadIntegrationSelection());
   b_menu = true;
   grinderRuntime.shutdownUnconfirmed = true;

@@ -1365,9 +1365,6 @@ void setup() {
   b_wifiOnBoot = storageGetBool(KEY_WIFI_BOOT, false);
 #endif
 #if HDS_ENABLE_GRINDER
-  if (grinderSettings.enabled && !b_wifiOnBoot) {
-    b_wifiOnBoot = true;
-  }
   if (grinderSettings.enabled) grinderRuntimeBegin();
 #endif
   refreshMenuRows();
@@ -2410,6 +2407,10 @@ void loop() {
     serviceFuelGauge();
     if (!otaRuntimeIsPaused()) {
       if (!otaTransportsStopped) {
+#if HDS_ENABLE_GRINDER
+        grinderCancelPlugSelection();
+        grinderPrepareForShutdown();
+#endif
         otaBleClientDisconnected =
             blePauseForOta() || otaBleClientDisconnected;
         otaTransportsStopped = true;
@@ -2445,6 +2446,9 @@ void loop() {
     fuelGaugeResume();
     bleResumeAfterOta(
         otaBleClientDisconnected && !bleHasLiveClient());
+#if HDS_ENABLE_GRINDER
+    if (!b_menu) grinderResumeAfterCancelledShutdown();
+#endif
     otaBleClientDisconnected = false;
     otaTransportsStopped = false;
     invalidateMenuFrame();

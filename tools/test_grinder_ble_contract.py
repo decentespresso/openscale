@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL_HEADER = ROOT / "include" / "grinder_protocol.h"
 RUNTIME_HEADER = ROOT / "include" / "grinder_runtime.h"
 LOW_LATENCY_HEADER = ROOT / "include" / "grinder_runtime_low_latency.h"
-DISCOVERY_HEADER = ROOT / "include" / "grinder_discovery.h"
+TRANSPORT_HEADER = ROOT / "include" / "grinder_ble_transport.h"
 ADAPTIVE_HEADER = ROOT / "include" / "grinder_adaptive_safety.h"
 RUNTIME_ADAPTIVE_HEADER = ROOT / "include" / "grinder_runtime_adaptive.h"
 PERSISTENCE_HEADER = ROOT / "include" / "grinder_settings_persistence.h"
@@ -61,9 +61,8 @@ enum Command { GRINDER_COMMAND_NONE, GRINDER_COMMAND_ON };
 struct { float zeroMaxGrams, targetGrams = 15.0f, safetyMarginGrams = 2.0f; } grinderSettings;
 bool connected = true, offSucceeds = true;
 int order = 0, offAt = 0, closeAt = 0, onCount = 0;
-struct Client { bool connected() { return ::connected; } };
+bool grinderBleConnected() { return connected; }
 struct {
-  Client client;
   State state = GRINDER_STATE_ARMED;
   Command pendingCommand = GRINDER_COMMAND_NONE;
   uint32_t lastCommandAt = 100;
@@ -163,8 +162,7 @@ def test_low_latency_cutoff_source_contracts():
     tare_complete = low_latency[tare_complete_start:tare_complete_end]
     cutoff_start = low_latency.index("static inline void grinderTickGrindingCutoff")
     fresh_start = low_latency.index("static inline void grinderRuntimeFreshWeightTick")
-    assert "const uint8_t command[] = { '!', '\\n' };" in low_latency
-    assert "grinderRuntime.client.write(command, sizeof(command))" in low_latency
+    assert 'grinderSendCommand("!", 1, GRINDER_COMMAND_OFF)' in low_latency
     assert 'return grinderSendSimpleCommand("OFF", GRINDER_COMMAND_OFF);' in low_latency
     assert low_latency.index("grinderSendOff()", cutoff_start) < low_latency.index("[grinder] cutoff", cutoff_start)
     assert low_latency.index("grinderPlugConnectionStale(millis())", fresh_start) < low_latency.index("grinderTickGrindingCutoff(weight);", fresh_start)
@@ -262,47 +260,18 @@ def test_sampling_changes_blocked_during_grinder_cutoff_states():
     assert_contains(MENU_HEADER, "grinderRuntimeLocksScaleSampling()")
 
 
-def test_discovery_contracts():
-    assert_not_contains(DISCOVERY_HEADER, "MDNS.queryService")
-    assert_contains(DISCOVERY_HEADER, "mdns_browse_new")
-    assert_contains(
-        DISCOVERY_HEADER,
-        'mdns_browse_new("_grinderplug", "_tcp", grinderMdnsBrowseNotify)',
-    )
-    assert_contains(
-        DISCOVERY_HEADER,
-        'mdns_browse_delete("_grinderplug", "_tcp")',
-    )
-    assert_contains(DISCOVERY_HEADER, "mdns_query_srv")
-    assert_contains(DISCOVERY_HEADER, "mdns_query_txt")
-    assert_contains(DISCOVERY_HEADER, "mdns_query_a")
-    assert_contains(DISCOVERY_HEADER, "GRINDER_MDNS_MAX_CANDIDATES")
-    assert_contains(DISCOVERY_HEADER, "grinderMdnsStartCollection")
-    assert_contains(DISCOVERY_HEADER, "grinderMdnsStopCollection")
-    assert_contains(PARAMETER_HEADER, "GrinderMdnsCandidate * volatile grinderMdnsCandidateBuffer")
-    assert_contains(DISCOVERY_HEADER, "candidate.port == GRINDER_TCP_PORT")
-    assert_contains(DISCOVERY_HEADER, 'strcmp(candidate.proto, "1") == 0')
-    assert_contains(DISCOVERY_HEADER, "grinderIsMac(candidate.mac)")
-    assert_contains(DISCOVERY_HEADER, "grinderAddDiscovery")
-    assert_contains(DISCOVERY_HEADER, "grinderMdnsBrowseRound(2500, debug)")
-    assert source(DISCOVERY_HEADER).count("grinderMdnsBrowseRound(2500, debug)") == 1
-    assert_contains(DISCOVERY_HEADER, "attempt < 2 && grinderRuntime.discoveredCount == 0")
-    assert_not_contains(DISCOVERY_HEADER, "requestedRounds")
-    assert_not_contains(DISCOVERY_HEADER, "windows[]")
-    assert_contains(DISCOVERY_HEADER, "wifiEnsureMdnsReadyForSta")
-    assert_not_contains(DISCOVERY_HEADER, "WiFi.setSleep")
-    assert_not_contains(DISCOVERY_HEADER, "esp_wifi_set_ps")
-    assert_not_contains(DISCOVERY_HEADER, "WIFI_PS_NONE")
-    assert_not_contains(DISCOVERY_HEADER, "mdns_query_ptr")
-    assert_not_contains(DISCOVERY_HEADER, "grinderProbeDiscoveryIp")
-    assert_not_contains(DISCOVERY_HEADER, "grinderDiscoverPlugsByTcpScan")
-    assert_not_contains(DISCOVERY_HEADER, 'grinderSetStatus("scan tcp")')
-    assert_not_contains(DISCOVERY_HEADER, 'strcmp(model, "NOUS_A6T")')
-    assert_not_contains(DISCOVERY_HEADER, "192, 168")
+def test_ble_transport_contracts():
+    assert_contains(RUNTIME_HEADER, 'grinderBleStartScan(grinderSettings.selectedMac)')
+    assert_contains(RUNTIME_HEADER, 'grinderBleWrite(data, length, requestId)')
+    assert_contains(RUNTIME_HEADER, 'grinderBleRead(&requestId, data, sizeof(data))')
+    for header in (RUNTIME_HEADER, LOW_LATENCY_HEADER, TRANSPORT_HEADER):
+        for legacy in ("WiFiClient", "WiFi.", "ESPmDNS", "mdns_", "GRINDER_TCP_PORT"):
+            assert_not_contains(header, legacy)
+    assert_not_contains(TRANSPORT_HEADER, "BLEDevice::deinit")
+    assert_not_contains(MENU_HEADER, "grinderEnsureWifiReadyForDiscovery")
 
 
 def test_firmware_contracts():
-    assert_contains(PROTOCOL_HEADER, "GRINDER_TCP_PORT 31980")
     assert_contains(PROTOCOL_HEADER, "grinderParseResponse")
     assert_contains(PROTOCOL_HEADER, "grinderCopyMacPrefix")
     assert_contains(PROTOCOL_HEADER, "strlen(value) < 17")
@@ -330,15 +299,11 @@ def test_firmware_contracts():
     assert_contains(RUNTIME_HEADER, 'preferences.getFloat("safety", 2.0f)')
     assert_contains(RUNTIME_HEADER, "previousWifiOnBoot")
     assert_contains(RUNTIME_HEADER, 'preferences.getBool("wifi_prev", false)')
-    assert_contains(RUNTIME_HEADER, 'preferences.putBool("wifi_saved", grinderSettings.previousWifiOnBootSaved)')
     assert_contains(PROTOCOL_HEADER, "GRINDER_RUNTIME_RECONNECT_INTERVAL_MS 3000")
-    assert_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS 250")
-    assert_not_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_BACKGROUND_MDNS_INTERVAL_MS")
-    assert_not_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_BACKGROUND_MDNS_TIMEOUT_MS")
     assert_contains(RUNTIME_HEADER, 'preferences.begin("grinder"')
     assert_contains(RUNTIME_HEADER, '#include "grinder_runtime_adaptive.h"')
     assert_contains(RUNTIME_HEADER, '#include "grinder_settings_persistence.h"')
-    assert_contains(RUNTIME_HEADER, '#include "grinder_discovery.h"')
+    assert_contains(RUNTIME_HEADER, '#include "grinder_ble_transport.h"')
     assert_contains(RUNTIME_HEADER, '#include "grinder_runtime_low_latency.h"')
     assert_contains(RUNTIME_HEADER, 'preferences.getUInt("safe_count"')
     assert_contains(RUNTIME_HEADER, 'preferences.isKey("safe0"')
@@ -347,43 +312,19 @@ def test_firmware_contracts():
     assert_contains(RUNTIME_HEADER, 'preferences.putFloat("safe2"')
     assert_contains(RUNTIME_HEADER, "esp_read_mac(mac, ESP_MAC_WIFI_STA)")
     assert_contains(RUNTIME_HEADER, "[grinder] bad response line=")
-    assert_contains(RUNTIME_HEADER, "client.connect(ip, GRINDER_TCP_PORT, GRINDER_DISCOVERY_CONNECT_TIMEOUT_MS)")
     assert_contains(RUNTIME_HEADER, 'grinderSetStatus("plug wait")')
-    assert_not_contains(RUNTIME_HEADER, "grinderFindSelectedByMdns")
-    assert_not_contains(RUNTIME_HEADER, "grinderAttemptMdnsConnect")
-    assert_not_contains(RUNTIME_HEADER, "grinderAttemptBackgroundMdnsConnect")
-    assert_not_contains(RUNTIME_HEADER, "grinderDiscoverPlugsByTcpScan")
-    assert_not_contains(RUNTIME_HEADER, "GRINDER_RUNTIME_STARTUP_DISCOVERY_DELAY_MS")
-    assert_not_contains(RUNTIME_HEADER, "MDNS.queryService")
-    assert_not_contains(RUNTIME_HEADER, "stateEnteredAt < GRINDER_RUNTIME_STARTUP_DISCOVERY_DELAY_MS")
     assert_not_contains(RUNTIME_HEADER, 'grinderEnterError("select plug")')
-    assert_not_contains(RUNTIME_HEADER, "WiFi.setSleep")
-    assert_not_contains(RUNTIME_HEADER, "esp_wifi_set_ps")
-    assert_not_contains(RUNTIME_HEADER, "WIFI_PS_NONE")
-    assert_not_contains(RUNTIME_HEADER, "wifiLowLatency")
-    assert_not_contains(LOW_LATENCY_HEADER, "WiFi.setSleep")
-    assert_not_contains(LOW_LATENCY_HEADER, "esp_wifi_set_ps")
-    assert_not_contains(LOW_LATENCY_HEADER, "WIFI_PS_NONE")
-    assert_not_contains(LOW_LATENCY_HEADER, "wifiLowLatency")
     assert_contains(PERSISTENCE_HEADER, "grinderFlushSettingsIfDirty")
-    assert_contains(PERSISTENCE_HEADER, "grinderSaveLastIpIfChanged")
-    assert_contains(PERSISTENCE_HEADER, "grinderSaveLookupHintsIfChanged")
     assert_contains(MENU_HEADER, "menuGrinder")
     assert_contains(MENU_HEADER, "Grind by weight")
-    assert_contains(MENU_HEADER, "grinderFindPlugsForSelection")
+    assert_contains(MENU_HEADER, "grinderRenderPlugSelection")
     assert_contains(MENU_HEADER, "grinderDrawPlugList")
     assert_contains(MENU_HEADER, "grinderEditNumber")
     assert_contains(MENU_HEADER, "grinderHandleDraftAdjust")
-    assert_contains(MENU_HEADER, "bool grinderEnsureWifiReadyForDiscovery()")
-    assert_contains(MENU_HEADER, "grinderReleaseClientForDiscovery();")
     assert_contains(RUNTIME_HEADER, "grinderSendOff();")
-    assert_contains(RUNTIME_HEADER, "grinderRuntime.client.print(\"BYE\\n\");")
-    assert_contains(MENU_HEADER, "if (!b_wifiEnabled) {\n    b_wifiOnBoot = true;\n    wifi_init();")
     assert_contains(MENU_HEADER, "toggleIntegration(IntegrationMode::Grinder);")
-    assert_contains(MENU_HEADER, "const bool stored = storagePutBool(KEY_WIFI_BOOT, false);")
-    assert_contains(ROOT / "include/integration_settings.h", "storagePutBool(KEY_WIFI_BOOT, grinderSettings.previousWifiOnBoot)")
-    assert_contains(HDS_SOURCE, "if (grinderSettings.enabled && !b_wifiOnBoot)")
-    assert_contains(MENU_HEADER, "WiFi Off deferred until Grind by weight is disabled.")
+    assert_not_contains(HDS_SOURCE, "if (grinderSettings.enabled && !b_wifiOnBoot)")
+    assert_not_contains(MENU_HEADER, "WiFi Off deferred until Grind by weight is disabled.")
     assert_contains(MENU_HEADER, "step * 10.0f")
     assert_contains(MENU_HEADER, "GRINDER_TARGET_MIN_GRAMS")
     assert_contains(MENU_HEADER, "grinderMaxSafetyGrams(grinderSettings.targetGrams)")
@@ -425,6 +366,6 @@ if __name__ == "__main__":
     test_pending_command_timeouts_source_contracts()
     test_weight_and_loop_source_order()
     test_sampling_changes_blocked_during_grinder_cutoff_states()
-    test_discovery_contracts()
+    test_ble_transport_contracts()
     test_firmware_contracts()
-    print("grinder TCP contract tests passed")
+    print("grinder BLE contract tests passed")

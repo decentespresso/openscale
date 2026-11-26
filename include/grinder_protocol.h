@@ -7,10 +7,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifndef GRINDER_TCP_PORT
-#define GRINDER_TCP_PORT 31980
-#endif
-
 #ifndef GRINDER_TCP_MAX_LINE_LENGTH
 #define GRINDER_TCP_MAX_LINE_LENGTH 96
 #endif

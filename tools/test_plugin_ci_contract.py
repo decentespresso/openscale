@@ -67,7 +67,7 @@ def main():
     assert '"${source_args[@]}"' in verifyPlugins
     assert 'python tools/build_custom_firmware.py \\\n' in verifyPlugins
     assert '"plugins": ["pressensor", "grind-by-weight"]' in verifyPlugins
-    assert "if: matrix.plugin == 'pressensor' && (matrix.firmware_ref == 'main' || matrix.firmware_ref == 'v3.1.17')" in verifyPlugins
+    assert "if: matrix.plugin == 'pressensor' && matrix.firmware_ref == 'v3.1.17'" in verifyPlugins
     bash = shutil.which("bash") if os.name != "nt" else None
     if bash:
         pluginStep = verifyPlugins.split("- name: Build plugin environment", 1)[1]
@@ -85,10 +85,10 @@ def main():
                 expected = ["tools/build_custom_firmware.py", "--config", ".pio.nosync/plugin-ci.json",
                             "--verify-plugin-environment", f"esp32s3-{pluginId}",
                             *(["--source-commit", "1" * 40] if ref == "main" else [])]
-                if pluginId == "pressensor" and ref in ("main", "v3.1.17"):
+                if pluginId == "pressensor" and ref == "v3.1.17":
                     expected = [*expected, "tools/build_custom_firmware.py", "--config",
                                 ".pio.nosync/plugin-combined-ci.json", "--builder-commit", "1" * 40,
-                                "--source-commit", ("1" if ref == "main" else "2") * 40]
+                                "--source-commit", "2" * 40]
                 assert result.stdout.splitlines() == expected
     assert "verify-pressensor:" not in customWorkflow
     assert "compile-matrix:" not in customWorkflow

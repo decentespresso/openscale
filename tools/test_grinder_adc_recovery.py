@@ -24,9 +24,8 @@ int order = 0, offAt = 0, closeAt = 0, powerAt = 0, tareAt = 0;
 int responseMode = -1, responseStatus = -1, responseCount = 0;
 unsigned long now = 10000;
 constexpr int LOW = 0;
-struct Client { bool connected() { return ::connected; } };
+bool grinderBleConnected() { return connected; }
 struct {
-  Client client;
   State state = GRINDER_STATE_GRINDING;
   bool resumeAfterRecovery = true;
   int recovery = 1;

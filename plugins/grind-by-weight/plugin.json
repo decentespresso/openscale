@@ -3,13 +3,13 @@
   "id": "grind-by-weight",
   "name": "Grind by weight",
   "description": "Stop a supported grinder automatically at the target dose.",
-  "tooltip": "Enables the built-in grind-by-weight integration. Its recommended setup also selects Wifi Pull OTA and the default web apps.",
+  "tooltip": "Uses BLE on main and WiFi on tagged releases. WiFi Pull OTA and the default web apps are optional on main.",
   "version": "1.0.0",
   "firmware_refs": ["v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main", "v3.1.15", "v3.1.16", "v3.1.17"],
   "requires": ["grinder"],
   "depends_on": [],
   "conflicts": ["pressensor"],
-  "conflicts_by_ref": {"main": [], "v3.1.16": [], "v3.1.17": []},
+  "conflicts_by_ref": {"v3.1.16": [], "v3.1.17": []},
   "recommends": {
     "features": ["pull-ota"],
     "plugins": ["default-web-apps"]

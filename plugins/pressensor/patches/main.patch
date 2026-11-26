@@ -314,9 +314,9 @@ diff --git a/include/parameter.h b/include/parameter.h
 index 2c2458c..a2e5664 100644
 --- a/include/parameter.h
 +++ b/include/parameter.h
-@@ -450,6 +450,17 @@ extern GrinderRuntime grinderRuntime;
- portMUX_TYPE grinderMdnsMux = portMUX_INITIALIZER_UNLOCKED;
- GrinderMdnsCandidate * volatile grinderMdnsCandidateBuffer = nullptr;
+@@ -459,6 +459,17 @@ GrinderBleTransport grinderBleTransport;
+ unsigned long grinderPlugPickerStartedAt = 0;
+ uint8_t grinderPlugPickerIndex = 0;
  #endif
 +#if HDS_ENABLE_PRESSENSOR
 +struct PressensorLink;

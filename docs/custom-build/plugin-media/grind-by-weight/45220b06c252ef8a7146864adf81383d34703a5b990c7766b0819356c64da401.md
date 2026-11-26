@@ -2,11 +2,9 @@
 
 HDS support for using a Tasmota smart plug as a grinder power switch.
 
-Plug-side firmware lives at:
+Use a matching BLE build of the [Tasmota Auto Doser firmware](https://github.com/decentespresso/tasmota-auto-doser) with an HDS build from `main`. Tagged HDS releases through 3.1.17 still use the WiFi version. The two transports are not interchangeable.
 
-https://github.com/decentespresso/tasmota-auto-doser
-
-This is a trusted-local-WLAN feature. The plug MAC is used as an identity label, not as authentication.
+You can use Grind by weight without WiFi on either device. Decaid can stay connected to the scale over its usual BLE link while the scale connects to the plug.
 
 ## What It Does
 
@@ -22,25 +20,23 @@ The grinder itself still needs to be ready to run. This feature controls power t
 
 ## Plug Setup
 
-Install the linked plug firmware on the Tasmota plug, then connect the plug to the same WiFi network as the scale.
+Install the matching BLE grinder firmware on the plug. Back up the existing settings and keep both previous firmware images for rollback. The plug's WiFi remains available for settings and firmware upgrades.
 
 ## Scale Setup
 
 1. Build firmware with the `Grind by weight` plugin and flash it to the HDS scale.
-2. Connect the scale to WiFi.
-3. Open the HDS OLED menu.
-4. Open `Grind by weight`.
-5. Select `Enable`.
-6. Select `Select Plug`.
-7. Choose the plug MAC address.
-8. Adjust the grinder settings if needed.
-9. Leave the menu with `Back`.
+2. Power on with the circle button to enable BLE, then open `Grind by weight` in the HDS OLED menu.
+3. Enable the grinder.
+4. Open `Select Plug` and choose the plug by its factory MAC address.
+5. Adjust the grinder settings if needed, then leave the menu with `Back`.
 
-The selected MAC is the saved identity. Hostname and IP are cached only to find the plug faster later.
+To use the scale's tare button while Decaid is connected, enable `BLE Buttons` in the scale's `Connections` menu.
+
+If you already selected the same plug on the WiFi firmware, the scale keeps its factory MAC and your dosing settings. There is no WiFi fallback: both firmware images must support BLE.
 
 ## First Safe Test
 
-Keep the grinder's physical switch off for the first test so the plug can switch without starting the motor.
+Disconnect the grinder. Use a lamp so you can see whether the outlet is energized, not just whether the software reports ON or OFF.
 
 1. Complete `Scale Setup` and leave the menu.
 2. Confirm that the display reaches `Tare to arm`.
@@ -49,7 +45,7 @@ Keep the grinder's physical switch off for the first test so the plug can switch
 5. Add weight gradually until the cutoff is reached and confirm that the plug switches off.
 6. Remove the weight and return the empty cup. After stable zero, the display should return to `Ready`.
 
-Only enable the grinder's physical switch after this dry test works reliably.
+Repeat with Windows Decaid connected to the physical scale over BLE and WiFi unavailable to both devices. Confirm Decaid reports weight during dosing and automatic plug reconnection, and remains connected while the scale's setup menu scans for plugs. This test does not qualify a tablet with a real DE1 connected.
 
 ## Settings
 
@@ -66,9 +62,7 @@ Zero hold: 1000 ms
 Target tolerance: 0.5 g
 ```
 
-`Enable` forces WiFi on boot.
-
-Entering the grinder menu while the plug is armed sends OFF first. The TCP connection is kept alive where possible, and leaving the menu rearms only after stable zero.
+The grinder has no WiFi settings. Entering the grinder menu while the plug is armed sends OFF first. The BLE connection stays open where possible, and leaving the menu rearms only after stable zero.
 
 The cutoff threshold is:
 
@@ -105,13 +99,14 @@ The earlier cutoff allows for grounds that continue falling after power is remov
 
 After a reconnect, the existing tare baseline remains valid. The relay stays off; remove and return the cup to resume without another tare. Automatic startup, charging-wake, and ADC-recovery tares do not arm the grinder.
 
-After `Ready` appears, only ground coffee should add weight. Slowly placing another object can look like a valid grind because the scale only sees weight changes. If the cup or setup changes, tare again before grinding.
+Once the relay is ON, a tare from Decaid or the scale resets the cutoff baseline while leaving the relay powered. Do not tare during a dose. If the cup or setup changes, turn the grinder off before taring again.
+
+After `Ready` appears, only ground coffee should add weight. Slowly placing another object can look like a valid grind because the scale only sees weight changes.
 
 ## Display Status
 
 | Display | Meaning | What to do |
 | --- | --- | --- |
-| `WiFi wait` | Scale is waiting for WiFi | Wait for WiFi or check the saved network |
 | `Plug wait` | Selected plug is not reachable | Power the plug or use `Select Plug` |
 | `Tare to arm` | Plug is connected but safely OFF | Put down the empty cup and tare |
 | `Zero wait` | Waiting for a stable zero reading | Leave the empty cup untouched |
@@ -168,47 +163,25 @@ Adaptive changes are saved before deep sleep instead of on every loop.
 
 ## Technical Details
 
-The plug advertises itself with mDNS:
+The plug advertises a dedicated BLE service. Manufacturer data starts with the little-endian company ID `FF FF`, followed by six bytes of its factory WiFi STA MAC in display order. HDS uses the MAC as an identity label and does not use the plug's current BLE address as its saved identity.
 
 ```text
-service: _grinderplug._tcp.local
-port: 31980
-TXT mac=<plug_mac>
-TXT proto=1
-TXT model=<optional model name>
+Service UUID:        6f735400-6d61-4d8e-bb2b-f5e23b9d7801
+Command write UUID:  6f735401-6d61-4d8e-bb2b-f5e23b9d7801
+Reply notify UUID:   6f735402-6d61-4d8e-bb2b-f5e23b9d7801
 ```
 
-The scale stores the selected plug MAC as the identity. Hostname and last IP are only cached lookup hints.
+Each write or notification contains a one-byte request ID and 1 to 19 ASCII bytes. Requests use IDs 1 through 255; every fragment of a message uses the same ID and replies echo it. ID 0 is reserved for unsolicited `BUSY` or `ERR`. Lines end in LF except for the standalone fast OFF command `!`.
 
-The scale keeps one TCP connection open while active. It sends `HELLO <scale_mac>` and only accepts the plug if the returned MAC matches the selected MAC.
+The scale subscribes for replies, sends `HELLO <scale_mac>`, and checks the returned MAC against the saved selection. After that it sends `PING` every 500 ms and uses `!` at cutoff. The plug supports `STATE`, `ON`, `OFF`, and `BYE` with the same relay semantics as the WiFi version.
 
-After validation, cutoff uses the fast OFF command `!`. The scale also sends PING heartbeats while connected.
-
-The plug relay must default to OFF on boot. If the active TCP connection drops, the plug must also turn the relay OFF.
-
-Each plug accepts one active scale connection. A second client receives `BUSY` and is closed.
+The plug starts with its relay off. It turns off if the owning connection drops or no valid heartbeat arrives for two seconds. A second client receives `BUSY` without affecting the owning connection.
 
 ## Troubleshooting
 
 ### Select Plug Finds Nothing
 
-Check mDNS from another machine:
-
-```powershell
-dns-sd -B _grinderplug._tcp local
-dns-sd -L "INSTANCE NAME HERE" _grinderplug._tcp local
-```
-
-Expected result:
-
-```text
-port=31980
-mac=<plug_mac>
-proto=1
-model=<optional model name>
-```
-
-If `_http._tcp` appears but `_grinderplug._tcp` does not, the plug service advertisement is wrong.
+Check that the plug has the BLE grinder firmware and is within range. A BLE scanner should show the grinder service UUID above. The factory MAC must be present in the manufacturer data.
 
 ### Scale Shows Plug Wait
 
@@ -217,12 +190,8 @@ The selected plug cannot currently be reached.
 Check:
 
 - plug is powered
-- plug is on the same WLAN
-- plug TCP service is listening on port 31980
-- saved hostname still resolves
-- saved IP still belongs to the selected plug
-
-If the plug IP changed and hostname lookup does not recover it, run `Select Plug` again.
+- plug is within BLE range
+- the saved MAC in `Select Plug` matches the intended plug
 
 ### Scale Shows Busy
 
@@ -230,7 +199,7 @@ Another scale or client is already connected to the plug. Disconnect the other c
 
 ### Scale Shows Wrong Mac
 
-The TCP server answered with a MAC different from the selected plug MAC. This usually means the cached IP points to another device. Run `Select Plug` again.
+The plug replied with a MAC different from the selected identity. Check the firmware on the plug and verify the intended MAC before selecting it again.
 
 ### Scale Shows an Error
 
@@ -239,13 +208,13 @@ The scale entered the Grind by weight fail-safe state.
 Common causes:
 
 - plug connection lost while grinding
-- malformed TCP response
+- malformed BLE response
 - wrong plug MAC
 - plug returned `ERR`
 - `ON` timed out
 - `OFF` timed out
 
-The plug is expected to turn OFF automatically when the active TCP connection drops.
+The plug should turn OFF when the owning BLE connection drops or its heartbeat expires.
 
 ### Scale Shows Tare To Arm
 
@@ -253,7 +222,7 @@ The plug connection is valid, but the grinder remains OFF until a user-requested
 
 ### Plug Is Offline And Weighing Must Stay Responsive
 
-Normal weighing does not run full blocking service discovery in the background. Runtime lookup only tries the saved IP and saved hostname with short timeouts. Full mDNS discovery happens in manual `Select Plug`.
+During normal weighing, the scale looks for the saved plug in the background. Use `Select Plug` to list nearby plugs.
 
 ### The Scale Does Not Rearm
 
@@ -280,4 +249,4 @@ Grind by weight debug logs are printed on USB serial. The internal prefix remain
 
 ## Security Notes
 
-This protocol has no cryptographic authentication. Any host on the trusted WLAN that can reach the plug or scale network services may interact with them. Do not expose the scale or plug to untrusted networks.
+The first BLE client to connect owns the plug until it disconnects or times out. There is no PIN or bond. Anyone within Bluetooth range can claim an idle plug, even without access to your WiFi. The MAC check identifies the selected plug but does not authenticate it. Use this build only where you trust nearby devices.

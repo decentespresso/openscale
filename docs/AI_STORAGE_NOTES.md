@@ -93,8 +93,8 @@ selection; sensor and plug discovery need no restart. A pending or unconfirmed
 grinder stop blocks a mode change. Other restart requests retain the final
 grinder shutdown guard.
 Sensor, plug, and tuning keys remain in their existing namespaces.
-Migration restores the pre-grinder WiFi boot preference from the legacy settings.
-Selected Grinder forces WiFi in RAM at startup without overwriting that preference.
+Legacy migration restores the pre-grinder WiFi boot preference. The BLE grinder
+does not change WiFi settings and keeps the saved factory plug MAC across upgrades.
 Run `python tools/test_app_text.py` for migration, failed-save, and restart guards.
 
 ## Legacy EEPROM Migration

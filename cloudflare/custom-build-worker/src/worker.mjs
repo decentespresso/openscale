@@ -220,6 +220,13 @@ function featureDefinition(catalog, id) {
       feature.firmware_refs.some(ref => typeof ref !== "string")) {
     throw new ApiError(503, "invalid_service_catalog");
   }
+  const overrides = feature.requires_by_ref;
+  if (overrides !== undefined && (!overrides || typeof overrides !== "object" || Array.isArray(overrides) ||
+      Object.entries(overrides).some(([ref, requires]) =>
+        !feature.firmware_refs.includes(ref) || !Array.isArray(requires) ||
+        requires.some(required => typeof required !== "string" || !Object.hasOwn(catalog.features, required))))) {
+    throw new ApiError(503, "invalid_service_catalog");
+  }
   return feature;
 }
 
@@ -237,7 +244,9 @@ function resolveFeatures(catalog, firmwareRef, requested, plugins) {
   while (resolved.size !== previousSize) {
     previousSize = resolved.size;
     for (const id of resolved) {
-      for (const dependency of featureDefinition(catalog, id).requires) resolved.add(dependency);
+      const feature = featureDefinition(catalog, id);
+      const requires = feature.requires_by_ref?.[firmwareRef] ?? feature.requires;
+      for (const dependency of requires) resolved.add(dependency);
     }
   }
   for (const id of resolved) {

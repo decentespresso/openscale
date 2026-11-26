@@ -13,6 +13,9 @@ ROOT = Path(__file__).resolve().parents[1]
 def check_menu_escape():
     menu = (ROOT / "include/menu.h").read_text(encoding="utf-8")
     battery = (ROOT / "include/fuel_gauge_menu.h").read_text(encoding="utf-8")
+    for name in ("void grinderSelectPlugMenu()", "static bool grinderRenderPlugSelection()"):
+        select = body_at(menu, menu.index(f"{name} {{"))
+        assert "while (" not in select and "delay(" not in select
     for name in ("showWifiStatus", "showStatus", "showAbout", "showLogo"):
         page = body_at(menu, menu.index(f"void {name}() {{"))
         assert re.findall(r"\bwhile\s*\((.*)\)", page) == ["u8g2.nextPage()"], name
@@ -21,8 +24,6 @@ def check_menu_escape():
     for text, declaration, marker, exit_statement in (
         (menu, "void waitForMenuButtonRelease() {", "while (digitalRead", "return;"),
         (battery, "void showBatInfo() {", "while (showing)", "return;"),
-        (menu, "bool grinderEnsureWifiReadyForDiscovery() {", "while (WiFi.status()", "return false;"),
-        (menu, "void grinderSelectPlugMenu() {", "while (selecting)", "return;"),
         (menu, "static inline float grinderHandleDraftAdjust(", "while (digitalRead", "return draft;"),
         (menu, "static inline bool grinderEditNumber(", "while (true)", "return false;"),
         (menu, "bool calibrationCaptureRaw(", "while (millis()", "return false;"),
@@ -48,6 +49,7 @@ def main():
     loop = function_body((ROOT / "src/hds.ino").read_text(encoding="utf-8"), "loop")
     assert loop.index("processMenuInfoPageExit();") < loop.index("if (b_ota)")
     main_ota = body_at(loop, loop.index("if (b_ota)"))
+    assert main_ota.index("grinderCancelPlugSelection();") < main_ota.index("grinderPrepareForShutdown();")
     assert main_ota.index('wakeScaleFromSoftSleep("OTA wake");') < main_ota.index("fuelGaugeRequestQuiesce();")
     rollback = (ROOT / "include/ota_rollback.h").read_text(encoding="utf-8")
     rollback_begin = function_body(rollback, "hdsOtaRollbackBegin")

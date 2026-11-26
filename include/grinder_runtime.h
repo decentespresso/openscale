@@ -2,17 +2,13 @@
 #define GRINDER_RUNTIME_H
 
 #include <Arduino.h>
-#include <ESPmDNS.h>
 #include <Preferences.h>
-#include <WiFi.h>
 #include <esp_mac.h>
 #include <math.h>
 #include "grinder_protocol.h"
 #include "grinder_adaptive_safety.h"
-
-#ifndef GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS
-#define GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS 250
-#endif
+#include "grinder_ble_transport.h"
+#include "grinder_reply_frame.h"
 
 enum GrinderDosingState {
   GRINDER_STATE_DISABLED,
@@ -38,8 +34,6 @@ enum GrinderPendingCommand {
 struct GrinderSettings {
   bool enabled = false;
   char selectedMac[18] = { 0 };
-  char hostname[64] = { 0 };
-  IPAddress lastIp = IPAddress((uint32_t)0);
   float targetGrams = 15.0f;
   float safetyMarginGrams = 2.0f;
   float zeroMinGrams = -1.0f;
@@ -51,26 +45,18 @@ struct GrinderSettings {
   bool previousWifiOnBootSaved = false;
 };
 
-struct GrinderDiscoveredPlug {
-  char mac[18] = { 0 };
-  char hostname[64] = { 0 };
-  IPAddress ip = IPAddress((uint32_t)0);
-};
-
 struct GrinderRuntime {
-  WiFiClient client;
   GrinderDosingState state = GRINDER_STATE_DISABLED;
   GrinderPendingCommand pendingCommand = GRINDER_COMMAND_NONE;
   GrinderDiscoveredPlug discovered[8];
   uint8_t discoveredCount = 0;
-  uint8_t resolvePhase = 0;
+  uint8_t nextRequestId = 0;
+  uint8_t pendingRequestId = 0;
+  GrinderReplyFrame reply;
   uint8_t rateSamples = 0;
   char scaleMac[18] = { 0 };
   char activePlugMac[18] = { 0 };
   char status[32] = { 0 };
-  char rxLine[GRINDER_TCP_MAX_LINE_LENGTH + 1] = { 0 };
-  uint16_t rxLength = 0;
-  bool pendingCr = false;
   bool relayOn = false;
   bool shutdownUnconfirmed = false;
   bool removalSeen = false;
@@ -99,6 +85,7 @@ struct GrinderRuntime {
   uint32_t lastPingAt = 0;
   uint32_t lastRxAt = 0;
   uint32_t lastCommandAt = 0;
+  uint32_t offSentAt = 0;
   uint32_t zeroStableSince = 0;
   uint32_t lastWeightAt = 0;
   uint32_t stateEnteredAt = 0;
@@ -112,10 +99,6 @@ struct GrinderRuntime {
 
 GrinderSettings grinderSettings;
 GrinderRuntime grinderRuntime;
-
-static inline bool grinderIpValid(IPAddress ip) {
-  return (uint32_t)ip != 0;
-}
 
 static inline void grinderCopyCString(char *output, size_t outputSize, const char *input) {
   if (output == nullptr || outputSize == 0) {
@@ -175,8 +158,6 @@ static inline void grinderLoadSettings() {
   }
   grinderSettings.enabled = preferences.getBool("enabled", false);
   grinderCopyString(grinderSettings.selectedMac, sizeof(grinderSettings.selectedMac), preferences.getString("mac", ""));
-  grinderCopyString(grinderSettings.hostname, sizeof(grinderSettings.hostname), preferences.getString("host", ""));
-  grinderSettings.lastIp = IPAddress(preferences.getUInt("ip", 0));
   grinderSettings.targetGrams = preferences.getFloat("target", 15.0f);
   grinderSettings.safetyMarginGrams = preferences.getFloat("safety", 2.0f);
   grinderSettings.zeroMinGrams = preferences.getFloat("zmin", -1.0f);
@@ -202,8 +183,6 @@ static inline void grinderSaveSettings() {
   }
   preferences.putBool("enabled", grinderSettings.enabled);
   preferences.putString("mac", grinderSettings.selectedMac);
-  preferences.putString("host", grinderSettings.hostname);
-  preferences.putUInt("ip", (uint32_t)grinderSettings.lastIp);
   preferences.putFloat("target", grinderSettings.targetGrams);
   preferences.putFloat("safety", grinderSettings.safetyMarginGrams);
   preferences.putFloat("zmin", grinderSettings.zeroMinGrams);
@@ -215,8 +194,6 @@ static inline void grinderSaveSettings() {
   preferences.putFloat("safe1", grinderSettings.adaptiveSafety.history[1]);
   preferences.putFloat("safe2", grinderSettings.adaptiveSafety.history[2]);
   preferences.putUInt("zerohold", grinderSettings.zeroHoldMs);
-  preferences.putBool("wifi_prev", grinderSettings.previousWifiOnBoot);
-  preferences.putBool("wifi_saved", grinderSettings.previousWifiOnBootSaved);
   preferences.end();
   grinderRuntime.settingsDirty = false;
 }
@@ -256,36 +233,20 @@ static inline void grinderSetState(GrinderDosingState state) {
   }
 }
 
-static inline bool grinderRuntimeLogDue(uint32_t intervalMs) {
-  const uint32_t now = millis();
-  if (now - grinderRuntime.lastRuntimeLogAt < intervalMs) {
-    return false;
-  }
-  grinderRuntime.lastRuntimeLogAt = now;
-  return true;
-}
-
 static inline void grinderFormatScaleMac() {
-  uint8_t mac[6] = { 0, 0, 0, 0, 0, 0 };
-  if (esp_read_mac(mac, ESP_MAC_WIFI_STA) != ESP_OK) {
-    WiFi.macAddress(mac);
-  }
+  uint8_t mac[6];
+  if (esp_read_mac(mac, ESP_MAC_WIFI_STA) != ESP_OK) return;
   snprintf(grinderRuntime.scaleMac, sizeof(grinderRuntime.scaleMac), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   Serial.printf("[grinder] scale mac=%s\n", grinderRuntime.scaleMac);
 }
 
-static inline void grinderResetLineReader() {
-  grinderRuntime.rxLength = 0;
-  grinderRuntime.rxLine[0] = 0;
-  grinderRuntime.pendingCr = false;
-}
-
 static inline void grinderCloseClient() {
-  grinderRuntime.client.stop();
+  grinderBleClose();
   grinderRuntime.pendingCommand = GRINDER_COMMAND_NONE;
+  grinderRuntime.pendingRequestId = 0;
   grinderRuntime.relayOn = false;
   grinderRuntime.activePlugMac[0] = 0;
-  grinderResetLineReader();
+  grinderRuntime.reply = {};
 }
 
 static inline void grinderResetCutoffGuard();
@@ -293,7 +254,6 @@ static inline void grinderResetGrindConfirmation();
 
 static inline void grinderDisconnectToFinding(uint32_t reconnectFrom = 0, uint32_t reconnectDelayMs = 0) {
   grinderCloseClient();
-  grinderRuntime.resolvePhase = 0;
   grinderRuntime.lastConnectAttempt = reconnectFrom;
   grinderRuntime.reconnectDelayMs = reconnectDelayMs;
   grinderRuntime.grindRateGps = 0.0f;
@@ -310,7 +270,7 @@ static inline void grinderDisconnectToFinding(uint32_t reconnectFrom = 0, uint32
 static inline bool grinderSendOff();
 
 static inline void grinderEnterError(const char *status) {
-  if (grinderRuntime.client.connected()) {
+  if (grinderBleConnected()) {
     grinderSendOff();
   }
   grinderRuntime.recovery = grinderRecoveryComplete();
@@ -329,21 +289,30 @@ static inline bool grinderResponseMatchesSelection(const GrinderTcpResponse &res
   return grinderSelectedMacSet() && strcmp(response.plugMac, grinderSettings.selectedMac) == 0;
 }
 
-static inline bool grinderSendLine(const char *line, GrinderPendingCommand command) {
-  if (!grinderRuntime.client.connected()) {
-    return false;
-  }
-  if (command == GRINDER_COMMAND_ON) grinderRuntime.shutdownUnconfirmed = true;
-  grinderRuntime.client.print(line);
-  grinderRuntime.client.print('\n');
+static inline bool grinderSendCommand(const char *data, size_t length, GrinderPendingCommand command) {
+  const bool retryOff = command == GRINDER_COMMAND_OFF && grinderRuntime.pendingCommand == command;
+  if (!retryOff && ++grinderRuntime.nextRequestId == 0) ++grinderRuntime.nextRequestId;
+  const uint8_t requestId = retryOff ? grinderRuntime.pendingRequestId : grinderRuntime.nextRequestId;
+  if (!grinderBleWrite(data, length, requestId)) return false;
+  if (!retryOff) grinderRuntime.reply = {};
+  grinderRuntime.pendingRequestId = requestId;
   grinderRuntime.pendingCommand = command;
   grinderRuntime.lastCommandAt = millis();
+  if (command == GRINDER_COMMAND_ON) grinderRuntime.shutdownUnconfirmed = true;
+  if (command == GRINDER_COMMAND_OFF && !retryOff) grinderRuntime.offSentAt = grinderRuntime.lastCommandAt;
   if (command == GRINDER_COMMAND_PING) {
     grinderRuntime.lastPingAt = grinderRuntime.lastCommandAt;
   } else {
-    Serial.printf("[grinder] tx %s state=%s\n", line, grinderStateText(grinderRuntime.state));
+    const size_t displayLength = data[length - 1] == '\n' ? length - 1 : length;
+    Serial.printf("[grinder] tx %.*s state=%s\n", (int)displayLength, data, grinderStateText(grinderRuntime.state));
   }
   return true;
+}
+
+static inline bool grinderSendLine(const char *line, GrinderPendingCommand command) {
+  char frame[32];
+  const int length = snprintf(frame, sizeof(frame), "%s\n", line);
+  return length > 0 && length < (int)sizeof(frame) && grinderSendCommand(frame, length, command);
 }
 
 static inline bool grinderSendHello() {
@@ -414,7 +383,7 @@ static inline void grinderUpdateRate(float weight) {
 }
 
 static inline bool grinderPlugConnectionStale(uint32_t now) {
-  if (!grinderRuntime.client.connected()) {
+  if (!grinderBleConnected()) {
     return true;
   }
   return grinderHeartbeatLost(grinderRuntime.missedPingResponses, grinderRuntime.lastRxAt, now);
@@ -423,29 +392,6 @@ static inline bool grinderPlugConnectionStale(uint32_t now) {
 static inline void grinderCheckConnectionLoss();
 
 #include "grinder_runtime_low_latency.h"
-
-static inline bool grinderLineRead(char value) {
-  if (value == '\r') {
-    if (grinderRuntime.pendingCr) {
-      grinderResetLineReader();
-    } else {
-      grinderRuntime.pendingCr = true;
-    }
-    return false;
-  }
-  if (value == '\n') {
-    grinderRuntime.pendingCr = false;
-    grinderRuntime.rxLine[grinderRuntime.rxLength] = 0;
-    return true;
-  }
-  if (grinderRuntime.pendingCr || value < 32 || value > 126 || grinderRuntime.rxLength >= GRINDER_TCP_MAX_LINE_LENGTH) {
-    grinderResetLineReader();
-    return false;
-  }
-  grinderRuntime.rxLine[grinderRuntime.rxLength++] = value;
-  grinderRuntime.rxLine[grinderRuntime.rxLength] = 0;
-  return false;
-}
 
 static inline void grinderWaitAfterRecovery() {
   grinderRuntime.resumeAfterRecovery = false;
@@ -497,6 +443,7 @@ static inline void grinderHandleOkResponse(const GrinderTcpResponse &response, f
       break;
     case GRINDER_COMMAND_OFF:
       if (!response.relayOn) {
+        Serial.printf("[grinder] off confirmed ms=%lu\n", (unsigned long)(millis() - grinderRuntime.offSentAt));
         grinderRuntime.shutdownUnconfirmed = false;
         grinderRuntime.pendingCommand = GRINDER_COMMAND_NONE;
         grinderMarkAdaptiveShotOff(weight);
@@ -529,10 +476,10 @@ static inline void grinderHandleOkResponse(const GrinderTcpResponse &response, f
   }
 }
 
-static inline void grinderHandleResponseLine(float weight) {
+static inline void grinderHandleResponseLine(const char *line, uint8_t requestId, float weight) {
   GrinderTcpResponse response;
-  if (!grinderParseResponse(grinderRuntime.rxLine, &response)) {
-    Serial.printf("[grinder] bad response line=%s\n", grinderRuntime.rxLine);
+  if (!grinderParseResponse(line, &response) || (requestId == 0 && response.kind == GRINDER_TCP_RESPONSE_OK)) {
+    Serial.printf("[grinder] bad response line=%s\n", line);
     grinderEnterError("bad response");
     return;
   }
@@ -563,100 +510,46 @@ static inline void grinderHandleResponseLine(float weight) {
 }
 
 static inline void grinderReadClient(float weight) {
-  while (grinderRuntime.client.connected() && grinderRuntime.client.available()) {
-    const int value = grinderRuntime.client.read();
-    if (value < 0) {
-      return;
+  uint8_t requestId;
+  char data[19];
+  for (uint8_t i = 0; i < 8; ++i) {
+    const size_t size = grinderBleRead(&requestId, data, sizeof(data));
+    if (!size) break;
+    const uint8_t expected = grinderRuntime.pendingCommand == GRINDER_COMMAND_NONE ? 0 : grinderRuntime.pendingRequestId;
+    const auto result = grinderRuntime.reply.append(expected, requestId, data, size);
+    if (result == GrinderReplyResult::Invalid) {
+      grinderEnterError("bad reply frame");
+      break;
     }
-    if (grinderLineRead((char)value)) {
-      grinderHandleResponseLine(weight);
-      grinderResetLineReader();
-      if (grinderRuntime.state == GRINDER_STATE_ERROR) {
-        return;
-      }
-    }
+    if (result == GrinderReplyResult::Complete) grinderHandleResponseLine(grinderRuntime.reply.line, requestId, weight);
   }
-}
-
-#include "grinder_discovery.h"
-
-static inline bool grinderAttemptConnect(IPAddress ip) {
-  if (!grinderIpValid(ip)) {
-    grinderSetStatus("plug wait");
-    return false;
-  }
-  grinderCloseClient();
-  grinderSetStatus("connecting");
-  grinderRuntime.client.setTimeout(50);
-  if (!grinderRuntime.client.connect(ip, GRINDER_TCP_PORT, GRINDER_DISCOVERY_CONNECT_TIMEOUT_MS)) {
-    grinderSetStatus("plug wait");
-    if (grinderRuntimeLogDue(10000)) {
-      Serial.printf("[grinder] plug wait ip=%s\n", ip.toString().c_str());
-    }
-    grinderCloseClient();
-    return false;
-  }
-  Serial.printf("[grinder] connect ip=%s selected=%s\n",
-                ip.toString().c_str(),
-                grinderSettings.selectedMac);
-  grinderRuntime.client.setNoDelay(true);
-  grinderRuntime.lastRxAt = millis();
-  grinderRuntime.lastPingAt = 0;
-  grinderRuntime.missedPingResponses = 0;
-  grinderResetLineReader();
-  if (!grinderSendHello()) {
-    Serial.println("[grinder] HELLO send failed");
-    grinderCloseClient();
-    return false;
-  }
-  return true;
-}
-
-static inline bool grinderAttemptHostnameConnect() {
-  if (grinderSettings.hostname[0] == 0) {
-    grinderSetStatus("plug wait");
-    return false;
-  }
-  char host[64];
-  grinderCopyCString(host, sizeof(host), grinderSettings.hostname);
-  const size_t len = strlen(host);
-  if (len > 6 && strcmp(host + len - 6, ".local") == 0) {
-    host[len - 6] = 0;
-  }
-  IPAddress ip = MDNS.queryHost(host, GRINDER_RUNTIME_HOST_RESOLVE_TIMEOUT_MS);
-  if (!grinderIpValid(ip)) {
-    grinderSetStatus("plug wait");
-    if (grinderRuntimeLogDue(10000)) {
-      Serial.printf("[grinder] plug wait host=%s\n", host);
-    }
-    return false;
-  }
-  Serial.printf("[grinder] host resolved host=%s ip=%s\n", host, ip.toString().c_str());
-  grinderSaveLastIpIfChanged(ip);
-  return grinderAttemptConnect(ip);
 }
 
 static inline void grinderResolveAndConnect() {
   const uint32_t now = millis();
   if (grinderRuntime.pendingCommand == GRINDER_COMMAND_HELLO) {
-    if (now - grinderRuntime.lastCommandAt > 1200) {
-      grinderCloseClient();
-      grinderRuntime.resolvePhase = (grinderRuntime.resolvePhase + 1) % 2;
-    }
+    if (!grinderBleConnected() || now - grinderRuntime.lastCommandAt > 1200) grinderCloseClient();
     return;
   }
+  if (grinderBleConnected()) {
+    grinderRuntime.lastRxAt = now;
+    grinderRuntime.lastPingAt = now;
+    grinderRuntime.missedPingResponses = 0;
+    if (!grinderSendHello()) grinderCloseClient();
+    return;
+  }
+  if (grinderBleBusy()) return;
+  if (!grinderBleAvailable()) {
+    grinderSetStatus("BLE off");
+    return;
+  }
+  grinderSetStatus("plug wait");
   if (!grinderReconnectDue(grinderRuntime.lastConnectAttempt, grinderRuntime.reconnectDelayMs, now)) {
     return;
   }
   grinderRuntime.lastConnectAttempt = now;
   grinderRuntime.reconnectDelayMs = GRINDER_RUNTIME_RECONNECT_INTERVAL_MS;
-  if (grinderRuntime.resolvePhase == 0) {
-    grinderRuntime.resolvePhase = 1;
-    grinderAttemptConnect(grinderSettings.lastIp);
-    return;
-  }
-  grinderRuntime.resolvePhase = 0;
-  grinderAttemptHostnameConnect();
+  grinderBleStartScan(grinderSettings.selectedMac);
 }
 
 static inline void grinderSendPingIfDue() {
@@ -788,7 +681,6 @@ static inline void grinderRuntimeBegin() {
 
 static inline void grinderRuntimeReset() {
   grinderCloseClient();
-  grinderRuntime.resolvePhase = 0;
   grinderRuntime.lastConnectAttempt = 0;
   grinderRuntime.reconnectDelayMs = GRINDER_RUNTIME_RECONNECT_INTERVAL_MS;
   grinderRuntime.lastPingAt = 0;
@@ -819,7 +711,7 @@ static inline void grinderPauseForMenu() {
     return;
   }
   grinderRuntime.menuPaused = true;
-  if (!grinderRuntime.client.connected() ||
+  if (!grinderBleConnected() ||
       (grinderRuntime.state != GRINDER_STATE_ARMED && grinderRuntime.state != GRINDER_STATE_GRINDING)) {
     return;
   }
@@ -857,6 +749,7 @@ static inline void grinderTickWhileMenuOpen(float weight) {
 }
 
 static inline void grinderRuntimeTick(float weight) {
+  grinderBleTick();
   if (!grinderSettings.enabled) {
     if (grinderRuntime.state != GRINDER_STATE_DISABLED) {
       grinderRuntimeReset();
@@ -882,11 +775,7 @@ static inline void grinderRuntimeTick(float weight) {
   }
   switch (grinderRuntime.state) {
     case GRINDER_STATE_FINDING_PLUG:
-      if (WiFi.status() == WL_CONNECTED) {
-        grinderResolveAndConnect();
-      } else {
-        grinderSetStatus("wifi wait");
-      }
+      grinderResolveAndConnect();
       break;
     case GRINDER_STATE_CONNECTED:
       grinderTickConnected(weight);
@@ -917,17 +806,6 @@ static inline void grinderRuntimeTick(float weight) {
 
 static inline bool grinderRuntimeKeepsAwake() {
   return grinderSettings.enabled && grinderRuntime.state != GRINDER_STATE_DISABLED;
-}
-
-static inline void grinderReleaseClientForDiscovery() {
-  if (grinderRuntime.client.connected()) {
-    grinderSendOff();
-    delay(250);
-    grinderRuntime.client.print("BYE\n");
-    delay(250);
-  }
-  grinderCloseClient();
-  delay(250);
 }
 
 static inline void grinderShortStatus(char *output, size_t outputSize) {

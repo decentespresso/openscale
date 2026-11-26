@@ -137,6 +137,7 @@ void refreshMenuRows();
 #if HDS_ENABLE_GRINDER
 void toggleGrinder();
 void grinderSelectPlugMenu();
+void grinderCancelPlugSelection();
 void grinderTargetMenu();
 void grinderSafetyMenu();
 void grinderZeroRangeMenu();
@@ -330,6 +331,7 @@ void exitMenu() {
 #endif
   delay(1000);
 #if HDS_ENABLE_GRINDER
+  grinderCancelPlugSelection();
   grinderResumeAfterMenu();
 #endif
   leaveMenu();
@@ -402,8 +404,6 @@ void toggleIntegration(IntegrationMode mode) {
   if (grinderSettings.enabled) {
     grinderRuntimeBegin();
     grinderPauseForMenu();
-    b_wifiOnBoot = true;
-    if (!b_wifiEnabled) wifi_init();
   }
 #endif
 #if HDS_ENABLE_PRESSENSOR
@@ -450,21 +450,6 @@ void toggleBuzzer() {
 #if HDS_FEATURE_WIFI
 void toggleWifi() {
   const bool enabled = !b_wifiOnBoot;
-#if HDS_ENABLE_GRINDER
-  if (!enabled && grinderSettings.enabled) {
-    const bool stored = storagePutBool(KEY_WIFI_BOOT, false);
-    if (!stored) {
-      showStoredAction("WiFi", false, false);
-      return;
-    }
-    actionMessage = "Grind by weight";
-    actionMessage2 = "Needs WiFi";
-    menuActionMessageChanged();
-    t_actionMessageDelay = 1500;
-    Serial.println("WiFi Off deferred until Grind by weight is disabled.");
-    return;
-  }
-#endif
   const bool stored = storagePutBool(KEY_WIFI_BOOT, enabled);
   if (stored) {
     b_wifiOnBoot = enabled;
@@ -692,51 +677,25 @@ void toggleGrinder() {
   toggleIntegration(IntegrationMode::Grinder);
 }
 
-bool grinderEnsureWifiReadyForDiscovery() {
-  if (!b_wifiEnabled) {
-    b_wifiOnBoot = true;
-    wifi_init();
-  }
-  const uint32_t startedAt = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - startedAt < 12000) {
-    if (b_ota) return false;
-    serviceFuelGauge();
-    refreshOLED((char *)"WiFi", (char *)"Connecting");
-    if (b_wifiEnabled) {
-      wifiSupervise();
-    }
-    delay(250);
-  }
-  if (b_wifiEnabled) {
-    wifiSupervise();
-  }
-  return WiFi.status() == WL_CONNECTED;
-}
-
-uint8_t grinderFindPlugsForSelection() {
+void grinderSelectPlugMenu() {
   if (!grinderSettings.enabled) {
     grinderSetActionMessage("Enable Mode", "First");
-    return 0;
+    return;
   }
   if (!integrationCanRestart()) {
     blockIntegrationChange();
-    return 0;
+    return;
   }
-  if (!grinderEnsureWifiReadyForDiscovery()) {
-    grinderSetActionMessage("WiFi Wait", "No Plugs");
-    return 0;
+  if (!grinderBleAvailable()) {
+    grinderSetActionMessage("BLE Off", "No Plugs");
+    return;
   }
-  grinderReleaseClientForDiscovery();
-  refreshOLED((char *)"Finding", (char *)"Plugs");
-  uint8_t count = grinderDiscoverPlugs();
-  char message[24];
-  if (count == 0) {
-    grinderSetActionMessage(grinderRuntime.status[0] ? grinderRuntime.status : "No Plugs");
-  } else {
-    snprintf(message, sizeof(message), "Found %u", count);
-    grinderSetActionMessage(message);
-  }
-  return count;
+  grinderDisconnectToFinding();
+  grinderRuntime.discoveredCount = 0;
+  grinderPlugPicker = GrinderPlugPicker::Disconnecting;
+  grinderPlugPickerStartedAt = millis();
+  grinderPlugPickerIndex = 0;
+  invalidateMenuFrame();
 }
 
 void grinderDrawPlugList(uint8_t selected) {
@@ -765,39 +724,57 @@ void grinderDrawPlugList(uint8_t selected) {
   } while (u8g2.nextPage());
 }
 
-void grinderSelectPlugMenu() {
-  if (grinderFindPlugsForSelection() == 0) {
-    return;
+void grinderCancelPlugSelection() {
+  if (grinderPlugPicker != GrinderPlugPicker::Idle) {
+    grinderBleStopScan();
+    grinderPlugPicker = GrinderPlugPicker::Idle;
+    invalidateMenuFrame();
   }
-  waitForMenuButtonRelease();
-  uint8_t selected = 0;
-  bool selecting = true;
-  while (selecting) {
-    if (b_ota) return;
-    power_off(-1);
-    grinderDrawPlugList(selected);
-    if (digitalRead(BUTTON_CIRCLE) == LOW) {
-      selected = (selected + 1) % (grinderRuntime.discoveredCount + 1);
-      waitForMenuButtonRelease();
+}
+
+static bool grinderRenderPlugSelection() {
+  const unsigned long now = millis();
+  if (grinderPlugPicker == GrinderPlugPicker::Disconnecting) {
+    if (!grinderBleBusy() && grinderBleStartScan(nullptr)) {
+      grinderPlugPicker = GrinderPlugPicker::Scanning;
+      grinderPlugPickerStartedAt = now;
+    } else if (now - grinderPlugPickerStartedAt >= 1000) {
+      grinderCancelPlugSelection();
+      grinderSetActionMessage("BLE Busy", "Try Again");
     }
-    if (digitalRead(BUTTON_SQUARE) == LOW) {
-      if (selected == 0) {
-        selecting = false;
-      } else {
-        grinderSaveSelectedDiscovery(grinderRuntime.discovered[selected - 1]);
-        grinderRuntimeReset();
-        Serial.printf("[grinder] selected mac=%s host=%s ip=%s enabled=%d\n",
-                      grinderSettings.selectedMac,
-                      grinderSettings.hostname,
-                      grinderSettings.lastIp.toString().c_str(),
-                      grinderSettings.enabled ? 1 : 0);
-        grinderSetActionMessage("Plug Selected", grinderSettings.enabled ? "Saved" : "Enable in menu");
-        selecting = false;
-      }
-      waitForMenuButtonRelease();
-    }
-    delay(40);
   }
+  if (grinderPlugPicker == GrinderPlugPicker::Scanning &&
+      (!grinderBleScanActive() || now - grinderPlugPickerStartedAt >= 3000)) {
+    grinderBleStopScan();
+    grinderRuntime.discoveredCount = grinderBleCopyDiscoveries(grinderRuntime.discovered,
+                                                                 getMenuSize(grinderRuntime.discovered));
+    if (grinderRuntime.discoveredCount) {
+      grinderPlugPicker = GrinderPlugPicker::Choosing;
+      invalidateMenuFrame();
+    } else {
+      grinderCancelPlugSelection();
+      grinderSetActionMessage("No Plugs");
+    }
+  }
+  if (grinderPlugPicker == GrinderPlugPicker::Idle) return false;
+  if (menuFrameDirty) {
+    if (grinderPlugPicker == GrinderPlugPicker::Choosing) grinderDrawPlugList(grinderPlugPickerIndex);
+    else refreshOLED((char *)"Finding", (char *)"Plugs");
+    menuFrameDirty = false;
+  }
+  return true;
+}
+
+static void grinderConfirmSelectedPlug() {
+  if (grinderPlugPicker != GrinderPlugPicker::Choosing) return;
+  grinderCancelPlugSelection();
+  if (grinderPlugPickerIndex == 0) return;
+  grinderCopyCString(grinderSettings.selectedMac, sizeof(grinderSettings.selectedMac),
+                     grinderRuntime.discovered[grinderPlugPickerIndex - 1].mac);
+  grinderSaveSettings();
+  grinderRuntimeReset();
+  Serial.printf("[grinder] selected mac=%s\n", grinderSettings.selectedMac);
+  grinderSetActionMessage("Plug Selected", "Saved");
 }
 
 static inline float grinderClampDraft(float value, float minValue, float maxValue) {
@@ -1765,6 +1742,16 @@ void navigateMenu(int direction) {
   processMenuInfoPageExit();
   recordEnergyActivity();
   if (menuInfoPageActive()) return;
+#if HDS_ENABLE_GRINDER
+  if (grinderPlugPicker != GrinderPlugPicker::Idle) {
+    if (grinderPlugPicker == GrinderPlugPicker::Choosing) {
+      const int count = grinderRuntime.discoveredCount + 1;
+      grinderPlugPickerIndex = (grinderPlugPickerIndex + direction + count) % count;
+      invalidateMenuFrame();
+    }
+    return;
+  }
+#endif
   if (currentMenu == connectionsMenu) currentMenuSize = connectionsMenuSize();
   currentIndex = (currentIndex + direction + currentMenuSize) % currentMenuSize;
   currentSelection = currentMenu[currentIndex];
@@ -1774,6 +1761,12 @@ void navigateMenu(int direction) {
 }
 
 void backMenu() {
+#if HDS_ENABLE_GRINDER
+  if (grinderPlugPicker != GrinderPlugPicker::Idle) {
+    grinderCancelPlugSelection();
+    return;
+  }
+#endif
   if (currentMenu == mainMenu) {
     exitMenu();
     return;
@@ -1804,6 +1797,12 @@ void selectMenu() {
     dismissMenuInfoPage();
     return;
   }
+#if HDS_ENABLE_GRINDER
+  if (grinderPlugPicker != GrinderPlugPicker::Idle) {
+    grinderConfirmSelectedPlug();
+    return;
+  }
+#endif
   invalidateMenuFrame();
   if (currentSelection->subMenu) {
     if (currentSelection == &menuScale) {
@@ -1861,6 +1860,9 @@ void drawMenuButtonIndicators() {
 
 void showMenu() {
   processMenuInfoPageExit();
+#if HDS_ENABLE_GRINDER
+  if (grinderRenderPlugSelection()) return;
+#endif
   if (renderMenuInfoPage()) return;
   const unsigned long now = millis();
   if (!menuFrameNeedsRender(now)) return;

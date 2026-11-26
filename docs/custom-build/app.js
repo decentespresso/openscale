@@ -2,13 +2,14 @@ import {
   SelectionError,
   catalogRevisionChanged,
   defaultSelection,
+  featureRequirements,
   firmwareRefLabel,
   optionReason,
   parseSelection,
   resolveSelection,
   selectableFirmwareRefs,
   selectionQuery,
-} from "./selection.mjs?v=6";
+} from "./selection.mjs?v=7";
 import {initFleet} from "./fleet.js?v=17";
 import {buildEstimate} from "./build-estimate.mjs?v=1";
 import {initBuildProgress} from "./build-progress.mjs?v=1";
@@ -172,7 +173,7 @@ import {initBuildProgress} from "./build-progress.mjs?v=1";
     resolved.features.forEach(id => {
       if (id === featureId) return;
       const feature = featureById.get(id);
-      if (feature?.requires.includes(featureId)) reasons.push(feature.name);
+      if (feature && featureRequirements(feature, resolved.firmware_ref).includes(featureId)) reasons.push(feature.name);
     });
     const unique = [...new Set(reasons)];
     return unique.length ? `Required by ${unique.join(", ")}` : "Included as a dependency";

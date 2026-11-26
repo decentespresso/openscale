@@ -88,7 +88,7 @@ def main():
     require('#include "hds_features.h"', config)
     require("#define HDS_FEATURE_GRINDER 0", features)
     require("#define HDS_ENABLE_GRINDER HDS_FEATURE_GRINDER", features)
-    require('HDS_FEATURE_GRINDER requires HDS_FEATURE_WIFI and HDS_FEATURE_MDNS', features)
+    assert "HDS_FEATURE_GRINDER requires HDS_FEATURE_WIFI" not in features
     normal = platformio.split("[env:esp32s3]", 1)[1].split("[env:esp32s3-grinder]", 1)[0]
     grinder_environment = platformio.split("[env:esp32s3-grinder]", 1)[1].split("[env:esp32s3-custom]", 1)[0]
     custom_environment = platformio.split("[env:esp32s3-custom]", 1)[1].split("[env:native]", 1)[0]
@@ -114,7 +114,8 @@ def main():
     for text in (
         "GrinderSettings grinderSettings",
         "GrinderRuntime grinderRuntime",
-        "grinderMdnsCandidateBuffer",
+        "GrinderBleTransport grinderBleTransport",
+        "grinderBleMux",
         "f_grinder_fast_weight",
         "grinderFastWeightSequence",
     ):

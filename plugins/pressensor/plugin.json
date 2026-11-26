@@ -8,7 +8,7 @@
   "firmware_refs": ["v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4", "main", "v3.1.15", "v3.1.16", "v3.1.17"],
   "requires": [],
   "conflicts": ["grind-by-weight"],
-  "conflicts_by_ref": {"main": [], "v3.1.16": [], "v3.1.17": []},
+  "conflicts_by_ref": {"v3.1.16": [], "v3.1.17": []},
   "patches": {
     "v3.1.14-preview.3": "patches/v3.1.14-preview.3.patch",
     "v3.1.14-preview.4": "patches/legacy-main.patch",

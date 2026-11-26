@@ -1,5 +1,5 @@
 {
-  "catalog_revision": "0dd079356e9bbfa3a9cc47b3285670424db1950ddf77cc538cd48a87e71a50b7",
+  "catalog_revision": "5f780e3c98bb4522abbf8574d7aa1954804937a5f350d7b38e101f428e77c4fc",
   "custom_ota_signing_key_generation": 1,
   "firmware_refs": [
     "v3.1.17",
@@ -160,6 +160,9 @@
         "v3.1.16",
         "v3.1.17"
       ],
+      "requires_by_ref": {
+        "main": []
+      },
       "hidden": true
     },
     {
@@ -245,7 +248,7 @@
       "id": "grind-by-weight",
       "name": "Grind by weight",
       "description": "Stop a supported grinder automatically at the target dose.",
-      "tooltip": "Enables the built-in grind-by-weight integration. Its recommended setup also selects Wifi Pull OTA and the default web apps.",
+      "tooltip": "Uses BLE on main and WiFi on tagged releases. WiFi Pull OTA and the default web apps are optional on main.",
       "version": "1.0.0",
       "firmware_refs": [
         "v3.1.14",
@@ -265,7 +268,6 @@
       ],
       "conflicts_features": [],
       "conflicts_by_ref": {
-        "main": [],
         "v3.1.16": [],
         "v3.1.17": []
       },
@@ -279,7 +281,7 @@
       },
       "asset_targets": [],
       "presentation": {
-        "handbook": "plugin-media/grind-by-weight/9bf8d6abe06db79c81eee26b668390907677a198e8f5c64b189fa7a31e2367d6.md"
+        "handbook": "plugin-media/grind-by-weight/45220b06c252ef8a7146864adf81383d34703a5b990c7766b0819356c64da401.md"
       }
     },
     {
@@ -304,7 +306,6 @@
       ],
       "conflicts_features": [],
       "conflicts_by_ref": {
-        "main": [],
         "v3.1.16": [],
         "v3.1.17": []
       },

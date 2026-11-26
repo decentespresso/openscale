@@ -70,7 +70,7 @@ Grind by weight is a built-in, repository-owned compile-time feature and is not 
 - menu, setup, loop, power, and storage behavior remain inside the same gate.
 - `tools/test_grinder_feature_flag_contract.py` prevents unguarded integration and stale dependencies.
 
-Copy this containment pattern, not Grind by weight's WiFi requirements, implementation, or generated feature mapping. Patch plugin dependencies belong in `plugin.json`. Add a plugin to the core feature graph only when it is intentionally becoming a built-in firmware feature.
+On `main`, the grinder uses BLE and has no WiFi feature dependencies. Tagged builds through 3.1.17 still need WiFi and mDNS. Copy the containment pattern, not the feature mapping. Patch plugin dependencies belong in `plugin.json`. Add a plugin to the core feature graph only when it is intentionally becoming a built-in firmware feature.
 
 ## Dependencies
 
