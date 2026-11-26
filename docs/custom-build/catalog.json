@@ -1,5 +1,5 @@
 {
-  "catalog_revision": "0dd079356e9bbfa3a9cc47b3285670424db1950ddf77cc538cd48a87e71a50b7",
+  "catalog_revision": "6344ace3215773aed4c0ee7bc418fa6313ba96a7bd00971b4a44eea771866582",
   "custom_ota_signing_key_generation": 1,
   "firmware_refs": [
     "v3.1.17",
@@ -280,6 +280,44 @@
       "asset_targets": [],
       "presentation": {
         "handbook": "plugin-media/grind-by-weight/9bf8d6abe06db79c81eee26b668390907677a198e8f5c64b189fa7a31e2367d6.md"
+      }
+    },
+    {
+      "id": "hds-drs",
+      "name": "SofronioDRS",
+      "description": "Adds pour-over and espresso extraction modes with a dedicated scale screen and web app.",
+      "tooltip": "Compile-time extraction modes with timers, flow, dose, and brew ratio on the OLED and at /apps/hds-drs/. Uses the existing webserver, websocket, and LittleFS features; it does not start a second web server.",
+      "version": "0.1.0",
+      "firmware_refs": [
+        "main",
+        "v3.1.17"
+      ],
+      "requires": [
+        "webserver",
+        "websocket",
+        "littlefs"
+      ],
+      "depends_on": [],
+      "conflicts": [
+        "pressensor",
+        "grind-by-weight"
+      ],
+      "conflicts_features": [
+        "grinder"
+      ],
+      "conflicts_by_ref": {},
+      "recommends": {
+        "features": [],
+        "plugins": []
+      },
+      "asset_targets": [
+        "apps/hds-drs/app.js",
+        "apps/hds-drs/index.html",
+        "apps/hds-drs/style.css"
+      ],
+      "webapp": {
+        "name": "SofronioDRS",
+        "href": "/apps/hds-drs/index.html"
       }
     },
     {

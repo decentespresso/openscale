@@ -1,0 +1,1278 @@
+diff --git a/include/config.h b/include/config.h
+index 45f432f..ccbb80a 100644
+--- a/include/config.h
++++ b/include/config.h
+@@ -3,6 +3,13 @@
+ 
+ #include "hds_features.h"
+ 
++#ifndef HDS_ENABLE_HDS_DRS
++#if HDS_CUSTOM_BUILD
++#define HDS_ENABLE_HDS_DRS 1
++#else
++#define HDS_ENABLE_HDS_DRS 0
++#endif
++#endif
+ 
+ #define CUUID_DECENTSCALE_READ "fff4"
+ #define CUUID_DECENTSCALE_WRITE "36f5"
+diff --git a/include/finger_detection.h b/include/finger_detection.h
+index 91a43cd..06a79f8 100644
+--- a/include/finger_detection.h
++++ b/include/finger_detection.h
+@@ -4,6 +4,9 @@
+ #include "declare.h"
+ #include "config.h"
+ #include "parameter.h"
++#if HDS_ENABLE_HDS_DRS
++#include "hds_drs.h"
++#endif
+ #include "ble.h"
+ #include "usbcomm.h"
+ #if HDS_FEATURE_WEBSOCKET
+@@ -88,13 +91,33 @@ void runRecognizedButtonAction(int button) {
+   if (bleClientLive) sendBleButton(buttonNumber, 1);
+ 
+   if (button == BUTTON_CIRCLE) {
++#if HDS_ENABLE_HDS_DRS
++    if (b_drsEnabled && b_extraction) {
++      if (stopWatch.isRunning()) {
++        stopWatch.stop();
++      } else {
++        stopWatch.reset();
++        hdsDrsClearStamps();
++      }
++    }
++#endif
+     b_weight_quick_zero = true;
+     t_quickZeroStart = millis();
+     t_tareByButton = millis();
+     b_tareByButton = true;
+   } else if (button == BUTTON_SQUARE && !b_menu && !b_calibration &&
+              millis() - t_menuExitTime > 1000) {
++#if HDS_ENABLE_HDS_DRS
++    if (drsContainerCapture) {
++      return;
++    } else if (b_drsEnabled && !b_extraction) {
++      hdsDrsEnterExtraction();
++    } else {
++      scaleTimer();
++    }
++#else
+     scaleTimer();
++#endif
+   }
+ }
+ 
+diff --git a/include/hds_drs.h b/include/hds_drs.h
+new file mode 100644
+index 0000000..3ec7d7c
+--- /dev/null
++++ b/include/hds_drs.h
+@@ -0,0 +1,365 @@
++#ifndef HDS_DRS_H
++#define HDS_DRS_H
++
++#include "config.h"
++
++#if HDS_ENABLE_HDS_DRS
++
++#include "declare.h"
++#include "parameter.h"
++#include "scale_drift.h"
++#include "storage.h"
++
++constexpr float HDS_DRS_POUR_START_MIN_G = 1.0f;
++constexpr unsigned long HDS_DRS_POUR_START_DELAY_MS = 3000;
++constexpr float HDS_DRS_POUR_STABLE_G = 0.2f;
++constexpr unsigned long HDS_DRS_POUR_STABLE_MS = 1000;
++constexpr float HDS_DRS_POUR_CUP_REMOVED_G = 50.0f;
++constexpr float HDS_DRS_ESPRESSO_CUP_MIN_G = 30.0f;
++constexpr float HDS_DRS_ESPRESSO_STABLE_G = 0.5f;
++constexpr float HDS_DRS_ESPRESSO_NEGATIVE_TARE_G = -0.5f;
++constexpr unsigned long HDS_DRS_FLOW_INTERVAL_MS = 1000;
++
++inline void hdsDrsResetPourDetection() {
++  drsPourLastWeight = 0.0f;
++  drsPourStableWeight = 0.0f;
++  drsPourStableSince = 0;
++  drsPourStable = false;
++}
++
++inline void hdsDrsClearStamps() {
++  t_extraction_begin = 0;
++  t_extraction_first_drop = 0;
++  t_extraction_first_drop_num = 0;
++  t_extraction_last_drop = 0;
++  tareCounter = 0;
++  t_auto_tare = 0;
++  t_auto_stop = 0;
++  t_scale_stable = 0;
++  t_time_out = 0;
++  t_last_weight_adc = 0;
++  aWeight = 0.0f;
++}
++
++inline void hdsDrsSetSmoothWeight(float value) {
++  f_weight_smooth = value;
++}
++
++inline float hdsDrsDefaultDose() {
++  return b_mode ? INPUTCOFFEEESPRESSO : INPUTCOFFEEPOUROVER;
++}
++
++inline void hdsDrsAdjustModeDose(int mode, float delta) {
++  mode = mode ? 1 : 0;
++  float &dose = mode ? INPUTCOFFEEESPRESSO : INPUTCOFFEEPOUROVER;
++  dose += delta;
++  if (dose < 1.0f) dose = 1.0f;
++  if (dose > 100.0f) dose = 100.0f;
++  storagePutFloat(mode ? KEY_ESPRESSO : KEY_POUROVER, dose);
++  if (!b_extraction && b_mode == mode) {
++    f_weight_dose = dose;
++  }
++}
++
++inline void hdsDrsRefreshSnapshots() {
++  g_drsExtraction = b_extraction;
++  g_drsMode = b_mode;
++  g_drsFlow = f_flow_rate;
++  g_drsDose = f_weight_dose;
++  float ratio = f_weight_dose > 0.1f ? f_displayedValue / f_weight_dose : 0.0f;
++  if (ratio < 0.0f) ratio = 0.0f;
++  g_drsRatio = ratio;
++}
++
++inline void hdsDrsResetFlow() {
++  f_flow_rate = 0.0f;
++  f_flow_rate_last_weight = f_displayedValue;
++  t_flow_rate = millis();
++  dtostrf(f_flow_rate, 7, i_decimal_precision, c_flow_rate);
++  dtostrf(0.0f, 7, i_decimal_precision, c_brew_ratio);
++}
++
++inline void hdsDrsRequestEspressoCupTare() {
++  b_weight_quick_zero = true;
++  t_quickZeroStart = millis();
++  b_tareByButton = true;
++  t_tareByButton = millis();
++}
++
++inline void hdsDrsEnterExtraction() {
++  if (!b_drsEnabled || b_extraction) return;
++  b_extraction = true;
++  f_weight_dose = f_displayedValue;
++  hdsDrsClearStamps();
++  hdsDrsResetPourDetection();
++  hdsDrsSetSmoothWeight(f_displayedValue);
++  hdsDrsResetFlow();
++  resetDriftCompensation();
++  resetTracking();
++  resetStableOutput();
++  stopWatch.stop();
++  stopWatch.reset();
++  b_ready_to_brew = false;
++  b_weight_quick_zero = false;
++  b_minus_container = false;
++  t_ready_to_brew = 0;
++  if (b_mode == 1) {
++    hdsDrsRequestEspressoCupTare();
++  }
++  recordEnergyActivity();
++  hdsDrsRefreshSnapshots();
++}
++
++inline void hdsDrsExitExtraction() {
++  if (!b_extraction) return;
++  b_extraction = false;
++  stopWatch.stop();
++  stopWatch.reset();
++  b_ready_to_brew = false;
++  b_weight_quick_zero = false;
++  hdsDrsResetPourDetection();
++  resetDriftCompensation();
++  resetTracking();
++  resetStableOutput();
++  f_flow_rate = 0.0f;
++  recordEnergyActivity();
++  hdsDrsRefreshSnapshots();
++}
++
++inline void hdsDrsToggleExtraction() {
++  if (!b_drsEnabled) return;
++  if (b_extraction) {
++    hdsDrsExitExtraction();
++  } else {
++    hdsDrsEnterExtraction();
++  }
++}
++
++inline void hdsDrsCancelContainerCapture();
++
++inline void hdsDrsSetEnabled(bool enabled) {
++  b_drsEnabled = enabled;
++  storagePutBool(KEY_DRS_ENABLED, enabled);
++  if (!enabled) {
++    hdsDrsExitExtraction();
++    hdsDrsCancelContainerCapture();
++  }
++  hdsDrsRefreshSnapshots();
++}
++
++inline void hdsDrsCancelContainerCapture() {
++  drsContainerCapture = false;
++  drsContainerCaptureStableSince = 0;
++  drsContainerCaptureLast = 0.0f;
++}
++
++inline void hdsDrsStartContainerCapture() {
++  if (!b_drsEnabled) return;
++  if (b_extraction) hdsDrsExitExtraction();
++  drsContainerCapture = true;
++  drsContainerCaptureAt = millis();
++  drsContainerCaptureStableSince = 0;
++  drsContainerCaptureLast = 0.0f;
++  drsContainerCapturedAt = 0;
++}
++
++inline void hdsDrsServiceContainerCapture() {
++  if (!drsContainerCapture) return;
++  const unsigned long now = millis();
++  if (now - drsContainerCaptureAt > 60000) {
++    hdsDrsCancelContainerCapture();
++    return;
++  }
++  if (b_tareByButton) return;
++  const float weight = f_displayedValue;
++  if (fabsf(weight - drsContainerCaptureLast) <= 0.2f) {
++    if (drsContainerCaptureStableSince == 0) {
++      drsContainerCaptureStableSince = now;
++      return;
++    }
++    if (now - drsContainerCaptureStableSince < 1000) return;
++    if (weight < -0.5f) {
++      b_tareByButton = true;
++      t_tareByButton = millis();
++      drsContainerCaptureStableSince = 0;
++      drsContainerCaptureLast = 0.0f;
++      return;
++    }
++    if (weight >= 1.0f) {
++      drsContainerWeight = weight;
++      storagePutFloat(KEY_DRS_CONTAINER, drsContainerWeight);
++      drsContainerCapture = false;
++      drsContainerCapturedAt = now;
++      return;
++    }
++    drsContainerCaptureStableSince = 0;
++  } else {
++    drsContainerCaptureLast = weight;
++    drsContainerCaptureStableSince = 0;
++  }
++}
++
++inline void hdsDrsSetMode(int mode) {
++  mode = mode ? 1 : 0;
++  if (b_mode == mode) {
++    hdsDrsRefreshSnapshots();
++    return;
++  }
++  b_mode = mode;
++  storagePutInt(KEY_MODE, b_mode);
++  if (b_extraction) {
++    hdsDrsClearStamps();
++    hdsDrsResetPourDetection();
++    resetDriftCompensation();
++    resetTracking();
++    resetStableOutput();
++    stopWatch.stop();
++    stopWatch.reset();
++    b_ready_to_brew = false;
++    b_weight_quick_zero = false;
++    f_flow_rate = 0.0f;
++    if (b_mode == 1) {
++      hdsDrsRequestEspressoCupTare();
++    }
++  }
++}
++
++inline void hdsDrsToggleMode() {
++  hdsDrsSetMode(b_mode ? 0 : 1);
++}
++
++inline void hdsDrsOnTareComplete() {
++  hdsDrsResetPourDetection();
++  if (!b_extraction) return;
++  hdsDrsSetSmoothWeight(0.0f);
++  t_extraction_first_drop = 0;
++  t_extraction_first_drop_num = 0;
++  t_extraction_last_drop = 0;
++  tareCounter = 0;
++  aWeight = 0.0f;
++  b_ready_to_brew = true;
++  t_ready_to_brew = millis();
++  f_flow_rate_last_weight = 0.0f;
++  t_flow_rate = millis();
++}
++
++inline void hdsDrsUpdateFlow(unsigned long now) {
++  if (now - t_flow_rate < HDS_DRS_FLOW_INTERVAL_MS) return;
++  f_flow_rate = f_displayedValue - f_flow_rate_last_weight;
++  if (f_flow_rate < 0.0f) f_flow_rate = 0.0f;
++  f_flow_rate_last_weight = f_displayedValue;
++  t_flow_rate = now;
++  dtostrf(f_flow_rate, 7, i_decimal_precision, c_flow_rate);
++}
++
++inline void hdsDrsUpdatePour(unsigned long now) {
++  if (f_weight_dose < 3.0f) f_weight_dose = INPUTCOFFEEPOUROVER;
++  if (!stopWatch.isRunning() && stopWatch.elapsed() == 0) {
++    hdsDrsResetPourDetection();
++  }
++  if (b_ready_to_brew && !b_weight_quick_zero &&
++      f_displayedValue > HDS_DRS_POUR_START_MIN_G &&
++      now - t_ready_to_brew > HDS_DRS_POUR_START_DELAY_MS) {
++    stopWatch.start();
++    b_ready_to_brew = false;
++    hdsDrsResetPourDetection();
++  }
++  if (!stopWatch.isRunning()) return;
++  if (fabsf(f_displayedValue - drsPourLastWeight) <= HDS_DRS_POUR_STABLE_G) {
++    if (drsPourStableSince == 0) drsPourStableSince = now;
++    if (!drsPourStable && now - drsPourStableSince >= HDS_DRS_POUR_STABLE_MS) {
++      drsPourStable = true;
++      drsPourStableWeight = f_displayedValue;
++    }
++  } else {
++    drsPourLastWeight = f_displayedValue;
++    drsPourStableSince = 0;
++  }
++  if (drsPourStable &&
++      f_displayedValue < drsPourStableWeight - HDS_DRS_POUR_CUP_REMOVED_G) {
++    stopWatch.stop();
++    drsPourStable = false;
++  }
++}
++
++inline void hdsDrsUpdateEspresso(unsigned long now) {
++  if (f_weight_dose < 3.0f) f_weight_dose = INPUTCOFFEEESPRESSO;
++  if (now - t_scale_stable < (unsigned long)scaleStableInterval) return;
++  t_scale_stable = now;
++  if (fabsf(aWeight - f_weight_smooth) >= HDS_DRS_ESPRESSO_STABLE_G) {
++    if (t_extraction_begin > 0) {
++      if (tareCounter <= 3) {
++        tareCounter++;
++      } else if (t_extraction_first_drop == 0) {
++        t_extraction_first_drop = now;
++      }
++    }
++    aWeight = f_weight_smooth;
++    return;
++  }
++  aWeight = f_weight_smooth;
++  if (now - t_auto_tare < (unsigned long)autoTareInterval) return;
++  if (t_extraction_begin > 0 && tareCounter > 3 &&
++      t_extraction_first_drop != 0) {
++    if (t_extraction_last_drop == 0) t_extraction_last_drop = now;
++    if (t_extraction_last_drop - t_extraction_first_drop <
++        (unsigned long)i_extraction_minimium_timer * 1000UL) {
++      t_extraction_last_drop = 0;
++    } else if (b_ready_to_brew && stopWatch.isRunning()) {
++      stopWatch.stop();
++      b_ready_to_brew = false;
++    }
++  }
++  if (stopWatch.isRunning() || stopWatch.elapsed() != 0) return;
++  t_auto_tare = now;
++  if (f_displayedValue > HDS_DRS_ESPRESSO_CUP_MIN_G && !b_minus_container) {
++    scale.tare();
++    tareCounter = 0;
++    t_extraction_last_drop = 0;
++    t_extraction_first_drop = 0;
++    t_extraction_first_drop_num = 0;
++    stopWatch.reset();
++    stopWatch.start();
++    b_ready_to_brew = true;
++    t_extraction_begin = millis();
++    t_auto_tare = millis();
++    aWeight = 0.0f;
++    f_displayedValue = 0.0f;
++    hdsDrsSetSmoothWeight(0.0f);
++    hdsDrsResetPourDetection();
++    return;
++  }
++  if (f_displayedValue < HDS_DRS_ESPRESSO_NEGATIVE_TARE_G) {
++    scale.tare();
++    b_ready_to_brew = true;
++    f_displayedValue = 0.0f;
++    hdsDrsSetSmoothWeight(0.0f);
++  }
++}
++
++inline void hdsDrsSample(float driftCorrectedWeight) {
++  f_weight_smooth = driftCorrectedWeight;
++  if (f_weight_smooth >= f_displayedValue - OledTolerance &&
++      f_weight_smooth <= f_displayedValue + OledTolerance) {
++    if (f_weight_smooth > -0.1f && f_weight_smooth < 0.1f) {
++      f_displayedValue = 0.0f;
++    }
++  } else {
++    f_displayedValue = f_weight_smooth;
++  }
++  float ratio = f_weight_dose > 0.1f ? f_displayedValue / f_weight_dose : 0.0f;
++  if (ratio < 0.0f) ratio = 0.0f;
++  dtostrf(ratio, 7, i_decimal_precision, c_brew_ratio);
++  const unsigned long now = millis();
++  if (b_mode == 1) {
++    hdsDrsUpdateEspresso(now);
++  } else {
++    hdsDrsUpdatePour(now);
++  }
++  hdsDrsUpdateFlow(now);
++  hdsDrsRefreshSnapshots();
++}
++
++#endif
++
++#endif
+diff --git a/include/menu.h b/include/menu.h
+index 590311f..330a27e 100644
+--- a/include/menu.h
++++ b/include/menu.h
+@@ -12,6 +12,9 @@
+ #if HDS_ENABLE_GRINDER
+ #include "grinder_runtime.h"
+ #endif
++#if HDS_ENABLE_HDS_DRS
++#include "hds_drs.h"
++#endif
+ #include <string.h>
+ const char *const weights[] = { "Exit", "50g", "100g", "200g", "500g", "1000g" };
+ const float weight_values[] = { 0.0, 50.0, 100.0, 200.0, 500.0, 1000.0 };
+@@ -141,6 +144,15 @@ void grinderTargetMenu();
+ void grinderSafetyMenu();
+ void grinderZeroRangeMenu();
+ #endif
++#if HDS_ENABLE_HDS_DRS
++void toggleDrsEnabled();
++void increasePourDose();
++void decreasePourDose();
++void increaseEspressoDose();
++void decreaseEspressoDose();
++void setDrsContainer();
++void toggleDrsContainer();
++#endif
+ #if HDS_FEATURE_WIFI
+ void wifi_init();
+ #endif
+@@ -153,6 +165,9 @@ extern const Menu menuInfoBack;
+ #if HDS_ENABLE_GRINDER
+ extern const Menu menuGrinderBack;
+ #endif
++#if HDS_ENABLE_HDS_DRS
++extern const Menu menuDrsBack;
++#endif
+ 
+ const Menu menuExit = { "Exit", exitMenu, NULL, NULL };
+ const Menu menuScale = { "Scale", NULL, &menuScaleBack, NULL };
+@@ -297,6 +312,27 @@ const Menu *const grinderMenu[] = { &menuGrinderBack, &menuGrinderEnabled,
+                                    &menuGrinderSafety, &menuGrinderZero };
+ #endif
+ 
++#if HDS_ENABLE_HDS_DRS
++char menuDrsEnabledLabel[] = "DRS o";
++char menuDrsPourUpLabel[20] = "Pour 16.0 +";
++char menuDrsPourDownLabel[20] = "Pour 16.0 -";
++char menuDrsEspUpLabel[20] = "Esp 18.0 +";
++char menuDrsEspDownLabel[20] = "Esp 18.0 -";
++char menuDrsContainerLabel[24] = "Cont off 0.0g";
++const Menu menuDrs = { "SofronioDRS", NULL, &menuDrsBack, NULL };
++const Menu menuDrsBack = { "Back", NULL, NULL, &menuDrs };
++const Menu menuDrsEnabled = { menuDrsEnabledLabel, toggleDrsEnabled, NULL, &menuDrs };
++const Menu menuDrsPourUp = { menuDrsPourUpLabel, increasePourDose, NULL, &menuDrs };
++const Menu menuDrsPourDown = { menuDrsPourDownLabel, decreasePourDose, NULL, &menuDrs };
++const Menu menuDrsEspUp = { menuDrsEspUpLabel, increaseEspressoDose, NULL, &menuDrs };
++const Menu menuDrsEspDown = { menuDrsEspDownLabel, decreaseEspressoDose, NULL, &menuDrs };
++const Menu menuDrsContainerSet = { "Set Container", setDrsContainer, NULL, &menuDrs };
++const Menu menuDrsContainerOn = { menuDrsContainerLabel, toggleDrsContainer, NULL, &menuDrs };
++const Menu *const drsMenu[] = { &menuDrsBack, &menuDrsEnabled, &menuDrsPourUp,
++                                &menuDrsPourDown, &menuDrsEspUp, &menuDrsEspDown,
++                                &menuDrsContainerSet, &menuDrsContainerOn };
++#endif
++
+ const Menu *const mainMenu[] = {
+   &menuExit,
+   &menuScale,
+@@ -305,6 +341,9 @@ const Menu *const mainMenu[] = {
+   &menuPower,
+ #if HDS_ENABLE_GRINDER
+   &menuGrinder,
++#endif
++#if HDS_ENABLE_HDS_DRS
++  &menuDrs,
+ #endif
+   &menuInfo,
+ };
+@@ -1718,6 +1757,72 @@ void calibrateVoltage() {
+   Serial.println(f_batteryCalibrationFactor);
+ }
+ 
++#if HDS_ENABLE_HDS_DRS
++void toggleDrsEnabled() {
++  hdsDrsSetEnabled(!b_drsEnabled);
++  actionMessage = b_drsEnabled ? "DRS On" : "DRS Off";
++  actionMessage2 = "Default";
++  menuActionMessageChanged();
++}
++
++void setDrsContainer() {
++  if (!b_drsEnabled) {
++    actionMessage = "Enable DRS first";
++    actionMessage2 = "Default";
++    menuActionMessageChanged();
++    return;
++  }
++  hdsDrsStartContainerCapture();
++  leaveMenu();
++}
++
++void toggleDrsContainer() {
++  if (drsContainerWeight < 1.0f) {
++    actionMessage = "Set container first";
++    actionMessage2 = "Default";
++    menuActionMessageChanged();
++    return;
++  }
++  drsContainerEnabled = !drsContainerEnabled;
++  storagePutBool(KEY_DRS_CONTAINER_ON, drsContainerEnabled);
++  actionMessage = drsContainerEnabled ? "Container On" : "Container Off";
++  actionMessage2 = "Default";
++  menuActionMessageChanged();
++}
++
++void increasePourDose() {
++  hdsDrsAdjustModeDose(0, 0.5f);
++  actionMessage = "Pour dose";
++  actionMessage2 = String(INPUTCOFFEEPOUROVER, 1) + "g";
++  t_actionMessageDelay = 1000;
++  menuActionMessageChanged();
++}
++
++void decreasePourDose() {
++  hdsDrsAdjustModeDose(0, -0.5f);
++  actionMessage = "Pour dose";
++  actionMessage2 = String(INPUTCOFFEEPOUROVER, 1) + "g";
++  t_actionMessageDelay = 1000;
++  menuActionMessageChanged();
++}
++
++void increaseEspressoDose() {
++  hdsDrsAdjustModeDose(1, 0.5f);
++  actionMessage = "Esp dose";
++  actionMessage2 = String(INPUTCOFFEEESPRESSO, 1) + "g";
++  t_actionMessageDelay = 1000;
++  menuActionMessageChanged();
++}
++
++void decreaseEspressoDose() {
++  hdsDrsAdjustModeDose(1, -0.5f);
++  actionMessage = "Esp dose";
++  actionMessage2 = String(INPUTCOFFEEESPRESSO, 1) + "g";
++  t_actionMessageDelay = 1000;
++  menuActionMessageChanged();
++}
++#endif
++
+ void refreshMenuRows() {
+   updateToggleLabel(menuAppTextLabel, appTextIsEnabled());
+   updateToggleLabel(menuHeartbeatLabel, b_requireHeartBeat);
+@@ -1759,6 +1864,19 @@ void refreshMenuRows() {
+ #if HDS_ENABLE_ENERGY_MENU
+   refreshEnergyMenuRows();
+ #endif
++#if HDS_ENABLE_HDS_DRS
++  updateToggleLabel(menuDrsEnabledLabel, b_drsEnabled);
++  snprintf(menuDrsPourUpLabel, sizeof(menuDrsPourUpLabel), "Pour %.1f +",
++           INPUTCOFFEEPOUROVER);
++  snprintf(menuDrsPourDownLabel, sizeof(menuDrsPourDownLabel), "Pour %.1f -",
++           INPUTCOFFEEPOUROVER);
++  snprintf(menuDrsEspUpLabel, sizeof(menuDrsEspUpLabel), "Esp %.1f +",
++           INPUTCOFFEEESPRESSO);
++  snprintf(menuDrsEspDownLabel, sizeof(menuDrsEspDownLabel), "Esp %.1f -",
++           INPUTCOFFEEESPRESSO);
++  snprintf(menuDrsContainerLabel, sizeof(menuDrsContainerLabel), "Cont %s %.1fg",
++           drsContainerEnabled ? "on" : "off", drsContainerWeight);
++#endif
+ }
+ 
+ void navigateMenu(int direction) {
+@@ -1826,6 +1944,11 @@ void selectMenu() {
+       b_grinderMenuDirectEntry = false;
+       currentMenu = grinderMenu;
+       currentMenuSize = getMenuSize(grinderMenu);
++#endif
++#if HDS_ENABLE_HDS_DRS
++    } else if (currentSelection == &menuDrs) {
++      currentMenu = drsMenu;
++      currentMenuSize = getMenuSize(drsMenu);
+ #endif
+     }
+     currentIndex = 0;
+diff --git a/include/parameter.h b/include/parameter.h
+index 5a13a7d..9ffd339 100644
+--- a/include/parameter.h
++++ b/include/parameter.h
+@@ -184,6 +184,26 @@ inline bool websocketHasClients() {
+ volatile bool g_timerRunning = false;
+ volatile unsigned long g_timerElapsed = 0;
+ 
++#if HDS_ENABLE_HDS_DRS
++volatile bool g_drsExtraction = false;
++volatile int g_drsMode = 0;
++volatile float g_drsFlow = 0.0f;
++volatile float g_drsRatio = 0.0f;
++volatile float g_drsDose = 0.0f;
++float drsPourLastWeight = 0.0f;
++float drsPourStableWeight = 0.0f;
++unsigned long drsPourStableSince = 0;
++bool drsPourStable = false;
++bool b_drsEnabled = true;
++float drsContainerWeight = 0.0f;
++bool drsContainerEnabled = false;
++bool drsContainerCapture = false;
++unsigned long drsContainerCaptureAt = 0;
++unsigned long drsContainerCaptureStableSince = 0;
++float drsContainerCaptureLast = 0.0f;
++unsigned long drsContainerCapturedAt = 0;
++#endif
++
+ // Websocket pending-command mask. Set on the AsyncTCP task by the WS event
+ // callback; drained on the main loop. Defers hardware-touching ops (u8g2,
+ // stopWatch, power-rail GPIOs) so they never race the main loop.
+@@ -203,6 +223,14 @@ const uint32_t WSP_RESET       = 1u << 12;
+ const uint32_t WSP_BLE_GYRO    = 1u << 13;
+ const uint32_t WSP_OTA_RESET   = 1u << 14;
+ const uint32_t WSP_DISPLAY_RESTORE = 1u << 15;
++#if HDS_ENABLE_HDS_DRS
++const uint32_t WSP_DRS_EXTRACT_ON     = 1u << 16;
++const uint32_t WSP_DRS_EXTRACT_OFF    = 1u << 17;
++const uint32_t WSP_DRS_EXTRACT_TOGGLE = 1u << 18;
++const uint32_t WSP_DRS_MODE_POUR      = 1u << 19;
++const uint32_t WSP_DRS_MODE_ESPRESSO  = 1u << 20;
++const uint32_t WSP_DRS_MODE_TOGGLE    = 1u << 21;
++#endif
+ portMUX_TYPE wsPendingMux = portMUX_INITIALIZER_UNLOCKED;
+ volatile uint32_t wsPendingMask = 0;
+ volatile uint8_t pendingSamplesInUse = 0;
+diff --git a/include/storage.h b/include/storage.h
+index 07ee356..14de14f 100644
+--- a/include/storage.h
++++ b/include/storage.h
+@@ -51,6 +51,11 @@ static_assert(sizeof(ENERGY_FEATURE_KEYS) / sizeof(ENERGY_FEATURE_KEYS[0]) ==
+ #endif
+ constexpr const char *KEY_TAP_TARE = "tap_tare";
+ constexpr const char *KEY_TAP_TIMER = "tap_timer";
++#if HDS_ENABLE_HDS_DRS
++constexpr const char *KEY_DRS_ENABLED = "drs_en";
++constexpr const char *KEY_DRS_CONTAINER = "drs_cont";
++constexpr const char *KEY_DRS_CONTAINER_ON = "drs_cont_on";
++#endif
+ 
+ constexpr size_t LEGACY_EEPROM_BYTES = 512;
+ constexpr size_t LEGACY_CAL1_ADDRESS = 0;
+@@ -213,7 +218,10 @@ inline bool storageHasAllSettings() {
+     KEY_BEEP, KEY_WELCOME, KEY_BAT_CAL, KEY_HEARTBEAT, KEY_SCREEN_FLIP,
+     KEY_TIME_ON_TOP, KEY_BTN_CONN, KEY_WIFI_BOOT, KEY_AUTO_SLEEP,
+     KEY_QUICK_BOOT, KEY_DRIFT_MAX, KEY_TAP_TARE, KEY_TAP_TIMER,
+-    KEY_WOW_INTERVAL, KEY_BAT_PROTECT, KEY_BAT_CAPACITY_SET, KEY_BAT_CAPACITY, KEY_APP_TEXT
++    KEY_WOW_INTERVAL, KEY_BAT_PROTECT, KEY_BAT_CAPACITY_SET, KEY_BAT_CAPACITY, KEY_APP_TEXT,
++#if HDS_ENABLE_HDS_DRS
++    KEY_DRS_ENABLED, KEY_DRS_CONTAINER, KEY_DRS_CONTAINER_ON,
++#endif
+   };
+   for (const char *key : keys) {
+     if (!settingsPreferences.isKey(key)) {
+@@ -246,6 +254,11 @@ inline bool storageEnsureDefaults() {
+          storageEnsureInt(KEY_BAT_CAPACITY, 0) &&
+          storageEnsureBool(KEY_TAP_TARE, false) &&
+          storageEnsureBool(KEY_TAP_TIMER, false) &&
++#if HDS_ENABLE_HDS_DRS
++         storageEnsureBool(KEY_DRS_ENABLED, true) &&
++         storageEnsureFloat(KEY_DRS_CONTAINER, 0.0f) &&
++         storageEnsureBool(KEY_DRS_CONTAINER_ON, false) &&
++#endif
+          storageEnsureInt(KEY_WOW_INTERVAL, 0);
+ }
+ 
+@@ -343,6 +356,11 @@ inline bool storageMigrateLegacyEeprom() {
+                   storageEnsureInt(KEY_BAT_CAPACITY, 0) &&
+                   storageEnsureBool(KEY_TAP_TARE, false) &&
+                   storageEnsureBool(KEY_TAP_TIMER, false) &&
++#if HDS_ENABLE_HDS_DRS
++                  storageEnsureBool(KEY_DRS_ENABLED, true) &&
++                  storageEnsureFloat(KEY_DRS_CONTAINER, 0.0f) &&
++                  storageEnsureBool(KEY_DRS_CONTAINER_ON, false) &&
++#endif
+                   storageEnsureInt(KEY_WOW_INTERVAL, 0);
+   EEPROM.end();
+   return migrated;
+diff --git a/include/websocket.h b/include/websocket.h
+index 78e3c23..91b03e2 100644
+--- a/include/websocket.h
++++ b/include/websocket.h
+@@ -5,6 +5,9 @@
+ #include "parameter.h"
+ #include "power.h"
+ #include "display.h"
++#if HDS_ENABLE_HDS_DRS
++#include "hds_drs.h"
++#endif
+ #if HDS_FEATURE_WEBSOCKET
+ #include "wifi_setup.h"
+ #include "webserver.h"
+@@ -432,6 +435,14 @@ void processWsPendingCmds() {
+     recordEnergyActivity();
+ #endif
+   }
++#if HDS_ENABLE_HDS_DRS
++  if (mask & WSP_DRS_MODE_POUR)     hdsDrsSetMode(0);
++  if (mask & WSP_DRS_MODE_ESPRESSO) hdsDrsSetMode(1);
++  if (mask & WSP_DRS_MODE_TOGGLE)   hdsDrsToggleMode();
++  if (mask & WSP_DRS_EXTRACT_ON)     hdsDrsEnterExtraction();
++  if (mask & WSP_DRS_EXTRACT_OFF)    hdsDrsExitExtraction();
++  if (mask & WSP_DRS_EXTRACT_TOGGLE) hdsDrsToggleExtraction();
++#endif
+   if (mask & WSP_SET_SAMPLES) {
+     if (setScaleSamplesInUseWhenReady(samplesInUse, "remote samples")) {
+       Serial.print("Samples in use set to: ");
+@@ -527,9 +538,17 @@ const char *websocketWifiModeName() {
+   return "off";
+ }
+ 
++#if HDS_ENABLE_HDS_DRS
++#define HDS_DRS_WS_STATUS_JSON ",\"drs_mode\":%d,\"drs_extraction\":%s,\"drs_flow\":%.2f,\"drs_ratio\":%.2f,\"drs_dose\":%.1f"
++#define HDS_DRS_WS_STATUS_ARGS , (int)g_drsMode, (g_drsExtraction ? "true" : "false"), g_drsFlow, g_drsRatio, g_drsDose
++#else
++#define HDS_DRS_WS_STATUS_JSON ""
++#define HDS_DRS_WS_STATUS_ARGS
++#endif
++
+ void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
+   if (!wsClientHeapOk()) return;
+-  client->printf("{\"type\":\"status\",\"status\":\"%s\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu,\"wifi_on_boot\":%s,\"wifi_active\":%s,\"wifi_connected\":%s,\"wifi_mode\":\"%s\",\"wifi_credentials_saved\":%s,\"mdns_name\":\"%s\",\"ble_enabled\":%s,\"ble_connected\":%s,\"ble_buttons_enabled\":%s,\"ble_heartbeat_required\":%s,\"auto_sleep_enabled\":%s,\"auto_sleep_minutes\":15,\"quick_boot_enabled\":%s,\"time_on_top\":%s,\"drift_compensation_max_grams\":%.3f}",
++  client->printf("{\"type\":\"status\",\"status\":\"%s\",\"protocol_version\":1,\"firmware_version\":\"%s\",\"grams\":%.2f,\"ms\":%lu,\"battery_percent\":%d,\"battery_voltage\":%.2f,\"charging\":%s,\"timer_running\":%s,\"timer_seconds\":%lu,\"display_on\":%s,\"low_power\":%s,\"soft_sleep\":%s,\"events_enabled\":%s,\"rate_hz\":%lu,\"interval_ms\":%lu,\"wifi_on_boot\":%s,\"wifi_active\":%s,\"wifi_connected\":%s,\"wifi_mode\":\"%s\",\"wifi_credentials_saved\":%s,\"mdns_name\":\"%s\",\"ble_enabled\":%s,\"ble_connected\":%s,\"ble_buttons_enabled\":%s,\"ble_heartbeat_required\":%s,\"auto_sleep_enabled\":%s,\"auto_sleep_minutes\":15,\"quick_boot_enabled\":%s,\"time_on_top\":%s,\"drift_compensation_max_grams\":%.3f" HDS_DRS_WS_STATUS_JSON "}",
+                  status,
+                  FIRMWARE_VER,
+                  f_displayedValue,
+@@ -558,15 +577,30 @@ void sendWebsocketStatus(AsyncWebSocketClient *client, const char *status) {
+                  b_autoSleep ? "true" : "false",
+                  b_quickBoot ? "true" : "false",
+                  b_timeOnTop ? "true" : "false",
+-                 f_maxDriftCompensation);
++                 f_maxDriftCompensation HDS_DRS_WS_STATUS_ARGS);
+ }
+ 
+ void sendWebsocketWeightAll(float grams, unsigned long ms) {
+   if (!b_wifiEnabled || !websocketHasClients()) return;
+   if (!wsBroadcastHeapOk()) return;
++#if HDS_ENABLE_HDS_DRS
++  char message[192];
++  const float ratio = f_weight_dose > 0.1f ? grams / f_weight_dose : 0.0f;
++  int messageLength = snprintf(message, sizeof(message),
++                               "{\"grams\":%.2f,\"ms\":%lu,\"drs\":{\"extract\":%d,\"mode\":%d,\"flow\":%.2f,\"ratio\":%.2f,\"dose\":%.1f,\"timer\":%lu,\"trun\":%d}}",
++                               grams, ms,
++                               b_extraction ? 1 : 0,
++                               b_mode,
++                               f_flow_rate,
++                               ratio > 0.0f ? ratio : 0.0f,
++                               f_weight_dose,
++                               (unsigned long)stopWatch.elapsed(),
++                               stopWatch.isRunning() ? 1 : 0);
++#else
+   char message[96];
+   int messageLength = snprintf(message, sizeof(message),
+                                "{\"grams\":%.2f,\"ms\":%lu}", grams, ms);
++#endif
+   if (messageLength <= 0 ||
+       static_cast<size_t>(messageLength) >= sizeof(message)) return;
+   websocket.textAll(message, static_cast<size_t>(messageLength));
+@@ -706,6 +740,54 @@ bool handleWebsocketControlCommand(
+     return true;
+   }
+ 
++#if HDS_ENABLE_HDS_DRS
++  if (websocketEqualsIgnoreCase(command, "drs")) {
++    if (action.empty() || websocketEqualsIgnoreCase(action, "toggle")) {
++      Serial.println("Websocket DRS extraction toggle detected.");
++      wsReplacePending(WSP_DRS_EXTRACT_TOGGLE,
++                       WSP_DRS_EXTRACT_ON | WSP_DRS_EXTRACT_OFF);
++      sendWebsocketStatus(client, "ok");
++      return true;
++    }
++    if (websocketEqualsIgnoreCase(action, "on")) {
++      Serial.println("Websocket DRS extraction on detected.");
++      wsReplacePending(WSP_DRS_EXTRACT_ON,
++                       WSP_DRS_EXTRACT_OFF | WSP_DRS_EXTRACT_TOGGLE);
++      sendWebsocketStatus(client, "ok");
++      return true;
++    }
++    if (websocketEqualsIgnoreCase(action, "off")) {
++      Serial.println("Websocket DRS extraction off detected.");
++      wsReplacePending(WSP_DRS_EXTRACT_OFF,
++                       WSP_DRS_EXTRACT_ON | WSP_DRS_EXTRACT_TOGGLE);
++      sendWebsocketStatus(client, "ok");
++      return true;
++    }
++    if (websocketEqualsIgnoreCase(action, "pour")) {
++      wsReplacePending(WSP_DRS_MODE_POUR, WSP_DRS_MODE_ESPRESSO);
++      sendWebsocketStatus(client, "ok");
++      return true;
++    }
++    if (websocketEqualsIgnoreCase(action, "espresso")) {
++      wsReplacePending(WSP_DRS_MODE_ESPRESSO, WSP_DRS_MODE_POUR);
++      sendWebsocketStatus(client, "ok");
++      return true;
++    }
++    if (websocketEqualsIgnoreCase(action, "mode pour")) {
++      wsReplacePending(WSP_DRS_MODE_POUR, WSP_DRS_MODE_ESPRESSO);
++      sendWebsocketStatus(client, "ok");
++      return true;
++    }
++    if (websocketEqualsIgnoreCase(action, "mode espresso")) {
++      wsReplacePending(WSP_DRS_MODE_ESPRESSO, WSP_DRS_MODE_POUR);
++      sendWebsocketStatus(client, "ok");
++      return true;
++    }
++    sendWebsocketStatus(client, "invalid");
++    return true;
++  }
++#endif
++
+   if (websocketEqualsIgnoreCase(command, "display")) {
+     if (websocketEqualsIgnoreCase(action, "on")) {
+       Serial.println("Websocket display on detected.");
+diff --git a/platformio.ini b/platformio.ini
+index a36a694..c0334d1 100644
+--- a/platformio.ini
++++ b/platformio.ini
+@@ -102,6 +102,12 @@ build_flags =
+   ${env:esp32s3.build_flags}
+   -DHDS_ENABLE_GRINDER=1
+ 
++[env:esp32s3-hds-drs]
++extends = env:esp32s3
++build_flags =
++  ${env:esp32s3.build_flags}
++  -DHDS_ENABLE_HDS_DRS=1
++
+ [env:esp32s3-pm-capable]
+ extends = env:esp32s3
+ custom_sdkconfig = file://sdkconfig.energy-menu.defaults
+diff --git a/src/hds.ino b/src/hds.ino
+index 44bde32..b3cb176 100644
+--- a/src/hds.ino
++++ b/src/hds.ino
+@@ -4,6 +4,9 @@
+ 
+ #include "parameter.h"
+ #include "scale_drift.h"
++#if HDS_ENABLE_HDS_DRS
++#include "hds_drs.h"
++#endif
+ #if HDS_ENABLE_ENERGY_MENU
+ #include "energy_idle_wake.h"
+ void applyEnergyDisplayCommand(bool enabled);
+@@ -631,6 +634,11 @@ void scaleTimer() {
+     }
+     if (stopWatch.elapsed() > 0) {
+       stopWatch.reset();
++#if HDS_ENABLE_HDS_DRS
++      if (b_extraction) {
++        hdsDrsClearStamps();
++      }
++#endif
+       recordEnergyActivity();
+       Serial.println("Timer Reset");
+     }
+@@ -856,6 +864,11 @@ void buttonCircle_LongPressed() {
+     if (GPIO_power_on_with == BATTERY_CHARGING) {
+       wakeFromChargingUi(BUTTON_CIRCLE);
+     }
++#if HDS_ENABLE_HDS_DRS
++    else if (b_drsEnabled && !drsContainerCapture && !b_calibration && !b_ota) {
++      hdsDrsToggleMode();
++    }
++#endif
+   }
+ }
+ 
+@@ -868,6 +881,14 @@ void buttonSquare_LongPressed() {
+     if (GPIO_power_on_with == BATTERY_CHARGING) {
+       wakeFromChargingUi(BUTTON_SQUARE);
+     }
++#if HDS_ENABLE_HDS_DRS
++    else if (drsContainerCapture) {
++      hdsDrsCancelContainerCapture();
++    }
++    else if (b_drsEnabled && b_extraction && !b_calibration && !b_ota) {
++      hdsDrsExitExtraction();
++    }
++#endif
+   }
+ }
+ 
+@@ -1312,6 +1333,16 @@ void setup() {
+   b_autoSleep = storageGetBool(KEY_AUTO_SLEEP, true);
+   b_tapTareEnabled = storageGetBool(KEY_TAP_TARE, false);
+   b_tapTimerEnabled = storageGetBool(KEY_TAP_TIMER, false);
++#if HDS_ENABLE_HDS_DRS
++  b_drsEnabled = storageGetBool(KEY_DRS_ENABLED, true);
++  drsContainerWeight = storageGetFloat(KEY_DRS_CONTAINER, 0.0f);
++  if (isnan(drsContainerWeight) || drsContainerWeight < 0.0f) {
++    drsContainerWeight = 0.0f;
++    storagePutFloat(KEY_DRS_CONTAINER, drsContainerWeight);
++  }
++  drsContainerEnabled = storageGetBool(KEY_DRS_CONTAINER_ON, false) &&
++                        drsContainerWeight >= 1.0f;
++#endif
+   if (b_mode > 1) {
+     b_mode = 0;
+     storagePutInt(KEY_MODE, b_mode);
+@@ -1769,6 +1800,12 @@ void pureScale() {
+ #endif
+     updateAdaptiveTracking(tracking_compensated);
+ 
++#if HDS_ENABLE_HDS_DRS
++    if (b_extraction) {
++      hdsDrsSample(temperature_compensated);
++    }
++#endif
++
+     if (!b_bootTare && !b_weight_quick_zero &&
+         fabs(f_displayedValue) <= 0.14 &&
+         fabs(temperature_compensated) > ZERO_DISPLAY_MISMATCH_THRESHOLD) {
+@@ -1819,6 +1856,9 @@ void pureScale() {
+     resetStableOutput();
+     resetDriftCompensation();
+     f_displayedValue = 0.0;
++#if HDS_ENABLE_HDS_DRS
++    hdsDrsOnTareComplete();
++#endif
+ #if HDS_ENABLE_GRINDER
+     f_grinder_fast_weight = 0.0f;
+     grinderRuntimeNotifyTareComplete();
+@@ -2662,8 +2702,16 @@ void loop() {
+           }
+         }
+         pureScale();
++#if HDS_ENABLE_HDS_DRS
++        hdsDrsServiceContainerCapture();
++        hdsDrsRefreshSnapshots();
++#endif
+         tapDetectTick();
++#if HDS_ENABLE_HDS_DRS
++        updateDrsOled();
++#else
+         updateOled();
++#endif
+ #if HDS_ENABLE_GRINDER
+         grinderRuntimeTick(f_displayedValue);
+ #endif
+@@ -2769,6 +2817,154 @@ void updateOled() {
+   }
+ }
+ 
++#if HDS_ENABLE_HDS_DRS
++void drawDrsTimerText(char *text, size_t size) {
++  const unsigned long elapsed = stopWatch.elapsed();
++  if (b_mode) {
++    const unsigned long seconds = elapsed < 99 ? elapsed : 99;
++    snprintf(text, size, "%02lu", seconds);
++    return;
++  }
++  unsigned long minutes = elapsed / 60;
++  unsigned long seconds = elapsed % 60;
++  if (minutes > 99) {
++    minutes = 99;
++    seconds = 59;
++  }
++  snprintf(text, size, "%02lu:%02lu", minutes, seconds);
++}
++
++void drawDrsBattery(unsigned long now, int top) {
++  if (digitalRead(BATTERY_CHARGING) == LOW) {
++    u8g2.drawXBM(121, top, 7, 12, image_battery_charging);
++    return;
++  }
++  if (powerCadence.batterySampleSequence == 0) return;
++  switch (EnergyRuntimePolicy::batteryDisplayBucket(batteryPercent())) {
++    case 0:
++      if ((now / 500) & 1) u8g2.drawXBM(121, top + 1, 7, 12, image_battery_0);
++      break;
++    case 1: u8g2.drawXBM(121, top + 1, 7, 12, image_battery_1); break;
++    case 2: u8g2.drawXBM(121, top + 1, 7, 12, image_battery_2); break;
++    case 3: u8g2.drawXBM(121, top + 1, 7, 12, image_battery_3); break;
++    default: u8g2.drawXBM(121, top + 1, 7, 12, image_battery_4); break;
++  }
++}
++
++void drawDrsBle(unsigned long now, int top) {
++  if (!b_ble_enabled) return;
++  if (bleHasLiveClient() || ((now / 1000) & 1)) {
++    u8g2.drawXBM(109, top, 5, 13, image_ble_enabled);
++  }
++}
++
++void drawDrsWifi(unsigned long now, int baseline) {
++#if HDS_FEATURE_WIFI
++  if (!b_wifiEnabled) return;
++  const bool connecting = WiFi.getMode() == WIFI_STA && WiFi.status() != WL_CONNECTED;
++  if (connecting && !((now / 500) & 1)) return;
++  u8g2.setFont(u8g2_font_open_iconic_www_1x_t);
++  const int glyph = WiFi.getMode() == WIFI_STA ? 0x004F : 0x0051;
++  u8g2.drawGlyph(96, baseline, glyph);
++#endif
++}
++
++void drawDrsExtractionPage() {
++  char text[16];
++  char timerText[8];
++  char doseText[16];
++  char ratioText[16];
++  const unsigned long now = millis();
++  u8g2.setFont(FONT_EXTRACTION);
++  int y = u8g2.getMaxCharHeight() - 5;
++  u8g2.drawStr(0, y, trim(c_weight));
++  drawDrsTimerText(timerText, sizeof(timerText));
++  u8g2.drawStr(LCDWidth - u8g2.getUTF8Width(timerText), y, timerText);
++  if (b_mode && t_extraction_first_drop > 0 &&
++      t_extraction_first_drop > t_extraction_begin) {
++    unsigned long firstDrop = (t_extraction_first_drop - t_extraction_begin) / 1000;
++    if (firstDrop > 99) firstDrop = 99;
++    snprintf(text, sizeof(text), "%02lu", firstDrop);
++    u8g2.drawStr(70, y, text);
++  }
++  y += u8g2.getMaxCharHeight() + 2;
++  u8g2.drawStr(0, y + 1, trim(c_flow_rate));
++  dtostrf(f_weight_dose, 7, i_decimal_precision, doseText);
++  u8g2.drawStr(0, LCDHeight, trim(doseText));
++  snprintf(ratioText, sizeof(ratioText), "1:%s", trim(c_brew_ratio));
++  u8g2.drawStr(LCDWidth - u8g2.getUTF8Width(ratioText), LCDHeight, ratioText);
++  drawDrsBattery(now, 26);
++  drawDrsBle(now, 26);
++  drawDrsWifi(now, 34);
++  drawTare();
++}
++
++void drawDrsPurePage() {
++  const unsigned long now = millis();
++  char text[24];
++  const bool containerActive = drsContainerEnabled &&
++      drsContainerWeight >= 1.0f &&
++      f_displayedValue >= drsContainerWeight - (float)NegativeTolerance &&
++      f_displayedValue <= drsContainerWeight + (float)PositiveTolerance;
++  u8g2.setFont(FONT_S);
++  snprintf(text, sizeof(text), "%s%s", b_mode ? "Espresso" : "Pour over",
++           containerActive ? " *" : "");
++  u8g2.drawStr(0, 12, text);
++  float shown = f_displayedValue;
++  if (containerActive) {
++    shown -= drsContainerWeight;
++    if (fabsf(shown) < 0.05f) shown = 0.0f;
++  }
++  snprintf(text, sizeof(text), "%.*f", i_decimal_precision, shown);
++  u8g2.setFont(FONT_L);
++  u8g2.drawStr(AC(text), AM() + 3, text);
++  drawDrsBattery(now, 0);
++  drawDrsBle(now, 0);
++  drawDrsWifi(now, 10);
++  drawTare();
++}
++
++void drawDrsContainerCapturePage() {
++  char text[24];
++  u8g2.setFont(FONT_S);
++  if (drsContainerCapture) {
++    u8g2.drawStr(AC("Place container"), 24, "Place container");
++    snprintf(text, sizeof(text), "%.1fg", f_displayedValue);
++    u8g2.setFont(FONT_L);
++    u8g2.drawStr(AC(text), 56, text);
++    return;
++  }
++  snprintf(text, sizeof(text), "Container %.1fg", drsContainerWeight);
++  u8g2.drawStr(AC(text), 32, text);
++}
++
++void updateDrsOled() {
++  if (!b_drsEnabled || b_debug || b_about || b_adc_recovery_active) {
++    updateOled();
++    return;
++  }
++  const unsigned long frameNow = millis();
++  const bool containerNotice = drsContainerCapture ||
++      (drsContainerCapturedAt != 0 && frameNow - drsContainerCapturedAt < 2000);
++  if (frameNow - t_oled_refresh < (unsigned long)i_oled_print_interval) return;
++  t_oled_refresh = frameNow;
++  invalidateEnergyOledFrame();
++  u8g2.firstPage();
++  do {
++    u8g2.setDisplayRotation(b_screenFlipped ? U8G2_R0 : U8G2_R2);
++    u8g2.setFontMode(1);
++    u8g2.setDrawColor(1);
++    if (containerNotice) {
++      drawDrsContainerCapturePage();
++    } else if (b_extraction) {
++      drawDrsExtractionPage();
++    } else {
++      drawDrsPurePage();
++    }
++  } while (u8g2.nextPage());
++}
++#endif
++
+ void drawShutdownFail() {
+   if (b_shutdownFailBle && millis() - t_shutdownFailBle < 3000 && millis() - t_menuExitTime > 1000) {
+     u8g2.setFont(FONT_S);
+diff --git a/tools/test_hds_drs_plugin_contract.py b/tools/test_hds_drs_plugin_contract.py
+new file mode 100644
+index 0000000..59317d9
+--- /dev/null
++++ b/tools/test_hds_drs_plugin_contract.py
+@@ -0,0 +1,125 @@
++#!/usr/bin/env python3
++import json
++import re
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++PLUGIN = ROOT / "plugins" / "hds-drs"
++
++
++def require(condition, message):
++    assert condition, message
++
++
++def gate_violations(path, markers):
++    lines = path.read_text(encoding="utf-8").splitlines()
++    stack = []
++    gate_depth = 0
++    violations = []
++    for number, line in enumerate(lines, 1):
++        stripped = line.strip()
++        if stripped.startswith("#if"):
++            gated = "HDS_ENABLE_HDS_DRS" in stripped
++            stack.append(gated)
++            if gated:
++                gate_depth += 1
++            continue
++        if stripped.startswith("#elif") or stripped.startswith("#else"):
++            continue
++        if stripped.startswith("#endif"):
++            if stack and stack.pop():
++                gate_depth -= 1
++            continue
++        if stripped.startswith("#define") or stripped.startswith("#include"):
++            pass
++        if gate_depth == 0 and any(marker in line for marker in markers):
++            violations.append(f"{path.name}:{number}: {stripped}")
++    return violations
++
++
++def check_gate():
++    config = (ROOT / "include" / "config.h").read_text(encoding="utf-8")
++    require(
++        "#ifndef HDS_ENABLE_HDS_DRS\n"
++        "#if HDS_CUSTOM_BUILD\n"
++        "#define HDS_ENABLE_HDS_DRS 1\n"
++        "#else\n"
++        "#define HDS_ENABLE_HDS_DRS 0\n"
++        "#endif\n"
++        "#endif" in config,
++        "config.h is missing the HDS_ENABLE_HDS_DRS gate",
++    )
++
++    targets = {
++        ROOT / "include" / "hds_drs.h": ["hdsDrs", "g_drs"],
++        ROOT / "include" / "parameter.h": ["g_drs", "WSP_DRS_", "b_drsEnabled",
++                                          "drsContainer"],
++        ROOT / "include" / "storage.h": ["KEY_DRS_"],
++        ROOT / "include" / "finger_detection.h": ["hdsDrs", "b_drsEnabled"],
++        ROOT / "include" / "menu.h": ["menuDrs", "drsMenu", "hdsDrs", "DrsContainer"],
++        ROOT / "include" / "websocket.h": ["hdsDrs(", "WSP_DRS_"],
++        ROOT / "src" / "hds.ino": ["hdsDrs", "updateDrsOled(", "drawDrsExtractionPage(",
++                                   "drawDrsPurePage(", "b_drsEnabled", "drsContainer"],
++    }
++    for path, markers in targets.items():
++        violations = gate_violations(path, markers)
++        require(not violations, "ungated DRS integration:\n" + "\n".join(violations))
++
++    header = (ROOT / "include" / "hds_drs.h").read_text(encoding="utf-8")
++    start = header.index("#if HDS_ENABLE_HDS_DRS")
++    require(header.rstrip().endswith("#endif\n#endif") or header.rstrip().endswith("#endif"),
++            "hds_drs.h must end with its gate")
++
++
++def check_environment():
++    ini = (ROOT / "platformio.ini").read_text(encoding="utf-8")
++    require(
++        "[env:esp32s3-hds-drs]\nextends = env:esp32s3\nbuild_flags =\n"
++        "  ${env:esp32s3.build_flags}\n  -DHDS_ENABLE_HDS_DRS=1" in ini,
++        "platformio.ini is missing the esp32s3-hds-drs environment",
++    )
++
++
++def check_menu_contract():
++    contract = (ROOT / "tools" / "test_menu_memory_contract.py").read_text(encoding="utf-8")
++    require('"menuDrs": "menuDrsBack"' in contract,
++            "menu memory contract is missing the menuDrs link")
++
++
++def check_manifest():
++    if not (PLUGIN / "plugin.json").exists():
++        return
++    manifest = json.loads((PLUGIN / "plugin.json").read_text(encoding="utf-8"))
++    require(re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", manifest["id"]) is not None,
++            "plugin id must be lowercase kebab-case")
++    require(manifest["id"] == "hds-drs", "plugin id must stay hds-drs")
++    require(set(manifest["firmware_refs"]) == {"main", "v3.1.17"},
++            "firmware_refs must list main and v3.1.17")
++    require(set(manifest["patches"]) == set(manifest["firmware_refs"]),
++            "each firmware ref needs a patch mapping")
++    for reference, relative in manifest["patches"].items():
++        require((PLUGIN / relative).is_file(), f"missing patch for {reference}")
++    for key, value in manifest["budget"].items():
++        require(type(value) is int and value >= 0, f"invalid budget value {key}")
++    require({"webserver", "websocket", "littlefs"} <= set(manifest["requires"]),
++            "web app dependencies are incomplete")
++    require(not (PLUGIN / "webapp").exists(), "use assets/ instead of webapp/")
++    index = PLUGIN / "assets" / "index.html"
++    require(index.is_file(), "assets/index.html is required for the web app")
++    html = index.read_text(encoding="utf-8")
++    require('href="./style.css"' in html and 'src="./app.js"' in html,
++            "web app resources must use relative paths")
++    require("http://" not in html and "https://" not in html,
++            "web app must not reference remote resources")
++
++
++def main():
++    check_gate()
++    check_environment()
++    check_menu_contract()
++    check_manifest()
++    print("hds-drs plugin contract tests passed")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/tools/test_menu_memory_contract.py b/tools/test_menu_memory_contract.py
+index 8ac7952..2cc0559 100644
+--- a/tools/test_menu_memory_contract.py
++++ b/tools/test_menu_memory_contract.py
+@@ -13,6 +13,7 @@ SKETCH = ROOT / "src" / "hds.ino"
+ SUBMENU_LINKS = {
+     "menuConnections": "menuConnectionsBack",
+     "menuDisplay": "menuDisplayBack",
++    "menuDrs": "menuDrsBack",
+     "menuGrinder": "menuGrinderBack",
+     "menuInfo": "menuInfoBack",
+     "menuPower": "menuPowerBack",
