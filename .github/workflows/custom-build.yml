@@ -178,21 +178,27 @@ jobs:
           import configure_custom_build as customBuild
           path = Path(".pio.nosync/plugin-ci.json")
           path.parent.mkdir(parents=True, exist_ok=True)
+          pluginId = os.environ["PLUGIN_ID"]
+          firmwareRef = os.environ["FIRMWARE_REF"]
           selection = customBuild.recommendedPluginSelection(
               customBuild.loadPluginCatalog(),
-              os.environ["PLUGIN_ID"],
-              os.environ["FIRMWARE_REF"],
+              pluginId,
+              firmwareRef,
           )
           path.write_text(json.dumps(selection) + "\n", encoding="utf-8")
-          if os.environ["PLUGIN_ID"] == "pressensor" and os.environ["FIRMWARE_REF"] in ("main", "v3.1.17"):
+          if pluginId in ("pressensor", "hds-drs") and firmwareRef in ("main", "v3.1.17"):
+              drs = pluginId == "hds-drs"
               path.with_name("plugin-combined-ci.json").write_text(json.dumps({
-                  "firmware_ref": os.environ["FIRMWARE_REF"],
-                  "features": [],
-                  "plugins": ["pressensor", "grind-by-weight"],
+                  "firmware_ref": firmwareRef,
+                  "features": ["energy-menu"] if drs else [],
+                  "plugins": ["pressensor", "grind-by-weight"] + (["hds-drs", "default-web-apps"] if drs else []),
               }) + "\n", encoding="utf-8")
           PY
+      - name: Test SofronioDRS dashboard
+        if: matrix.plugin == 'hds-drs'
+        run: node plugins/hds-drs/test_web.cjs
       - name: Create test custom OTA key for combined integrations
-        if: matrix.plugin == 'pressensor' && (matrix.firmware_ref == 'main' || matrix.firmware_ref == 'v3.1.17')
+        if: (matrix.plugin == 'pressensor' || matrix.plugin == 'hds-drs') && (matrix.firmware_ref == 'main' || matrix.firmware_ref == 'v3.1.17')
         run: |
           openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$RUNNER_TEMP/custom-ota.pem" 2>/dev/null
           openssl pkey -in "$RUNNER_TEMP/custom-ota.pem" -pubout \
@@ -216,7 +222,8 @@ jobs:
             --config .pio.nosync/plugin-ci.json \
             --verify-plugin-environment "esp32s3-$PLUGIN_ID" \
             "${source_args[@]}"
-          if [ "$PLUGIN_ID" = "pressensor" ] && { [ "$FIRMWARE_REF" = "main" ] || [ "$FIRMWARE_REF" = "v3.1.17" ]; }; then
+          if { [ "$PLUGIN_ID" = "pressensor" ] || [ "$PLUGIN_ID" = "hds-drs" ]; } &&
+             { [ "$FIRMWARE_REF" = "main" ] || [ "$FIRMWARE_REF" = "v3.1.17" ]; }; then
             if [ "$FIRMWARE_REF" = "v3.1.17" ]; then
               source_commit="$(git rev-parse "refs/tags/$FIRMWARE_REF^{commit}")"
               source_args=(--source-commit "$source_commit")

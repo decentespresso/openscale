@@ -1,0 +1,22 @@
+{
+  "schema": 2,
+  "id": "hds-drs",
+  "name": "SofronioDRS",
+  "description": "Adds pour-over and espresso extraction modes with a dedicated scale screen and web app.",
+  "tooltip": "Compile-time extraction modes with timers, flow, dose, and brew ratio on the OLED and at /apps/hds-drs/. Uses the existing webserver, websocket, and LittleFS features; it does not start a second web server.",
+  "version": "0.1.0",
+  "firmware_refs": ["main", "v3.1.17"],
+  "requires": ["webserver", "websocket", "littlefs"],
+  "depends_on": [],
+  "recommends": {"features": [], "plugins": []},
+  "conflicts": [],
+  "patches": {
+    "main": "patches/main.patch",
+    "v3.1.17": "patches/v3.1.17.patch"
+  },
+  "budget": {
+    "firmware_flash_bytes": 16384,
+    "static_ram_bytes": 1024,
+    "littlefs_bytes": 9216
+  }
+}

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SofronioDRS</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="panel">
+    <header class="header">
+      <h1>SofronioDRS</h1>
+      <span id="connection" class="connection">offline</span>
+    </header>
+
+    <section class="readout">
+      <div id="weight" class="weight">0.0<span class="unit">g</span></div>
+      <div id="timer" class="timer">0s</div>
+    </section>
+
+    <section class="metrics">
+      <div class="metric">
+        <span class="metric-label">Flow</span>
+        <span id="flow" class="metric-value">0.0 g/s</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Ratio</span>
+        <span id="ratio" class="metric-value">1:0.0</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Dose</span>
+        <span id="dose" class="metric-value">0.0 g</span>
+      </div>
+    </section>
+
+    <section class="modes">
+      <button id="mode-pour" class="mode" data-command="drs pour">Pour over</button>
+      <button id="mode-espresso" class="mode" data-command="drs espresso">Espresso</button>
+    </section>
+
+    <section class="actions">
+      <button data-command="drs toggle" class="primary" id="extraction">DRS unavailable</button>
+      <button data-command="drs tare">Tare</button>
+      <button data-command="drs timer start" id="timer-start">Start</button>
+      <button data-command="drs timer stop">Stop</button>
+      <button data-command="drs timer zero">Reset</button>
+    </section>
+
+  </main>
+  <script src="./app.js"></script>
+</body>
+</html>
