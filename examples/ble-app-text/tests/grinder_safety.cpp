@@ -139,6 +139,14 @@ int main() {
   assert(grinderSendOff());
   grinderHandleOkResponse(off, 0);
   assert(!grinderRuntime.shutdownUnconfirmed && canRestart());
+  assert(grinderSendOff());
+  grinderHandleOkResponse(on, 0);
+  grinderCloseClient();
+  assert(grinderRuntime.shutdownUnconfirmed && !canRestart());
+  connected = true;
+  grinderRuntime.pendingCommand = GRINDER_COMMAND_HELLO;
+  grinderHandleOkResponse(off, 0);
+  assert(canRestart());
   connected = false;
   assert(!grinderSendCommand("ON\n", 3, GRINDER_COMMAND_ON));
   assert(canRestart());

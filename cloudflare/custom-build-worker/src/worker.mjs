@@ -210,24 +210,30 @@ async function serviceCatalog(env, commit) {
   return catalog;
 }
 
-function featureDefinition(catalog, id) {
+function featureRequirements(catalog, id, firmwareRef) {
   const stored = catalog.features[id];
   const feature = Array.isArray(stored)
     ? {requires: stored, firmware_refs: catalog.firmware_refs}
     : stored;
-  if (!feature || !Array.isArray(feature.requires) || !Array.isArray(feature.firmware_refs) ||
-      feature.requires.some(required => !idPattern.test(required)) ||
+  if (!feature || !Array.isArray(feature.firmware_refs) ||
       feature.firmware_refs.some(ref => typeof ref !== "string")) {
     throw new ApiError(503, "invalid_service_catalog");
   }
-  const overrides = feature.requires_by_ref;
-  if (overrides !== undefined && (!overrides || typeof overrides !== "object" || Array.isArray(overrides) ||
-      Object.entries(overrides).some(([ref, requires]) =>
-        !feature.firmware_refs.includes(ref) || !Array.isArray(requires) ||
-        requires.some(required => typeof required !== "string" || !Object.hasOwn(catalog.features, required))))) {
+  if (!feature.firmware_refs.includes(firmwareRef)) throw new ApiError(400, "unsupported_feature_ref");
+  const validRequirements = requires => Array.isArray(requires) && requires.every(required =>
+    typeof required === "string" && idPattern.test(required) && Object.hasOwn(catalog.features, required));
+  const {requires, requires_by_ref: byRef} = feature;
+  if (byRef === undefined) {
+    if (!validRequirements(requires)) throw new ApiError(503, "invalid_service_catalog");
+    return requires;
+  }
+  if (requires !== undefined || !byRef || typeof byRef !== "object" || Array.isArray(byRef) ||
+      feature.firmware_refs.some(ref => !Object.hasOwn(byRef, ref)) ||
+      Object.entries(byRef).some(([ref, dependencies]) =>
+        !feature.firmware_refs.includes(ref) || !validRequirements(dependencies))) {
     throw new ApiError(503, "invalid_service_catalog");
   }
-  return feature;
+  return byRef[firmwareRef];
 }
 
 function resolveFeatures(catalog, firmwareRef, requested, plugins) {
@@ -240,19 +246,8 @@ function resolveFeatures(catalog, firmwareRef, requested, plugins) {
     if (!plugin) throw new ApiError(400, "unknown_plugin");
     for (const feature of plugin.requires) resolved.add(feature);
   }
-  let previousSize = -1;
-  while (resolved.size !== previousSize) {
-    previousSize = resolved.size;
-    for (const id of resolved) {
-      const feature = featureDefinition(catalog, id);
-      const requires = feature.requires_by_ref?.[firmwareRef] ?? feature.requires;
-      for (const dependency of requires) resolved.add(dependency);
-    }
-  }
   for (const id of resolved) {
-    if (!featureDefinition(catalog, id).firmware_refs.includes(firmwareRef)) {
-      throw new ApiError(400, "unsupported_feature_ref");
-    }
+    for (const dependency of featureRequirements(catalog, id, firmwareRef)) resolved.add(dependency);
   }
   return [...resolved].sort();
 }

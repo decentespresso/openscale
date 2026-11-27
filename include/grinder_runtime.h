@@ -402,6 +402,7 @@ static inline void grinderWaitAfterRecovery() {
 
 static inline void grinderHandleOkResponse(const GrinderTcpResponse &response, float weight) {
   grinderRuntime.relayOn = response.relayOn;
+  if (response.relayOn) grinderRuntime.shutdownUnconfirmed = true;
   grinderCopyCString(grinderRuntime.activePlugMac, sizeof(grinderRuntime.activePlugMac), response.plugMac);
   if (grinderRuntime.pendingCommand != GRINDER_COMMAND_PING) {
     Serial.printf("[grinder] rx OK %s state=%s pending=%d weight=%.2f\n",

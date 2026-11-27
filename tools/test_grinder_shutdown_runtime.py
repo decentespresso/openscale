@@ -9,13 +9,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 SOURCE = r'''
 #include <cassert>
+#include <initializer_list>
 #include <limits>
 #include "grinder_reply_frame.h"
 
+enum Command { GRINDER_COMMAND_NONE, GRINDER_COMMAND_OFF };
 struct {
   bool menuPaused = false;
   bool shutdownUnconfirmed = false;
   bool userTareComplete = true;
+  Command pendingCommand = GRINDER_COMMAND_NONE;
 } grinderRuntime;
 struct { void println(const char *) {} } Serial;
 float f_displayedValue = 12;
@@ -26,32 +29,38 @@ void delay(unsigned long ms) { clockMs += ms; }
 bool grinderBleConnected() { return connected && (!drops || clockMs - connectedAt < 15); }
 void grinderBleTick() {}
 bool grinderSendOff() {
-  assert(grinderRuntime.menuPaused && grinderRuntime.shutdownUnconfirmed);
+  assert(grinderRuntime.menuPaused);
   sends = true;
+  if (sendSucceeds) grinderRuntime.pendingCommand = GRINDER_COMMAND_OFF;
   return sendSucceeds;
 }
 void grinderReadClient(float weight) {
   assert(weight == 12);
-  if (replies && clockMs - connectedAt >= 20) grinderRuntime.shutdownUnconfirmed = false;
+  if (replies && clockMs - connectedAt >= 20) {
+    grinderRuntime.shutdownUnconfirmed = false;
+    grinderRuntime.pendingCommand = GRINDER_COMMAND_NONE;
+  }
 }
 void grinderRuntimeReset() {
   connected = false;
   grinderRuntime.userTareComplete = false;
+  grinderRuntime.pendingCommand = GRINDER_COMMAND_NONE;
 }
 void grinderResumeAfterMenu() { grinderRuntime.menuPaused = false; }
 #include "grinder_shutdown.h"
 
-void checkShutdown(bool send, unsigned long elapsed, bool confirmed) {
+void checkShutdown(bool send, unsigned long elapsed, bool unconfirmed) {
   grinderPrepareForShutdown();
   assert(clockMs - connectedAt == elapsed);
-  assert(sends == send && grinderRuntime.shutdownUnconfirmed == !confirmed);
+  assert(sends == send && grinderRuntime.shutdownUnconfirmed == unconfirmed);
   assert(!connected && grinderRuntime.menuPaused && !grinderRuntime.userTareComplete);
   grinderResumeAfterCancelledShutdown();
   assert(!grinderRuntime.menuPaused);
 }
 
-void reset(unsigned long now = 0) {
+void reset(bool unconfirmed, unsigned long now = 0) {
   grinderRuntime = {};
+  grinderRuntime.shutdownUnconfirmed = unconfirmed;
   clockMs = connectedAt = now;
   connected = sendSucceeds = replies = true;
   sends = drops = false;
@@ -71,20 +80,22 @@ int main() {
   assert(frame.append(8, 8, "OK\nX", 4) == R::Invalid);
   assert(frame.append(8, 8, "\rX", 2) == R::Invalid);
 
-  reset();
-  checkShutdown(true, 20, true);
-  reset(std::numeric_limits<unsigned long>::max() - 100);
-  replies = false;
-  checkShutdown(true, 250, false);
-  reset();
-  sendSucceeds = false;
-  checkShutdown(true, 0, false);
-  reset();
-  drops = true;
-  checkShutdown(true, 15, false);
-  reset();
-  connected = false;
-  checkShutdown(false, 0, true);
+  for (const bool unconfirmed : {false, true}) {
+    reset(unconfirmed);
+    checkShutdown(true, 20, false);
+    reset(unconfirmed, std::numeric_limits<unsigned long>::max() - 100);
+    replies = false;
+    checkShutdown(true, 250, unconfirmed);
+    reset(unconfirmed);
+    sendSucceeds = false;
+    checkShutdown(true, 0, unconfirmed);
+    reset(unconfirmed);
+    drops = true;
+    checkShutdown(true, 15, unconfirmed);
+    reset(unconfirmed);
+    connected = false;
+    checkShutdown(false, 0, unconfirmed);
+  }
 }
 '''
 

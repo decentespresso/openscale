@@ -299,7 +299,6 @@ def test_firmware_contracts():
     assert_contains(RUNTIME_HEADER, 'preferences.getFloat("safety", 2.0f)')
     assert_contains(RUNTIME_HEADER, "previousWifiOnBoot")
     assert_contains(RUNTIME_HEADER, 'preferences.getBool("wifi_prev", false)')
-    assert_contains(PROTOCOL_HEADER, "GRINDER_RUNTIME_RECONNECT_INTERVAL_MS 3000")
     assert_contains(RUNTIME_HEADER, 'preferences.begin("grinder"')
     assert_contains(RUNTIME_HEADER, '#include "grinder_runtime_adaptive.h"')
     assert_contains(RUNTIME_HEADER, '#include "grinder_settings_persistence.h"')

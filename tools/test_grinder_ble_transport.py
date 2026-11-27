@@ -3,6 +3,8 @@ import shutil
 import subprocess
 import tempfile
 
+from test_usb_text_actions_contract import block_after
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -14,7 +16,31 @@ def test_grinder_ble_transport():
 #include <cassert>
 #include "grinder_ble_transport_state.h"
 
+GrinderBleTransport grinderBleTransport;
+int grinderBleMux = 0;
+bool scheduled = false;
+bool advancePhaseOnLock = true;
+unsigned long clockMs = 100;
+constexpr unsigned long grinderBlePhaseTimeoutMs = 6000;
+constexpr unsigned long grinderBleCloseRetryMs = 250;
+
+unsigned long millis() { return clockMs; }
+void portENTER_CRITICAL(int *) {
+  if (advancePhaseOnLock) grinderBleTransport.phaseAt = ++clockMs;
+}
+void portEXIT_CRITICAL(int *) {}
+void grinderBleSchedule() { scheduled = true; }
+void grinderBleTick() { @TICK@ }
+
 int main() {
+  grinderBleTransport.phase = GrinderBlePhase::Scanning;
+  grinderBleTick();
+  assert(!grinderBleTransport.closeRequested && !scheduled);
+  advancePhaseOnLock = false;
+  clockMs += grinderBlePhaseTimeoutMs;
+  grinderBleTick();
+  assert(grinderBleTransport.closeRequested && scheduled);
+
   constexpr uint8_t advertisement[] = {0xff, 0xff, 0x01, 0x2b, 0x30, 0x45, 0xfe, 0x00};
   char mac[18];
   assert(grinderBleAdvertisedMac(advertisement, sizeof(advertisement), mac));
@@ -67,7 +93,8 @@ int main() {
   link.closeRequested = true;
   assert(link.takeCommand().size == 0);
 }
-'''
+'''.replace("@TICK@", block_after((ROOT / "include/grinder_ble_transport.h").read_text(encoding="utf-8"),
+                               "static void grinderBleTick()"))
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory)
         cpp, executable = path / "test.cpp", path / "test.exe"

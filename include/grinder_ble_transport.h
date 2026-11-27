@@ -418,8 +418,8 @@ static size_t grinderBleRead(uint8_t *requestId, char *data, size_t capacity) {
 
 static void grinderBleTick() {
   auto &link = grinderBleTransport;
-  const unsigned long now = millis();
   portENTER_CRITICAL(&grinderBleMux);
+  const unsigned long now = millis();
   const bool busy = link.phase != GrinderBlePhase::Idle && !link.connected();
   if (busy && now - link.phaseAt >= grinderBlePhaseTimeoutMs) link.closeRequested = true;
   const bool closing = link.closeRequested && now - link.closeAt >= grinderBleCloseRetryMs;

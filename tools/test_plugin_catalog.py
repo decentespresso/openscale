@@ -307,7 +307,13 @@ def main():
     assert grinderFeature["name"] == "Grind by weight core"
     assert grinderFeature["hidden"] is True
     assert grinderFeature["requires_by_ref"] == {"main": []}
-    assert serviceCatalog["features"]["grinder"]["requires_by_ref"] == {"main": []}
+    assert serviceCatalog["features"]["grinder"] == {
+        "firmware_refs": list(customBuild.FIRMWARE_REFS),
+        "requires_by_ref": {
+            ref: [] if ref == "main" else grinderFeature["requires"]
+            for ref in customBuild.FIRMWARE_REFS
+        },
+    }
     assert grindByWeight["name"] == "Grind by weight"
     assert grindByWeight["requires"] == ["grinder"]
     assert grindByWeight["conflicts"] == ["pressensor"]

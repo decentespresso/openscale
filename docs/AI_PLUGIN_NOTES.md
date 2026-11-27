@@ -87,8 +87,8 @@ Use `conflicts` for plugin IDs and optional `conflicts_features` for feature IDs
 
 Optional `conflicts_by_ref` replaces `conflicts` for an explicit supported firmware
 ref. Its values must be unique known plugin IDs without self-conflicts. Omitted
-refs keep the default conflicts. Pressensor and Grind by Weight permit combined
-builds on `main`, `v3.1.16` and the staged `v3.1.17` ref; older release/preview
+refs keep the default conflicts. The catalog permits selecting both Pressensor and
+Grind by Weight on `v3.1.16` and `v3.1.17`, but not on `main`. Older release/preview
 mappings retain their original patches and conflicts. Freeze the release patch
 separately from the moving `main` patch. Regenerate both catalogs after changing mappings.
 App Text is core BLE firmware and must not appear as a selectable plugin.

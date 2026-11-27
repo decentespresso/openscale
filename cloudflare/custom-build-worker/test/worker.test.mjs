@@ -30,11 +30,21 @@ test("grinder needs WiFi on tagged sources only", async () => {
   const catalog = JSON.parse(await readFile(new URL("../../../docs/custom-build/service-catalog.json", import.meta.url), "utf8"));
   const selection = {firmware_ref: "main", features: [], plugins: ["grind-by-weight"]};
   const commit = "1".repeat(40);
+  const {firmware_refs, requires_by_ref} = catalog.features.grinder;
+  assert.equal(Object.hasOwn(catalog.features.grinder, "requires"), false);
   assert.deepEqual(identityForSelection(catalog, commit, selection).features, ["grinder"]);
   assert.deepEqual(identityForSelection(catalog, commit, {...selection, firmware_ref: "v3.1.17"}).features,
     ["grinder", "mdns", "webserver", "wifi"]);
-  for (const requires_by_ref of [null, [], {unknown: []}, {main: "wifi"}, {main: ["missing"]}]) {
-    const features = {...catalog.features, grinder: {...catalog.features.grinder, requires_by_ref}};
+  const legacyGrinder = {firmware_refs, requires: requires_by_ref["v3.1.17"]};
+  const legacyCatalog = {...catalog, features: {...catalog.features, grinder: legacyGrinder}};
+  assert.deepEqual(identityForSelection(legacyCatalog, commit, selection).features, ["grinder", "mdns", "webserver", "wifi"]);
+  for (const grinder of [
+    {firmware_refs},
+    {...legacyGrinder, requires_by_ref},
+    ...[null, [], {main: []}, {...requires_by_ref, unknown: []}, {...requires_by_ref, main: "wifi"},
+      {...requires_by_ref, main: ["missing"]}].map(requires_by_ref => ({firmware_refs, requires_by_ref})),
+  ]) {
+    const features = {...catalog.features, grinder};
     assert.throws(() => identityForSelection({...catalog, features}, commit, selection), /invalid_service_catalog/);
   }
 });

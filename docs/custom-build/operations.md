@@ -134,6 +134,14 @@ manifests, SHA-256-matched final binaries after `buildfs`, and live saved-build 
 7. Treat sustained `409 catalog_stale` responses as an incomplete deployment. The browser
    retries one catalog reload and then displays `Configurator update in progress`.
 
+Deploy the Worker that supports `requires_by_ref` before merging the BLE grinder catalog and
+publishing the configurator. It still accepts the previous catalog's shared `requires` lists.
+Ref-specific service features omit the shared list so an older Worker rejects affected selections
+with `503 invalid_service_catalog` instead of silently adding Wi-Fi to a grinder build on `main`.
+After the merge, verify a hosted grinder-only `main` build has no Wi-Fi features and a tagged
+grinder build still includes them. To roll back the Worker, first restore the compatible builder
+and configurator catalogs.
+
 Before deploying lookup changes, verify the configured App can resolve `main` and every public
 stable tag with its existing repository-scoped token. GitHub permits public commit reads without
 Contents permission; if that exact token receives an integration-permission rejection, stop rather

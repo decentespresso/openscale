@@ -563,6 +563,17 @@ def writeBrowserCatalog(path):
     path.write_bytes((json.dumps(catalog, indent=2) + "\n").encode("utf-8"))
 
 
+def serviceFeatureContract(featureId):
+    contract = featureContract(featureId)
+    if "requires_by_ref" not in contract:
+        return contract
+    firmwareRefs = contract["firmware_refs"]
+    return {
+        "firmware_refs": firmwareRefs,
+        "requires_by_ref": {ref: list(featureRequirements(featureId, ref)) for ref in firmwareRefs},
+    }
+
+
 def buildServiceCatalog(sourceRoot=ROOT):
     plugins = loadPluginCatalog(validateDefaults=True)
     return {
@@ -575,7 +586,7 @@ def buildServiceCatalog(sourceRoot=ROOT):
             firmwareRef: firmwareMetadata(firmwareRef, sourceRoot)
             for firmwareRef in FIRMWARE_REFS
         },
-        "features": {featureId: featureContract(featureId) for featureId in FEATURES},
+        "features": {featureId: serviceFeatureContract(featureId) for featureId in FEATURES},
         "plugins": {
             pluginId: {
                 "version": manifest["version"],

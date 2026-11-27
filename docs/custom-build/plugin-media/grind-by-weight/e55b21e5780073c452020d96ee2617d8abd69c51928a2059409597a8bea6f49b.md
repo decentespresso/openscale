@@ -2,9 +2,7 @@
 
 HDS support for using a Tasmota smart plug as a grinder power switch.
 
-Use a matching BLE build of the [Tasmota Auto Doser firmware](https://github.com/decentespresso/tasmota-auto-doser) with an HDS build from `main`. Tagged HDS releases through 3.1.17 still use the WiFi version. The two transports are not interchangeable.
-
-You can use Grind by weight without WiFi on either device. Decaid can stay connected to the scale over its usual BLE link while the scale connects to the plug.
+Match the plug firmware to the HDS firmware ref you selected in the custom build configurator: `main` uses BLE, while tags through `v3.1.17` use WiFi/TCP. The two plug firmwares are not interchangeable.
 
 ## What It Does
 
@@ -18,34 +16,36 @@ You can use Grind by weight without WiFi on either device. Decaid can stay conne
 
 The grinder itself still needs to be ready to run. This feature controls power to the plug, not the physical grinder switch.
 
-## Plug Setup
+## Setup
 
-Install the matching BLE grinder firmware on the plug. Back up the existing settings and keep both previous firmware images for rollback. The plug's WiFi remains available for settings and firmware upgrades.
+### Tagged Firmware: WiFi
 
-## Scale Setup
+1. Install [Tasmota Auto Doser v1.1.0](https://github.com/decentespresso/tasmota-auto-doser/releases/tag/v1.1.0) for your plug model. Connect the plug to a trusted WiFi network using the [plug setup guide](https://github.com/decentespresso/tasmota-auto-doser/blob/v1.1.0/docs/plug-setup.md).
+2. Build the chosen HDS tag with the `Grind by weight` plugin, flash it to the scale, and connect the scale to the same WiFi network. The network must allow local connections and mDNS discovery between the devices.
+3. Open `Grind by weight` in the HDS OLED menu, enable it, and use `Select Plug` to choose the plug by its factory MAC address.
+4. Adjust the dosing settings as needed and leave the menu with `Back`.
 
-1. Build firmware with the `Grind by weight` plugin and flash it to the HDS scale.
-2. Power on with the circle button to enable BLE, then open `Grind by weight` in the HDS OLED menu.
-3. Enable the grinder.
-4. Open `Select Plug` and choose the plug by its factory MAC address.
-5. Adjust the grinder settings if needed, then leave the menu with `Back`.
+### Main Firmware: BLE
 
-To use the scale's tare button while Decaid is connected, enable `BLE Buttons` in the scale's `Connections` menu.
+1. Back up the plug settings and keep both previous firmware images for rollback. Install the [matching BLE grinder firmware](https://github.com/decentespresso/tasmota-auto-doser/pull/20) for your plug model. The plug's WiFi remains available for settings and updates; this grinder connection does not need WiFi on either device.
+2. Build `main` with the `Grind by weight` plugin and flash it to the HDS scale. Power on with the circle button to enable BLE.
+3. Open `Grind by weight` in the HDS OLED menu, enable it, and use `Select Plug` to choose the plug by its factory MAC address.
+4. Adjust the dosing settings as needed and leave the menu with `Back`.
 
-If you already selected the same plug on the WiFi firmware, the scale keeps its factory MAC and your dosing settings. There is no WiFi fallback: both firmware images must support BLE.
+If you already selected this plug on the WiFi firmware, the scale keeps its factory MAC and your dosing settings. There is no WiFi fallback. Decaid can stay connected to the scale over BLE while the scale controls the plug. To use the scale's tare button while Decaid is connected, enable `BLE Buttons` in the scale's `Connections` menu.
 
 ## First Safe Test
 
 Disconnect the grinder. Use a lamp so you can see whether the outlet is energized, not just whether the software reports ON or OFF.
 
-1. Complete `Scale Setup` and leave the menu.
+1. Complete the setup for your firmware ref and leave the menu.
 2. Confirm that the display reaches `Tare to arm`.
 3. Put the empty dosing cup in its normal position and tare the scale.
 4. Wait for `Ready` and confirm that the plug relay switches on.
 5. Add weight gradually until the cutoff is reached and confirm that the plug switches off.
 6. Remove the weight and return the empty cup. After stable zero, the display should return to `Ready`.
 
-Repeat with Windows Decaid connected to the physical scale over BLE and WiFi unavailable to both devices. Confirm Decaid reports weight during dosing and automatic plug reconnection, and remains connected while the scale's setup menu scans for plugs. This test does not qualify a tablet with a real DE1 connected.
+On `main`, repeat with Windows Decaid connected to the physical scale over BLE and WiFi unavailable to both devices. Confirm Decaid reports weight during dosing and automatic plug reconnection, and remains connected while the scale scans for plugs. This test does not qualify a tablet with a real DE1 connected.
 
 ## Settings
 
@@ -62,7 +62,7 @@ Zero hold: 1000 ms
 Target tolerance: 0.5 g
 ```
 
-The grinder has no WiFi settings. Entering the grinder menu while the plug is armed sends OFF first. The BLE connection stays open where possible, and leaving the menu rearms only after stable zero.
+Tagged firmware keeps WiFi on at boot when the grinder is enabled; `main` does not change your WiFi setting. Entering the grinder menu while the plug is armed sends OFF first. The plug connection stays open where possible, and leaving the menu rearms only after stable zero.
 
 The cutoff threshold is:
 
@@ -107,6 +107,8 @@ After `Ready` appears, only ground coffee should add weight. Slowly placing anot
 
 | Display | Meaning | What to do |
 | --- | --- | --- |
+| `WiFi wait` (tags) | Scale is waiting for WiFi | Check the scale's saved network |
+| `BLE off` (`main`) | Scale started without BLE | Restart the scale with the circle button |
 | `Plug wait` | Selected plug is not reachable | Power the plug or use `Select Plug` |
 | `Tare to arm` | Plug is connected but safely OFF | Put down the empty cup and tare |
 | `Zero wait` | Waiting for a stable zero reading | Leave the empty cup untouched |
@@ -163,6 +165,12 @@ Adaptive changes are saved before deep sleep instead of on every loop.
 
 ## Technical Details
 
+### Tagged Firmware: WiFi
+
+The scale discovers `_grinderplug._tcp.local` over mDNS and connects on TCP port `31980`. It stores the plug MAC and caches its hostname and last IP for lookup. See the [TCP protocol guide](https://github.com/decentespresso/tasmota-auto-doser/blob/v1.1.0/docs/grinder-tcp.md).
+
+### Main Firmware: BLE
+
 The plug advertises a dedicated BLE service. Manufacturer data starts with the little-endian company ID `FF FF`, followed by six bytes of its factory WiFi STA MAC in display order. HDS uses the MAC as an identity label and does not use the plug's current BLE address as its saved identity.
 
 ```text
@@ -181,7 +189,7 @@ The plug starts with its relay off. It turns off if the owning connection drops 
 
 ### Select Plug Finds Nothing
 
-Check that the plug has the BLE grinder firmware and is within range. A BLE scanner should show the grinder service UUID above. The factory MAC must be present in the manufacturer data.
+On tags, check that both devices are on the same WiFi network and that the plug advertises `_grinderplug._tcp.local` with its MAC and protocol version `1`. On `main`, check that the plug has the BLE firmware and is within range. A BLE scanner should show the grinder service UUID and the factory MAC in manufacturer data.
 
 ### Scale Shows Plug Wait
 
@@ -190,8 +198,9 @@ The selected plug cannot currently be reached.
 Check:
 
 - plug is powered
-- plug is within BLE range
 - the saved MAC in `Select Plug` matches the intended plug
+- on tags, the plug is on the same network and listens on TCP port `31980`
+- on `main`, the plug is within BLE range
 
 ### Scale Shows Busy
 
@@ -208,13 +217,13 @@ The scale entered the Grind by weight fail-safe state.
 Common causes:
 
 - plug connection lost while grinding
-- malformed BLE response
+- malformed plug response
 - wrong plug MAC
 - plug returned `ERR`
 - `ON` timed out
 - `OFF` timed out
 
-The plug should turn OFF when the owning BLE connection drops or its heartbeat expires.
+The plug should turn OFF when the owning connection drops or its heartbeat expires.
 
 ### Scale Shows Tare To Arm
 
@@ -222,7 +231,7 @@ The plug connection is valid, but the grinder remains OFF until a user-requested
 
 ### Plug Is Offline And Weighing Must Stay Responsive
 
-During normal weighing, the scale looks for the saved plug in the background. Use `Select Plug` to list nearby plugs.
+During normal weighing, the scale looks for the saved plug. Use `Select Plug` for a fresh mDNS lookup on tags or to list nearby BLE plugs on `main`.
 
 ### The Scale Does Not Rearm
 
@@ -249,4 +258,4 @@ Grind by weight debug logs are printed on USB serial. The internal prefix remain
 
 ## Security Notes
 
-The first BLE client to connect owns the plug until it disconnects or times out. There is no PIN or bond. Anyone within Bluetooth range can claim an idle plug, even without access to your WiFi. The MAC check identifies the selected plug but does not authenticate it. Use this build only where you trust nearby devices.
+Neither transport authenticates the plug or the controller. On tags, keep both devices on a trusted local WiFi network. On `main`, the first BLE client to connect owns the plug until it disconnects or times out. There is no PIN or bond. A device within Bluetooth range can claim an idle plug and turn its relay on, even without access to your WiFi. Use the BLE build only where you trust nearby devices.
