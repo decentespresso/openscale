@@ -66,8 +66,11 @@ def main():
     assert 'if [ "$FIRMWARE_REF" = "main" ]; then\n            source_args+=(--source-commit "$CANDIDATE_COMMIT")\n          fi' in verifyPlugins
     assert '"${source_args[@]}"' in verifyPlugins
     assert 'python tools/build_custom_firmware.py \\\n' in verifyPlugins
-    assert '"plugins": ["pressensor", "grind-by-weight"]' in verifyPlugins
-    assert "if: matrix.plugin == 'pressensor' && (matrix.firmware_ref == 'main' || matrix.firmware_ref == 'v3.1.17')" in verifyPlugins
+    assert 'if pluginId in ("pressensor", "hds-drs") and firmwareRef in ("main", "v3.1.17"):' in verifyPlugins
+    assert '"features": ["energy-menu"] if drs else []' in verifyPlugins
+    assert '"plugins": ["pressensor", "grind-by-weight"] + (["hds-drs", "default-web-apps"] if drs else [])' in verifyPlugins
+    assert "if: matrix.plugin == 'hds-drs'\n        run: node plugins/hds-drs/test_web.cjs" in verifyPlugins
+    assert "if: (matrix.plugin == 'pressensor' || matrix.plugin == 'hds-drs') && (matrix.firmware_ref == 'main' || matrix.firmware_ref == 'v3.1.17')" in verifyPlugins
     bash = shutil.which("bash") if os.name != "nt" else None
     if bash:
         pluginStep = verifyPlugins.split("- name: Build plugin environment", 1)[1]
@@ -77,7 +80,7 @@ def main():
             "git() { test \"$*\" = 'rev-parse refs/tags/v3.1.17^{commit}' || return 1; "
             "printf '%s\\n' '" + "2" * 40 + "'; }\n"
         )
-        for pluginId in ("pressensor", "grind-by-weight"):
+        for pluginId in ("pressensor", "grind-by-weight", "hds-drs"):
             for ref in ("main", "v3.1.14", "v3.1.15", "v3.1.16", "v3.1.17"):
                 result = subprocess.run([bash, "-e", "-c", stubs + script],
                     env={**os.environ, "PLUGIN_ID": pluginId, "FIRMWARE_REF": ref, "CANDIDATE_COMMIT": "1" * 40},
@@ -85,7 +88,7 @@ def main():
                 expected = ["tools/build_custom_firmware.py", "--config", ".pio.nosync/plugin-ci.json",
                             "--verify-plugin-environment", f"esp32s3-{pluginId}",
                             *(["--source-commit", "1" * 40] if ref == "main" else [])]
-                if pluginId == "pressensor" and ref in ("main", "v3.1.17"):
+                if pluginId in ("pressensor", "hds-drs") and ref in ("main", "v3.1.17"):
                     expected = [*expected, "tools/build_custom_firmware.py", "--config",
                                 ".pio.nosync/plugin-combined-ci.json", "--builder-commit", "1" * 40,
                                 "--source-commit", ("1" if ref == "main" else "2") * 40]
@@ -135,6 +138,12 @@ def main():
     assert changedPlugins.changedPluginMatrix([
         "plugins/default-web-apps/assets/index.html"
     ]) == []
+    assert changedPlugins.changedPluginMatrix([
+        "plugins/hds-drs/patches/main.patch"
+    ]) == [
+        {"plugin": "hds-drs", "firmware_ref": "main"},
+        {"plugin": "hds-drs", "firmware_ref": "v3.1.17"},
+    ]
     dependencyCatalog = {
         "base": ({"depends_on": []}, [], {}),
         "dependent": ({"depends_on": ["base"]}, [], {"main": Path("dependent.patch")}),

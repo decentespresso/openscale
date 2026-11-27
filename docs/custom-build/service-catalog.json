@@ -1,7 +1,7 @@
 {
   "schema": 2,
   "custom_ota_signing_key_generation": 1,
-  "catalog_revision": "6344ace3215773aed4c0ee7bc418fa6313ba96a7bd00971b4a44eea771866582",
+  "catalog_revision": "274d87ddc1ce58f9d3bc10c533da8254c5f189b085e498c87be36969f73f75af",
   "firmware_refs": [
     "v3.1.14",
     "v3.1.14-preview.3",
@@ -385,38 +385,33 @@
         "littlefs"
       ],
       "depends_on": [],
-      "conflicts": [
-        "pressensor",
-        "grind-by-weight"
-      ],
+      "conflicts": [],
       "conflicts_by_ref": {},
-      "conflicts_features": [
-        "grinder"
-      ],
+      "conflicts_features": [],
       "recommends": {
         "features": [],
         "plugins": []
       },
       "patches": {
         "main": {
-          "sha256": "afa648d389789f1f31083095dba5ad9573ed6a0fbc525e3279e47d498dd09678"
+          "sha256": "f7dbf74fd4c6ed4d68aee58709452117a9d4bbd3dfd1f34f1f98f56fa6fcb65d"
         },
         "v3.1.17": {
-          "sha256": "afa648d389789f1f31083095dba5ad9573ed6a0fbc525e3279e47d498dd09678"
+          "sha256": "f7dbf74fd4c6ed4d68aee58709452117a9d4bbd3dfd1f34f1f98f56fa6fcb65d"
         }
       },
       "assets": [
         {
           "target": "apps/hds-drs/app.js",
-          "sha256": "8709883cd0c6aa2c032309b03487aada92fe099846a8c92183cb64387166e75c"
+          "sha256": "9936c404340486f097e24bec2c3fc589f8ba46c9192920d699d56039dd596628"
         },
         {
           "target": "apps/hds-drs/index.html",
-          "sha256": "3f4c78e56025829cb736a42e1c9d06bac9a0de34d60d35890b2195c316d6357a"
+          "sha256": "130b66de712eec3dd91545498df60e1f9b19f881d7e9583d04ead84bdd586256"
         },
         {
           "target": "apps/hds-drs/style.css",
-          "sha256": "033c176767519b03ac624c069cb7e194ffd228b5333741d612dd1b8dfe708715"
+          "sha256": "f95281e1974f3b82247f2e5fa773d948cfc281c785f7d7e3eb6904c957747502"
         }
       ],
       "webapp": {

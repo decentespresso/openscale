@@ -166,13 +166,10 @@ body {
   font-weight: 600;
 }
 
-button:active {
+button:active:not(:disabled) {
   transform: translateY(1px);
 }
 
-.hint {
-  margin: 14px 0 0;
-  font-size: 0.78rem;
-  line-height: 1.5;
-  color: var(--muted);
+button:disabled {
+  opacity: 0.5;
 }

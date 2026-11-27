@@ -1,109 +1,80 @@
 # SofronioDRS
 
-SofronioDRS is a firmware-changing plugin for OpenScale. It adds DRS-style
-extraction modes on top of the stock weighing screen and the stock
-WebSocket/MDns stack.
+SofronioDRS adds pour-over and espresso extraction screens to OpenScale and
+a WiFi dashboard at `/apps/hds-drs/`. You can use extraction on the scale with
+WiFi off.
 
-## Features
+## Enable DRS
 
-- Pure weighing mode keeps the upstream behavior, including drift
-  compensation, tracking, and stable output.
-- Pour-over extraction mode with automatic timer start after a tare and
-  automatic stop when the cup is removed.
-- Espresso extraction mode with cup auto-tare, automatic timer start, and
-  automatic stop after the last drop settles. Enter espresso extraction
-  with an empty scale; a stable cup above 30 g is tared and starts the
-  timer immediately.
-- Extraction screen with live weight, timer, flow, dose, and brew ratio.
-- `/apps/hds-drs/` web app with live values and controls.
-- Standard BLE, USB, WiFi, OTA, and power behavior remain unchanged.
+DRS starts off on a fresh install. In Settings, open **SofronioDRS** and
+select the **DRS** row to turn it on. Select the same row again to turn it off.
 
-Drift compensation uses the upstream `include/scale_drift.h` state machine.
-Extraction samples bypass the stable-output dead band and the moving-average
-window: the drift-corrected weight is displayed directly, so both large and
-small changes appear immediately. Residual ADC noise is shown as-is.
+DRS, Pressensor, and Grind by Weight can share a custom build. Settings save
+one active integration across restarts; choosing one turns the others off.
+If the grinder has not confirmed a safe stop, Settings block the change and
+show **Confirm Stop**. Confirm the grinder has stopped before retrying.
 
 ## Controls
 
-- Holding both buttons at power-on opens the menu; the normal menu chord
-  otherwise keeps the stock OpenScale USB-power rule.
-- The `SofronioDRS` menu page has `DRS o/x` (master enable), separate
-  pour-over dose rows (`Pour x.x +` / `Pour x.x -`), espresso dose rows
-  (`Esp x.x +` / `Esp x.x -`), `Set Container`, and `Cont on/off` with the
-  recorded container weight. Dose values persist per mode.
-- With DRS enabled, the pure page uses the DRS layout (mode label, large
-  weight, icons at the DRS positions), and extraction uses the DRS layout
-  (weight, timer, first-drop seconds, flow, dose, ratio).
-- `Set Container` closes the menu and shows a guided capture screen:
-  tare with the circle button, then place the empty container. The first
-  stable weight above 1 g is saved. Long-press the square button cancels
-  the capture.
-- Container subtraction applies to the DRS pure page only and mirrors the
-  SofronioDRS range check: after enabling `Cont`, the container weight is
-  subtracted only while the gross weight is within 5 g below to 25 g above
-  the recorded container weight. Outside that window the gross weight is
-  shown. The mode label shows `*` while subtraction is active. Extraction
-  uses tare and is not affected.
-- Short-press the square button in pure weighing to enter extraction and
-  capture the displayed weight as the dose. In extraction the same press
-  starts the timer, stops it, or resets it (start -> stop -> reset).
-- Short-press the circle button to tare. In extraction it first stops
-  the timer when running; when stopped it resets the timer and clears the
-  extraction timestamps, then tares.
-- Long-press the square button while extracting to return to pure
-  weighing.
-- Long-press the circle button to switch pour-over/espresso mode when DRS
-  is enabled. An active app-text prompt still consumes the long press.
-- The web app sends the text commands `drs toggle`, `drs pour`,
-  `drs espresso`, `tare`, and `timer start|stop|zero` over `/snapshot`.
+- **Square, short:** Enter extraction from weighing. DRS uses the displayed
+  dose if it is at least 3 g, or the configured dose for the current mode.
+  In extraction, short press cycles through start, stop, and reset.
+- **Square, long:** Leave extraction or cancel container capture.
+- **Circle, short:** Tare. In extraction, this stops a running timer or
+  resets a stopped one before taring.
+- **Circle, long:** Switch between pour-over and espresso. App Text takes
+  display priority while a prompt is visible; long press dismisses it.
+
+For pour-over, tare before pouring. The timer starts on a weight gain above
+1 g after the three-second delay and stops when you remove the cup (a drop of
+at least 50 g from a stable reading). For espresso, enter extraction with an
+empty scale. Placing a stable cup over 30 g starts the timer once the cup tare
+completes. Auto-stop requires a first drop and settled weight at least seven
+seconds after that drop. The OLED shows weight, timer, first-drop time (in
+espresso), flow, dose, and brew ratio. If drift compensation masks a slow
+pour, adjust it in the Scale menu.
+
+Use **Set Container** to capture the empty container. Tare the clear scale,
+place the container, and wait for a stable reading of at least 1 g. Toggle
+**Cont** to subtract the container during weighing when gross weight is
+between container weight minus 5 g and plus 25 g. The mode label shows `*`
+while subtraction applies. Extraction weight uses tare instead.
 
 ## WebSocket additions
 
-`/snapshot` status frames add `drs_mode`, `drs_extraction`, `drs_flow`,
-`drs_ratio`, and `drs_dose`. Weight frames add a `drs` object with
-`extract`, `mode`, `flow`, `ratio`, `dose`, `timer`, and `trun`.
+The dashboard sends `drs toggle`, `drs pour`, `drs espresso`, `drs tare`, and
+`drs timer start|stop|zero` to `/snapshot`. Its controls require an active DRS
+connection; the timer controls also require extraction. Dashboard mode
+changes apply for the current boot without writing settings.
 
-## Known limitations
-
-- With DRS enabled, both the pure and extraction pages replace the stock
-  weighing screen and do not show the app-text prompt overlay. Debug,
-  about, and ADC recovery screens still take precedence. Disabling DRS
-  restores the stock screen.
-- Espresso auto-stop requires an observed first drop and at least seven
-  seconds between first and last drop.
-- Very slow pours can be mistaken for thermal drift; disable drift
-  compensation from the Scale menu when the pour must be preserved.
-- The web app requires WiFi. Extraction itself works on the scale without
-  a connected client.
-- DRS-specific BLE commands (0x30/0x31/0x32) are not implemented; the
-  standard Decent BLE protocol is unchanged.
+Status frames add `drs_enabled`, `drs_mode`, `drs_extraction`, `drs_weight`,
+`drs_flow`, `drs_ratio`, and `drs_dose`. Weight frames add `drs` with
+`enabled`, `extract`, `mode`, `weight`, `flow`, `ratio`, `dose`, `timer`, and
+`trun`. DRS presentation weight lives in `drs_weight` or `drs.weight`; the
+top-level `grams` field retains stock weight. The mode is `0` for pour-over
+and `1` for espresso; timer values are in seconds.
 
 ## Compatibility
 
 - Requires `webserver`, `websocket`, and `littlefs`.
-- Declared compatible with firmware refs `main` and `v3.1.17`.
-- Conflicts with `pressensor` and `grind-by-weight`. The `grinder` feature
-  is also declared incompatible because extraction weight would reach the
-  grinder safety logic.
+- Supports firmware refs `main` and `v3.1.17`. It can share a build with
+  `pressensor`, `grind-by-weight`, `energy-menu`, and `default-web-apps`.
+- Uses existing WiFi setup and standard Decent BLE and USB interfaces.
+  DRS-specific BLE commands are not implemented.
+- Stores container settings, dose defaults, and locally selected brew mode
+  in the `hds-drs` NVS namespace. Missing settings use pour-over mode, doses
+  of 16 g and 18 g, and no container subtraction. DRS adds no required keys
+  to the base settings store.
+- Earlier PR builds' shared `hds` entries are left untouched, not imported.
+  Configure DRS once after updating from those builds.
 
 ## Validation status
 
-Validated on the plugin branch with PlatformIO Core 6.1.19:
-
-- `esp32s3` normal firmware builds with the patch applied and the gate off.
-- `esp32s3-hds-drs` builds with the gate on.
-- `git apply --check --whitespace=error` passes for `main` and `v3.1.17`.
-- The plugin environment verification applies the patch in an isolated
-  checkout, runs `test_hds_drs_plugin_contract.py`, and builds.
-- The production custom build completes.
-
-Measured change between `esp32s3` and `esp32s3-hds-drs`:
-10908 flash bytes and 240 static RAM bytes. The declared budget keeps
-headroom at 12288 flash bytes, 1024 RAM bytes, and 9216 LittleFS bytes.
-
-Physical scale, extraction, flow, OLED, button, and web-app behavior on
-hardware has not been validated. A successful build is not hardware
-evidence.
+Run `node plugins/hds-drs/test_web.cjs` for dashboard status and control checks
+with mocked WebSocket frames. The firmware patch includes host checks for
+extraction, storage, integration handoff, and OLED priority, plus the plugin
+contract used by the custom-build pipeline. This revision has not undergone
+live hardware validation.
 
 ## License
 

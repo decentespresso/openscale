@@ -9,10 +9,11 @@ const elements = {
   modePour: document.getElementById('mode-pour'),
   modeEspresso: document.getElementById('mode-espresso'),
   timerStart: document.getElementById('timer-start'),
-  timerStop: document.getElementById('timer-stop'),
 };
+const controls = document.querySelectorAll('[data-command]');
 
 const state = {
+  enabled: false,
   weight: 0,
   timer: 0,
   timerRunning: false,
@@ -39,12 +40,14 @@ function render() {
   elements.flow.textContent = `${state.flow.toFixed(1)} g/s`;
   elements.ratio.textContent = `1:${state.ratio.toFixed(1)}`;
   elements.dose.textContent = `${state.dose.toFixed(1)} g`;
-  elements.extraction.textContent = state.extraction
-    ? 'Extraction on'
-    : 'Extraction off';
+  elements.extraction.textContent = !state.enabled ? 'DRS unavailable'
+    : state.extraction ? 'Extraction on' : 'Extraction off';
   elements.modePour.classList.toggle('active', state.mode === 0);
   elements.modeEspresso.classList.toggle('active', state.mode === 1);
   elements.timerStart.classList.toggle('active', state.timerRunning);
+  controls.forEach(button => {
+    button.disabled = !state.enabled || (!state.extraction && button.dataset.command.startsWith('drs timer '));
+  });
 }
 
 function setConnection(connected) {
@@ -54,7 +57,9 @@ function setConnection(connected) {
 }
 
 function applyStatus(message) {
-  if (typeof message.grams === 'number') state.weight = message.grams;
+  state.enabled = message.drs_enabled === true;
+  const weight = state.enabled ? message.drs_weight : message.grams;
+  if (Number.isFinite(weight)) state.weight = weight;
   if (typeof message.timer_seconds === 'number') state.timer = message.timer_seconds;
   if (typeof message.timer_running === 'boolean') state.timerRunning = message.timer_running;
   if (typeof message.drs_extraction === 'boolean') state.extraction = message.drs_extraction;
@@ -68,7 +73,9 @@ function applyWeight(message) {
   if (typeof message.grams !== 'number') return;
   state.weight = message.grams;
   const drs = message.drs;
+  state.enabled = drs?.enabled === 1;
   if (!drs) return;
+  if (state.enabled && Number.isFinite(drs.weight)) state.weight = drs.weight;
   state.extraction = drs.extract === 1;
   state.mode = drs.mode;
   state.flow = drs.flow;
@@ -85,6 +92,7 @@ function handleMessage(event) {
   } catch (error) {
     return;
   }
+  if (!message || typeof message !== 'object') return;
   if (message.type === 'status') {
     applyStatus(message);
   } else {
@@ -102,6 +110,8 @@ function connect() {
   socket.addEventListener('message', handleMessage);
   socket.addEventListener('close', () => {
     setConnection(false);
+    state.enabled = false;
+    render();
     scheduleReconnect();
   });
   socket.addEventListener('error', () => {
@@ -117,13 +127,10 @@ function scheduleReconnect() {
   }, 2000);
 }
 
-function send(command) {
-  if (!socket || socket.readyState !== WebSocket.OPEN) return;
-  socket.send(command);
-}
-
-document.querySelectorAll('[data-command]').forEach(button => {
-  button.addEventListener('click', () => send(button.dataset.command));
+controls.forEach(button => {
+  button.addEventListener('click', () => {
+    if (!button.disabled && socket?.readyState === WebSocket.OPEN) socket.send(button.dataset.command);
+  });
 });
 
 render();

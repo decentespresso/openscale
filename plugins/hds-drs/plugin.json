@@ -9,8 +9,7 @@
   "requires": ["webserver", "websocket", "littlefs"],
   "depends_on": [],
   "recommends": {"features": [], "plugins": []},
-  "conflicts": ["pressensor", "grind-by-weight"],
-  "conflicts_features": ["grinder"],
+  "conflicts": [],
   "patches": {
     "main": "patches/main.patch",
     "v3.1.17": "patches/v3.1.17.patch"

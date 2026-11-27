@@ -396,6 +396,13 @@ def main():
                 writeConfig(root, [], ["grind-by-weight", "pressensor"], ref)
             )
             assert {plugin["id"] for plugin in combined["plugins"]} == {"grind-by-weight", "pressensor"}
+        for ref in ("main", "v3.1.17"):
+            plugins = ["grind-by-weight", "pressensor", "hds-drs", "default-web-apps"]
+            combined = customBuild.resolveConfiguration(writeConfig(root, ["energy-menu"], plugins, ref))
+            assert {plugin["id"] for plugin in combined["plugins"]} == set(plugins)
+            assert {"energy-menu", "grinder", "littlefs", "webserver", "websocket"}.issubset(combined["features"])
+            assert {pluginId for pluginId, _ in combined["patches"]} == {"pressensor", "hds-drs"}
+            assert customBuild.platformioEnvironment(combined) == "esp32s3-energy-menu-custom"
         for ref in ("v3.1.15", "v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4"):
             assertRejected(lambda ref=ref: customBuild.resolveConfiguration(
                 writeConfig(root, [], ["grind-by-weight", "pressensor"], ref)
