@@ -163,25 +163,35 @@ char *trim(char *value) { return value; }
 struct {
   int frames = 0;
   bool inFrame = false;
+  String wifiStatus, wifiSsid, wifiIp;
   void firstPage() { assert(!inFrame); inFrame = true; ++frames; }
   bool nextPage() { assert(inFrame); inFrame = false; return false; }
   void setFont(int) {}
   void setDisplayRotation(int) {}
   int getUTF8Width(const char *value) { return std::strlen(value) * 6; }
   int getMaxCharHeight() { return 12; }
-  void drawStr(int, int, const char *) { assert(inFrame); }
+  void drawStr(int x, int y, const char *text) {
+    assert(inFrame);
+    if (x == 72 && y == 10) wifiStatus = text;
+    if (x == 40 && y == 22) wifiSsid = text;
+    if (x == 40 && y == 34) wifiIp = text;
+  }
   void drawBox(int, int, int, int) { assert(inFrame); }
   void drawXBM(int, int, int, int, const unsigned char *) { assert(inFrame); }
 } u8g2;
+constexpr int WIFI_AP = 2, WL_CONNECTED = 1, MDNS_NAME_OLED_LINE1_BYTES = 32;
 struct {
-  bool isConnected() { return true; }
+  int mode = 1;
+  bool connected = true;
+  bool isConnected() { return connected; }
   String SSID() { return "network"; }
-  struct Address { String toString() { return "192.168.1.2"; } };
-  Address localIP() { return {}; }
-  int getMode() { return 1; }
+  String softAPSSID() { return "Scale Setup"; }
+  struct Address { const char *ip; String toString() { return ip; } };
+  Address localIP() { return {"192.168.1.2"}; }
+  Address softAPIP() { return {"192.168.4.1"}; }
+  int getMode() { return mode; }
   int status() { return 1; }
 } WiFi;
-constexpr int WIFI_AP = 2, WL_CONNECTED = 1, MDNS_NAME_OLED_LINE1_BYTES = 32;
 bool wifiCredentialsSaved() { return true; }
 const char *wifiDeviceName() { return "hds"; }
 const char *mdnsNameSplitOledLine1(const char *name, char *output, size_t size) {
@@ -315,7 +325,24 @@ void checkOtaFailure(void (*open)()) {
     clearMenuInfoPage();
   }
 }
+#if HDS_FEATURE_WIFI
+void checkWifiStatus(int mode, bool connected, const char *status, const char *ssid, const char *ip) {
+  WiFi.mode = mode;
+  WiFi.connected = connected;
+  u8g2.wifiStatus.clear();
+  u8g2.wifiSsid.clear();
+  u8g2.wifiIp.clear();
+  showWifiStatus();
+  assert(u8g2.wifiStatus == status && u8g2.wifiSsid == ssid && u8g2.wifiIp == ip);
+}
+#endif
 int main() {
+#if HDS_FEATURE_WIFI
+  checkWifiStatus(0, false, "Disabled", "N/A", "0.0.0.0");
+  checkWifiStatus(WIFI_AP, false, "Setup AP", "Scale Setup", "192.168.4.1");
+  checkWifiStatus(WIFI_AP | 1, true, "Setup AP", "Scale Setup", "192.168.4.1");
+  checkWifiStatus(1, true, "Enabled", "network", "192.168.1.2");
+#endif
   for (const auto open : {showStatus, showAbout, showLogo
 #if HDS_FEATURE_WIFI
                           , showWifiStatus

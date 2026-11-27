@@ -477,9 +477,11 @@ void toggleWifi() {
 void showWifiStatus() {
   b_showWifiData = true;
 
-  String ssid = WiFi.isConnected() ? WiFi.SSID() : "N/A";
-  String ip = WiFi.isConnected() ? WiFi.localIP().toString() : "0.0.0.0";
-  const char *status = WiFi.isConnected() ? "Enabled" : "Disabled";
+  const bool accessPoint = (WiFi.getMode() & WIFI_AP) != 0;
+  const bool connected = !accessPoint && WiFi.isConnected();
+  const String ssid = accessPoint ? WiFi.softAPSSID() : (connected ? WiFi.SSID() : "N/A");
+  const String ip = accessPoint ? WiFi.softAPIP().toString() : (connected ? WiFi.localIP().toString() : "0.0.0.0");
+  const char *status = accessPoint ? "Setup AP" : (connected ? "Enabled" : "Disabled");
 
   char nameLine1[MDNS_NAME_OLED_LINE1_BYTES];
   const char *nameLine2 =
