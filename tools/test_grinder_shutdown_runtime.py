@@ -4,6 +4,9 @@ import shutil
 import subprocess
 import tempfile
 
+from test_auto_off_weight_activity import extract_function
+from test_usb_text_actions_contract import block_after
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -66,6 +69,21 @@ void reset(bool unconfirmed, unsigned long now = 0) {
   sends = drops = false;
 }
 
+void quiesceFuelGaugeForShutdown() {
+  assert(sends == bool(HDS_ENABLE_GRINDER));
+  assert(connected != bool(HDS_ENABLE_GRINDER));
+}
+void fuelGaugeSleep() {}
+void bleShutdown() {}
+struct { int restarts = 0; void restart() { ++restarts; } } ESP;
+@DEVICE_RESET@
+struct UsbSink { @USB_SINK_RESET@ };
+void usbTextReset() { @USB_TEXT_RESET@ }
+void usbBinaryReset() {
+  UsbSink sink;
+  switch (0x1F) { @USB_BINARY_RESET@ }
+}
+
 int main() {
   GrinderReplyFrame frame;
   using R = GrinderReplyResult;
@@ -96,6 +114,13 @@ int main() {
     connected = false;
     checkShutdown(false, 0, unconfirmed);
   }
+  reset(true);
+  usbTextReset();
+  assert(ESP.restarts == 1 && clockMs == (HDS_ENABLE_GRINDER ? 20 : 0));
+  reset(true);
+  replies = false;
+  usbBinaryReset();
+  assert(ESP.restarts == 2 && clockMs == (HDS_ENABLE_GRINDER ? 250 : 0));
 }
 '''
 
@@ -103,14 +128,24 @@ int main() {
 def main():
     compiler = os.environ.get("CXX") or shutil.which("g++") or shutil.which("clang++")
     assert compiler, "A C++ compiler is required"
+    power = (ROOT / "include/power.h").read_text(encoding="utf-8")
+    usb = (ROOT / "include/usbcomm.h").read_text(encoding="utf-8")
+    protocol = (ROOT / "include/decent_protocol.h").read_text(encoding="utf-8")
+    binary_reset = protocol[protocol.index("case 0x1F:"):protocol.index("case 0x20:", protocol.index("case 0x1F:"))]
+    source = SOURCE.replace("@DEVICE_RESET@", extract_function(power, "void reset() {"))
+    source = source.replace("@USB_SINK_RESET@", extract_function(usb, "void reset() {"))
+    source = source.replace("@USB_TEXT_RESET@", block_after(usb, 'if (inputString.startsWith("reset"))'))
+    source = source.replace("@USB_BINARY_RESET@", binary_reset)
     with tempfile.TemporaryDirectory(prefix="grinder-shutdown-") as directory:
         cpp = Path(directory) / "shutdown.cpp"
         binary = Path(directory) / ("shutdown.exe" if os.name == "nt" else "shutdown")
-        cpp.write_text(SOURCE, encoding="utf-8")
-        subprocess.run([compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror",
-                        "-I", str(ROOT / "include"), str(cpp), "-o", str(binary)], check=True)
-        subprocess.run([str(binary)], check=True)
-    print("Grinder BLE reply correlation and bounded shutdown passed")
+        cpp.write_text(source, encoding="utf-8")
+        for grinder in (0, 1):
+            subprocess.run([compiler, "-std=c++17", "-Wall", "-Wextra", "-Werror",
+                            "-DESP32", f"-DHDS_ENABLE_GRINDER={grinder}", "-I", str(ROOT / "include"),
+                            str(cpp), "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+    print("Grinder BLE reply correlation, bounded shutdown and USB reset passed")
 
 
 if __name__ == "__main__":
