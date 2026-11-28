@@ -449,11 +449,15 @@ bool b_showChargingUI = false;
 #if HDS_ENABLE_GRINDER
 struct GrinderSettings;
 struct GrinderRuntime;
-struct GrinderMdnsCandidate;
 extern GrinderSettings grinderSettings;
 extern GrinderRuntime grinderRuntime;
-portMUX_TYPE grinderMdnsMux = portMUX_INITIALIZER_UNLOCKED;
-GrinderMdnsCandidate * volatile grinderMdnsCandidateBuffer = nullptr;
+#include "grinder_ble_transport_state.h"
+GrinderBleTransport grinderBleTransport;
+portMUX_TYPE grinderBleMux = portMUX_INITIALIZER_UNLOCKED;
+enum class GrinderPlugPicker : uint8_t { Idle, Disconnecting, Scanning, Choosing };
+GrinderPlugPicker grinderPlugPicker = GrinderPlugPicker::Idle;
+unsigned long grinderPlugPickerStartedAt = 0;
+uint8_t grinderPlugPickerIndex = 0;
 #endif
 
 //电子秤参数和计时点

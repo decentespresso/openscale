@@ -70,7 +70,7 @@ Grind by weight is a built-in, repository-owned compile-time feature and is not 
 - menu, setup, loop, power, and storage behavior remain inside the same gate.
 - `tools/test_grinder_feature_flag_contract.py` prevents unguarded integration and stale dependencies.
 
-Copy this containment pattern, not Grind by weight's WiFi requirements, implementation, or generated feature mapping. Patch plugin dependencies belong in `plugin.json`. Add a plugin to the core feature graph only when it is intentionally becoming a built-in firmware feature.
+On `main`, the grinder uses BLE and has no WiFi feature dependencies. Tagged builds through 3.1.17 still need WiFi and mDNS. Copy the containment pattern, not the feature mapping. Patch plugin dependencies belong in `plugin.json`. Add a plugin to the core feature graph only when it is intentionally becoming a built-in firmware feature.
 
 ## Dependencies
 
@@ -87,8 +87,8 @@ Use `conflicts` for plugin IDs and optional `conflicts_features` for feature IDs
 
 Optional `conflicts_by_ref` replaces `conflicts` for an explicit supported firmware
 ref. Its values must be unique known plugin IDs without self-conflicts. Omitted
-refs keep the default conflicts. Pressensor and Grind by Weight permit combined
-builds on `main`, `v3.1.16` and the staged `v3.1.17` ref; older release/preview
+refs keep the default conflicts. The catalog permits selecting both Pressensor and
+Grind by Weight on `v3.1.16` and `v3.1.17`, but not on `main`. Older release/preview
 mappings retain their original patches and conflicts. Freeze the release patch
 separately from the moving `main` patch. Regenerate both catalogs after changing mappings.
 App Text is core BLE firmware and must not appear as a selectable plugin.

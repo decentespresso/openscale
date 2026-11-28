@@ -268,7 +268,7 @@ def main():
     indexPage = (pageRoot / "index.html").read_text(encoding="utf-8")
     appScript = (pageRoot / "app.js").read_text(encoding="utf-8")
     fleetScript = (pageRoot / "fleet.js").read_text(encoding="utf-8")
-    assert 'type="module" src="app.js?v=41"' in indexPage
+    assert 'type="module" src="app.js?v=42"' in indexPage
     assert 'href="styles.css?v=19"' in indexPage
     assert 'href="fleet.css?v=9"' in indexPage
     assert 'href="preview.css?v=2"' in indexPage
@@ -290,7 +290,7 @@ def main():
     assert "plugins: [plugin.id, ...plugin.recommends.plugins]" in appScript
     assert "firmwareRefLabel(ref)" in appScript
     assert "firmwareRefLabel(selected.firmware_ref)" in appScript
-    assert 'selection.mjs?v=6' in appScript
+    assert 'selection.mjs?v=7' in appScript
     assert 'fleet.js?v=17' in appScript
     assert 'fleetPanel.hidden = installMethod !== "wifi"' in appScript
     assert "sessionStorage.setItem(storageKey" not in fleetScript
@@ -306,6 +306,14 @@ def main():
     pressensor = next(plugin for plugin in generatedCatalog["plugins"] if plugin["id"] == "pressensor")
     assert grinderFeature["name"] == "Grind by weight core"
     assert grinderFeature["hidden"] is True
+    assert grinderFeature["requires_by_ref"] == {"main": []}
+    assert serviceCatalog["features"]["grinder"] == {
+        "firmware_refs": list(customBuild.FIRMWARE_REFS),
+        "requires_by_ref": {
+            ref: [] if ref == "main" else grinderFeature["requires"]
+            for ref in customBuild.FIRMWARE_REFS
+        },
+    }
     assert grindByWeight["name"] == "Grind by weight"
     assert grindByWeight["requires"] == ["grinder"]
     assert grindByWeight["conflicts"] == ["pressensor"]
@@ -386,12 +394,19 @@ def main():
         assertRejected(lambda: customBuild.resolveConfiguration(writeConfig(root, [], ["../bad"])))
         resolved = customBuild.resolveConfiguration(writeConfig(root, [], ["default-web-apps"]))
         assert {"littlefs", "wifi", "webserver", "websocket"}.issubset(resolved["features"])
-        grindByWeight = customBuild.resolveConfiguration(writeConfig(root, [], ["grind-by-weight"]))
-        assert {"grinder", "wifi", "mdns"}.issubset(grindByWeight["features"])
+        for ref in customBuild.FIRMWARE_REFS:
+            grindByWeight = customBuild.resolveConfiguration(writeConfig(root, [], ["grind-by-weight"], ref))
+            expected = ["grinder"] if ref == "main" else ["grinder", "mdns", "webserver", "wifi"]
+            assert grindByWeight["features"] == expected
+        bleGrinder = customBuild.resolveConfiguration(writeConfig(root, [], ["grind-by-weight"], "main"))
+        customBuild.writeHeader(bleGrinder, root)
+        generatedHeader = (root / "generated_features.h").read_text(encoding="ascii")
+        for macro, enabled in (("GRINDER", 1), ("WIFI", 0), ("MDNS", 0)):
+            assert f"#define HDS_FEATURE_{macro} {enabled}" in generatedHeader
         assertRejected(lambda: customBuild.resolveConfiguration(
-            writeConfig(root, [], ["grind-by-weight", "pressensor"])
+            writeConfig(root, [], ["grind-by-weight", "pressensor"], "main")
         ))
-        for ref in ("main", "v3.1.16", "v3.1.17"):
+        for ref in ("v3.1.16", "v3.1.17"):
             combined = customBuild.resolveConfiguration(
                 writeConfig(root, [], ["grind-by-weight", "pressensor"], ref)
             )

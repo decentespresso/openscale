@@ -105,7 +105,7 @@ class FrameworkPeers:
 
 
 def function_body(text, name):
-    match = re.search(rf"\b\w+\s+{re.escape(name)}\([^;{{}}]*\)\s*{{", text)
+    match = re.search(rf"\b\w+\s+{re.escape(name)}\([^;{{}}]*\)\s*(?:override\s*)?{{", text)
     if match is None:
         raise AssertionError(f"missing function: {name}")
     opening = text.index("{", match.start())
@@ -165,6 +165,8 @@ def main():
         raise AssertionError("outbound FFF4 notification bypasses the shared send path")
 
     subscribe = function_body(ble, "onSubscribe")
+    assert subscribe.index("desc->role != BLE_GAP_ROLE_SLAVE") < subscribe.index("adoptBleFff4ConnectionFromSubscription")
+    assert "desc->role == BLE_GAP_ROLE_SLAVE" in function_body(ble, "onWrite")
     assert_contains(
         subscribe,
         "pServer->removePeerDevice(desc->conn_handle, false);",

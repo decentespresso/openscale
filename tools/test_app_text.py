@@ -48,8 +48,8 @@ def main():
     assert "u8g2" not in runtime and "delay(" not in runtime
     assert "appTextEnabled || (length == 1 && bytes[0] == 0)" in ble
     assert "static_cast<uint8_t>(appTextIsEnabled())" in ble
-    selectPlug = block_after(menu, "uint8_t grinderFindPlugsForSelection()")
-    assert selectPlug.index("if (!integrationCanRestart())") < selectPlug.index("grinderReleaseClientForDiscovery();")
+    selectPlug = block_after(menu, "void grinderSelectPlugMenu() {")
+    assert selectPlug.index("if (!integrationCanRestart())") < selectPlug.index("GrinderPlugPicker::Disconnecting")
     blocked = block_after(menu, "void blockIntegrationChange()")
     assert "grinderRuntime.shutdownUnconfirmed && grinderRuntime.state == GRINDER_STATE_ERROR" in blocked
     assert "grinderRuntimeReset();" in blocked
@@ -81,7 +81,7 @@ def main():
                 grinder = (ROOT / "include/grinder_runtime.h").read_text(encoding="utf-8")
                 for marker, signature in {
                     "CLOSE": "static inline void grinderCloseClient()",
-                    "SEND": "static inline bool grinderSendLine(",
+                    "SEND": "static inline bool grinderSendCommand(",
                     "ERROR": "static inline void grinderEnterError(",
                     "OK": "static inline void grinderHandleOkResponse(",
                     "RESOLVE": "static inline void grinderResolveAndConnect()",

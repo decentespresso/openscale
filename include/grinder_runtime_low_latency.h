@@ -12,22 +12,14 @@ static inline bool grinderActivePlugValidated() {
 }
 
 static inline bool grinderWriteFastOff() {
-  if (!grinderRuntime.client.connected() || !grinderActivePlugValidated()) {
+  if (!grinderBleConnected() || !grinderActivePlugValidated()) {
     return false;
   }
-  const uint8_t command[] = { '!', '\n' };
-  const size_t written = grinderRuntime.client.write(command, sizeof(command));
-  if (written != sizeof(command)) {
-    return false;
-  }
-  grinderRuntime.pendingCommand = GRINDER_COMMAND_OFF;
-  grinderRuntime.lastCommandAt = millis();
-  Serial.printf("[grinder] tx ! state=%s\n", grinderStateText(grinderRuntime.state));
-  return true;
+  return grinderSendCommand("!", 1, GRINDER_COMMAND_OFF);
 }
 
 static inline bool grinderSendOff() {
-  if (!grinderRuntime.client.connected()) {
+  if (!grinderBleConnected()) {
     return false;
   }
   if (grinderWriteFastOff()) {

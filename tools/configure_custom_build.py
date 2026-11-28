@@ -34,6 +34,7 @@ FEATURES = {
     "grinder": ("HDS_FEATURE_GRINDER", ("wifi", "mdns"), FIRMWARE_REFS),
     "energy-menu": ("HDS_FEATURE_ENERGY_MENU", (), FIRMWARE_REFS),
 }
+FEATURE_REQUIRES_BY_REF = {"grinder": {"main": ()}}
 FEATURE_PRESENTATION = {
     "wifi": (
         "WiFi",
@@ -316,6 +317,24 @@ def pluginOrder(pluginCatalog, requestedIds):
     return ordered
 
 
+def featureRequirements(featureId, firmwareRef):
+    return FEATURE_REQUIRES_BY_REF.get(featureId, {}).get(firmwareRef, FEATURES[featureId][1])
+
+
+def featureContract(featureId):
+    _, dependencies, firmwareRefs = FEATURES[featureId]
+    overrides = {
+        ref: list(required)
+        for ref, required in FEATURE_REQUIRES_BY_REF.get(featureId, {}).items()
+        if ref in firmwareRefs
+    }
+    return {
+        "requires": list(dependencies),
+        "firmware_refs": list(firmwareRefs),
+        **({"requires_by_ref": overrides} if overrides else {}),
+    }
+
+
 def resolveFeatureIds(featureIds, firmwareRef):
     resolved = set(featureIds)
     changed = True
@@ -324,7 +343,7 @@ def resolveFeatureIds(featureIds, firmwareRef):
         for featureId in previous:
             if featureId not in FEATURES:
                 raise ValueError(f"unknown feature: {featureId}")
-            resolved.update(FEATURES[featureId][1])
+            resolved.update(featureRequirements(featureId, firmwareRef))
         changed = resolved != previous
     unsupported = sorted(
         featureId for featureId in resolved if firmwareRef not in FEATURES[featureId][2]
@@ -470,13 +489,7 @@ def catalogRevision(plugins):
         "schema": BUILD_CONTRACT_SCHEMA,
         "custom_ota_signing_key_generation": CUSTOM_OTA_SIGNING_KEY_GENERATION,
         "firmware_refs": list(FIRMWARE_REFS),
-        "features": {
-            featureId: {
-                "requires": list(dependencies),
-                "firmware_refs": list(firmwareRefs),
-            }
-            for featureId, (_, dependencies, firmwareRefs) in FEATURES.items()
-        },
+        "features": {featureId: featureContract(featureId) for featureId in FEATURES},
         "plugins": {
             pluginId: {
                 key: manifest[key]
@@ -495,15 +508,14 @@ def catalogRevision(plugins):
 def buildBrowserCatalog():
     plugins = loadPluginCatalog(validateDefaults=True)
     features = []
-    for featureId, (_, dependencies, firmwareRefs) in FEATURES.items():
+    for featureId in FEATURES:
         name, description, tooltip = FEATURE_PRESENTATION[featureId]
         feature = {
             "id": featureId,
             "name": name,
             "description": description,
             "tooltip": tooltip,
-            "requires": list(dependencies),
-            "firmware_refs": list(firmwareRefs),
+            **featureContract(featureId),
         }
         if featureId in DEFAULT_FEATURES:
             feature["default"] = True
@@ -551,6 +563,17 @@ def writeBrowserCatalog(path):
     path.write_bytes((json.dumps(catalog, indent=2) + "\n").encode("utf-8"))
 
 
+def serviceFeatureContract(featureId):
+    contract = featureContract(featureId)
+    if "requires_by_ref" not in contract:
+        return contract
+    firmwareRefs = contract["firmware_refs"]
+    return {
+        "firmware_refs": firmwareRefs,
+        "requires_by_ref": {ref: list(featureRequirements(featureId, ref)) for ref in firmwareRefs},
+    }
+
+
 def buildServiceCatalog(sourceRoot=ROOT):
     plugins = loadPluginCatalog(validateDefaults=True)
     return {
@@ -563,13 +586,7 @@ def buildServiceCatalog(sourceRoot=ROOT):
             firmwareRef: firmwareMetadata(firmwareRef, sourceRoot)
             for firmwareRef in FIRMWARE_REFS
         },
-        "features": {
-            featureId: {
-                "requires": list(dependencies),
-                "firmware_refs": list(firmwareRefs),
-            }
-            for featureId, (_, dependencies, firmwareRefs) in FEATURES.items()
-        },
+        "features": {featureId: serviceFeatureContract(featureId) for featureId in FEATURES},
         "plugins": {
             pluginId: {
                 "version": manifest["version"],

@@ -311,6 +311,12 @@ struct BleDecentCommandSink {
 };
 
 class MyCallbacks : public BLECharacteristicCallbacks {
+#if defined(CONFIG_NIMBLE_ENABLED)
+  void onWrite(BLECharacteristic *characteristic, ble_gap_conn_desc *desc) override {
+    if (desc != nullptr && desc->role == BLE_GAP_ROLE_SLAVE) onWrite(characteristic);
+  }
+#endif
+
   void onWrite(BLECharacteristic *pWriteCharacteristic) {
     if (b_ota) return;
     Serial.print("Timer");
@@ -349,7 +355,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
 class Fff4Callbacks : public BLECharacteristicCallbacks {
 #if defined(CONFIG_NIMBLE_ENABLED)
   void onSubscribe(BLECharacteristic *pCharacteristic, ble_gap_conn_desc *desc, uint16_t subValue) {
-    if (desc == nullptr) return;
+    if (desc == nullptr || desc->role != BLE_GAP_ROLE_SLAVE) return;
     if (subValue != 0 && connId == 0xFFFF) {
       pServer->removePeerDevice(desc->conn_handle, false);
       adoptBleFff4ConnectionFromSubscription(desc->conn_handle);

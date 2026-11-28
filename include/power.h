@@ -125,6 +125,9 @@ bool prepareScaleShutdown() {
 
 void reset() {
 #ifdef ESP32
+#if HDS_ENABLE_GRINDER
+  grinderPrepareForShutdown();
+#endif
   quiesceFuelGaugeForShutdown();
   fuelGaugeSleep();
   bleShutdown();

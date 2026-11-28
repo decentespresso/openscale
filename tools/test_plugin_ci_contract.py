@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import textwrap
 import tomllib
@@ -67,7 +68,7 @@ def main():
     assert '"${source_args[@]}"' in verifyPlugins
     assert 'python tools/build_custom_firmware.py \\\n' in verifyPlugins
     assert '"plugins": ["pressensor", "grind-by-weight"]' in verifyPlugins
-    assert "if: matrix.plugin == 'pressensor' && (matrix.firmware_ref == 'main' || matrix.firmware_ref == 'v3.1.17')" in verifyPlugins
+    assert "if: matrix.plugin == 'pressensor' && matrix.firmware_ref == 'v3.1.17'" in verifyPlugins
     bash = shutil.which("bash") if os.name != "nt" else None
     if bash:
         pluginStep = verifyPlugins.split("- name: Build plugin environment", 1)[1]
@@ -85,10 +86,10 @@ def main():
                 expected = ["tools/build_custom_firmware.py", "--config", ".pio.nosync/plugin-ci.json",
                             "--verify-plugin-environment", f"esp32s3-{pluginId}",
                             *(["--source-commit", "1" * 40] if ref == "main" else [])]
-                if pluginId == "pressensor" and ref in ("main", "v3.1.17"):
+                if pluginId == "pressensor" and ref == "v3.1.17":
                     expected = [*expected, "tools/build_custom_firmware.py", "--config",
                                 ".pio.nosync/plugin-combined-ci.json", "--builder-commit", "1" * 40,
-                                "--source-commit", ("1" if ref == "main" else "2") * 40]
+                                "--source-commit", "2" * 40]
                 assert result.stdout.splitlines() == expected
     assert "verify-pressensor:" not in customWorkflow
     assert "compile-matrix:" not in customWorkflow
@@ -154,10 +155,15 @@ def main():
     ]
     compileCustom = customWorkflow.split("\n  compile_custom:\n", 1)[1].split("\n  build:\n", 1)[0]
     assert compileCustom.lstrip().startswith("if: github.event_name != 'workflow_dispatch' || inputs.commit != ''")
-    assert '"features": []' in compileCustom
-    assert '"plugins": []' in compileCustom
-    assert '"firmware_ref": "main"' in compileCustom
-    assert "--config .pio.nosync/pr-ci.json" in compileCustom
+    candidateScript = compileCustom.split("python - <<'PY'\n", 1)[1].split("\n          PY", 1)[0]
+    with tempfile.TemporaryDirectory(prefix="hds-candidate-configs-") as directory:
+        subprocess.run([sys.executable, "-c", textwrap.dedent(candidateScript)], cwd=directory, check=True)
+        for name, plugins in (("pr-ci.json", []), ("pr-ci-grinder.json", ["grind-by-weight"])):
+            selection = json.loads((Path(directory) / ".pio.nosync" / name).read_text(encoding="utf-8"))
+            assert selection == {"firmware_ref": "main", "features": [], "plugins": plugins}
+            buildArgs = compileCustom.split(f"--config .pio.nosync/{name}\n", 1)[1].split("\n      - name:", 1)[0]
+            assert '--source-commit "$CANDIDATE_COMMIT"' in buildArgs
+            assert '--builder-commit "$CANDIDATE_COMMIT"' in buildArgs
     assert 'git tag v3.1.14 "${{ github.sha }}"' in verifyPlugins
     assert 'git tag v3.1.14 "${{ github.sha }}"' in compileCustom
     assert 'git tag v3.1.15 HEAD' in verifyPlugins
@@ -166,8 +172,6 @@ def main():
     assert 'git tag v3.1.16 HEAD' in compileCustom
     assert 'git tag v3.1.17 HEAD' in verifyPlugins
     assert 'git tag v3.1.17 HEAD' in compileCustom
-    assert '--source-commit "$CANDIDATE_COMMIT"' in compileCustom
-    assert '--builder-commit "$CANDIDATE_COMMIT"' in compileCustom
     assert 'ref: ${{ inputs.commit || github.sha }}' in compileCustom
     assert 'CANDIDATE_COMMIT: ${{ inputs.commit || github.sha }}' in compileCustom
     assert 'refs/tags/v3.1.14^{commit}' not in compileCustom

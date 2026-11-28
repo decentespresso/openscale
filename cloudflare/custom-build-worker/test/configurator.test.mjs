@@ -99,6 +99,19 @@ test("offers stable releases and main with 3.1.17 selected by default", async ()
   }
 });
 
+test("grinder runs on BLE-only main and keeps WiFi on tagged releases", async () => {
+  const shipped = JSON.parse(await readFile(
+    new URL("../../../docs/custom-build/catalog.json", import.meta.url), "utf8",
+  ));
+  const selection = {firmware_ref: "main", features: [], plugins: ["grind-by-weight"]};
+  assert.deepEqual(resolveSelection(shipped, selection).features, ["grinder"]);
+  assert.deepEqual(resolveSelection(shipped, {...selection, firmware_ref: "v3.1.17"}).features,
+    ["grinder", "mdns", "webserver", "wifi"]);
+  const paired = {...selection, plugins: [...selection.plugins, "pressensor"]};
+  assert.throws(() => resolveSelection(shipped, paired), /plugin_conflict/);
+  assert.doesNotThrow(() => resolveSelection(shipped, {...paired, firmware_ref: "v3.1.17"}));
+});
+
 
 test("main builds require confirmation and cancellation sends no request", async () => {
   const source = await readFile(new URL("../../../docs/custom-build/app.js", import.meta.url), "utf8");

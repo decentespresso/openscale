@@ -75,7 +75,7 @@ def main():
     assert "b_ble_enabled" in resume
     assert "restoreDisplayAfterBleDisconnect();" not in resume
     assert ble.count("OTA active, advertising paused") == 2
-    ble_write = function_body(ble, "onWrite")
+    ble_write = body_at(ble, ble.index("void onWrite(BLECharacteristic *pWriteCharacteristic)"))
     assert ble_write.index("if (b_ota) return;") < ble_write.index("getLength()")
     for disconnect_marker in (
         "void onDisconnect(BLEServer *pServer, ble_gap_conn_desc *desc)",

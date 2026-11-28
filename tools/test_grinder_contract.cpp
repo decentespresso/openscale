@@ -42,6 +42,8 @@ int main() {
   assert(!grinderHeartbeatLost(2, 1000, 2500));
   assert(grinderHeartbeatLost(3, 1000, 2500));
   assert(grinderHeartbeatLost(0, 1000, 2750));
+  assert(!grinderReconnectDue(1000, GRINDER_RUNTIME_RECONNECT_INTERVAL_MS, 6999));
+  assert(grinderReconnectDue(1000, GRINDER_RUNTIME_RECONNECT_INTERVAL_MS, 7000));
   assert(!grinderReconnectDue(1000, GRINDER_RUNTIME_RECOVERY_DELAY_MS, 3249));
   assert(grinderReconnectDue(1000, GRINDER_RUNTIME_RECOVERY_DELAY_MS, 3250));
   const uint32_t unansweredPingAt[] = { 500, 1000, 1500 };

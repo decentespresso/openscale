@@ -11,25 +11,4 @@ static inline void grinderFlushSettingsIfDirty() {
   }
 }
 
-static inline void grinderSaveLastIpIfChanged(IPAddress ip) {
-  if (grinderSettings.lastIp != ip) {
-    grinderSettings.lastIp = ip;
-    grinderSaveSettings();
-  }
-}
-
-static inline void grinderSaveLookupHintsIfChanged(const char *hostname, IPAddress ip) {
-  const bool hostnameChanged = hostname != nullptr && strcmp(grinderSettings.hostname, hostname) != 0;
-  const bool ipChanged = grinderSettings.lastIp != ip;
-  if (hostnameChanged) {
-    grinderCopyCString(grinderSettings.hostname, sizeof(grinderSettings.hostname), hostname);
-  }
-  if (ipChanged) {
-    grinderSettings.lastIp = ip;
-  }
-  if (hostnameChanged || ipChanged) {
-    grinderSaveSettings();
-  }
-}
-
 #endif

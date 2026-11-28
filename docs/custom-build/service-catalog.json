@@ -1,7 +1,7 @@
 {
   "schema": 2,
   "custom_ota_signing_key_generation": 1,
-  "catalog_revision": "0dd079356e9bbfa3a9cc47b3285670424db1950ddf77cc538cd48a87e71a50b7",
+  "catalog_revision": "5f780e3c98bb4522abbf8574d7aa1954804937a5f350d7b38e101f428e77c4fc",
   "firmware_refs": [
     "v3.1.14",
     "v3.1.14-preview.3",
@@ -163,10 +163,6 @@
       ]
     },
     "grinder": {
-      "requires": [
-        "wifi",
-        "mdns"
-      ],
       "firmware_refs": [
         "v3.1.14",
         "v3.1.14-preview.3",
@@ -175,7 +171,34 @@
         "v3.1.15",
         "v3.1.16",
         "v3.1.17"
-      ]
+      ],
+      "requires_by_ref": {
+        "v3.1.14": [
+          "wifi",
+          "mdns"
+        ],
+        "v3.1.14-preview.3": [
+          "wifi",
+          "mdns"
+        ],
+        "v3.1.14-preview.4": [
+          "wifi",
+          "mdns"
+        ],
+        "main": [],
+        "v3.1.15": [
+          "wifi",
+          "mdns"
+        ],
+        "v3.1.16": [
+          "wifi",
+          "mdns"
+        ],
+        "v3.1.17": [
+          "wifi",
+          "mdns"
+        ]
+      }
     },
     "energy-menu": {
       "requires": [],
@@ -357,7 +380,6 @@
         "pressensor"
       ],
       "conflicts_by_ref": {
-        "main": [],
         "v3.1.16": [],
         "v3.1.17": []
       },
@@ -390,7 +412,6 @@
         "grind-by-weight"
       ],
       "conflicts_by_ref": {
-        "main": [],
         "v3.1.16": [],
         "v3.1.17": []
       },
@@ -401,7 +422,7 @@
       },
       "patches": {
         "main": {
-          "sha256": "a820251bc97b93cfacf58c42b3ea6c3a9699b5a8cf545cd5493e72908460c16c"
+          "sha256": "05db4404c96c79dc416ed9254215ce56ceb4effa02fdd65b59d78d0bca7e9439"
         },
         "v3.1.14": {
           "sha256": "4a98719ba31c44ee490d39912a752ce70fb6e270b89eedee1ef90d71d313b378"

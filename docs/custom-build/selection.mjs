@@ -68,6 +68,10 @@ function compatibilityPackages(maps, pluginIds) {
   });
 }
 
+export function featureRequirements(feature, firmwareRef) {
+  return feature.requires_by_ref?.[firmwareRef] ?? feature.requires;
+}
+
 export function resolveSelection(catalog, selection) {
   const maps = catalogMaps(catalog);
   const firmwareRef = selection.firmware_ref;
@@ -101,7 +105,7 @@ export function resolveSelection(catalog, selection) {
     [...resolvedFeatures].forEach(id => {
       const feature = maps.features.get(id);
       if (!feature) throw new SelectionError("unknown_feature", {id});
-      feature.requires.forEach(required => resolvedFeatures.add(required));
+      featureRequirements(feature, firmwareRef).forEach(required => resolvedFeatures.add(required));
     });
   }
   resolvedFeatures.forEach(id => {

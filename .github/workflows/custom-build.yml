@@ -184,7 +184,7 @@ jobs:
               os.environ["FIRMWARE_REF"],
           )
           path.write_text(json.dumps(selection) + "\n", encoding="utf-8")
-          if os.environ["PLUGIN_ID"] == "pressensor" and os.environ["FIRMWARE_REF"] in ("main", "v3.1.17"):
+          if os.environ["PLUGIN_ID"] == "pressensor" and os.environ["FIRMWARE_REF"] == "v3.1.17":
               path.with_name("plugin-combined-ci.json").write_text(json.dumps({
                   "firmware_ref": os.environ["FIRMWARE_REF"],
                   "features": [],
@@ -192,7 +192,7 @@ jobs:
               }) + "\n", encoding="utf-8")
           PY
       - name: Create test custom OTA key for combined integrations
-        if: matrix.plugin == 'pressensor' && (matrix.firmware_ref == 'main' || matrix.firmware_ref == 'v3.1.17')
+        if: matrix.plugin == 'pressensor' && matrix.firmware_ref == 'v3.1.17'
         run: |
           openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$RUNNER_TEMP/custom-ota.pem" 2>/dev/null
           openssl pkey -in "$RUNNER_TEMP/custom-ota.pem" -pubout \
@@ -216,15 +216,12 @@ jobs:
             --config .pio.nosync/plugin-ci.json \
             --verify-plugin-environment "esp32s3-$PLUGIN_ID" \
             "${source_args[@]}"
-          if [ "$PLUGIN_ID" = "pressensor" ] && { [ "$FIRMWARE_REF" = "main" ] || [ "$FIRMWARE_REF" = "v3.1.17" ]; }; then
-            if [ "$FIRMWARE_REF" = "v3.1.17" ]; then
-              source_commit="$(git rev-parse "refs/tags/$FIRMWARE_REF^{commit}")"
-              source_args=(--source-commit "$source_commit")
-            fi
+          if [ "$PLUGIN_ID" = "pressensor" ] && [ "$FIRMWARE_REF" = "v3.1.17" ]; then
+            source_commit="$(git rev-parse "refs/tags/$FIRMWARE_REF^{commit}")"
             python tools/build_custom_firmware.py \
               --config .pio.nosync/plugin-combined-ci.json \
               --builder-commit "$CANDIDATE_COMMIT" \
-              "${source_args[@]}"
+              --source-commit "$source_commit"
           fi
 
   compile_custom:
@@ -263,18 +260,19 @@ jobs:
           python-version: "3.11"
       - name: Install PlatformIO Core
         run: python -m pip install --requirement requirements-platformio.txt --requirement requirements-custom-build.txt
-      - name: Configure minimal selection
+      - name: Configure candidate selections
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-          path = Path(".pio.nosync/pr-ci.json")
-          path.parent.mkdir(parents=True, exist_ok=True)
-          path.write_text(json.dumps({
-              "firmware_ref": "main",
-              "features": [],
-              "plugins": [],
-          }) + "\n", encoding="utf-8")
+          workspace = Path(".pio.nosync")
+          workspace.mkdir(parents=True, exist_ok=True)
+          for name, plugins in (("pr-ci.json", []), ("pr-ci-grinder.json", ["grind-by-weight"])):
+              (workspace / name).write_text(json.dumps({
+                  "firmware_ref": "main",
+                  "features": [],
+                  "plugins": plugins,
+              }) + "\n", encoding="utf-8")
           PY
       - name: Create test custom OTA key
         run: |
@@ -292,6 +290,14 @@ jobs:
         run: >-
           python tools/build_custom_firmware.py
           --config .pio.nosync/pr-ci.json
+          --source-commit "$CANDIDATE_COMMIT"
+          --builder-commit "$CANDIDATE_COMMIT"
+      - name: Build Wi-Fi-free grinder custom firmware and filesystem
+        env:
+          CANDIDATE_COMMIT: ${{ inputs.commit || github.sha }}
+        run: >-
+          python tools/build_custom_firmware.py
+          --config .pio.nosync/pr-ci-grinder.json
           --source-commit "$CANDIDATE_COMMIT"
           --builder-commit "$CANDIDATE_COMMIT"
       - name: Build standard firmware

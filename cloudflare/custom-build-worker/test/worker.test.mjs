@@ -13,16 +13,39 @@ const origin = "https://decentespresso.github.io";
 test("combined integrations use supported refs and reject invalid overrides", async () => {
   const catalog = JSON.parse(await readFile(new URL("../../../docs/custom-build/service-catalog.json", import.meta.url), "utf8"));
   const selection = {firmware_ref: "main", features: [], plugins: ["pressensor", "grind-by-weight"]};
-  for (const ref of ["main", "v3.1.16", "v3.1.17"]) {
+  for (const ref of ["v3.1.16", "v3.1.17"]) {
     assert.doesNotThrow(() => identityForSelection(catalog, "1".repeat(40), {...selection, firmware_ref: ref}));
   }
-  for (const ref of ["v3.1.15", "v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4"]) {
+  for (const ref of ["main", "v3.1.15", "v3.1.14", "v3.1.14-preview.3", "v3.1.14-preview.4"]) {
     assert.throws(() => identityForSelection(catalog, "1".repeat(40), {...selection, firmware_ref: ref}), /plugin_conflict/);
   }
   for (const conflicts of [null, [], {unknown: []}, {main: "bad"}, {main: ["pressensor"]},
     {main: ["missing"]}, {main: ["grind-by-weight", "grind-by-weight"]}]) {
     const invalid = {...catalog, plugins: {...catalog.plugins, pressensor: {...catalog.plugins.pressensor, conflicts_by_ref: conflicts}}};
     assert.throws(() => identityForSelection(invalid, "1".repeat(40), selection), /invalid_service_catalog/);
+  }
+});
+
+test("grinder needs WiFi on tagged sources only", async () => {
+  const catalog = JSON.parse(await readFile(new URL("../../../docs/custom-build/service-catalog.json", import.meta.url), "utf8"));
+  const selection = {firmware_ref: "main", features: [], plugins: ["grind-by-weight"]};
+  const commit = "1".repeat(40);
+  const {firmware_refs, requires_by_ref} = catalog.features.grinder;
+  assert.equal(Object.hasOwn(catalog.features.grinder, "requires"), false);
+  assert.deepEqual(identityForSelection(catalog, commit, selection).features, ["grinder"]);
+  assert.deepEqual(identityForSelection(catalog, commit, {...selection, firmware_ref: "v3.1.17"}).features,
+    ["grinder", "mdns", "webserver", "wifi"]);
+  const legacyGrinder = {firmware_refs, requires: requires_by_ref["v3.1.17"]};
+  const legacyCatalog = {...catalog, features: {...catalog.features, grinder: legacyGrinder}};
+  assert.deepEqual(identityForSelection(legacyCatalog, commit, selection).features, ["grinder", "mdns", "webserver", "wifi"]);
+  for (const grinder of [
+    {firmware_refs},
+    {...legacyGrinder, requires_by_ref},
+    ...[null, [], {main: []}, {...requires_by_ref, unknown: []}, {...requires_by_ref, main: "wifi"},
+      {...requires_by_ref, main: ["missing"]}].map(requires_by_ref => ({firmware_refs, requires_by_ref})),
+  ]) {
+    const features = {...catalog.features, grinder};
+    assert.throws(() => identityForSelection({...catalog, features}, commit, selection), /invalid_service_catalog/);
   }
 });
 
